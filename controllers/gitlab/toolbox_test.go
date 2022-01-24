@@ -71,8 +71,8 @@ var _ = Describe("CustomResourceAdapter", func() {
 		})
 
 		When("Toolbox CronJob and CronJob Persistence is enabled", func() {
-			gitlabToolboxCronJobEnabled := fmt.Sprintf(gitlabToolboxCronJobEnabled, ToolboxComponentName(GetChartVersion()))
-			gitlabToolboxCronJobPersistenceEnabled := fmt.Sprintf(gitlabToolboxCronJobPersistenceEnabled, ToolboxComponentName(GetChartVersion()))
+			gitlabToolboxCronJobEnabled := fmt.Sprintf(gitlabToolboxCronJobEnabled, ToolboxComponentName(helm.GetChartVersion()))
+			gitlabToolboxCronJobPersistenceEnabled := fmt.Sprintf(gitlabToolboxCronJobPersistenceEnabled, ToolboxComponentName(helm.GetChartVersion()))
 
 			chartValues := resource.Values{}
 			_ = chartValues.SetValue(gitlabToolboxCronJobEnabled, true)
