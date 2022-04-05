@@ -5,7 +5,7 @@
 Pods in OpenShift receive permissions based on their security context
 constraints. Security context constraints, often abbreviated _**SCC**_,
 simplify the role based access control mechanism for use in large scale
-deployments. [Administrators may consult the upstream documentation to gain more insight into how security context constraints work and their place in OpenShift](https://docs.openshift.com/container-platform/4.7/authentication/managing-security-context-constraints.html)
+deployments. [Administrators may consult the upstream documentation to gain more insight into how security context constraints work and their place in OpenShift](https://docs.openshift.com/container-platform/4.8/authentication/managing-security-context-constraints.html)
 
 Administrators may also consult the following resources:
 

@@ -32,10 +32,10 @@ Every cluster is created using the [OpenShift cluster setup documentation](opens
 OpenShift clusters use `machineset`s to pool resources. Default deployment has 4 `machineset`s out of which 2 are utilized.
 We retain that approach and scale 2 active `machineset`s to 2 nodes.
 
-Following [OpenShift scaling documentation](https://docs.openshift.com/container-platform/4.7/scalability_and_performance/recommended-cluster-scaling-practices.html) :
+Following [OpenShift scaling documentation](https://docs.openshift.com/container-platform/4.8/scalability_and_performance/recommended-cluster-scaling-practices.html) :
 
 ```shell
-$ export KUBECONFIG=~/work/ocp/kubeconfig_4_7
+$ export KUBECONFIG=~/work/ocp/kubeconfig_4_8
 $ oc get machinesets -n openshift-machine-api
 NAME                         DESIRED   CURRENT   READY   AVAILABLE   AGE
 ocp-ci-4717-abcde-worker-a   1         1         1       1           59d
@@ -104,8 +104,8 @@ ocp-ci-4717-abcde-worker-c-5gq6r.c.cloud-native-123456.internal   Ready    worke
 
 [external-dns](https://github.com/kubernetes-sigs/external-dns) has been installed using the [Bitnami Helm Chart](https://github.com/bitnami/charts/tree/master/bitnami/external-dns) using [ci/scripts/install_external_dns.sh](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/ci/scripts/install_external_dns.sh). This tool creates DNS entries for the NGINX Ingress controller Services that are created as external-facing LoadBalancers, ensuring that our QA jobs can reach the instance for testing.
 
-- For our `4.7` OpenShift Cluster: `CLUSTER_VERSION=4.7 ENVIRONMENT=openshift GOOGLE_APPLICATION_CREDENTIALS=gitlab-operator-ci-gcloud-externaldns.json ./ci/scripts/install_external_dns.sh`
 - For our `4.8` OpenShift Cluster: `CLUSTER_VERSION=4.8 ENVIRONMENT=openshift GOOGLE_APPLICATION_CREDENTIALS=gitlab-operator-ci-gcloud-externaldns.json ./ci/scripts/install_external_dns.sh`
+- For our `4.9` OpenShift Cluster: `CLUSTER_VERSION=4.9 ENVIRONMENT=openshift GOOGLE_APPLICATION_CREDENTIALS=gitlab-operator-ci-gcloud-externaldns.json ./ci/scripts/install_external_dns.sh`
 
 Note: `gitlab-operator-ci-gcloud-externaldns.json` is a file containing the credentials for the external-dns ServiceAccount created in GCP. You can find this credentials file in 1Password by searching for `externaldns` in the `Cloud Native` vault.
 
