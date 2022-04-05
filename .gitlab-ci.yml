@@ -6,7 +6,6 @@ variables:
   TESTS_NAMESPACE: "${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_SLUG}"
   BUILD_DIR: ".build"
   INSTALL_DIR: ".install"
-  DOMAIN_OPENSHIFT_4_7: "apps.ocp-ci-4717.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_8: "apps.ocp-ci-4821.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_9: "apps.ocp-ci-4917.k8s-ft.win"
   DOMAIN_GKE: "gitlab-operator.k8s-ft.win"
@@ -218,35 +217,6 @@ approve_cluster_tests:
     - if: '$CI_COMMIT_BRANCH'
       when: manual
 
-build_review_4_7:
-  extends: .build_review_template
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_7
-    PLATFORM: openshift
-
-create_review_4_7:
-  extends: .create_review_template
-  environment: &environment_4_7
-    name: openshift_4_7/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
-    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_OPENSHIFT_4_7
-    on_stop: stop_review_openshift_4_7
-    auto_stop_in: 1 hour
-  needs:
-    - build_review_4_7
-
-review_4_7:
-  extends: .review_template
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_7
-    PLATFORM: openshift
-  before_script:
-    - export KUBECONFIG="$KUBECONFIG_OCP_4_7"
-  needs:
-    - create_review_4_7
-    # we need build_* dependency to receive appropriate artifacts
-    - build_review_4_7
-  environment: *environment_4_7
-
 build_review_4_8:
   extends: .build_review_template
   variables:
@@ -336,14 +306,6 @@ review_gke:
     - build_review_gke
   environment: *environment_gke
 
-qa_4_7:
-  extends: .qa
-  stage: qa
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_7
-  needs:
-    - review_4_7
-
 qa_4_8:
   extends: .qa
   stage: qa
@@ -367,18 +329,6 @@ qa_gke:
     DOMAIN: $DOMAIN_GKE
   needs:
     - review_gke
-
-stop_review_openshift_4_7:
-  extends: .stop_review_template
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_7
-  before_script:
-    - export KUBECONFIG="$KUBECONFIG_OCP_4_7"
-  environment:
-    name: openshift_4_7/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
-    action: stop
-  needs:
-    - build_review_4_7
 
 stop_review_openshift_4_8:
   extends: .stop_review_template
