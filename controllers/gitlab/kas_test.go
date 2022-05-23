@@ -10,6 +10,8 @@ import (
 var _ = Describe("KAS", func() {
 	When("KAS is disabled", func() {
 		chartValues := support.Values{}
+		_ = chartValues.SetValue("global.kas.enabled", false)
+
 		mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
 		adapter := CreateMockAdapter(mockGitLab)
 		template, err := GetTemplate(adapter)
