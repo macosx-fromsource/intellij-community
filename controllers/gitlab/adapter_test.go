@@ -78,13 +78,12 @@ var _ = Describe("CustomResourceAdapter", func() {
 		values := adapter.Values()
 
 		expected := map[string]string{
-			"global.serviceAccount.name":                       settings.AppNonRootServiceAccount,
-			"gitlab.webservice.serviceAccount.name":            settings.AppAnyUIDServiceAccount,
-			"shared-secrets.serviceAccount.name":               settings.ManagerServiceAccount,
-			"redis.serviceAccount.name":                        settings.AppNonRootServiceAccount,
-			"postgresql.serviceAccount.name":                   settings.AppNonRootServiceAccount,
-			"nginx-ingress.serviceAccount.name":                settings.NGINXServiceAccount,
-			"nginx-ingress.defaultBackend.serviceAccount.name": settings.AppNonRootServiceAccount,
+			"global.serviceAccount.name":            settings.AppNonRootServiceAccount,
+			"gitlab.webservice.serviceAccount.name": settings.AppAnyUIDServiceAccount,
+			"shared-secrets.serviceAccount.name":    settings.ManagerServiceAccount,
+			"redis.serviceAccount.name":             settings.AppNonRootServiceAccount,
+			"postgresql.serviceAccount.name":        settings.AppNonRootServiceAccount,
+			"nginx-ingress.serviceAccount.name":     settings.NGINXServiceAccount,
 		}
 
 		for key, value := range expected {

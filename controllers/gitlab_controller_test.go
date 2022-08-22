@@ -685,8 +685,6 @@ global:
 			releaseName := "nginx-disabled"
 			controllerServiceName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
 			controllerDeploymentName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
-			defaultBackendComponentName := gitlabctl.NGINXDefaultBackendComponentName
-			defaultBackendDeploymentName := fmt.Sprintf("%s-%s-%s", releaseName, gitlabctl.NGINXComponentName, defaultBackendComponentName)
 			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
 
 			chartValues := support.Values{}
@@ -706,10 +704,6 @@ global:
 				Eventually(getObjectPromise(controllerDeploymentName, &appsv1.Deployment{}),
 					PollTimeout, PollInterval).ShouldNot(Succeed())
 
-				By("Checking NGINX Default Backend Deployment does not exist")
-				Eventually(getObjectPromise(defaultBackendDeploymentName, &appsv1.Deployment{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
 				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
 				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
 					PollTimeout, PollInterval).Should(Succeed())
@@ -720,8 +714,6 @@ global:
 			releaseName := "nginx-enabled"
 			controllerServiceName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
 			controllerDeploymentName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
-			defaultBackendComponentName := gitlabctl.NGINXDefaultBackendComponentName
-			defaultBackendDeploymentName := fmt.Sprintf("%s-%s-%s", releaseName, gitlabctl.NGINXComponentName, defaultBackendComponentName)
 			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
 
 			BeforeEach(func() {
@@ -736,10 +728,6 @@ global:
 
 				By("Checking NGINX Controller Deployment exists")
 				Eventually(getObjectPromise(controllerDeploymentName, &appsv1.Deployment{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking NGINX Default Backend Deployment exists")
-				Eventually(getObjectPromise(defaultBackendDeploymentName, &appsv1.Deployment{}),
 					PollTimeout, PollInterval).Should(Succeed())
 
 				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
