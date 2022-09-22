@@ -1,3 +1,17 @@
+## 0.12.0 (2022-09-22)
+
+### fixed (1 change)
+
+- [Add fixes from manual run of 0.10.2 certification](gitlab-org/cloud-native/gitlab-operator@7c0368f587c166bb82870e4a33cda9c7ed0eefb9) ([merge request](gitlab-org/cloud-native/gitlab-operator!511))
+
+### performance (1 change)
+
+- [Add `jobSucceeded` method to check Job status](gitlab-org/cloud-native/gitlab-operator@d6c37cf6ed736777a94ac2519c51dcdbac704e49) ([merge request](gitlab-org/cloud-native/gitlab-operator!503))
+
+### other (1 change)
+
+- [Remove NGINX DefaultBackend from tests](gitlab-org/cloud-native/gitlab-operator@1604313afffe233ae427a2092e704647b7bf8f6d) ([merge request](gitlab-org/cloud-native/gitlab-operator!514))
+
 ## 0.11.4 (2022-09-05)
 
 No changes.
