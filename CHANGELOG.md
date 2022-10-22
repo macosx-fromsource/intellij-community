@@ -1,3 +1,24 @@
+## 0.13.0 (2022-10-22)
+
+### fixed (1 change)
+
+- [Ensure "Running" phase only set if Condition true](gitlab-org/cloud-native/gitlab-operator@b6f8a80f22b8515fde666ee423e3e01d0994c4bd) ([merge request](gitlab-org/cloud-native/gitlab-operator!539))
+
+### added (4 changes)
+
+- [Add documentation on certified images](gitlab-org/cloud-native/gitlab-operator@fb664e38d788b05e423296a32268233d64509408) ([merge request](gitlab-org/cloud-native/gitlab-operator!537))
+- [Support reconciling the spamcheck chart](gitlab-org/cloud-native/gitlab-operator@6e6da19e052a549da62d145d7aa4333252add7e6) ([merge request](gitlab-org/cloud-native/gitlab-operator!536))
+- [Support batch/v1beta1 and batch/v1 for CronJob](gitlab-org/cloud-native/gitlab-operator@4a52125d1423c3a13dfbc3b5dfb792234f9445f3) by @Omar007 ([merge request](gitlab-org/cloud-native/gitlab-operator!532))
+- [Add new features and components to new GitLab resource adapter](gitlab-org/cloud-native/gitlab-operator@1ae8cda74c28d572b720d4445c514afb6a0b4053) ([merge request](gitlab-org/cloud-native/gitlab-operator!527))
+
+### removed (1 change)
+
+- [Remove the unused custom resource adapter](gitlab-org/cloud-native/gitlab-operator@535d0641b23dfbeee4b221f961f4cb07a6fdc17a) ([merge request](gitlab-org/cloud-native/gitlab-operator!529))
+
+### changed (1 change)
+
+- [Replace the old adapter with the new one](gitlab-org/cloud-native/gitlab-operator@9b9eaf01068087317527518e5722d1e95a67e24f) ([merge request](gitlab-org/cloud-native/gitlab-operator!528))
+
 ## 0.12.3 (2022-10-19)
 
 No changes.
