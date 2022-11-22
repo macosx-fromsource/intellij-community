@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
+	rt "gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/runtime"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support/kube"
 )
 
@@ -22,6 +23,7 @@ import (
 func WithClient(client client.Client) kube.ApplyOption {
 	return func(cfg *kube.ApplyConfig) {
 		cfg.Client = client
+		cfg.Scheme = client.Scheme()
 	}
 }
 
@@ -35,16 +37,21 @@ func WithCodec(codec runtime.Codec) kube.ApplyOption {
 	}
 }
 
-// WithContext configures apply with the logger and the client from the context.
+// WithContext configures apply with the specified context and its associated
+// logger and client if it can locate them.
+//
+// When the context has a client it uses its scheme to configure apply.
+//
+// By default ApplyObject uses a Background context.
 func WithContext(ctx context.Context) kube.ApplyOption {
 	return func(cfg *kube.ApplyConfig) {
 		cfg.Context = ctx
-
-		if cfg.Client == nil {
-			cfg.Client = getClientFromContext(cfg.Context)
-		}
-
 		cfg.Logger = logr.FromContextOrDiscard(ctx)
+
+		cfg.Client = rt.ClientFromContext(ctx)
+		if cfg.Client != nil {
+			cfg.Scheme = cfg.Client.Scheme()
+		}
 	}
 }
 
@@ -67,21 +74,14 @@ func WithScheme(scheme *runtime.Scheme) kube.ApplyOption {
 	}
 }
 
-// WithContext configures apply with the client, scheme, and logger from the
+// WithManager configures ApplyOption with the client, scheme, and logger from the
 // manager.
 //
-// This is a convenient way for configuring apply.
+// This is a convenient way for configuring apply for test environments.
 func WithManager(manager manager.Manager) kube.ApplyOption {
 	return func(cfg *kube.ApplyConfig) {
 		cfg.Client = manager.GetClient()
 		cfg.Scheme = manager.GetScheme()
 		cfg.Logger = manager.GetLogger()
 	}
-}
-
-/* Private */
-
-func getClientFromContext(ctx context.Context) client.Client {
-	/* This is a placeholder for future implementation */
-	return nil
 }

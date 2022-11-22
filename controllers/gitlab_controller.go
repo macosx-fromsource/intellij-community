@@ -53,6 +53,7 @@ import (
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/component"
 	feature "gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/features"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/status"
+	rt "gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/runtime"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support/kube"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support/kube/apply"
 )
@@ -92,11 +93,17 @@ type GitLabReconciler struct {
 // +kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile triggers when an event occurs on the watched resource.
+//
 //nolint:gocognit,gocyclo,nestif // The complexity of this method will be addressed in #260.
 func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("gitlab", req.NamespacedName)
 
 	log.Info("Reconciling GitLab")
+
+	rtCtx := rt.NewContext(ctx,
+		rt.WithLogger(log),
+		rt.WithClient(r.Client),
+		rt.WithEventRecorder(r.Recorder))
 
 	gitlab := &apiv1beta1.GitLab{}
 	if err := r.Get(ctx, req.NamespacedName, gitlab); err != nil {
@@ -108,7 +115,7 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return requeue(err)
 	}
 
-	adapter, err := adapter.NewV1Beta1(ctx, gitlab)
+	adapter, err := adapter.NewV1Beta1(rtCtx, gitlab)
 	if err != nil {
 		return requeue(err)
 	}
