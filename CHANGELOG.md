@@ -1,3 +1,13 @@
+## 0.14.0 (2022-11-22)
+
+### removed (1 change)
+
+- [Change OpenShift minimum version to 4.8](gitlab-org/cloud-native/gitlab-operator@75a81e8cde8e57ece8a2fd24b42fc5bb6c736e71) ([merge request](gitlab-org/cloud-native/gitlab-operator!545))
+
+### fixed (1 change)
+
+- [Add OCO setup script](gitlab-org/cloud-native/gitlab-operator@14105d6d280ff20bf17183009819ba35c26cae0b) ([merge request](gitlab-org/cloud-native/gitlab-operator!533))
+
 ## 0.13.4 (2022-11-14)
 
 No changes.
