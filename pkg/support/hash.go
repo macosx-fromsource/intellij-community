@@ -19,9 +19,8 @@ import (
 //
 // For more details see:
 //
-//   https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#metadata
-//   https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#status-subresource
-//
+// - https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#metadata
+// - https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#status-subresource
 func SimpleObjectHash(object client.Object) string {
 	uid := object.GetUID()
 	gen := object.GetGeneration()

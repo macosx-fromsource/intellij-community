@@ -55,7 +55,9 @@ func ToggleDeploymentPause(obj client.Object, pause bool) error {
 }
 
 // PopulateAttachedSecrets populates all the Secrets that are attached to a ReplicaSet.
-// nolint:nestif,gocognit // This function is a bit complicated, but breaking it up may not increase legibility.
+// This function is a bit complicated, but breaking it up may not increase legibility.
+//
+//nolint:nestif,gocognit
 func PopulateAttachedSecrets(template v1.PodTemplateSpec) map[string]map[string]struct{} {
 	result := map[string]map[string]struct{}{}
 

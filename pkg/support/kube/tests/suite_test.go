@@ -3,7 +3,7 @@ package kubetests
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo"
@@ -91,7 +91,7 @@ var (
 )
 
 func readObject(name string, decoder ...runtime.Codec) client.Object {
-	content, err := ioutil.ReadFile(fmt.Sprintf("testdata/%s.yaml", name))
+	content, err := os.ReadFile(fmt.Sprintf("testdata/%s.yaml", name))
 	Expect(err).NotTo(HaveOccurred())
 
 	decoderToUse := scheme.Codecs.UniversalDeserializer()

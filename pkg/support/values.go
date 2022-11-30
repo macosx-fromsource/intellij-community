@@ -2,7 +2,7 @@ package support
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 
 	"github.com/imdario/mergo"
@@ -231,7 +231,7 @@ func (v Values) AddFromYAMLBuffer(content []byte) error {
 // It will return an error if it fails to read or parse the YAML file or
 // encounters an error while merging. For more details see `Merge` function.
 func (v Values) AddFromYAMLFile(filePath string) error {
-	fileContent, err := ioutil.ReadFile(filePath)
+	fileContent, err := os.ReadFile(filePath)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read file: %s", filePath)
 	}
