@@ -1,3 +1,14 @@
+## 0.16.0 (2023-01-22)
+
+### added (1 change)
+
+- [Add OLM bundle testing script with instructions](gitlab-org/cloud-native/gitlab-operator@dd1c21081d8d1152e1cd8c5ca433f093cda4528e) ([merge request](gitlab-org/cloud-native/gitlab-operator!352))
+
+### fixed (2 changes)
+
+- [Support disabling webhook self-signed cert](gitlab-org/cloud-native/gitlab-operator@a14b87b3b9bc31ce860c1c5a7eed63cfbb0613c9) ([merge request](gitlab-org/cloud-native/gitlab-operator!562))
+- [Create cert manager resources only when needed ](gitlab-org/cloud-native/gitlab-operator@0f2df982efda0c51e3680c7aaa6a9d07ee270477) by @javion1 ([merge request](gitlab-org/cloud-native/gitlab-operator!561))
+
 ## 0.15.5 (2023-01-17)
 
 No changes.
