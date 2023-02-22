@@ -1,3 +1,18 @@
+## 0.17.0 (2023-02-22)
+
+### other (1 change)
+
+- [Use non-floating golangci-lint image](gitlab-org/cloud-native/gitlab-operator@0f8e5094e5794882e522c10f9d0025d12e115595) ([merge request](gitlab-org/cloud-native/gitlab-operator!584))
+
+### added (1 change)
+
+- [Add support for nameOverride of PostgreSQL resources](gitlab-org/cloud-native/gitlab-operator@993bc94c977c419c827daf4b65dfa65f1bb23fff) ([merge request](gitlab-org/cloud-native/gitlab-operator!570))
+
+### fixed (2 changes)
+
+- [Fail early if Chart catalog cannot be populated](gitlab-org/cloud-native/gitlab-operator@089e4204bf848f24cb918f8b8ddaf549fa723769) ([merge request](gitlab-org/cloud-native/gitlab-operator!572))
+- [Truncate secret annotation key](gitlab-org/cloud-native/gitlab-operator@792b8bcf6276fe6d398125268b367b1250d1a8ff) ([merge request](gitlab-org/cloud-native/gitlab-operator!569))
+
 ## 0.16.3 (2023-02-15)
 
 No changes.
