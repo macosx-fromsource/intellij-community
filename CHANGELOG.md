@@ -1,3 +1,9 @@
+## 0.18.0 (2023-03-22)
+
+### other (1 change)
+
+- [Distinguish operator default and operator override values](gitlab-org/cloud-native/gitlab-operator@02b42fab33163a2f2434e8a4da0c7a6e26c539dd) ([merge request](gitlab-org/cloud-native/gitlab-operator!586))
+
 ## 0.17.3 (2023-03-09)
 
 No changes.
