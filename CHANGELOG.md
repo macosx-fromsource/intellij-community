@@ -1,3 +1,13 @@
+## 0.19.0 (2023-04-22)
+
+### added (1 change)
+
+- [Add support for nameOverride of redis resources](gitlab-org/cloud-native/gitlab-operator@1dcd2610e1e0e83b04d56497ea837244234898b3) ([merge request](gitlab-org/cloud-native/gitlab-operator!565))
+
+### fixed (1 change)
+
+- [Fix linter issue for doc/openshift_ingress.md](gitlab-org/cloud-native/gitlab-operator@8fc3e4797ead02f58ec01a218b94dda55c3637e0) ([merge request](gitlab-org/cloud-native/gitlab-operator!610))
+
 ## 0.18.3 (2023-04-14)
 
 No changes.
