@@ -1,3 +1,9 @@
+## 0.20.0 (2023-05-22)
+
+### other (1 change)
+
+- [Documenting switching back to single connection](gitlab-org/cloud-native/gitlab-operator@77a8854c1f6c7cb58da18c08870fd897c8d2e811) ([merge request](gitlab-org/cloud-native/gitlab-operator!616))
+
 ## 0.19.4 (2023-05-17)
 
 No changes.
