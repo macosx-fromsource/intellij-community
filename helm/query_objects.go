@@ -41,8 +41,16 @@ func (q *cachingQuery) ObjectsByKindAndLabels(kindArg string, labels map[string]
 }
 
 func (q *cachingQuery) ObjectByKindAndComponent(kindArg, component string) client.Object {
-	objects := q.ObjectsByKindAndLabels(kindArg, map[string]string{
-		appLabel: component,
+	key := q.cacheKey(anything, fmt.Sprintf("%s?", kindArg), map[string]string{"component": component})
+
+	objects := q.queryObjectsWithKindArg(key, kindArg, func(obj runtime.Object) bool {
+		objLabels, err := accessor.Labels(obj)
+
+		if err != nil {
+			return false
+		}
+
+		return objLabels[appLabel] == component || objLabels[gitlabComponentLabel] == component
 	})
 
 	if len(objects) == 0 {

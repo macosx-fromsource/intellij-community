@@ -16,6 +16,7 @@ import (
 
 	gitlabv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
 
@@ -323,10 +324,15 @@ global:
 			pgName := gitlabctl.DefaultPostgresComponentName
 			cfgMapName := fmt.Sprintf("%s-%s-init-db", releaseName, pgName)
 			metricsServiceName := fmt.Sprintf("%s-%s-metrics", releaseName, pgName)
-			headlessServiceName := fmt.Sprintf("%s-%s-headless", releaseName, pgName)
+			headlessServiceName := fmt.Sprintf("%s-%s-hl", releaseName, pgName)
 			serviceName := fmt.Sprintf("%s-%s", releaseName, pgName)
-			statefulSetName := fmt.Sprintf("%s-%s", releaseName, pgName)
+			statefulSetName := fmt.Sprintf("%s-postgresql", releaseName)
 			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
+
+			if gitlabctl.IsChartVersionOlderThan(helm.GetChartVersion(), gitlabctl.ChartVersion7) {
+				headlessServiceName = fmt.Sprintf("%s-%s-headless", releaseName, pgName)
+				statefulSetName = fmt.Sprintf("%s-%s", releaseName, pgName)
+			}
 
 			chartValues := support.Values{}
 			_ = chartValues.SetValue("postgresql.install", true)
@@ -369,12 +375,17 @@ global:
 
 			cfgMapName := fmt.Sprintf("%s-%s-init-db", releaseName, pgComponent)
 			metricsServiceName := fmt.Sprintf("%s-%s-metrics", releaseName, pgComponent)
-			headlessServiceName := fmt.Sprintf("%s-%s-headless", releaseName, pgComponent)
+			headlessServiceName := fmt.Sprintf("%s-%s-hl", releaseName, pgComponent)
 			serviceName := fmt.Sprintf("%s-%s", releaseName, pgComponent)
 
 			nameOverride := "foobar"
-			statefulSetName := fmt.Sprintf("%s-%s", releaseName, nameOverride)
+			statefulSetName := fmt.Sprintf("%s-postgresql", releaseName)
 			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
+
+			if gitlabctl.IsChartVersionOlderThan(helm.GetChartVersion(), gitlabctl.ChartVersion7) {
+				headlessServiceName = fmt.Sprintf("%s-%s-headless", releaseName, pgComponent)
+				statefulSetName = fmt.Sprintf("%s-%s", releaseName, nameOverride)
+			}
 
 			chartValues := support.Values{}
 			_ = chartValues.SetValue("postgresql.install", true)
@@ -423,17 +434,12 @@ global:
 			serviceNameMetrics := fmt.Sprintf("%s-metrics", releaseName)
 			serviceNameMaster := fmt.Sprintf("%s-master", releaseName)
 			statefulSetName := fmt.Sprintf("%s-master", releaseName)
-			nextCfgMapName := releaseName
+			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.GitalyComponentName)
 
 			chartValues := support.Values{}
-			values := `
-redis:
-	install: false
-global:
-  redis:
-	  host: redis.example.com
-			`
-			_ = chartValues.AddFromYAML(values)
+
+			_ = chartValues.SetValue("redis.install", false)
+			_ = chartValues.SetValue("global.redis.host", "redis.example.com")
 
 			BeforeEach(func() {
 				createGitLabResource(releaseName, chartValues)
@@ -479,12 +485,16 @@ global:
 			releaseName := "redis-enabled"
 			cfgMapNameScripts := fmt.Sprintf("%s-scripts", releaseName)
 			cfgMapNameHealth := fmt.Sprintf("%s-health", releaseName)
-			cfgMapName := releaseName
+			cfgMapName := fmt.Sprintf("%s-configuration", releaseName)
 			serviceNameHeadless := fmt.Sprintf("%s-headless", releaseName)
 			serviceNameMetrics := fmt.Sprintf("%s-metrics", releaseName)
 			serviceNameMaster := fmt.Sprintf("%s-master", releaseName)
 			statefulSetName := fmt.Sprintf("%s-master", releaseName)
 			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
+
+			if gitlabctl.IsChartVersionOlderThan(helm.GetChartVersion(), gitlabctl.ChartVersion7) {
+				cfgMapName = releaseName
+			}
 
 			chartValues := support.Values{}
 			_ = chartValues.SetValue("redis.install", true)
@@ -535,12 +545,16 @@ global:
 
 			cfgMapNameScripts := fmt.Sprintf("%s-%s-scripts", releaseName, nameOverride)
 			cfgMapNameHealth := fmt.Sprintf("%s-%s-health", releaseName, nameOverride)
-			cfgMapName := fmt.Sprintf("%s-%s", releaseName, nameOverride)
+			cfgMapName := fmt.Sprintf("%s-%s-configuration", releaseName, nameOverride)
 			serviceNameHeadless := fmt.Sprintf("%s-%s-headless", releaseName, nameOverride)
 			serviceNameMetrics := fmt.Sprintf("%s-%s-metrics", releaseName, nameOverride)
 			serviceNameMaster := fmt.Sprintf("%s-%s-master", releaseName, nameOverride)
 			statefulSetName := fmt.Sprintf("%s-%s-master", releaseName, nameOverride)
 			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
+
+			if gitlabctl.IsChartVersionOlderThan(helm.GetChartVersion(), gitlabctl.ChartVersion7) {
+				cfgMapName = fmt.Sprintf("%s-%s", releaseName, nameOverride)
+			}
 
 			chartValues := support.Values{}
 			_ = chartValues.SetValue("redis.install", true)

@@ -3,6 +3,8 @@ package gitlab
 import (
 	"fmt"
 
+	"github.com/Masterminds/semver/v3"
+
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab"
 )
 
@@ -78,6 +80,11 @@ const (
 
 	// SpamcheckComponentName is the common name of Spamcheck.
 	SpamcheckComponentName = "spamcheck"
+
+	gitlabComponentLabel = "gitlab.io/component"
+	appLabel             = "app"
+
+	ChartVersion7 = "7.0.0"
 )
 
 // RedisSubqueues is the array of possible Redis subqueues.
@@ -110,4 +117,18 @@ func updateCommonLabels(releaseName, componentName string, labels map[string]str
 	labels["app.kubernetes.io/component"] = componentName
 	labels["app.kubernetes.io/part-of"] = "gitlab"
 	labels["app.kubernetes.io/managed-by"] = "gitlab-operator"
+}
+
+func IsChartVersionOlderThan(version, target string) bool {
+	c, err := semver.NewConstraint(fmt.Sprintf("< %s", target))
+	if err != nil {
+		panic(err)
+	}
+
+	v, err := semver.NewVersion(version)
+	if err != nil {
+		panic(err)
+	}
+
+	return c.Check(v)
 }

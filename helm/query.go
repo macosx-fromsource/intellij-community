@@ -45,8 +45,9 @@ func newQuery(t Template) Query {
 }
 
 const (
-	anything = "*"
-	appLabel = "app"
+	anything             = "*"
+	appLabel             = "app"
+	gitlabComponentLabel = "gitlab.io/component"
 )
 
 func (q *cachingQuery) Template() Template {
