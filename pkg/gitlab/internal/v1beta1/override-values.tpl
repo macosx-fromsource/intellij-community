@@ -123,11 +123,7 @@ nginx-ingress:
 
 postgresql:
   commonLabels:
-    app.kubernetes.io/name: {{ .ReleaseName }}
-    app.kubernetes.io/part-of: gitlab
-    app.kubernetes.io/managed-by: gitlab-operator
-    app.kubernetes.io/component: postgresql
-    app.kubernetes.io/instance: {{ .ReleaseName }}-postgresql
+    gitlab.io/component: postgresql
   serviceAccount:
     enabled: true
     create: false
@@ -137,14 +133,8 @@ postgresql:
     runAsUser: 1000
 
 redis:
-  master:
-    statefulset:
-      labels:
-        app.kubernetes.io/name: {{ .ReleaseName }}
-        app.kubernetes.io/part-of: gitlab
-        app.kubernetes.io/managed-by: gitlab-operator
-        app.kubernetes.io/component: redis
-        app.kubernetes.io/instance: {{ .ReleaseName }}-redis
+  commonLabels:
+    gitlab.io/component: redis
   serviceAccount:
     name: {{ .Settings.AppNonRootServiceAccount }}
   securityContext:

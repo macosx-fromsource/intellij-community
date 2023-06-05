@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	appsv1 "k8s.io/api/apps/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
@@ -13,13 +12,22 @@ import (
 
 // PostgresServices returns the Services of the Postgres component.
 func PostgresServices(adapter gitlab.Adapter, template helm.Template) []client.Object {
-	componentName := PostgresComponentName(adapter)
+	nameOverride := PostgresComponentName(adapter)
+
+	componentLabel := gitlabComponentLabel
+	componentName := DefaultPostgresComponentName
+
+	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
+		componentLabel = appLabel
+		componentName = nameOverride
+	}
+
 	results := template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
-		"app": componentName,
+		componentLabel: componentName,
 	})
 
 	for _, s := range results {
-		updateCommonLabels(adapter.ReleaseName(), componentName, s.GetLabels())
+		updateCommonLabels(adapter.ReleaseName(), nameOverride, s.GetLabels())
 
 		// Temporary fix: patch in the namespace because the version of the PostgreSQL chart
 		// we use does not specify `namespace` in the template.
@@ -31,17 +39,30 @@ func PostgresServices(adapter gitlab.Adapter, template helm.Template) []client.O
 
 // PostgresStatefulSet returns the StatefulSet of the PostgreSQL component.
 func PostgresStatefulSet(adapter gitlab.Adapter, template helm.Template) client.Object {
-	componentName := PostgresComponentName(adapter)
-	result := template.Query().ObjectByKindAndComponent(StatefulSetKind, componentName)
+	nameOverride := PostgresComponentName(adapter)
+
+	componentLabel := gitlabComponentLabel
+	componentName := DefaultPostgresComponentName
+
+	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
+		componentLabel = appLabel
+		componentName = nameOverride
+	}
+
+	objects := template.Query().ObjectsByKindAndLabels(StatefulSetKind, map[string]string{
+		componentLabel: componentName,
+	})
+
+	// This should panic when the StatefulSet does not exist. This needs a better
+	// error handling.
+	// See: https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/305
+	result := objects[0]
 
 	// Temporary fix: patch in the namespace because the version of the PostgreSQL chart
 	// we use does not specify `namespace` in the template.
 	result.SetNamespace(adapter.Name().Namespace)
 
-	updateCommonLabels(adapter.ReleaseName(), componentName, result.GetLabels())
-
-	// Attention: Type Assertion: StatefulSet.Spec is needed
-	updateCommonLabels(adapter.ReleaseName(), componentName, result.(*appsv1.StatefulSet).Spec.Template.ObjectMeta.Labels)
+	updateCommonLabels(adapter.ReleaseName(), nameOverride, result.GetLabels())
 
 	return result
 }

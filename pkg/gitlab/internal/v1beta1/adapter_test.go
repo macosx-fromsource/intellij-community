@@ -300,10 +300,10 @@ func checkLabels(a *Adapter) {
 			checkMoreLabels = true
 		case component.PostgreSQL:
 			labelsKey = "postgresql.commonLabels"
-			checkMoreLabels = true
+			checkMoreLabels = false
 		case component.Redis:
-			labelsKey = "redis.master.statefulset.labels"
-			checkMoreLabels = true
+			labelsKey = "redis.commonLabels"
+			checkMoreLabels = false
 		case component.Registry:
 			labelsKey = "registry.common.labels"
 			checkMoreLabels = false
@@ -320,11 +320,11 @@ func checkLabels(a *Adapter) {
 		Expect(
 			a.Values().GetValue(labelsKey),
 		).To(
-			SatisfyAll(
+			SatisfyAny(
+				HaveKeyWithValue("gitlab.io/component", c.Name()),
 				HaveKeyWithValue("app.kubernetes.io/component", c.Name()),
-				HaveKeyWithValue("app.kubernetes.io/instance", fmt.Sprintf("test-%s", c.Name())),
 			),
-			fmt.Sprintf("Labels for component `%s` do not match", c.Name()))
+			fmt.Sprintf("Required labels for component `%s` do not match", c.Name()))
 
 		if checkMoreLabels {
 			Expect(
@@ -335,7 +335,7 @@ func checkLabels(a *Adapter) {
 					HaveKeyWithValue("app.kubernetes.io/part-of", "gitlab"),
 					HaveKeyWithValue("app.kubernetes.io/managed-by", "gitlab-operator"),
 				),
-				fmt.Sprintf("Labels for component `%s` do not match", c.Name()))
+				fmt.Sprintf("Additional labels for component `%s` do not match", c.Name()))
 		}
 	}
 }

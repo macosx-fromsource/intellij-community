@@ -11,12 +11,22 @@ import (
 
 // RedisConfigMaps returns the ConfigMaps of the Redis component.
 func RedisConfigMaps(adapter gitlab.Adapter, template helm.Template) []client.Object {
+	nameOverride := RedisComponentName(adapter)
+
+	componentLabel := gitlabComponentLabel
+	componentName := DefaultRedisComponentName
+
+	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
+		componentLabel = appLabel
+		componentName = nameOverride
+	}
+
 	result := template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{
-		"app": RedisComponentName(adapter),
+		componentLabel: componentName,
 	})
 
 	for _, c := range result {
-		updateCommonLabels(adapter.ReleaseName(), RedisComponentName(adapter), c.GetLabels())
+		updateCommonLabels(adapter.ReleaseName(), nameOverride, c.GetLabels())
 	}
 
 	return result
@@ -24,8 +34,18 @@ func RedisConfigMaps(adapter gitlab.Adapter, template helm.Template) []client.Ob
 
 // RedisServices returns the Services of the Redis component.
 func RedisServices(adapter gitlab.Adapter, template helm.Template) []client.Object {
+	nameOverride := RedisComponentName(adapter)
+
+	componentLabel := gitlabComponentLabel
+	componentName := DefaultRedisComponentName
+
+	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
+		componentLabel = appLabel
+		componentName = nameOverride
+	}
+
 	results := template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
-		"app": RedisComponentName(adapter),
+		componentLabel: componentName,
 	})
 
 	for _, s := range results {
@@ -50,5 +70,23 @@ func RedisMasterService(adapter gitlab.Adapter, template helm.Template) client.O
 
 // RedisStatefulSet returns the Statefulset of the Redis component.
 func RedisStatefulSet(adapter gitlab.Adapter, template helm.Template) client.Object {
-	return template.Query().ObjectByKindAndComponent(StatefulSetKind, RedisComponentName(adapter))
+	nameOverride := RedisComponentName(adapter)
+
+	componentLabel := gitlabComponentLabel
+	componentName := DefaultRedisComponentName
+
+	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
+		componentLabel = appLabel
+		componentName = nameOverride
+	}
+
+	results := template.Query().ObjectsByKindAndLabels(StatefulSetKind, map[string]string{
+		componentLabel: componentName,
+	})
+
+	if len(results) == 0 {
+		return nil
+	}
+
+	return results[0]
 }
