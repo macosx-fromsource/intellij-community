@@ -1,3 +1,16 @@
+## 0.21.0 (2023-06-22)
+
+### added (2 changes)
+
+- [Add auto-discovery feature to DiscoverManagedObjects](gitlab-org/cloud-native/gitlab-operator@04f1667724606ca5ef479848c4c938b40a75752a) ([merge request](gitlab-org/cloud-native/gitlab-operator!626))
+- [Add utility for discovering managed objects](gitlab-org/cloud-native/gitlab-operator@40055c16d8382cf29a9e438ec48e6f622204732b) ([merge request](gitlab-org/cloud-native/gitlab-operator!546))
+
+### fixed (3 changes)
+
+- [Fix review environment DNS labels](gitlab-org/cloud-native/gitlab-operator@31889132e9d91d9f84ea96402219a58d4b293e69) ([merge request](gitlab-org/cloud-native/gitlab-operator!623))
+- [Fix PostgreSQL and Redis resource lookup after chart upgrade](gitlab-org/cloud-native/gitlab-operator@708523dcf2ceb055008b9ad096394e1f204d38d2) ([merge request](gitlab-org/cloud-native/gitlab-operator!619))
+- [Fix long running reconciliation loop on upgrade](gitlab-org/cloud-native/gitlab-operator@67d1f10f6a38d2450e6e1843a21c88819147ea2c) ([merge request](gitlab-org/cloud-native/gitlab-operator!617))
+
 ## 0.20.6 (2023-06-16)
 
 No changes.
