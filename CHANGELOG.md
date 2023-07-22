@@ -1,3 +1,18 @@
+## 0.22.0 (2023-07-22)
+
+### fixed (2 changes)
+
+- [Use createOrPatch for Issuer, not createOrUpdate](gitlab-org/cloud-native/gitlab-operator@8163e95ebe4a2aaf672a0e3ece3ef79c5a66197c) ([merge request](gitlab-org/cloud-native/gitlab-operator!650))
+- [Discover cluster capabilities and use them in chart](gitlab-org/cloud-native/gitlab-operator@7daf0b8e818cf387d6e55a2e5d904dac8188f9ee) ([merge request](gitlab-org/cloud-native/gitlab-operator!644))
+
+### changed (1 change)
+
+- [Update rbac-proxy to 0.14.1](gitlab-org/cloud-native/gitlab-operator@a135c110fee5b24c29e123710edc41b86f9d98bc) ([merge request](gitlab-org/cloud-native/gitlab-operator!641))
+
+### added (1 change)
+
+- [Add OwnerReference filtering to DiscoverManagedObjects](gitlab-org/cloud-native/gitlab-operator@217882ef6debba68c3b162bc675fc7319378b00b) ([merge request](gitlab-org/cloud-native/gitlab-operator!627))
+
 ## 0.21.2 (2023-07-05)
 
 No changes.
