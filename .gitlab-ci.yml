@@ -251,7 +251,7 @@ build_tag_image:
     - docker push "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
     - docker push "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
   rules:
-    - !reference [.if_release_tag]
+    - !reference [.if_release_tag_on_canonical]
     # TODO: when dev is part of the official release process,
     # change this to:
     # - !reference [.if_release_tag_on_dev]
@@ -284,7 +284,7 @@ build_bundle_image:
     - export BUNDLE_IMAGE_TAG=${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}
     - scripts/olm_bundle.sh publish
   rules:
-    - !reference [.if_release_tag]
+    - !reference [.if_release_tag_on_canonical]
 
 approve_cluster_tests:
   stage: cluster_tests_approval
