@@ -243,6 +243,10 @@
   artifacts:
     paths:
     - variables
+  rules:
+    - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_release_tag]
+    - !reference [.manual_if_commit_branch_or_mr_branch]
 
 .stop_review_template:
   stage: cleanup
