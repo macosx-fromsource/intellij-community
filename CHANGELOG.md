@@ -1,3 +1,15 @@
+## 0.23.0 (2023-08-22)
+
+### other (2 changes)
+
+- [Update client-go to 0.27.0](gitlab-org/cloud-native/gitlab-operator@8c5237230fb003c32f02d43ac0f0cc13a51fafed) ([merge request](gitlab-org/cloud-native/gitlab-operator!664))
+- [Revert Set global.hosts.externalIP on NGINX Service](gitlab-org/cloud-native/gitlab-operator@a6c1db6dde79352029a683bbe55c81959fc2ba9c) ([merge request](gitlab-org/cloud-native/gitlab-operator!652))
+
+### fixed (2 changes)
+
+- [Delete unused resources](gitlab-org/cloud-native/gitlab-operator@14877813ba2b90ea43fa4cc074baf3e14a5433c9) ([merge request](gitlab-org/cloud-native/gitlab-operator!649))
+- [Remove override for GitLab Shell Service type](gitlab-org/cloud-native/gitlab-operator@b94d581089873cad6037756eddfe387018fbd622) ([merge request](gitlab-org/cloud-native/gitlab-operator!653))
+
 ## 0.22.4 (2023-08-11)
 
 No changes.
