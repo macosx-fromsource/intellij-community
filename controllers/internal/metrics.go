@@ -16,6 +16,10 @@ func PrometheusCluster(adapter gitlab.Adapter) *monitoringv1.Prometheus {
 	var replicas int32 = 2
 
 	return &monitoringv1.Prometheus{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Prometheus",
+			APIVersion: "monitoring.coreos.com/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "gitlab-prometheus",
 			Namespace: adapter.Name().Namespace,
@@ -43,6 +47,10 @@ func ExposePrometheusCluster(adapter gitlab.Adapter) *corev1.Service {
 	labels := ResourceLabels(adapter.Name().Name, "prometheus", GitlabType)
 
 	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "gitlab-prometheus",
 			Namespace: adapter.Name().Namespace,
@@ -69,6 +77,10 @@ func ExporterServiceMonitor(adapter gitlab.Adapter) *monitoringv1.ServiceMonitor
 	labels := ResourceLabels(adapter.Name().Name, "gitlab-exporter", GitlabType)
 
 	return &monitoringv1.ServiceMonitor{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceMonitor",
+			APIVersion: "monitoring.coreos.com/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      labels["app.kubernetes.io/instance"],
 			Namespace: adapter.Name().Namespace,
@@ -93,6 +105,10 @@ func WebserviceServiceMonitor(adapter gitlab.Adapter) *monitoringv1.ServiceMonit
 	labels := ResourceLabels(adapter.Name().Name, "webservice", GitlabType)
 
 	return &monitoringv1.ServiceMonitor{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceMonitor",
+			APIVersion: "monitoring.coreos.com/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      labels["app.kubernetes.io/instance"],
 			Namespace: adapter.Name().Namespace,
@@ -117,6 +133,10 @@ func PostgresqlServiceMonitor(adapter gitlab.Adapter) *monitoringv1.ServiceMonit
 	labels := ResourceLabels(adapter.Name().Name, "postgresql", GitlabType)
 
 	return &monitoringv1.ServiceMonitor{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceMonitor",
+			APIVersion: "monitoring.coreos.com/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      labels["app.kubernetes.io/instance"],
 			Namespace: adapter.Name().Namespace,
@@ -141,6 +161,10 @@ func RedisServiceMonitor(adapter gitlab.Adapter) *monitoringv1.ServiceMonitor {
 	labels := ResourceLabels(adapter.Name().Name, "redis", GitlabType)
 
 	return &monitoringv1.ServiceMonitor{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceMonitor",
+			APIVersion: "monitoring.coreos.com/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      labels["app.kubernetes.io/instance"],
 			Namespace: adapter.Name().Namespace,
@@ -165,6 +189,10 @@ func GitalyServiceMonitor(adapter gitlab.Adapter) *monitoringv1.ServiceMonitor {
 	labels := ResourceLabels(adapter.Name().Name, "gitaly", GitlabType)
 
 	return &monitoringv1.ServiceMonitor{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceMonitor",
+			APIVersion: "monitoring.coreos.com/v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      labels["app.kubernetes.io/instance"],
 			Namespace: adapter.Name().Namespace,
