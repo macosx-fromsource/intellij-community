@@ -1,3 +1,9 @@
+## 0.23.3 (2023-09-12)
+
+### fixed (1 change)
+
+- [Fix monitoring resources create / delete loop](gitlab-org/cloud-native/gitlab-operator@2de341ae14300b0393366984efaa2d006ef54a88) ([merge request](gitlab-org/cloud-native/gitlab-operator!684))
+
 ## 0.23.2 (2023-09-05)
 
 No changes.
