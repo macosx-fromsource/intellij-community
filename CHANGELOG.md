@@ -1,3 +1,13 @@
+## 0.24.0 (2023-09-22)
+
+### fixed (1 change)
+
+- [Fix monitoring resources create / delete loop](gitlab-org/cloud-native/gitlab-operator@53f73f98c71f7ef39f4398f08e48a9a2a8bf02e4) ([merge request](gitlab-org/cloud-native/gitlab-operator!681))
+
+### added (1 change)
+
+- [Add Kubernetes 1.26 CI test jobs](gitlab-org/cloud-native/gitlab-operator@8c75c28beee70616affaf255408a370586f857dd) ([merge request](gitlab-org/cloud-native/gitlab-operator!678))
+
 ## 0.23.4 (2023-09-18)
 
 No changes.
