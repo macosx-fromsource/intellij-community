@@ -196,6 +196,8 @@ docs-lint markdown:
   needs:
     - docs-lint markdown
     - docs-lint links
+  rules:
+    - !reference ['docs-lint markdown', rules]
 
 # Trigger a docs build in gitlab-docs
 # Useful to preview the docs changes live
