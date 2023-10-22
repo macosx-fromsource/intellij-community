@@ -1,3 +1,24 @@
+## 0.25.0 (2023-10-22)
+
+### added (2 changes)
+
+- [Add Option to Configure Container securityContext](gitlab-org/cloud-native/gitlab-operator@434a77c30f1aa86b7fd7286685d40bc1c8a046d5) by @omland-94 ([merge request](gitlab-org/cloud-native/gitlab-operator!697))
+- [Add support for GitLab Zoekt](gitlab-org/cloud-native/gitlab-operator@1dbc8eee8e3754496eb37069e0c2bef0c4c66c96) ([merge request](gitlab-org/cloud-native/gitlab-operator!690))
+
+### changed (1 change)
+
+- [Replace Prometheus object definitions with objects from charts](gitlab-org/cloud-native/gitlab-operator@f21b17dc5b6905e1fac4cfb7e547e5a5e84b9b36) ([merge request](gitlab-org/cloud-native/gitlab-operator!686))
+
+### fixed (3 changes)
+
+- [Populate ACME Ingresse to managed objects](gitlab-org/cloud-native/gitlab-operator@27b69485a7aa4a5392a851774f83110798c25c32) ([merge request](gitlab-org/cloud-native/gitlab-operator!699))
+- [Fix modified chart catalog after a chart was rendered](gitlab-org/cloud-native/gitlab-operator@ee2cb71efdfd6ef6c751e6e70cc23220dc32954c) ([merge request](gitlab-org/cloud-native/gitlab-operator!694))
+- [Support multiple Services from GitLab Pages](gitlab-org/cloud-native/gitlab-operator@1b6627bfb742f6cc4e81c517233814265a7f4a69) ([merge request](gitlab-org/cloud-native/gitlab-operator!698))
+
+### other (1 change)
+
+- [Replace apimachinery.Scheme with kubectl.Scheme](gitlab-org/cloud-native/gitlab-operator@99286ed2f77244db2a3e44d1d95c06d01cc8ad73) ([merge request](gitlab-org/cloud-native/gitlab-operator!692))
+
 ## 0.24.1 (2023-09-28)
 
 No changes.
