@@ -1,3 +1,10 @@
+## 0.26.0 (2023-11-16)
+
+### changed (2 changes)
+
+- [Use Service and PodMonitors from the Helm template](gitlab-org/cloud-native/gitlab-operator@d05b4f16881344e009ceef0623ff4136067f8f0c) ([merge request](gitlab-org/cloud-native/gitlab-operator!661))
+- [Migrations for Operator SDK 1.32.0](gitlab-org/cloud-native/gitlab-operator@6c15e3d27d2510f71fae6adabd9c63bffc46cb55) ([merge request](gitlab-org/cloud-native/gitlab-operator!702))
+
 ## 0.25.2 (2023-11-14)
 
 No changes.
