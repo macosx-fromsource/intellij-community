@@ -272,7 +272,7 @@ tasks:
       - build_operator
     cmds:
       - "$HELM uninstall --namespace $NAMESPACE gitlab-operator"
-      - rm $INSTALL_DIR/operator.yaml
+      - rm -f $INSTALL_DIR/operator.yaml
 
   test_cr_files:
     desc: List of files used for building the test Custom Resource.
