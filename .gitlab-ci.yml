@@ -347,6 +347,7 @@ approve_cluster_tests:
   image: alpine:latest
   script: echo "Proceeding to tests in CI clusters..."
   rules:
+    - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_stable_branch]
@@ -428,9 +429,6 @@ build_review_4_13:
     TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
   dependencies:
     - image_certification
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.build_review_template, rules]
 
 create_review_4_13:
   extends: .create_review_template
@@ -441,9 +439,6 @@ create_review_4_13:
     auto_stop_in: 1 hour
   needs:
     - build_review_4_13
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.create_review_template, rules]
 
 review_4_13:
   extends: .review_template
@@ -458,9 +453,6 @@ review_4_13:
     - build_review_4_13
   environment: *environment_4_13
   resource_group: *env_4_13_name
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.review_template, rules]
 
 # GKE
 build_review_gke:
@@ -525,9 +517,6 @@ build_review_gke125:
   extends: .build_review_template
   variables:
     DOMAIN: $DOMAIN_GKE125
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.build_review_template, rules]
 
 create_review_gke125:
   extends: .create_review_template
@@ -538,9 +527,6 @@ create_review_gke125:
     auto_stop_in: 1 hour
   needs:
     - build_review_gke125
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.create_review_template, rules]
 
 review_gke125:
   extends: .review_template
@@ -558,18 +544,12 @@ review_gke125:
     - build_review_gke125
   environment: *environment_gke125
   resource_group: *env_gke_name125
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.review_template, rules]
 
 # GKE 1.26
 build_review_gke126:
   extends: .build_review_template
   variables:
     DOMAIN: $DOMAIN_GKE126
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.build_review_template, rules]
 
 create_review_gke126:
   extends: .create_review_template
@@ -580,9 +560,6 @@ create_review_gke126:
     auto_stop_in: 1 hour
   needs:
     - build_review_gke126
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.create_review_template, rules]
 
 review_gke126:
   extends: .review_template
@@ -600,9 +577,6 @@ review_gke126:
     - build_review_gke126
   environment: *environment_gke126
   resource_group: *env_gke_name126
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.review_template, rules]
 
 # QA OCP 4.11
 qa_4_11:
@@ -660,16 +634,10 @@ qa_4_13:
     DOMAIN: $DOMAIN_OPENSHIFT_4_13
   needs:
     - review_4_13
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa, rules]
 
 qa_4_13_full_suite_manual_trigger:
   extends: .qa_full_suite_manual_trigger
   script: echo 'The job will trigger Full E2E suite against OpenShift 4.13'
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa_full_suite_manual_trigger, rules]
 
 qa_4_13_full:
   extends: .qa
@@ -681,9 +649,6 @@ qa_4_13_full:
   needs:
     - review_4_13
     - qa_4_13_full_suite_manual_trigger
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa, rules]
 
 # QA GKE
 qa_gke:
@@ -741,16 +706,10 @@ qa_gke125:
     DOMAIN: $DOMAIN_GKE125
   needs:
     - review_gke125
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa, rules]
 
 qa_gke125_full_suite_manual_trigger:
   extends: .qa_full_suite_manual_trigger
   script: echo 'The job will trigger Full E2E suite against GKE 1.25'
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa_full_suite_manual_trigger, rules]
 
 qa_gke125_full:
   extends: .qa
@@ -762,9 +721,6 @@ qa_gke125_full:
   needs:
     - review_gke125
     - qa_gke125_full_suite_manual_trigger
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa, rules]
 
 # QA GKE 1.26
 qa_gke126:
@@ -774,16 +730,10 @@ qa_gke126:
     DOMAIN: $DOMAIN_GKE126
   needs:
     - review_gke126
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa, rules]
 
 qa_gke126_full_suite_manual_trigger:
   extends: .qa_full_suite_manual_trigger
   script: echo 'The job will trigger Full E2E suite against GKE 1.26'
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa_full_suite_manual_trigger, rules]
 
 qa_gke126_full:
   extends: .qa
@@ -795,9 +745,6 @@ qa_gke126_full:
   needs:
     - review_gke126
     - qa_gke126_full_suite_manual_trigger
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.qa, rules]
 
 stop_review_openshift_4_11:
   extends: .stop_review_template
@@ -834,9 +781,6 @@ stop_review_openshift_4_13:
     action: stop
   needs:
     - build_review_4_13
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.stop_review_template, rules]
 
 stop_review_gke:
   extends: .stop_review_template
@@ -877,9 +821,6 @@ stop_review_gke125:
     action: stop
   needs:
     - build_review_gke125
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.stop_review_template, rules]
 
 stop_review_gke126:
   extends: .stop_review_template
@@ -896,9 +837,6 @@ stop_review_gke126:
     action: stop
   needs:
     - build_review_gke126
-  rules:
-    - !reference [.skip_if_dev_mirror]
-    - !reference [.stop_review_template, rules]
 
 image_certification:
   stage: certification
