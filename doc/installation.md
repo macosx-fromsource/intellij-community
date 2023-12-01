@@ -36,9 +36,24 @@ If using OpenShift, these steps are typically handled by the Operator Lifecycle 
 
 To create a traditional Kubernetes cluster, consider using [official tooling](https://kubernetes.io/docs/tasks/tools/) or your preferred method of installation.
 
-GitLab Operator supports Kubernetes 1.19 through 1.22, and is tested against 1.21 and 1.22 in CI.
-[Epic 7599](https://gitlab.com/groups/gitlab-org/-/epics/7599) tracks progress towards supporting 1.25.
-For some components and other installation methods, [GitLab might support different cluster versions](https://docs.gitlab.com/ee/user/clusters/agent/#supported-kubernetes-versions-for-gitlab-features).
+The GitLab Operator supports the following Kubernetes versions:
+
+- A cluster running Kubernetes 1.20 or newer is required for all components to work.
+- 1.26 support is fully tested as of Operator 0.24.0.
+The GitLab Operator supports the following Kubernetes versions:
+
+| Operator Version | Minimum Kubernetes version | Maximum Kubernetes version | Partially tested Kubernetes version(s) |
+|--|--|--|--|
+| `0.24.0` | `1.20` | `1.26` | `1.27`, `1.28` |
+
+The last column lists newer versions of Kubernetes that have undergone initial testing but are not yet fully validated. You can track progress toward support for new Kubernetes versions in [Epic 11331](https://gitlab.com/groups/gitlab-org/-/epics/11331).
+
+The GitLab Operator aims to support new minor Kubernetes versions four months after their initial release.
+We welcome any compatibility issues with releases newer than those listed above in our [issue tracker](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues).
+
+Some GitLab features might not work on versions older than the versions listed above.
+
+For some components, like the [agent for Kubernetes](https://docs.gitlab.com/ee/user/clusters/agent/#gitlab-agent-for-kubernetes-supported-cluster-versions) and [GitLab Charts](https://docs.gitlab.com/charts/installation/cloud/#supported-kubernetes-versions), GitLab might support different cluster versions.
 
 :::TabTitle OpenShift
 
