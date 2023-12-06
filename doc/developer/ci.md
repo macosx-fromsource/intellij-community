@@ -179,3 +179,10 @@ to quickly ensure that basic functionality is working. If additional testing is 
 QA pipeline with Full suite of end-to-end tests using `qa_<cluster>_full_suite_manual_trigger` job for the specific cluster.
 
 To debug failures in tests, please follow [investigate QA failures](https://about.gitlab.com/handbook/engineering/quality/quality-engineering/enablement-saas-platforms-qe-team/distribution/#investigate-qa-failures) guide.
+
+## Container builds
+
+The Operator image can be built for multiple architectures, by configuring a Kubernetes buildx driver using the `BUILDX_K8S_*`
+variables. Set the `BUILDX_ARCHS` to a comma-separated string of the target architectures (for example `amd64,arm64`).
+
+If no Kubernetes driver is configured you can (cross-) compile only one architecture.
