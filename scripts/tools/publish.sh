@@ -303,8 +303,8 @@ export OPERATORHUB_NAME="${GITLAB_OPERATOR_DIR}"
 
 [ -n "${SSH_KEY_FILE}" ] && export GIT_SSH_COMMAND="ssh -i ${SSH_KEY_FILE} -o IdentitiesOnly=yes"
 [ -z "${KUBECONFIG:-}" ] && export KUBECONFIG="${BUILD_DIR}/kubeconfig"
-[ -z "${GIT_USERNAME}" ] && export GIT_USERNAME="$(git config --global user.name) (Operator Release)"
-[ -z "${GIT_EMAIL}" ] && export GIT_EMAIL="$(git config --global user.email | sed 's/@/+operator-release@/')"
+[ -z "${GIT_USERNAME:-}" ] && export GIT_USERNAME="$(git config --global user.name) (Operator Release)"
+[ -z "${GIT_EMAIL:-}" ] && export GIT_EMAIL="$(git config --global user.email | sed 's/@/+operator-release@/')"
 
 export GIT_FORK_REPO_URL="git@github.com:${GITHUB_ACCOUNT}/${RH_REPOSITORY}.git"
 export GIT_BRANCH="${BRANCH_NAME}"
