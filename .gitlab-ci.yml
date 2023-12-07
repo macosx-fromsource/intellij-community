@@ -82,7 +82,8 @@ include:
   - template: Jobs/SAST.latest.gitlab-ci.yml
     rules:
       - if: '$CI_PROJECT_PATH == "gitlab-org/cloud-native/gitlab-operator"'
-  - local: .gitlab-ci-templates.yml
+  - local: ci/rules.gitlab-ci.yml
+  - local: ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
 
 default:
