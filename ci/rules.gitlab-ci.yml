@@ -1,0 +1,86 @@
+.if_commit_branch_or_mr_branch: &if_commit_branch_or_mr_branch
+  if: '$CI_COMMIT_BRANCH || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME'
+
+.manual_if_commit_branch_or_mr_branch: &manual_if_commit_branch_or_mr_branch
+  <<: *if_commit_branch_or_mr_branch
+  when: manual
+
+.if_on_dev: &if_on_dev
+  if: '$CI_SERVER_HOST == "dev.gitlab.org" && $CI_PROJECT_PATH == "gitlab/cloud-native/gitlab-operator"'
+
+.if_release_tag: &if_release_tag
+  if: '$CI_COMMIT_TAG =~ /^[0-9]+\.[0-9]+\.[0-9]+(-(rc|RC|beta)\d*)?$/'
+
+.if_release_tag_on_dev: &if_release_tag_on_dev
+  if: '$CI_SERVER_HOST == "dev.gitlab.org" && $CI_PROJECT_PATH == "gitlab/cloud-native/gitlab-operator" && $CI_COMMIT_TAG =~ /^[0-9]+\.[0-9]+\.[0-9]+(-(rc|RC|beta)\d*)?$/'
+
+.if_release_tag_on_canonical: &if_release_tag_on_canonical
+  if: '$CI_SERVER_HOST == "gitlab.com" && $CI_PROJECT_PATH == "gitlab-org/cloud-native/gitlab-operator" && $CI_COMMIT_TAG =~ /^[0-9]+\.[0-9]+\.[0-9]+(-(rc|RC|beta)\d*)?$/'
+
+.skip_if_release_tag: &skip_if_release_tag
+  <<: *if_release_tag
+  when: never
+
+.on_failure_if_release_tag: &on_failure_if_release_tag
+  <<: *if_release_tag
+  when: on_failure
+
+.if_default_branch: &if_default_branch
+  if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+
+.skip_if_default_branch: &skip_if_default_branch
+  <<: *if_default_branch
+  when: never
+
+.on_failure_if_default_branch: &on_failure_if_default_branch
+  <<: *if_default_branch
+  when: on_failure
+
+.if_default_branch_with_bundle_changes: &if_default_branch_with_bundle_changes
+  <<: *if_default_branch
+  changes:
+  - bundle/**/*
+
+.if_stable_branch: &if_stable_branch
+  if: '$CI_COMMIT_REF_NAME =~ /^[0-9]+-[0-9]+-stable$/'
+
+.skip_if_stable_branch: &skip_if_stable_branch
+  <<: *if_stable_branch
+  when: never
+
+.on_failure_if_stable_branch: &on_failure_if_stable_branch
+  <<: *if_stable_branch
+  when: on_failure
+
+.manual_if_stable_branch: &manual_if_stable_branch
+  <<: *if_stable_branch
+  when: manual
+
+.if_dev_mirror: &if_dev_mirror
+  if: '$CI_PROJECT_PATH == "gitlab/cloud-native/gitlab-operator"'
+
+.skip_if_dev_mirror: &skip_if_dev_mirror
+  <<: *if_dev_mirror
+  when: never
+
+.if_docs_branch: &if_docs_branch
+  if: '$CI_COMMIT_REF_NAME =~ /(^docs[\/-].+|.+-docs$)/'
+
+.skip_if_docs_branch: &skip_if_docs_branch
+  <<: *if_docs_branch
+  when: never
+
+.manual_if_release_tag: &manual_if_release_tag
+  <<: *if_release_tag
+  when: manual
+
+.delayed_if_release_tag_on_dev: &delayed_if_release_tag_on_dev
+  <<: *if_release_tag_on_dev
+  when: delayed
+  start_in: 1 hour
+
+.if_redhat_certification: &if_redhat_certification
+  if: '$REDHAT_CERTIFICATION == "true"'
+  #TODO at the moment publishing is broken due to changes in RH API
+  # so we'll let things fail until it is fixed
+  allow_failure: true
