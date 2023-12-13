@@ -59,7 +59,7 @@ For some components, like the [agent for Kubernetes](https://docs.gitlab.com/ee/
 
 To create an OpenShift cluster, see the [OpenShift cluster setup documentation](developer/openshift_cluster_setup.md) for an example of how to create a _development environment_.
 
-GitLab Operator supports OpenShift 4.10 through 4.13.
+GitLab Operator supports OpenShift 4.10 through 4.14.
 
 ::EndTabs
 
