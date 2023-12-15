@@ -63,9 +63,29 @@ GitLab Operator supports OpenShift 4.10 through 4.13.
 
 ::EndTabs
 
-Cluster nodes must use the x86-64 architecture.
-Support for multiple architectures, including AArch64/ARM64, is under active development.
-See [issue 2899](https://gitlab.com/gitlab-org/charts/gitlab/-/issues/2899) for more information.
+Starting with 16.7, the Operator is built for x86-64 and arm64.
+The arm64 images are not tested in CI and are not recommended for production use.
+
+If you are on a multi-arch cluster you may want to add a [node selector](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector)
+for the [`kubernetes.io/arch` label](https://kubernetes.io/docs/reference/node/node-labels/#preset-labels) to the Operator Deployment.
+
+Patch the Deployment to be scheduled on x86-64/amd64 nodes only:
+
+```shell
+kubectl patch deployments gitlab-controller-manager \
+  -p '{"spec": {"template": {"spec": {"nodeSelector": {"kubernetes.io/arch": "amd64"}}}}}'
+```
+
+If you are using the Operator Helm chart you can add the node selector to your `values.yaml` instead:
+
+```yaml
+nodeSelector:
+  kubernetes.io/arch: amd64
+```
+
+This will ensure that the Operator runs on `amd64` nodes, using the platform that we currently test.
+
+See [epic 10928](https://gitlab.com/groups/gitlab-org/-/epics/10938) for more information on the arm64 support for CNG images.
 
 ### Ingress controller
 
