@@ -144,7 +144,7 @@
   image: registry.gitlab.com/gitlab-org/gitlab-omnibus-builder/distribution_ci_tools:4.22.0
   stage: qa
   services:
-  - docker:dind
+  - docker:${DOCKER_VERSION}-dind
   variables:
     QA_ARTIFACTS_DIR: $CI_PROJECT_DIR
     QA_CAN_TEST_PRAEFECT: "false"
