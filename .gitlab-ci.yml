@@ -1,6 +1,7 @@
 image: registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-1.20
 
 variables:
+  DOCKER_VERSION: "24.0.6"
   # Configuration of K8s
   # Namespace within which to run tests
   TESTS_NAMESPACE: "${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_SLUG}"
@@ -283,7 +284,7 @@ slow_unit_tests:
   needs: ["pull_charts"]
   image: registry.gitlab.com/gitlab-org/gitlab-omnibus-builder/distribution_ci_tools:${CI_TOOLS_VERSION}
   services:
-    - docker:dind
+    - docker:${DOCKER_VERSION}-dind
   variables:
     DOCKER_TAGS: ""
   before_script:
