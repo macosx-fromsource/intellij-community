@@ -1,3 +1,13 @@
+## 0.27.0 (2023-12-21)
+
+### changed (1 change)
+
+- [Support OpenShift 4.14](gitlab-org/cloud-native/gitlab-operator@67f75018b5490493a96272d67c0e0646ec0d4654) ([merge request](gitlab-org/cloud-native/gitlab-operator!723))
+
+### added (1 change)
+
+- [Build and publish arm64 container image](gitlab-org/cloud-native/gitlab-operator@f02d8d019618a993e28b0cfecaa4262de6b770eb) ([merge request](gitlab-org/cloud-native/gitlab-operator!707))
+
 ## 0.26.2 (2023-12-13)
 
 No changes.
