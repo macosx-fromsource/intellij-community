@@ -13,6 +13,7 @@ platform_arg() {
   local platform_arg=""
   local delim=""
 
+  [ "$BUILDX_K8S_DISABLE" == "true" ] && BUILDX_ARCHS="amd64"
   for arch in ${BUILDX_ARCHS//,/ }; do 
     platform_arg="${platform_arg}${delim}linux/${arch}";
     delim=",";

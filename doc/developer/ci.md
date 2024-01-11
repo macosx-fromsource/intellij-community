@@ -183,6 +183,6 @@ To debug failures in tests, please follow [investigate QA failures](https://abou
 ## Container builds
 
 The Operator image can be built for multiple architectures, by configuring a Kubernetes buildx driver using the `BUILDX_K8S_*`
-variables. Set the `BUILDX_ARCHS` to a comma-separated string of the target architectures (for example `amd64,arm64`).
+variables. Set the `BUILDX_ARCHS` to a comma-separated string of the target architectures (for example `amd64,arm64`). If `BUILDX_K8S_DISABLE` is set to `true` - autmatically reduces number of platforms to build for down to `amd64`.
 
 If no Kubernetes driver is configured you can (cross-) compile only one architecture.
