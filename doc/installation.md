@@ -220,6 +220,26 @@ After completing your installation, consider taking the
 [recommended next steps](https://docs.gitlab.com/ee/install/next_steps.html),
 including authentication options and sign-up restrictions.
 
+### OpenShift
+
+If you run OpenShift, change the approval strategy for the GitLab Operator from automatic (the default)
+to manual. This prevents OpenShift from installing new operator versions until
+[approval is given](https://docs.openshift.com/container-platform/4.13/operators/admin/olm-upgrading-operators.html#olm-approving-pending-upgrade_olm-upgrading-operators).
+
+You can also set a custom [`startingCSV`](https://docs.openshift.com/container-platform/4.10/operators/admin/olm-adding-operators-to-cluster.html#olm-installing-specific-version-cli_olm-adding-operators-to-a-cluster)
+to pin the Operator's version or to upgrade to a non-latest version.
+
+- The approval strategy can be changed from the [OpenShift web console](https://access.redhat.com/documentation/en-us/red_hat_openshift_data_foundation/4.13/html/updating_openshift_data_foundation/changing-the-update-approval-strategy_rhodf)
+  or by [editing the Subscription](https://docs.openshift.com/container-platform/4.13/operators/understanding/olm/olm-understanding-olm.html#olm-installplan_olm-understanding-olm).
+- Set `.spec.approved` to `true` of the `InstallPlan` to approve an manual upgrade.
+- Each GitLab Operator supports a defined subset of GitLab chart versions: upgrades to the GitLab Operator 
+  must also involve updating the chart version in the GitLab custom resource.
+- If the Operator and specified chart version are incompatible, configuration changes to the chart can fail with
+  [errors about the chart version](operator_upgrades.md#step-5-update-the-chart-version-in-the-gitlab-custom-resource-cr).
+ 
+NOTE:
+[OLM currently does not support downgrading Operators](https://github.com/operator-framework/operator-lifecycle-manager/issues/1177).
+
 ## Uninstall the GitLab Operator
 
 Follow the steps below to remove the GitLab Operator and its associated resources.
