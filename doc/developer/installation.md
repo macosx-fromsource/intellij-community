@@ -92,7 +92,7 @@ task clean
 
 This will remove all of the build artifacts and the install record.
 
-## Uninstall the GitLab Operator
+## Uninstall
 
 Follow the steps below to remove the GitLab Operator and its associated resources.
 
