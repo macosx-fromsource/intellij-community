@@ -178,7 +178,7 @@ By default, QA pipelines will include Smoke suite - a [small subset of fast end-
 to quickly ensure that basic functionality is working. If additional testing is required, it's possible to trigger manual
 QA pipeline with Full suite of end-to-end tests using `qa_<cluster>_full_suite_manual_trigger` job for the specific cluster.
 
-To debug failures in tests, please follow [investigate QA failures](https://about.gitlab.com/handbook/engineering/quality/quality-engineering/enablement-saas-platforms-qe-team/distribution/#investigate-qa-failures) guide.
+To debug failures in tests, please follow [investigate QA failures](https://handbook.gitlab.com/handbook/engineering/infrastructure/test-platform/self-managed-platform-team/distribution/#investigate-qa-failures) guide.
 
 ## Container builds
 
