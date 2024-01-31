@@ -12,7 +12,6 @@ variables:
   DOMAIN_OPENSHIFT_4_13: "apps.ocp-ci-41317.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_14: "apps.ocp-ci-4146.k8s-ft.win"
   DOMAIN_GKE: "gitlab-operator.k8s-ft.win"
-  DOMAIN_GKE122: "gitlab-operator-v122.k8s-ft.win"
   DOMAIN_GKE125: "gitlab-operator-v125.helm-charts.win"
   DOMAIN_GKE126: "gitlab-operator-v126.k8s-ft.win"
   # Namespace built into default manifest
@@ -542,35 +541,6 @@ review_gke:
   environment: *environment_gke
   resource_group: *env_gke_name
 
-# GKE 1.22
-build_review_gke122:
-  extends: .build_review_template
-  variables:
-    DOMAIN: $DOMAIN_GKE122
-
-create_review_gke122:
-  extends: .create_review_template
-  environment: &environment_gke122
-    name: &env_gke_name122 gke122/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
-    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_GKE122
-    on_stop: stop_review_gke122
-    auto_stop_in: 1 hour
-  needs:
-    - build_review_gke122
-
-review_gke122:
-  extends: .review_template
-  variables:
-    DOMAIN: $DOMAIN_GKE122
-  before_script:
-    - export KUBECONFIG="$KUBECONFIG_GKE122"
-  needs:
-    - create_review_gke122
-    # we need build_* dependency to receive appropriate artifacts
-    - build_review_gke122
-  environment: *environment_gke122
-  resource_group: *env_gke_name122
-
 # GKE 1.25
 build_review_gke125:
   extends: .build_review_template
@@ -757,30 +727,6 @@ qa_gke_full:
     - review_gke
     - qa_gke_full_suite_manual_trigger
 
-# QA GKE 1.22
-qa_gke122:
-  extends: .qa
-  stage: qa
-  variables:
-    DOMAIN: $DOMAIN_GKE122
-  needs:
-    - review_gke122
-
-qa_gke122_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
-  script: echo 'The job will trigger Full E2E suite against GKE 1.22'
-
-qa_gke122_full:
-  extends: .qa
-  stage: qa
-  parallel: 7
-  variables:
-    DOMAIN: $DOMAIN_GKE122
-    QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
-  needs:
-    - review_gke122
-    - qa_gke122_full_suite_manual_trigger
-
 # QA GKE 1.25
 qa_gke125:
   extends: .qa
@@ -888,18 +834,6 @@ stop_review_gke:
     action: stop
   needs:
     - build_review_gke
-
-stop_review_gke122:
-  extends: .stop_review_template
-  variables:
-    DOMAIN: $DOMAIN_GKE122
-  before_script:
-    - export KUBECONFIG="$KUBECONFIG_GKE122"
-  environment:
-    name: *env_gke_name122
-    action: stop
-  needs:
-    - build_review_gke122
 
 stop_review_gke125:
   extends: .stop_review_template
