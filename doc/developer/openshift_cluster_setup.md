@@ -46,7 +46,7 @@ If this cluster is meant to be used by other teammates or CI, create a new item 
 - `auth/kubeconfig`, authenticate to cluster
 - `auth/kubeadmin-password`, authenticate to cluster UI
 
-### Configuration Options
+### Configuration options
 
 Configuration can be applied during runtime by setting environment variables. All options have defaults, no options are required.
 
@@ -77,7 +77,7 @@ Run `./scripts/destroy_openshift_cluster.sh` to destroy your OpenShift cluster i
 
 The `metadata.json` file in `INSTALL_DIR` is all that is needed to destroy an OpenShift cluster. `metadata.json` files are attached to the cluster's existing 1Password item that holds the cluster's credentials.
 
-### Configuration Options
+### Configuration options
 
 Configuration can be applied during runtime by setting the following environment variables. All options have defaults, no options are required.
 
