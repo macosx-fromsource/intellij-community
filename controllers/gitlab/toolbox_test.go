@@ -3,108 +3,98 @@ package gitlab
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	feature "gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/features"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
 
 const (
+	gitlabToolboxPersistenceEnabled        = "gitlab.toolbox.persistence.enabled"
 	gitlabToolboxCronJobEnabled            = "gitlab.toolbox.backups.cron.enabled"
 	gitlabToolboxCronJobPersistenceEnabled = "gitlab.toolbox.backups.cron.persistence.enabled"
 )
 
-var _ = Describe("CustomResourceAdapter", func() {
+var _ = Describe("Toolbox", func() {
+	var chartValues support.Values
+	var cronJobEnabled bool
+	var cronJob client.Object
+	var restorePersistenceEnabled, backupPersistenceEnabled bool
+	var restorePVC, backupPVC client.Object
 
-	if namespace == "" {
-		namespace = testNamespace
-	}
+	JustBeforeEach(func() {
+		mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
+		adapter := CreateMockAdapter(mockGitLab)
+		template, err := GetTemplate(adapter)
 
-	Context("Toolbox", func() {
-		When("Toolbox CronJob is disabled", func() {
-			chartValues := support.Values{}
+		Expect(err).To(BeNil())
+		Expect(template).NotTo(BeNil())
 
-			mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
-			adapter := CreateMockAdapter(mockGitLab)
-			template, err := GetTemplate(adapter)
+		cronJobEnabled = adapter.WantsFeature(feature.BackupCronJob)
+		cronJob = ToolboxCronJob(adapter, template)
 
-			enabled := adapter.WantsFeature(feature.BackupCronJob)
-			cronJob := ToolboxCronJob(adapter, template)
+		restorePersistenceEnabled = adapter.WantsFeature(feature.RestoreDeploymentPersistence)
+		restorePVC = ToolboxDeploymentPersistentVolumeClaim(adapter, template)
 
-			It("Should render the template", func() {
-				Expect(err).To(BeNil())
-				Expect(template).NotTo(BeNil())
-			})
+		backupPersistenceEnabled = adapter.WantsFeature(feature.BackupCronJobPersistence)
+		backupPVC = ToolboxCronJobPersistentVolumeClaim(adapter, template)
+	})
 
-			It("Should not contain Toolbox CronJob resources", func() {
-				Expect(enabled).To(BeFalse())
-				Expect(cronJob).To(BeNil())
-			})
+	When("Toolbox CronJob is disabled", func() {
+		BeforeEach(func() {
+			chartValues = support.Values{}
+			_ = chartValues.SetValue(gitlabToolboxCronJobEnabled, false)
 		})
 
-		When("Toolbox CronJob is enabled", func() {
-			key := gitlabToolboxCronJobEnabled
+		It("Should not contain Toolbox CronJob resources", func() {
+			Expect(cronJobEnabled).To(BeFalse())
+			Expect(cronJob).To(BeNil())
+		})
+	})
 
-			chartValues := support.Values{}
-			_ = chartValues.SetValue(key, true)
-
-			mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
-			adapter := CreateMockAdapter(mockGitLab)
-			template, err := GetTemplate(adapter)
-
-			enabled := adapter.WantsFeature(feature.BackupCronJob)
-			cronJob := ToolboxCronJob(adapter, template)
-
-			persistenceEnabled := adapter.WantsFeature(feature.BackupCronJobPersistence)
-			cronJobPersistentVolumeClaim := ToolboxCronJobPersistentVolumeClaim(adapter, template)
-
-			It("Should render the template", func() {
-				Expect(err).To(BeNil())
-				Expect(template).NotTo(BeNil())
-			})
-
-			It("Should contain Toolbox CronJob resources", func() {
-				Expect(enabled).To(BeTrue())
-				Expect(cronJob).NotTo(BeNil())
-			})
-
-			It("Should not contain Toolbox CronJob Persistence resources", func() {
-				Expect(persistenceEnabled).To(BeFalse())
-				Expect(cronJobPersistentVolumeClaim).To(BeNil())
-			})
+	When("Toolbox CronJob is enabled", func() {
+		BeforeEach(func() {
+			chartValues = support.Values{}
+			_ = chartValues.SetValue(gitlabToolboxCronJobEnabled, true)
 		})
 
-		When("Toolbox CronJob and CronJob Persistence is enabled", func() {
-			gitlabToolboxCronJobEnabled := gitlabToolboxCronJobEnabled
-			gitlabToolboxCronJobPersistenceEnabled := gitlabToolboxCronJobPersistenceEnabled
+		It("Should not contain restore persistence resources", func() {
+			Expect(restorePersistenceEnabled).To(BeFalse())
+			Expect(restorePVC).To(BeNil())
+		})
 
-			chartValues := support.Values{}
+		It("Should contain Toolbox CronJob resources", func() {
+			Expect(cronJobEnabled).To(BeTrue())
+			Expect(cronJob).NotTo(BeNil())
+		})
+
+		It("Should not contain Toolbox CronJob persistence resources", func() {
+			Expect(backupPersistenceEnabled).To(BeFalse())
+			Expect(backupPVC).To(BeNil())
+		})
+	})
+
+	When("Toolbox persistence, CronJob and CronJob persistence is enabled", func() {
+		BeforeEach(func() {
+			chartValues = support.Values{}
+			_ = chartValues.SetValue(gitlabToolboxPersistenceEnabled, true)
 			_ = chartValues.SetValue(gitlabToolboxCronJobEnabled, true)
 			_ = chartValues.SetValue(gitlabToolboxCronJobPersistenceEnabled, true)
+		})
 
-			mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
-			adapter := CreateMockAdapter(mockGitLab)
-			template, err := GetTemplate(adapter)
+		It("Should contain restore persistence resources", func() {
+			Expect(restorePersistenceEnabled).To(BeTrue())
+			Expect(restorePVC).NotTo(BeNil())
+		})
 
-			enabled := adapter.WantsFeature(feature.BackupCronJob)
-			cronJob := ToolboxCronJob(adapter, template)
+		It("Should contain Toolbox CronJob resources", func() {
+			Expect(cronJobEnabled).To(BeTrue())
+			Expect(cronJob).NotTo(BeNil())
+		})
 
-			persistenceEnabled := adapter.WantsFeature(feature.BackupCronJobPersistence)
-			cronJobPersistentVolumeClaim := ToolboxCronJobPersistentVolumeClaim(adapter, template)
-
-			It("Should render the template", func() {
-				Expect(err).To(BeNil())
-				Expect(template).NotTo(BeNil())
-			})
-
-			It("Should contain Toolbox CronJob resources", func() {
-				Expect(enabled).To(BeTrue())
-				Expect(cronJob).NotTo(BeNil())
-			})
-
-			It("Should contain Toolbox CronJob Persistence resources", func() {
-				Expect(persistenceEnabled).To(BeTrue())
-				Expect(cronJobPersistentVolumeClaim).NotTo(BeNil())
-			})
+		It("Should contain Toolbox CronJob persistence resources", func() {
+			Expect(backupPersistenceEnabled).To(BeTrue())
+			Expect(backupPVC).NotTo(BeNil())
 		})
 	})
 })
