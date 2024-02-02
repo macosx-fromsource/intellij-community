@@ -14,14 +14,12 @@ func (r *GitLabReconciler) reconcileToolbox(ctx context.Context, adapter gitlab.
 		return err
 	}
 
-	if adapter.WantsFeature(feature.BackupCronJob) {
-		if err := r.reconcileToolboxCronJob(ctx, adapter, template); err != nil {
-			return err
-		}
+	if err := r.reconcileToolboxPersistentVolumeClaims(ctx, adapter, template); err != nil {
+		return err
 	}
 
-	if adapter.WantsFeature(feature.BackupCronJobPersistence) {
-		if err := r.reconcileToolboxPersistentVolumeClaim(ctx, adapter, template); err != nil {
+	if adapter.WantsFeature(feature.BackupCronJob) {
+		if err := r.reconcileToolboxCronJob(ctx, adapter, template); err != nil {
 			return err
 		}
 	}
@@ -61,9 +59,17 @@ func (r *GitLabReconciler) reconcileToolboxDeployment(ctx context.Context, adapt
 	return err
 }
 
-func (r *GitLabReconciler) reconcileToolboxPersistentVolumeClaim(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	if err := r.createOrPatch(ctx, gitlabctl.ToolboxCronJobPersistentVolumeClaim(adapter, template), adapter); err != nil {
-		return err
+func (r *GitLabReconciler) reconcileToolboxPersistentVolumeClaims(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	if adapter.WantsFeature(feature.RestoreDeploymentPersistence) {
+		if err := r.createOrPatch(ctx, gitlabctl.ToolboxDeploymentPersistentVolumeClaim(adapter, template), adapter); err != nil {
+			return err
+		}
+	}
+
+	if adapter.WantsFeature(feature.BackupCronJobPersistence) {
+		if err := r.createOrPatch(ctx, gitlabctl.ToolboxCronJobPersistentVolumeClaim(adapter, template), adapter); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -14,6 +14,12 @@ func ToolboxDeployment(adapter gitlab.Adapter, template helm.Template) client.Ob
 	return template.Query().ObjectByKindAndComponent(DeploymentKind, ToolboxComponentName)
 }
 
+// ToolboxDeploymentPersistentVolumeClaim returns the PersistentVolumeClaim of the Toolbox Deployment.
+func ToolboxDeploymentPersistentVolumeClaim(adapter gitlab.Adapter, template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndName(PersistentVolumeClaimKind,
+		fmt.Sprintf("%s-%s-tmp", adapter.ReleaseName(), ToolboxComponentName))
+}
+
 // ToolboxConfigMap returns the ConfigMaps of the Toolbox component.
 func ToolboxConfigMap(adapter gitlab.Adapter, template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndName(ConfigMapKind,
@@ -26,7 +32,7 @@ func ToolboxCronJob(adapter gitlab.Adapter, template helm.Template) client.Objec
 		fmt.Sprintf("%s-%s-backup", adapter.ReleaseName(), ToolboxComponentName))
 }
 
-// ToolboxPersistentVolumeClaim returns the PersistentVolumeClaim of the Toolbox component.
+// ToolboxCronJobPersistentVolumeClaim returns the PersistentVolumeClaim of the Toolbox CronJob.
 func ToolboxCronJobPersistentVolumeClaim(adapter gitlab.Adapter, template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndName(PersistentVolumeClaimKind,
 		fmt.Sprintf("%s-%s-backup-tmp", adapter.ReleaseName(), ToolboxComponentName))
