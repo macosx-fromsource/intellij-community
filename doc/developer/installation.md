@@ -32,9 +32,11 @@ Please consult the "Prerequisites" section of the [installation](../installation
 
    This command first deploys the service accounts, roles and role bindings used by the operator, and then the operator itself.
 
+   When working on a merge request, override the default `latest` tag used by the `deploy_operator` by setting the `TAG` environment variable to the name of your branch. For
+   example: `TAG=my-mr-branch-name task deploy_operator`.
+
    NOTE:
-   By default, the Operator will only watch the namespace where it is deployed. If you would like it to watch at the cluster scope,
-   modify [`deploy/chart/values.yaml`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/deploy/chart/values.yaml) by setting `watchCluster` to `true`.
+   You must deploy GitLab to the operator namespace. Other namespaces aren't supported. 
 
 1. Create a GitLab custom resource (CR).
 
@@ -81,6 +83,15 @@ Please consult the "Prerequisites" section of the [installation](../installation
    ```
 
    When the CR is reconciled (the status of the GitLab resource will be `RUNNING`), you can access GitLab in your browser at `https://gitlab.example.com`.
+
+## Updating the GitLab Operator
+
+It's the same command for installing, but you might have to add `--force` to
+override any previously-cached results. 
+
+```shell
+task --force deploy_operator
+```
 
 ## Cleanup
 
