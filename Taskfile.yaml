@@ -365,7 +365,7 @@ tasks:
       - >-
         CHART_VERSION=$CHART_VERSION
         SKIP_ENVTEST={{ .SKIP_ENVTEST }}
-        {{ .TEST_UTIL }} -cover -output-dir=coverage {{.TEST_PKGS }}
+        {{ .TEST_UTIL }} -cover -output-dir=coverage {{ .TEST_PKGS }}
 
   slow-unit-tests:
     desc: Runs unit tests locally, including the slow controller tests.
