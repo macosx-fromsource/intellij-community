@@ -21,7 +21,7 @@ NO_TRAP=${NO_TRAP:-""}
 # Command for `yq`, expected to be https://github.com/mikefarah/yq
 YQ=${YQ:-"yq"}
 
-export IMG TAG NAMESPACE=${TESTS_NAMESPACE}
+export IMG TAG GITLAB_CHART_VERSION NAMESPACE=${TESTS_NAMESPACE}
 
 # Trim name override to leave room for prefixes/suffixes
 NAME_OVERRIDE="g${TESTS_NAMESPACE:0:27}"
@@ -114,6 +114,7 @@ verify_operator_is_running() {
 
 build_gitlab_custom_resource() {
   echo 'Building GitLab custom resource manifest'
+  echo "Using Chart version: $GITLAB_CHART_VERSION"
   task build_test_cr
   set -x
   YQ_CMD="."

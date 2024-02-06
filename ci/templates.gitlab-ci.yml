@@ -61,6 +61,11 @@
     ## -- End of trimming
     - !reference [.vars_on_dev_gitlab_org, script]
     # Build manifests
+    - |
+      if test -n "${GITLAB_CHART_VERSION}"; then 
+        echo "Received chart version \"$GITLAB_CHART_VERSION\""
+      else echo "No chart version override provided. Proceeding with defaults"
+      fi
     - ./scripts/test.sh build_gitlab_custom_resource
     # Since Artifact paths don't seem to accept dynamic variables we'll have to manually
     # drop proper files in place:

@@ -45,6 +45,8 @@ variables:
   # Architectures to build via buildx
   BUILDX_ARCHS: amd64 # amd64,arm64 in project settings
 
+  GITLAB_CHART_VERSION: ""
+
 stages:
   - check
   - prepare
