@@ -43,7 +43,7 @@ env:
   HOSTSUFFIX: ""
   TLSSECRETNAME: ""
   HELM_CHARTS: "{{ .ROOT_DIR }}/charts"
-  CHART_VERSION: { sh: head -n1 CHART_VERSIONS }
+  CHART_VERSION: { sh: if test -z "$GITLAB_CHART_VERSION" ; then head -n1 CHART_VERSIONS; else echo $GITLAB_CHART_VERSION; fi }
   VERSION: 0.2.0
 
   # Bundle configuration
@@ -288,6 +288,7 @@ tasks:
     sources:
       - "$TEST_CR_FILES"
     cmds:
+      - echo $CHART_VERSION
       - (cd $TEST_CR_FILES_DIR && $KUSTOMIZE edit set namespace $NAMESPACE)
       - >-
         $KUSTOMIZE build $TEST_CR_FILES_DIR

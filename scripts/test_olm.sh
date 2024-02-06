@@ -11,7 +11,7 @@ cleanup_files(){
 get_chart_version(){
     local operator_version=$1
     curl "https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/raw/${operator_version}/CHART_VERSIONS" \
-      | head -n 1
+        | head -n 1
 }
 
 trap cleanup_files EXIT
