@@ -38,20 +38,28 @@ To create a traditional Kubernetes cluster, consider using [official tooling](ht
 
 The GitLab Operator supports the following Kubernetes versions:
 
-- A cluster running Kubernetes 1.20 or newer is required for all components to work.
-- 1.26 support is fully tested as of Operator 0.24.0.
-The GitLab Operator supports the following Kubernetes versions:
+| Kubernetes release | Status                       | Minimum Operator version | Architectures | End of life |
+|--------------------|------------------------------|--------------------------|---------------|-------------|
+| 1.27              | [In development/qualification](https://gitlab.com/groups/gitlab-org/-/epics/11320) | 0.24.0                   | x86-64        | 2024-06-28  |
+| 1.26               | Supported                    | 0.24.0                   | x86-64        | 2024-02-28  |
+| 1.25               | Supported                    | 0.24.0                   | x86-64        | 2023-10-28  |
+| 1.24               | Deprecated                   | 0.24.0                   | x86-64        | 2023-07-28  |
+| 1.23               | Deprecated                   | 0.24.0                   | x86-64        | 2023-02-28  |
+| 1.22               | Deprecated                   | 0.24.0                   | x86-64        | 2022-10-28  |
 
-| Operator Version | Minimum Kubernetes version | Maximum Kubernetes version | Partially tested Kubernetes version(s) |
-|--|--|--|--|
-| `0.24.0` | `1.20` | `1.26` | `1.27`, `1.28` |
+The GitLab Operator supports the following OpenShift versions:
 
-The last column lists newer versions of Kubernetes that have undergone initial testing but are not yet fully validated. You can track progress toward support for new Kubernetes versions in [Epic 11331](https://gitlab.com/groups/gitlab-org/-/epics/11331).
+| Kubernetes release | Status                       | Minimum Operator version | Architectures | End of life |
+|--------------------|------------------------------|--------------------------|---------------|-------------|
+| 4.14              | [In development/qualification](https://gitlab.com/groups/gitlab-org/-/epics/11320) | 0.24.0                   | x86-64        | 2025-05-01  |
+| 4.13               | Supported                    | 0.24.0                   | x86-64        | 2024-11-17  |
+| 4.12               | Supported                    | 0.24.0                   | x86-64        | 2024-07-17  |
+| 4.11               | Deprecated                   | 0.24.0                   | x86-64        | 2024-02-10  |
 
-The GitLab Operator aims to support new minor Kubernetes versions four months after their initial release.
+The GitLab Operator aims to support new minor Kubernetes and OpenShift versions three months after their initial releases.
 We welcome any compatibility issues with releases newer than those listed above in our [issue tracker](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues).
 
-Some GitLab features might not work on versions older than the versions listed above.
+Some GitLab features might not work on deprecrated versions and versions older than the versions listed above.
 
 For some components, like the [agent for Kubernetes](https://docs.gitlab.com/ee/user/clusters/agent/#gitlab-agent-for-kubernetes-supported-cluster-versions) and [GitLab Charts](https://docs.gitlab.com/charts/installation/cloud/#supported-kubernetes-versions), GitLab might support different cluster versions.
 
@@ -232,11 +240,11 @@ to pin the Operator's version or to upgrade to a non-latest version.
 - The approval strategy can be changed from the [OpenShift web console](https://access.redhat.com/documentation/en-us/red_hat_openshift_data_foundation/4.13/html/updating_openshift_data_foundation/changing-the-update-approval-strategy_rhodf)
   or by [editing the Subscription](https://docs.openshift.com/container-platform/4.13/operators/understanding/olm/olm-understanding-olm.html#olm-installplan_olm-understanding-olm).
 - Set `.spec.approved` to `true` of the `InstallPlan` to approve an manual upgrade.
-- Each GitLab Operator supports a defined subset of GitLab chart versions: upgrades to the GitLab Operator 
+- Each GitLab Operator supports a defined subset of GitLab chart versions: upgrades to the GitLab Operator
   must also involve updating the chart version in the GitLab custom resource.
 - If the Operator and specified chart version are incompatible, configuration changes to the chart can fail with
   [errors about the chart version](operator_upgrades.md#step-5-update-the-chart-version-in-the-gitlab-custom-resource-cr).
- 
+
 NOTE:
 [OLM currently does not support downgrading Operators](https://github.com/operator-framework/operator-lifecycle-manager/issues/1177).
 
