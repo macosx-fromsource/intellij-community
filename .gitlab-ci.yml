@@ -14,6 +14,7 @@ variables:
   DOMAIN_GKE: "gitlab-operator.k8s-ft.win"
   DOMAIN_GKE125: "gitlab-operator-v125.helm-charts.win"
   DOMAIN_GKE126: "gitlab-operator-v126.k8s-ft.win"
+  DOMAIN_GKE127: "gitlab-operator-v127.k8s-ft.win"
   # Namespace built into default manifest
   NAMESPACE: "gitlab-system"
   TAG: ${CI_COMMIT_SHORT_SHA}
@@ -88,6 +89,7 @@ include:
   - local: ci/rules.gitlab-ci.yml
   - local: ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
+  - local: ci/review-gke127.gitlab-ci.yml
 
 default:
   interruptible: true
