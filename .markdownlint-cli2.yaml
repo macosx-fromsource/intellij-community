@@ -85,6 +85,7 @@ config:
       "HipChat",
       "ID",
       "Ingress",
+      "IP",
       "jasmine-jquery",
       "JavaScript",
       "Jaeger",
