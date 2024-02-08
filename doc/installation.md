@@ -47,6 +47,10 @@ The GitLab Operator supports the following Kubernetes versions:
 | 1.23               | Deprecated                   | 0.24.0                   | x86-64        | 2023-02-28  |
 | 1.22               | Deprecated                   | 0.24.0                   | x86-64        | 2022-10-28  |
 
+:::TabTitle OpenShift
+
+To create an OpenShift cluster, see the [OpenShift cluster setup documentation](developer/openshift_cluster_setup.md) for an example of how to create a _development environment_.
+
 The GitLab Operator supports the following OpenShift versions:
 
 | Kubernetes release | Status                       | Minimum Operator version | Architectures | End of life |
@@ -56,20 +60,14 @@ The GitLab Operator supports the following OpenShift versions:
 | 4.12               | Supported                    | 0.24.0                   | x86-64        | 2024-07-17  |
 | 4.11               | Deprecated                   | 0.24.0                   | x86-64        | 2024-02-10  |
 
+::EndTabs
+
 The GitLab Operator aims to support new minor Kubernetes and OpenShift versions three months after their initial releases.
 We welcome any compatibility issues with releases newer than those listed above in our [issue tracker](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues).
 
-Some GitLab features might not work on deprecrated versions and versions older than the versions listed above.
+Some GitLab features might not work on deprecated versions and versions older than the versions listed above.
 
 For some components, like the [agent for Kubernetes](https://docs.gitlab.com/ee/user/clusters/agent/#gitlab-agent-for-kubernetes-supported-cluster-versions) and [GitLab Charts](https://docs.gitlab.com/charts/installation/cloud/#supported-kubernetes-versions), GitLab might support different cluster versions.
-
-:::TabTitle OpenShift
-
-To create an OpenShift cluster, see the [OpenShift cluster setup documentation](developer/openshift_cluster_setup.md) for an example of how to create a _development environment_.
-
-GitLab Operator supports OpenShift 4.10 through 4.14.
-
-::EndTabs
 
 Starting with 16.7, the Operator is built for x86-64 and arm64.
 The arm64 images are not tested in CI and are not recommended for production use.
