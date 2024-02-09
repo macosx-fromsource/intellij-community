@@ -2,6 +2,8 @@ image: registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-
 
 variables:
   DOCKER_VERSION: "24.0.6"
+  VCLUSTER_AGENT_NAME: "operator127-ci-cluster"
+  VCLUSTER_ENVIRONMENT_PREFIX: "operator127_"
   # Configuration of K8s
   # Namespace within which to run tests
   TESTS_NAMESPACE: "${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_SLUG}"
@@ -15,6 +17,7 @@ variables:
   DOMAIN_GKE125: "gitlab-operator-v125.helm-charts.win"
   DOMAIN_GKE126: "gitlab-operator-v126.k8s-ft.win"
   DOMAIN_GKE127: "gitlab-operator-v127.k8s-ft.win"
+  DOMAIN_VCLUSTER128: "gitlab-operator-v127.k8s-ft.win"
   # Namespace built into default manifest
   NAMESPACE: "gitlab-system"
   TAG: ${CI_COMMIT_SHORT_SHA}
@@ -90,6 +93,7 @@ include:
   - local: ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
   - local: ci/review-gke127.gitlab-ci.yml
+  - local: ci/review-vcluster128.gitlab-ci.yml
 
 default:
   interruptible: true
