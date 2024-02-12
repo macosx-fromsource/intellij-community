@@ -27,9 +27,8 @@ spec:
       - args:
         - --metrics-addr=127.0.0.1:8080
         - --enable-leader-election
-        {{- if .Values.manager.debug.enabled }}
-        - --zap-devel=true
-        {{- end }}
+        - --zap-devel={{ .Values.manager.debug.enabled }}
+        - --zap-log-level={{ .Values.manager.log.level }}
         command:
         - /manager
         image: {{ include "gitlab.image.fullPath" $imageCfg }}
