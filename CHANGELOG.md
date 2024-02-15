@@ -1,3 +1,21 @@
+## 0.29.0 (2024-02-15)
+
+### added (1 change)
+
+- [Helm Chart: support log level configuration](gitlab-org/cloud-native/gitlab-operator@cffdf796bb2e4e990d68335a6a34fa9978130a4d) ([merge request](gitlab-org/cloud-native/gitlab-operator!749))
+
+### changed (1 change)
+
+- [Update Go to 1.21](gitlab-org/cloud-native/gitlab-operator@529eeee6f5fd67c78b1d625260e2bebf1fbff653) ([merge request](gitlab-org/cloud-native/gitlab-operator!740))
+
+### fixed (1 change)
+
+- [Add support for Toolbox's restore PersistentVolumeClaim](gitlab-org/cloud-native/gitlab-operator@8f373c725f7705409a927b6cf8c316b6e128684c) ([merge request](gitlab-org/cloud-native/gitlab-operator!731))
+
+### other (1 change)
+
+- [Annotate ClusterServiceVersion with feature annotations](gitlab-org/cloud-native/gitlab-operator@1671ae92ef478bc96d0c4a03bfd303eb3a597670) ([merge request](gitlab-org/cloud-native/gitlab-operator!739))
+
 ## 0.28.2 (2024-02-07)
 
 No changes.
