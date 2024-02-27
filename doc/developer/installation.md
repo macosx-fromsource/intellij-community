@@ -36,7 +36,7 @@ Please consult the "Prerequisites" section of the [installation](../installation
    example: `TAG=my-mr-branch-name task deploy_operator`.
 
    NOTE:
-   You must deploy GitLab to the operator namespace. Other namespaces aren't supported. 
+   You must deploy GitLab to the operator namespace. Other namespaces aren't supported.
 
 1. Create a GitLab custom resource (CR).
 
@@ -87,7 +87,7 @@ Please consult the "Prerequisites" section of the [installation](../installation
 ## Updating the GitLab Operator
 
 It's the same command for installing, but you might have to add `--force` to
-override any previously-cached results. 
+override any previously-cached results.
 
 ```shell
 task --force deploy_operator
