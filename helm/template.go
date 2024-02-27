@@ -147,6 +147,7 @@ func (t *mutableTemplate) EditObjects(editor ObjectEditor) (int, error) {
 
 			return count, err
 		}
+
 		count++
 	}
 

@@ -99,6 +99,7 @@ func (c Collection) Edit(editors ...Editor) (int, error) {
 				return count, err
 			}
 		}
+
 		count++
 	}
 

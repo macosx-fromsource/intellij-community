@@ -34,7 +34,7 @@ func GetChartVersion() string {
 	version, found := os.LookupEnv("CHART_VERSION")
 	if !found {
 		version = AvailableChartVersions()[0]
-		os.Setenv("CHART_VERSION", version)
+		_ = os.Setenv("CHART_VERSION", version)
 	}
 
 	return version

@@ -77,6 +77,7 @@ func PopulateAttachedSecrets(template v1.PodTemplateSpec) map[string]map[string]
 					if _, ok := bucket[k.Key]; ok {
 						continue
 					}
+
 					bucket[k.Key] = struct{}{}
 				}
 			}
@@ -88,6 +89,7 @@ func PopulateAttachedSecrets(template v1.PodTemplateSpec) map[string]map[string]
 						bucket = map[string]struct{}{}
 						result[s.Secret.Name] = bucket
 					}
+
 					if len(s.Secret.Items) == 0 {
 						bucket["*"] = struct{}{}
 					} else {
@@ -95,6 +97,7 @@ func PopulateAttachedSecrets(template v1.PodTemplateSpec) map[string]map[string]
 							if _, ok := bucket[k.Key]; ok {
 								continue
 							}
+
 							bucket[k.Key] = struct{}{}
 						}
 					}

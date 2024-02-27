@@ -69,6 +69,7 @@ func dumpTemplate(template helm.Template) string { //nolint:golint,unused
 // Note: the file is written to where the test runs NOT from where the
 // tests were run from.
 func dumpTemplateToFile(template helm.Template, filename string) error { //nolint:golint,deadcode,unused
+	// #nosec G304 -- trusted input
 	fh, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -76,7 +77,7 @@ func dumpTemplateToFile(template helm.Template, filename string) error { //nolin
 
 	_, _ = fh.WriteString(dumpTemplate(template))
 
-	fh.Close()
+	_ = fh.Close()
 
 	return nil
 }
@@ -89,9 +90,9 @@ func dumpHelmValues(values support.Values) string { //nolint:golint,unused
 
 // dumpHelmValuesToFile() will output the current values to a file.
 // Note: the file is written to where the test runs NOT from where the
-//
-//	tests were run from.
+// tests were run from.
 func dumpHelmValuesToFile(values support.Values, filename string) error { //nolint:golint,deadcode,unused
+	// #nosec G304 -- trusted input
 	fh, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -99,7 +100,7 @@ func dumpHelmValuesToFile(values support.Values, filename string) error { //noli
 
 	_, _ = fh.WriteString(dumpHelmValues(values))
 
-	fh.Close()
+	_ = fh.Close()
 
 	return nil
 }
