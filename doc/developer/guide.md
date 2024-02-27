@@ -34,7 +34,7 @@ To setup your system for development of the operator, follow the steps below:
    We use [`task` from taskfile.dev](https://taskfile.dev/) in place of `make` for this project. [Here is why](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr/0016-replace-makefile-with-taskfile.md).
 
    Do not install `task` via `brew install task`. You will end up with [Taskwarrior](https://taskwarrior.org/docs/), which is a different package. Either user the `asdf` plugin from above, or follow [installation instructions from taskfile.dev](https://taskfile.dev/installation/).
-   
+
    See
    [`Taskfile.yaml`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/Taskfile.yaml?ref_type=heads)
    for our task definitions.

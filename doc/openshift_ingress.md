@@ -8,8 +8,8 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 Two supported methods exist for providing Ingress in OpenShift with the GitLab Operator:
 
-1. (Default) [NGINX Ingress Controller](#nginx-ingress-controller)
-1. [OpenShift Routes](#openshift-routes)
+- [NGINX Ingress Controller](#nginx-ingress-controller) (Default)
+- [OpenShift Routes](#openshift-routes)
 
 ## NGINX Ingress Controller
 
