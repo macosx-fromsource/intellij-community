@@ -61,7 +61,7 @@ stages:
   - certification
   - cluster_tests_approval
   - review
-  - qa-manual
+  - qa-trigger
   - qa
   - cleanup
   - report
@@ -627,8 +627,8 @@ qa_4_11:
   needs:
     - review_4_11
 
-qa_4_11_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
+qa_4_11_full_suite_trigger:
+  extends: .qa_full_suite_trigger
   script: echo 'The job will trigger Full E2E suite against OpenShift 4.11'
 
 qa_4_11_full:
@@ -640,7 +640,7 @@ qa_4_11_full:
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
     - review_4_11
-    - qa_4_11_full_suite_manual_trigger
+    - qa_4_11_full_suite_trigger
 
 # QA OCP 4.12
 qa_4_12:
@@ -651,8 +651,8 @@ qa_4_12:
   needs:
     - review_4_12
 
-qa_4_12_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
+qa_4_12_full_suite_trigger:
+  extends: .qa_full_suite_trigger
   script: echo 'The job will trigger Full E2E suite against OpenShift 4.12'
 
 qa_4_12_full:
@@ -664,7 +664,7 @@ qa_4_12_full:
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
     - review_4_12
-    - qa_4_12_full_suite_manual_trigger
+    - qa_4_12_full_suite_trigger
 
 # QA OCP 4.13
 qa_4_13:
@@ -675,8 +675,8 @@ qa_4_13:
   needs:
     - review_4_13
 
-qa_4_13_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
+qa_4_13_full_suite_trigger:
+  extends: .qa_full_suite_trigger
   script: echo 'The job will trigger Full E2E suite against OpenShift 4.13'
 
 qa_4_13_full:
@@ -688,7 +688,7 @@ qa_4_13_full:
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
     - review_4_13
-    - qa_4_13_full_suite_manual_trigger
+    - qa_4_13_full_suite_trigger
 
 # QA OCP 4.14
 qa_4_14:
@@ -699,8 +699,8 @@ qa_4_14:
   needs:
     - review_4_14
 
-qa_4_14_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
+qa_4_14_full_suite_trigger:
+  extends: .qa_full_suite_trigger
   script: echo 'The job will trigger Full E2E suite against OpenShift 4.14'
 
 qa_4_14_full:
@@ -712,7 +712,7 @@ qa_4_14_full:
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
     - review_4_14
-    - qa_4_14_full_suite_manual_trigger
+    - qa_4_14_full_suite_trigger
 
 # QA GKE
 qa_gke:
@@ -723,8 +723,8 @@ qa_gke:
   needs:
     - review_gke
 
-qa_gke_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
+qa_gke_full_suite_trigger:
+  extends: .qa_full_suite_trigger
   script: echo 'The job will trigger Full E2E suite against GKE'
 
 qa_gke_full:
@@ -736,7 +736,7 @@ qa_gke_full:
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
     - review_gke
-    - qa_gke_full_suite_manual_trigger
+    - qa_gke_full_suite_trigger
 
 # QA GKE 1.25
 qa_gke125:
@@ -747,8 +747,8 @@ qa_gke125:
   needs:
     - review_gke125
 
-qa_gke125_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
+qa_gke125_full_suite_trigger:
+  extends: .qa_full_suite_trigger
   script: echo 'The job will trigger Full E2E suite against GKE 1.25'
 
 qa_gke125_full:
@@ -760,7 +760,7 @@ qa_gke125_full:
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
     - review_gke125
-    - qa_gke125_full_suite_manual_trigger
+    - qa_gke125_full_suite_trigger
 
 # QA GKE 1.26
 qa_gke126:
@@ -771,8 +771,8 @@ qa_gke126:
   needs:
     - review_gke126
 
-qa_gke126_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
+qa_gke126_full_suite_trigger:
+  extends: .qa_full_suite_trigger
   script: echo 'The job will trigger Full E2E suite against GKE 1.26'
 
 qa_gke126_full:
@@ -784,7 +784,7 @@ qa_gke126_full:
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
     - review_gke126
-    - qa_gke126_full_suite_manual_trigger
+    - qa_gke126_full_suite_trigger
 
 stop_review_openshift_4_11:
   extends: .stop_review_template
