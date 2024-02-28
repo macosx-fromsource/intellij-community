@@ -208,9 +208,9 @@
     - !reference [.skip_if_release_tag]
     - !reference [.if_commit_branch_or_mr_branch]
 
-.qa_full_suite_manual_trigger:
+.qa_full_suite_trigger:
   image: alpine
-  stage: qa-manual
+  stage: qa-trigger
   when: manual
   artifacts:
     paths:
@@ -219,6 +219,7 @@
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_release_tag]
+    - !reference [.if_scheduled_pipeline] # nightly pipelines
     - !reference [.manual_if_commit_branch_or_mr_branch]
 
 .stop_review_template:

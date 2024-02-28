@@ -40,8 +40,8 @@ qa_gke127:
   needs:
     - review_gke127
 
-qa_gke127_full_suite_manual_trigger:
-  extends: .qa_full_suite_manual_trigger
+qa_gke127_full_suite_trigger:
+  extends: .qa_full_suite_trigger
   script: echo 'The job will trigger Full E2E suite against GKE 1.27'
 
 qa_gke127_full:
@@ -53,7 +53,7 @@ qa_gke127_full:
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
     - review_gke127
-    - qa_gke127_full_suite_manual_trigger
+    - qa_gke127_full_suite_trigger
 
 stop_review_gke127:
   extends: .stop_review_template

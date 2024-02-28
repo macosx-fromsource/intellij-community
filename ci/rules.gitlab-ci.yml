@@ -84,3 +84,6 @@
   #TODO at the moment publishing is broken due to changes in RH API
   # so we'll let things fail until it is fixed
   allow_failure: true
+
+.if_scheduled_pipeline: &if_scheduled_pipeline
+  if: '$CI_PIPELINE_SOURCE == "schedule"'
