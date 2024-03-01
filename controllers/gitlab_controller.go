@@ -448,26 +448,26 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	deletePropagation := metav1.DeletePropagationBackground
 
 	for _, obj := range currentManagedObjects.Difference(targetManagedObjects) {
+		objLog := log.WithValues("kind", obj.GetObjectKind().GroupVersionKind(), "name", obj.GetName())
+
 		canBeDeleted, err := isSafeToDelete(rtCtx, obj)
 
 		if err != nil {
-			log.V(2).Error(err, "Could not determine if it is safe to delete the object",
-				"kind", obj.GetObjectKind().GroupVersionKind(), "name", obj.GetName())
+			objLog.V(2).Error(err, "Could not determine if it is safe to delete the object")
 			continue
 		}
 
 		if !canBeDeleted {
-			log.Info("Can not safely delete the object. Skipping its deletion.",
-				"kind", obj.GetObjectKind().GroupVersionKind(), "name", obj.GetName())
+			objLog.Info("Can not safely delete the object. Skipping its deletion.")
 			continue
 		}
 
 		if err := r.Delete(ctx, obj, &client.DeleteOptions{PropagationPolicy: &deletePropagation}); err == nil {
-			log.Info("Object deleted",
-				"kind", obj.GetObjectKind().GroupVersionKind(), "name", obj.GetName())
+			objLog.Info("Object deleted")
+		} else if errors.IsNotFound(err) {
+			objLog.V(2).Info("Object not found, proceeding")
 		} else {
-			log.V(2).Error(err, "Could not delete the object",
-				"kind", obj.GetObjectKind().GroupVersionKind(), "name", obj.GetName())
+			objLog.V(2).Error(err, "Could not delete the object")
 		}
 	}
 

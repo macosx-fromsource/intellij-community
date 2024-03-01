@@ -82,14 +82,6 @@ var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersion
 		Version:  "v1",
 		Resource: "ingresses",
 	}, {
-		Group:    "networking.k8s.io",
-		Version:  "v1beta1",
-		Resource: "ingresses",
-	}, {
-		Group:    "extensions",
-		Version:  "v1beta1",
-		Resource: "ingresses",
-	}, {
 		Group:    "batch",
 		Version:  "v1",
 		Resource: "jobs",
@@ -98,24 +90,8 @@ var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersion
 		Version:  "v1",
 		Resource: "cronjobs",
 	}, {
-		Group:    "batch",
-		Version:  "v1beta1",
-		Resource: "cronjobs",
-	}, {
 		Group:    "autoscaling",
 		Version:  "v2",
-		Resource: "horizontalpodautoscalers",
-	}, {
-		Group:    "autoscaling",
-		Version:  "v2beta2",
-		Resource: "horizontalpodautoscalers",
-	}, {
-		Group:    "autoscaling",
-		Version:  "v2beta1",
-		Resource: "horizontalpodautoscalers",
-	}, {
-		Group:    "autoscaling",
-		Version:  "v1",
 		Resource: "horizontalpodautoscalers",
 	}, {
 		Group:    "monitoring.coreos.com",
