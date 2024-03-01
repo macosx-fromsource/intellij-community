@@ -829,31 +829,43 @@ func (r *GitLabReconciler) setDeploymentReplica(ctx context.Context, obj client.
 		return err
 	}
 
-	// Get the Deployment's HPA so we can check the desired number of replicas.
-	// Finds the Deployment's HPA using the Deployment's name (since they are defined the same way in the Helm chart).
-	hpa := &autoscalingv1.HorizontalPodAutoscaler{}
-	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, hpa); err != nil {
-		if errors.IsNotFound(err) {
-			return nil
-		}
-
-		return err
-	}
-
-	replicas := hpa.Status.DesiredReplicas
-	if replicas == 0 {
+	if deployment.Spec.Replicas != nil && *deployment.Spec.Replicas == 0 {
 		return nil
 	}
 
-	if deployment.Spec.Replicas == nil || *(deployment.Spec.Replicas) != replicas {
-		r.Log.V(1).Info("Changing replica count of deployment with HPA",
+	// Finds the Deployment's HPA using the Deployment's name (since they are defined the same way in the Helm chart).
+	hpa := &autoscalingv1.HorizontalPodAutoscaler{}
+	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, hpa); err == nil {
+		// Replica count is controlled by HPA and should not be patched by the GitLab controller.
+		r.Log.V(1).Info("Not setting replicas for deployment controlled by HPA",
 			"deployment", types.NamespacedName{
 				Namespace: deployment.Namespace,
 				Name:      deployment.Name,
-			},
-			"replicas", replicas)
+			})
 
-		deployment.Spec.Replicas = &replicas
+		deployment.Spec.Replicas = nil
+
+		return nil
+	} else if !errors.IsNotFound(err) {
+		return err
+	}
+
+	// Find the Deployment current replica count. If it's scaled to zero, do not override it.
+	liveDeployment := &appsv1.Deployment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, liveDeployment); err == nil {
+		if liveDeployment.Spec.Replicas != nil && *liveDeployment.Spec.Replicas == 0 {
+			r.Log.V(1).Info("Deployment is scaled down. Not overriding the replica count.",
+				"deployment", types.NamespacedName{
+					Namespace: deployment.Namespace,
+					Name:      deployment.Name,
+				})
+
+			*deployment.Spec.Replicas = 0
+
+			return nil
+		}
+	} else if !errors.IsNotFound(err) {
+		return err
 	}
 
 	return nil
