@@ -112,7 +112,7 @@ Because the operator needs a certificate for the Kubernetes webhook, you can't u
 
 To install cert-manager, see the [installation documentation](https://cert-manager.io/docs/installation/) for your platform and tooling.
 
-Our codebase targets [cert-manager 1.6.1](https://cert-manager.io/v1.6-docs).
+Our codebase targets [cert-manager 1.6.1](https://cert-manager.io/v1.6-docs/).
 
 NOTE:
 Because [cert-manager 1.6](https://github.com/jetstack/cert-manager/releases/tag/v1.6.0) removed some deprecated APIs, if you deploy cert-manager 1.6 or higher, you need at least GitLab Operator 0.4.

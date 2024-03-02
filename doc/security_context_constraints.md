@@ -15,8 +15,8 @@ deployments. [Administrators may consult the upstream documentation to gain more
 
 Administrators may also consult the following resources:
 
-1. [Managing Security Context Constraints in OpenShift](https://www.openshift.com/blog/managing-sccs-in-openshift)
-1. [A Guide to OpenShift and UIDs](https://www.openshift.com/blog/a-guide-to-openshift-and-uids)
+1. [Managing Security Context Constraints in OpenShift](https://www.redhat.com/en/blog/managing-sccs-in-openshift)
+1. [A Guide to OpenShift and UIDs](https://www.redhat.com/en/blog/a-guide-to-openshift-and-uids)
 
 ## Security context constraints within the GitLab deployment
 
@@ -66,7 +66,7 @@ documentation to learn more about its security context constraints.
 
 ### SSL encryption
 
-**Operator** deploys the [**cert-manager-operator** from JetStack](https://cert-manager.io/docs/installation/supported-releases/)
+**Operator** deploys the [**cert-manager-operator** from JetStack](https://cert-manager.io/docs/releases/)
 to manage SSL certificates across the GitLab application. The
 **cert-manager-operator** sets no secure context constraints directly, thus
 OpenShift will apply the _**restricted**_ security context constraint by
