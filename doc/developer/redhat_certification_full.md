@@ -7,7 +7,7 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 # RedHat Operator Bundle certification process
 
 This document outlines certification process for OLM bundle submission for RedHat Marketplace. It is based on
-[Red Hat Software Certification Workflow Guide](https://access.redhat.com/documentation/en-us/red_hat_software_certification/8.67/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-complete-pre-certification-checklist).
+[Red Hat Software Certification Workflow Guide](https://access.redhat.com/documentation/en-us/red_hat_software_certification/2024/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-complete-pre-certification-checklist).
 
 Below process outlines **full** setup for certification.
 
@@ -22,8 +22,8 @@ Below process outlines **full** setup for certification.
          ```shell
           #!/bin/sh
           OC_SSH_KEYFILE=${OC_SSH_KEYFILE:-"${HOME}/.ssh/gldoc_github"}
-          export GIT_SSH_COMMAND="ssh -i ${OC_SSH_KEYFILE} -o IdentitiesOnly=yes" 
-          exec $@  
+          export GIT_SSH_COMMAND="ssh -i ${OC_SSH_KEYFILE} -o IdentitiesOnly=yes"
+          exec $@
           ```
 
 1. `olm-bundle.sh` pre-requisites:
@@ -64,7 +64,7 @@ Follow OpenShift installation documentation to provision new cluster. Make sure 
   - See [RedHat files mirror](https://mirror.openshift.com/pub/openshift-v4/clients/ocp/)
 - download `tkn` binary compatible with the release
   - Documentation for your release, for example [release notes for 4.9](https://docs.openshift.com/container-platform/4.9/cicd/pipelines/op-release-notes.html)
-  - Pre-requisites section from [Chapter 21. Running the certification test suite locally](https://access.redhat.com/documentation/en-us/red_hat_software_certification/8.53/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-complete-pre-certification-checklist)
+  - Pre-requisites section from [Chapter 21. Running the certification test suite locally](https://access.redhat.com/documentation/en-us/red_hat_software_certification/2024/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-complete-pre-certification-checklist)
   - [Teknton CD requirements](https://github.com/tektoncd/pipeline#required-kubernetes-version)
 - contents of the `auth` directory under the installation root directory
 
@@ -124,7 +124,7 @@ export SSH_KEY_FILE=gl-distribution-oc/gl-distribution-oc-deploy
 # GitHub API key for the forked repo (see "Fork repo" section)
 # alternatively, is using 'gl-distribution-oc' - obtain from
 # 1Pasword (GitHub Operator Certification API token)
-export GITHUB_TOKEN_FILE=gl-distribution-oc/gh-token.txt 
+export GITHUB_TOKEN_FILE=gl-distribution-oc/gh-token.txt
 
 # Below section is written assuming 'gl-distribution-oc' GitHub user
 # if using different GitHub account - adjust accordingly
