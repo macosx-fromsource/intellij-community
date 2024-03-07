@@ -72,14 +72,23 @@ linters:
     - prealloc
     - ineffassign
 
+issues:
   # Independently from option `exclude` we use default exclude patterns,
   # it can be disabled by this option. To list all
   # excluded by default patterns execute `golangci-lint run --help`.
   # Default value for this option is true.
   exclude-use-default: false
 
-  # Maximum issues count per one linter. Set to 0 to disable. Default is 50.
-  max-per-linter: 0
+  # Maximum issues count per one linter.
+  # Set to 0 to disable.
+  # Default: 50
+  max-issues-per-linter: 0
+  # Maximum count of issues with the same text.
+  # Set to 0 to disable.
+  # Default: 3
+  max-same-issues: 0
 
-  # Maximum count of issues with the same text. Set to 0 to disable. Default is 3.
-  max-same: 0
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - goconst

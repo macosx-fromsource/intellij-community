@@ -146,7 +146,7 @@ pull_charts:
 lint_code:
   extends: .cache
   stage: test
-  image: registry.gitlab.com/gitlab-org/gitlab-build-images:golangci-lint-1.52-alpine
+  image: golangci/golangci-lint:v1.56-alpine
   script:
     - go install github.com/go-task/task/v3/cmd/task@v3.22.0
     - PATH="${PATH}:${GOPATH}/bin" task lint
