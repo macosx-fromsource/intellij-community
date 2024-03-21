@@ -1,3 +1,10 @@
+## 0.30.0 (2024-03-21)
+
+### fixed (2 changes)
+
+- [Don't override Deployment replica counts of zero](gitlab-org/cloud-native/gitlab-operator@151f1be140d2381e246c32c6be3078a212648f5b) ([merge request](gitlab-org/cloud-native/gitlab-operator!752))
+- [Resource cleanup: Don't error if object not found](gitlab-org/cloud-native/gitlab-operator@00749d7c610914453d0d1a482e1a2c740e5df9b2) ([merge request](gitlab-org/cloud-native/gitlab-operator!754))
+
 ## 0.29.2 (2024-03-06)
 
 No changes.
