@@ -86,8 +86,8 @@ $ tree -dL 2 .
 
 - The `controllers` directory contains the controller implementations for the GitLab and GitLab Backup controllers.
 - The `api` directory contains the API resource definitions for the GitLab and GLBackup resources owned by the operator. The API definitions are grouped by their API version.
-  The `*_types.go` file inside `api/<api_version>` contains spec definitions and markers used to generate the Custom Resource Definitions and Cluster Service Version file used by OLM.
-- The `config/samples` directory contains an example manifest for the GitLab Custom Resource.
+  The `*_types.go` file inside `api/<api_version>` contains spec definitions and markers used to generate the custom resource definitions and Cluster Service Version file used by OLM.
+- The `config/samples` directory contains an example manifest for the GitLab custom resource.
 - The `config/test` directory contains a parametrized GitLab definition used for running integration tests.
 
   An example is shown below:

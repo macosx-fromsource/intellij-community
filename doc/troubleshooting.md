@@ -99,7 +99,7 @@ The GitLab Operator's installation manifest and Helm Chart use `gitlab` as the p
 for all resource names by default unless `nameOverride` is specified in the Helm values.
 
 As a result, the NGINX IngressClass will be named `gitlab-nginx`. If a release name other than
-`gitlab` is specified in the GitLab CustomResource under `metadata.name`, then the default
+`gitlab` is specified in the GitLab custom resource under `metadata.name`, then the default
 IngressClass name must be set explicitly under `global.ingress.class`:
 
 For example: if `metadata.name` is set to `demo`, then set `global.ingress.class=gitlab-nginx`:
@@ -179,8 +179,8 @@ After upgrading to GitLab Operator `0.6.4`, complete the following steps to conn
 1. Remove `.spec.ClaimRef` from the previous MinIO PersistentVolume to dissociate it from the previous MinIO PersistentVolumeClaim.
 1. Delete the previous MinIO PersistentVolumeClaim, `export-gitlab-minio-0`.
 1. Confirm the previous PersistentVolume status is now `Available`.
-1. Set the following value in the GitLab CustomResource: `minio.persistence.volumeName=<previous PersistentVolume name>`.
-1. Apply the GitLab CustomResource.
+1. Set the following value in the GitLab custom resource: `minio.persistence.volumeName=<previous PersistentVolume name>`.
+1. Apply the GitLab custom resource.
 1. Delete the new MinIO PersistentVolumeClaim (and MinIO pod, so that the PersistentVolumeClaim is unbound and can be deleted). The Operator will recreate
    the PersistentVolumeClaim. This is required because the `.spec` field is immutable.
 1. Confirm that the previous MinIO PersistentVolume is now bound to new MinIO PersistentVolumeClaim.

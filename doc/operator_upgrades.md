@@ -44,10 +44,10 @@ This command will apply any changes to the related manifests, including the new 
 The Operator Deployment should create a new ReplicaSet with this change, which will spawn a new Operator pod. Meanwhile, the previous
 Operator pod will shut down, giving up its leader status. When this happens, the new Operator pod will become the leader.
 
-## Step 5: Update the chart version in the GitLab Custom Resource (CR)
+## Step 5: Update the chart version in the GitLab custom resource (CR)
 
 In most cases, the available chart versions will not be identical between versions of the Operator. When the newer version of the
-Operator starts, it will try to reconcile the existing GitLab Custom Resource (CR). You will likely see an error such as:
+Operator starts, it will try to reconcile the existing GitLab custom resource (CR). You will likely see an error such as:
 
 ```plaintext
 Configuration error detected: chart version 5.7.0 not supported; please use one of the following: 5.7.1, 5.6.4, 5.5.4
