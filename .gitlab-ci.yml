@@ -885,7 +885,7 @@ image_certification:
     REGISTRY_USER: $RH_CERTIFICATION_REGISTRY_USER
     REGISTRY_PASSWORD: $RH_CERTIFICATION_REGISTRY_PASSWORD
     COMPONENT_NAME: gitlab-operator
-  image: registry.gitlab.com/gitlab-org/cloud-native/preflight:1.2.1
+  image: registry.gitlab.com/gitlab-org/cloud-native/preflight:1.9.1
   retry: 1
   allow_failure: true
   before_script:
@@ -906,9 +906,15 @@ image_certification:
         CERTIFY_TAG=${CI_COMMIT_TAG:-${CERTIFY_TAG}}
       fi
     - CERTIFY_IMAGE="${CI_REGISTRY_IMAGE}:${CERTIFY_TAG}"
-    - echo "Running preflight certification check for ${CERTIFY_IMAGE}"
-    - preflight check container ${CERTIFY_IMAGE} ${SUBMIT} --docker-config="${DOCKER_AUTH_FILE}" > reports/${COMPONENT_NAME}-cert.json
-    - test "$(jq .passed reports/${COMPONENT_NAME}-cert.json)" == 'true'
+    - |
+      for arch in ${BUILDX_ARCHS//,/ }; do
+        echo "Running preflight certification check for ${CERTIFY_IMAGE} (${arch})"
+        preflight check container ${CERTIFY_IMAGE} ${SUBMIT} \
+          --docker-config="${DOCKER_AUTH_FILE}" \
+          --platform="${arch}" \
+            > reports/${COMPONENT_NAME}-${arch}-cert.json
+        test "$(jq .passed reports/${COMPONENT_NAME}-${arch}-cert.json)" == 'true'
+      done
   artifacts:
     untracked: false
     paths:
