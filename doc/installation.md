@@ -127,7 +127,7 @@ Install the [metrics server](https://github.com/kubernetes-sigs/metrics-server#i
 
 :::TabTitle OpenShift
 
-OpenShift ships with [Prometheus Adapter](https://docs.openshift.com/container-platform/4.9/monitoring/monitoring-overview.html) by default, so there is no manual action required here.
+OpenShift ships with [Prometheus Adapter](https://docs.openshift.com/container-platform/4.9/monitoring/monitoring-overview.html) by default, so all you need to do is set `spec.chart.values.prometheus.install=false` in your GitLab CustomResource to prevent the GitLab Operator from installing another instance.
 
 ::EndTabs
 
