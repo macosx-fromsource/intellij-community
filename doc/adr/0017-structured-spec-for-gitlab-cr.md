@@ -1,4 +1,4 @@
-# 17. Structured Specification of GitLab Custom Resource
+# 17. Structured Specification of GitLab custom resource
 
 Date: 2023-11-28
 
