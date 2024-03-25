@@ -15,7 +15,7 @@ var _ = Describe("SequenceGenerator", func() {
 		var result string
 
 		JustBeforeEach(func() {
-			generator, err = NewSequenceGenerator("1000", characterSets...)
+			generator, err = NewSequenceGenerator("1000", characterSets)
 			Expect(err).NotTo(HaveOccurred())
 			content, err = generator.Generate("key")
 			Expect(err).NotTo(HaveOccurred())
