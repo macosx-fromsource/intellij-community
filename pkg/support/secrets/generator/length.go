@@ -8,11 +8,9 @@ import (
 
 type Length uint64
 
-var ErrInvalidLength = errors.New("invalid length")
+const maxSecretLength = 1048576
 
-func (l Length) Uint64() uint64 {
-	return uint64(l)
-}
+var ErrInvalidLength = errors.New("invalid length")
 
 func ParseLength(annotation string) (Length, error) {
 	length, err := strconv.ParseUint(annotation, 10, 64)
@@ -25,11 +23,15 @@ func ParseLength(annotation string) (Length, error) {
 		return Length(0), err
 	}
 
-	if length == 0 || length > 1048576 {
+	if length == 0 || length > maxSecretLength {
 		return Length(0), fmt.Errorf("length: %d %w", length, ErrInvalidLength)
 	}
 
 	return Length(length), nil
+}
+
+func (l Length) Uint64() uint64 {
+	return uint64(l)
 }
 
 func (l Length) String() string {

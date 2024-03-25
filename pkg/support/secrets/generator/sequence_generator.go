@@ -11,7 +11,7 @@ type SequenceGenerator struct {
 	length        Length
 }
 
-func NewSequenceGenerator(lengthAnnotation string, characterSetAnnotations ...string) (*SequenceGenerator, error) {
+func NewSequenceGenerator(lengthAnnotation string, characterSetAnnotations []string) (*SequenceGenerator, error) {
 	length, err := ParseLength(lengthAnnotation)
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (g SequenceGenerator) allowedCharacters() string {
 	return chars
 }
 
-func (g SequenceGenerator) Generate(key string) (Content, error) {
+func (g SequenceGenerator) Generate(contentKey string) (Content, error) {
 	allowedCharacters := g.allowedCharacters()
 
 	var (
@@ -71,5 +71,5 @@ func (g SequenceGenerator) Generate(key string) (Content, error) {
 		}
 	}
 
-	return Content(map[string]([]byte){key: seq}), nil
+	return Content{contentKey: seq}, nil
 }
