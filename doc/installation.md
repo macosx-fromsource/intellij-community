@@ -183,7 +183,7 @@ Ingress in OpenShift requires extra consideration. See our [notes on OpenShift I
      name: gitlab
    spec:
      chart:
-       version: "X.Y.Z" # https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/0.8.1/CHART_VERSIONS
+       version: "X.Y.Z" # https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/<OPERATOR_VERSION>/CHART_VERSIONS
        values:
          global:
            hosts:
