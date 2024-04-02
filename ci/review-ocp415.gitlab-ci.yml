@@ -1,0 +1,66 @@
+build_review_4_15:
+  extends: .build_review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_15
+    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
+  dependencies:
+    - image_certification
+
+create_review_4_15:
+  extends: .create_review_template
+  environment: &environment_4_15
+    name: &env_4_15_name openshift_4_15/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_OPENSHIFT_4_15
+    on_stop: stop_review_openshift_4_15
+    auto_stop_in: 1 hour
+  needs:
+    - build_review_4_15
+
+review_4_15:
+  extends: .review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_15
+    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
+  before_script:
+    - export KUBECONFIG="$KUBECONFIG_OCP_4_15"
+  needs:
+    - create_review_4_15
+    # we need build_* dependency to receive appropriate artifacts
+    - build_review_4_15
+  environment: *environment_4_15
+  resource_group: *env_4_15_name
+
+qa_4_15:
+  extends: .qa
+  stage: qa
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_15
+  needs:
+    - review_4_15
+
+qa_4_15_full_suite_trigger:
+  extends: .qa_full_suite_trigger
+  script: echo 'The job will trigger Full E2E suite against OpenShift 4.15'
+
+qa_4_15_full:
+  extends: .qa
+  stage: qa
+  parallel: 7
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_15
+    QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
+  needs:
+    - review_4_15
+    - qa_4_15_full_suite_trigger
+
+stop_review_openshift_4_15:
+  extends: .stop_review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_15
+  before_script:
+    - export KUBECONFIG="$KUBECONFIG_OCP_4_15"
+  environment:
+    name: openshift_4_15/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    action: stop
+  needs:
+    - build_review_4_15
