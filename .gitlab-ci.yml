@@ -165,7 +165,7 @@ lint_code:
       optional: true
 
 docs-lint links:
-  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-html:alpine-3.19-ruby-3.2.3-eee6c4c0
+  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-html:alpine-3.19-ruby-3.2.3-a5032206
   stage: test
   tags: [ gitlab-org ]
   needs:
