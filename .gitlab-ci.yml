@@ -13,6 +13,7 @@ variables:
   DOMAIN_OPENSHIFT_4_12: "apps.ocp-ci-41221.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_13: "apps.ocp-ci-41317.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_14: "apps.ocp-ci-4146.k8s-ft.win"
+  DOMAIN_OPENSHIFT_4_15: "apps.ocp-ci-4153.k8s-ft.win"
   DOMAIN_GKE: "gitlab-operator.k8s-ft.win"
   DOMAIN_GKE125: "gitlab-operator-v125.helm-charts.win"
   DOMAIN_GKE126: "gitlab-operator-v126.k8s-ft.win"
@@ -93,6 +94,7 @@ include:
   - local: ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
   - local: ci/review-gke127.gitlab-ci.yml
+  - local: ci/review-ocp415.gitlab-ci.yml
   - local: ci/review-vcluster128.gitlab-ci.yml
 
 default:
