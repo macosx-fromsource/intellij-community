@@ -15,7 +15,7 @@ func (r *GitLabReconciler) runSharedSecretsJob(ctx context.Context, adapter gitl
 	}
 
 	if cfgMap == nil || job == nil {
-		r.Log.Info("shared secrets job skipped, not needed per configuration", "gitlab", adapter.Name())
+		r.Log.V(2).Info("shared secrets Job skipped, not needed per configuration", "gitlab", adapter.Name())
 
 		return true, nil
 	}
@@ -38,7 +38,7 @@ func (r *GitLabReconciler) runSelfSignedCertsJob(ctx context.Context, adapter gi
 	}
 
 	if job == nil {
-		r.Log.Info("self-signed certificates job skipped, not needed per configuration", "gitlab", adapter.Name())
+		r.Log.V(2).Info("self-signed certificates Job skipped, not needed per configuration", "gitlab", adapter.Name())
 
 		return true, nil
 	}

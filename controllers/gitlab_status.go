@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -18,17 +19,33 @@ import (
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/status"
 )
 
-func (r *GitLabReconciler) reconcileGitLabStatus(ctx context.Context, adapter gitlab.Adapter, template helm.Template) (ctrl.Result, error) {
+// reconcileGitLabStatus runs at the end of the reconcile loop.
+//
+// It handles:
+//   - calculating whether or not the reconcile loop should requeue
+//     (if Webservice and Sidekiq are not yet running)
+//   - setting the Status Condition on the GitLab custom resource
+//   - recording the new version on the GitLab custom resource
+func (r *GitLabReconciler) reconcileGitLabStatus(ctx context.Context, adapter gitlab.Adapter, template helm.Template, log logr.Logger) (ctrl.Result, error) {
+	const (
+		messageReady    = "GitLab is running and available to accept requests"
+		messageNotReady = "Webservice and/or Sidekiq not yet Running"
+	)
+
 	resultRequeue := ctrl.Result{RequeueAfter: 10 * time.Second}
 	resultNoRequeue := ctrl.Result{}
 	result := resultNoRequeue
 
 	if r.sidekiqAndWebserviceRunning(ctx, adapter, template) {
-		if err := r.setStatusCondition(ctx, adapter, status.ConditionAvailable, true, "GitLab is running and available to accept requests"); err != nil {
+		if err := r.setStatusCondition(ctx, adapter, status.ConditionAvailable, true, messageReady); err != nil {
 			return result, err
 		}
+
+		log.Info(messageReady)
 	} else {
 		result = resultRequeue
+
+		log.Info(messageNotReady)
 	}
 
 	// Set the version regardless of whether Sidekiq and Webservice are fully running to
