@@ -105,7 +105,7 @@ type GitLabReconciler struct {
 func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("gitlab", req.NamespacedName)
 
-	log.Info("Reconciling GitLab")
+	log.Info("reconciling GitLab")
 
 	rtCtx := rt.NewContext(ctx,
 		rt.WithLogger(log),
@@ -115,10 +115,10 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	gitlab := &apiv1beta1.GitLab{}
 	if err := r.Get(ctx, req.NamespacedName, gitlab); err != nil {
 		if errors.IsNotFound(err) {
+			log.Error(err, "GitLab custom resource not found, exiting")
 			return doNotRequeue()
 		}
 
-		// could not get GitLab resource
 		return requeue(err)
 	}
 
@@ -128,7 +128,13 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	isUpgrade := adapter.IsUpgrade()
-	log.V(1).Info("version information", "upgrade", isUpgrade, "current version", adapter.CurrentVersion(), "desired version", adapter.DesiredVersion())
+	operation := "install"
+
+	if isUpgrade {
+		operation = "upgrade"
+	}
+
+	log.Info("GitLab is initializing", "operation", operation, "current version", adapter.CurrentVersion(), "desired version", adapter.DesiredVersion())
 
 	if err := r.setStatusCondition(ctx, adapter, status.ConditionInitialized, false, "GitLab is initializing"); err != nil {
 		return requeue(err)
@@ -138,7 +144,10 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err != nil {
 		r.Recorder.Event(adapter.Origin(), "Warning", "ConfigError",
 			fmt.Sprintf("Configuration error detected: %v", err))
-		return doNotRequeue() // prevent further reconcile loops
+
+		log.Error(err, "configuration error detected, check GitLab custom resource events")
+
+		return doNotRequeue()
 	}
 
 	if err := r.setStatusCondition(ctx, adapter, status.ConditionInitialized, true, "GitLab is initialized"); err != nil {
@@ -161,7 +170,8 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	if !finished {
-		return requeueWithDelay()
+		log.Info("shared secrets Job not yet finished")
+		return requeueWithDefaultDelay()
 	}
 
 	finished, err = r.runSelfSignedCertsJob(ctx, adapter, template)
@@ -170,7 +180,8 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	if !finished {
-		return requeueWithDelay()
+		log.Info("self-signed certificates Job not yet finished")
+		return requeueWithDefaultDelay()
 	}
 
 	if adapter.WantsComponent(component.PostgreSQL) {
@@ -243,9 +254,10 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
-	if !r.ifCoreServicesReady(ctx, adapter, template) {
-		log.Info("Core services are not ready. Waiting and retrying", "interval", defaultRequeueDelay)
-		return requeueWithDelay()
+	ready, serviceName := r.ifCoreServicesReady(ctx, adapter, template)
+	if !ready {
+		log.Info("core services not ready, waiting and retrying", "service name", serviceName)
+		return requeueWithDefaultDelay()
 	}
 
 	if adapter.WantsComponent(component.GitLabShell) {
@@ -311,7 +323,7 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			if adapter.WantsComponent(component.Webservice) || adapter.WantsComponent(component.Sidekiq) {
 				// If upgrading with Migrations enabled and Webservice and/or Sidekiq enabled,
 				// then follow the traditional upgrade logic.
-				log.Info("reconciling pre migrations")
+				log.Info("ensuring pre-migrations Job has finished")
 
 				job, err := gitlabctl.PreMigrationsJob(adapter, template)
 
@@ -328,9 +340,11 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				// Scale Webservice and Sidekiq down before running pre migrations.
 				// Only scale them down before once, to avoid pause -> unpause loop.
 				if !exists {
-					log.Info("pre migrations job does not exist")
+					log.Info("pre-migrations Job does not exist")
 
-					if err := r.reconcileWebserviceAndSidekiqIfEnabled(ctx, adapter, template, true, log); err != nil {
+					log.Info("ensuring Webservice and/or Sidekiq are reconciled")
+
+					if err := r.reconcileWebserviceAndSidekiqIfEnabled(ctx, adapter, template, true); err != nil {
 						return requeue(err)
 					}
 				}
@@ -341,18 +355,24 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				}
 
 				if !finished {
-					return requeueWithDelay()
+					log.Info("pre-migrations Job not yet finished")
+					return requeueWithDefaultDelay()
 				}
 
-				if err := r.unpauseWebserviceAndSidekiqIfEnabled(ctx, adapter, template, log); err != nil {
-					return requeueWithDelay()
+				log.Info("ensuring Webservice and/or Sidekiq are unpaused")
+
+				if err := r.unpauseWebserviceAndSidekiqIfEnabled(ctx, adapter, template); err != nil {
+					return requeue(err)
 				}
 
-				if err := r.webserviceAndSidekiqRunningIfEnabled(ctx, adapter, template, log); err != nil {
-					return requeueWithDelay()
+				log.Info("ensuring Webservice and/or Sidekiq are running")
+
+				if err := r.webserviceAndSidekiqRunningIfEnabled(ctx, adapter, template); err != nil {
+					log.Info("Webservice and/or Sidekiq not yet running", "error", err)
+					return requeueWithDefaultDelay()
 				}
 
-				log.Info("reconciling post migrations")
+				log.Info("ensuring post-migrations Job has finished")
 
 				finished, err = r.runAllMigrations(ctx, adapter, template)
 				if err != nil {
@@ -360,16 +380,19 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				}
 
 				if !finished {
-					return requeueWithDelay()
+					log.Info("migrations Job not yet finished")
+					return requeueWithDefaultDelay()
 				}
 
-				if err := r.rollingUpdateWebserviceAndSidekiqIfEnabled(ctx, adapter, template, log); err != nil {
+				log.Info("ensuring rolling update of Webservice and/or Sidekiq")
+
+				if err := r.rollingUpdateWebserviceAndSidekiqIfEnabled(ctx, adapter, template); err != nil {
 					return requeue(err)
 				}
 			} else {
 				// If upgrading with Migrations enabled but neither Webservice nor Sidekiq are enabled,
 				// then just run all migrations.
-				log.Info("running all migrations")
+				log.Info("ensuring migrations Job has finished")
 
 				finished, err := r.runAllMigrations(ctx, adapter, template)
 				if err != nil {
@@ -377,12 +400,15 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				}
 
 				if !finished {
-					return requeueWithDelay()
+					log.Info("migrations Job not yet finished")
+					return requeueWithDefaultDelay()
 				}
 			}
 		} else {
 			// If upgrading with Migrations disabled, then just reconcile enabled Deployments.
-			if err := r.reconcileWebserviceAndSidekiqIfEnabled(ctx, adapter, template, false, log); err != nil {
+			log.Info("ensuring Webservice and/or Sidekiq are reconciled if enabled")
+
+			if err := r.reconcileWebserviceAndSidekiqIfEnabled(ctx, adapter, template, false); err != nil {
 				return requeue(err)
 			}
 		}
@@ -393,7 +419,7 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 
 		if adapter.WantsComponent(component.Migrations) {
-			log.Info("running all migrations")
+			log.Info("ensuring migrations Job has finished")
 
 			finished, err := r.runAllMigrations(ctx, adapter, template)
 			if err != nil {
@@ -401,11 +427,14 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 
 			if !finished {
-				return requeueWithDelay()
+				log.Info("migrations Job not yet finished")
+				return requeueWithDefaultDelay()
 			}
 		}
 
-		if err := r.reconcileWebserviceAndSidekiqIfEnabled(ctx, adapter, template, false, log); err != nil {
+		log.Info("ensuring Webservice and Sidekiq are reconciled if enabled")
+
+		if err := r.reconcileWebserviceAndSidekiqIfEnabled(ctx, adapter, template, false); err != nil {
 			return requeue(err)
 		}
 	}
@@ -440,7 +469,7 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	currentManagedObjects, err := adapter.CurrentObjects(rtCtx)
 	if err != nil {
-		log.Error(err, "Can not discover the managed resources for GitLab instance")
+		log.Error(err, "unable to discover the managed resources for GitLab instance")
 		return requeue(err)
 	}
 
@@ -453,27 +482,25 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		canBeDeleted, err := isSafeToDelete(rtCtx, obj)
 
 		if err != nil {
-			objLog.V(2).Error(err, "Could not determine if it is safe to delete the object")
+			objLog.V(2).Error(err, "unable to determine if it is safe to delete the object")
 			continue
 		}
 
 		if !canBeDeleted {
-			objLog.Info("Can not safely delete the object. Skipping its deletion.")
+			objLog.Info("unable to safely delete the object, skipping its deletion")
 			continue
 		}
 
 		if err := r.Delete(ctx, obj, &client.DeleteOptions{PropagationPolicy: &deletePropagation}); err == nil {
-			objLog.Info("Object deleted")
+			objLog.Info("object deleted")
 		} else if errors.IsNotFound(err) {
-			objLog.V(2).Info("Object not found, proceeding")
+			objLog.V(2).Info("object not found, skipping its deletion")
 		} else {
-			objLog.V(2).Error(err, "Could not delete the object")
+			objLog.V(2).Error(err, "unable to delete the object")
 		}
 	}
 
-	result, err := r.reconcileGitLabStatus(ctx, adapter, template)
-
-	return result, err
+	return r.reconcileGitLabStatus(ctx, adapter, template, log)
 }
 
 func isSafeToDelete(ctx context.Context, obj client.Object) (bool, error) {
@@ -537,32 +564,32 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithEventFilter(predicate.GenerationChangedPredicate{})
 
 	if settings.IsGroupVersionKindSupported("batch/v1", "CronJob") {
-		r.Log.Info("Using batch/v1 for CronJob")
+		r.Log.Info("using batch/v1 for CronJob")
 		builder.Owns(&batchv1.CronJob{})
 	}
 
 	if settings.IsGroupVersionKindSupported("batch/v1beta1", "CronJob") {
-		r.Log.Info("Using batch/v1beta1 for CronJob")
+		r.Log.Info("using batch/v1beta1 for CronJob")
 		builder.Owns(&batchv1beta1.CronJob{})
 	}
 
 	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "ServiceMonitor") {
-		r.Log.Info("Using monitoring.coreos.com/v1 for ServiceMonitor")
+		r.Log.Info("using monitoring.coreos.com/v1 for ServiceMonitor")
 		builder.Owns(&monitoringv1.ServiceMonitor{})
 	}
 
 	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "PodMonitor") {
-		r.Log.Info("Using monitoring.coreos.com/v1 for PodMonitor")
+		r.Log.Info("using monitoring.coreos.com/v1 for PodMonitor")
 		builder.Owns(&monitoringv1.PodMonitor{})
 	}
 
 	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "Prometheus") {
-		r.Log.Info("Using monitoring.coreos.com/v1/Prometheus")
+		r.Log.Info("using monitoring.coreos.com/v1/Prometheus")
 		builder.Owns(&monitoringv1.Prometheus{})
 	}
 
 	if settings.IsGroupVersionSupported("cert-manager.io", "v1") {
-		r.Log.Info("Using cert-manager.io/v1")
+		r.Log.Info("using cert-manager.io/v1")
 		builder.
 			Owns(&certmanagerv1.Issuer{}).
 			Owns(&certmanagerv1.Certificate{})
@@ -579,7 +606,7 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 func (r *GitLabReconciler) jobFinished(ctx context.Context, adapter gitlab.Adapter, job client.Object) (bool, error) {
 	logger := r.Log.WithValues("gitlab", adapter.Name(), "job", job.GetName(), "namespace", job.GetNamespace())
 
-	logger.V(2).Info("Checking the status of Job")
+	logger.V(2).Info("checking the status of Job")
 
 	lookup, err := r.lookupJob(ctx, job)
 
@@ -655,7 +682,7 @@ func (r *GitLabReconciler) reconcilePodMonitors(ctx context.Context, adapter git
 // The boolean return parameter is unused at the moment, but may be useful in the future.
 func (r *GitLabReconciler) createOrPatch(ctx context.Context, templateObject client.Object, adapter gitlab.Adapter) error {
 	if templateObject == nil {
-		r.Log.Info("Controller is not able to delete managed resources. This is a known issue",
+		r.Log.Info("controller unable to delete managed resources, this is a known issue",
 			"gitlab", adapter.Name())
 		return nil
 	}
@@ -673,7 +700,7 @@ func (r *GitLabReconciler) createOrPatch(ctx context.Context, templateObject cli
 		"type", fmt.Sprintf("%T", templateObject),
 		"reference", key)
 
-	logger.V(2).Info("Setting controller reference")
+	logger.V(2).Info("setting controller reference")
 
 	obj := templateObject.DeepCopyObject().(client.Object)
 
@@ -689,7 +716,7 @@ func (r *GitLabReconciler) createOrPatch(ctx context.Context, templateObject cli
 	}
 
 	if outcome != kube.ObjectUnchanged {
-		logger.V(1).Info("CreateOrPatch", "outcome", outcome)
+		logger.V(1).Info("create or patch outcome is changed", "outcome", outcome)
 	}
 
 	return nil
@@ -697,7 +724,7 @@ func (r *GitLabReconciler) createOrPatch(ctx context.Context, templateObject cli
 
 func (r *GitLabReconciler) reconcileIngress(ctx context.Context, templateObject client.Object, adapter gitlab.Adapter) error {
 	if templateObject == nil {
-		r.Log.V(2).Info("Controller received a nil templateObject",
+		r.Log.V(2).Info("controller received a nil templateObject",
 			"type", "Ingress",
 			"gitlab", adapter.Name())
 
@@ -716,7 +743,7 @@ func (r *GitLabReconciler) reconcileIngress(ctx context.Context, templateObject 
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			logger.V(1).Info("creating ingress", "ingress", ingress.Name)
+			logger.V(1).Info("creating Ingress", "Ingress", ingress.Name)
 			return r.createOrPatch(ctx, ingress, adapter)
 		}
 
@@ -731,7 +758,7 @@ func (r *GitLabReconciler) reconcileIngress(ctx context.Context, templateObject 
 
 	for _, path := range found.Spec.Rules[0].IngressRuleValue.HTTP.Paths {
 		if regex.MatchString(path.Path) {
-			logger.V(1).Info("ingress contains ACME challenge path, skipping patch for now", "ingress", found.Name)
+			logger.V(1).Info("Ingress contains ACME challenge path, skipping patch for now", "Ingress", found.Name)
 
 			doPatch = false
 		}
@@ -784,42 +811,40 @@ func (r *GitLabReconciler) isEndpointReady(ctx context.Context, service string, 
 	return len(addresses) > 0
 }
 
-func (r *GitLabReconciler) ifCoreServicesReady(ctx context.Context, adapter gitlab.Adapter, template helm.Template) bool {
+func (r *GitLabReconciler) ifCoreServicesReady(ctx context.Context, adapter gitlab.Adapter, template helm.Template) (bool, string) {
+	serviceNames := []string{}
+
 	if adapter.WantsComponent(component.PostgreSQL) {
-		if !r.isEndpointReady(ctx, gitlabctl.PostgresService(adapter, template).GetName(), adapter) {
-			return false
-		}
+		serviceNames = append(serviceNames, gitlabctl.PostgresService(adapter, template).GetName())
 	}
 
 	if adapter.WantsComponent(component.Redis) {
-		if !r.isEndpointReady(ctx, gitlabctl.RedisMasterService(adapter, template).GetName(), adapter) {
-			return false
-		}
+		serviceNames = append(serviceNames, gitlabctl.RedisMasterService(adapter, template).GetName())
 	}
 
 	if adapter.WantsComponent(component.Gitaly) {
 		if !adapter.WantsComponent(component.Praefect) || !adapter.WantsFeature(feature.ReplaceGitalyWithPraefect) {
-			if !r.isEndpointReady(ctx, gitlabctl.GitalyService(template).GetName(), adapter) {
-				return false
-			}
+			serviceNames = append(serviceNames, gitlabctl.GitalyService(template).GetName())
 		}
 	}
 
 	if adapter.WantsComponent(component.Praefect) {
-		if !r.isEndpointReady(ctx, gitlabctl.PraefectService(template).GetName(), adapter) {
-			return false
-		}
+		serviceNames = append(serviceNames, gitlabctl.PraefectService(template).GetName())
 
 		if adapter.WantsComponent(component.Gitaly) {
 			for _, gitalyPraefectService := range gitlabctl.GitalyPraefectServices(template) {
-				if !r.isEndpointReady(ctx, gitalyPraefectService.GetName(), adapter) {
-					return false
-				}
+				serviceNames = append(serviceNames, gitalyPraefectService.GetName())
 			}
 		}
 	}
 
-	return true
+	for _, serviceName := range serviceNames {
+		if !r.isEndpointReady(ctx, serviceName, adapter) {
+			return false, serviceName
+		}
+	}
+
+	return true, ""
 }
 
 // If a Deployment has an HPA attached to it consult its Status to set the replica count.
@@ -837,7 +862,7 @@ func (r *GitLabReconciler) setDeploymentReplica(ctx context.Context, obj client.
 	hpa := &autoscalingv1.HorizontalPodAutoscaler{}
 	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, hpa); err == nil {
 		// Replica count is controlled by HPA and should not be patched by the GitLab controller.
-		r.Log.V(1).Info("Not setting replicas for deployment controlled by HPA",
+		r.Log.V(1).Info("not setting replicas for Deployment controlled by HPA",
 			"deployment", types.NamespacedName{
 				Namespace: deployment.Namespace,
 				Name:      deployment.Name,
@@ -854,7 +879,7 @@ func (r *GitLabReconciler) setDeploymentReplica(ctx context.Context, obj client.
 	liveDeployment := &appsv1.Deployment{}
 	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name, Namespace: deployment.Namespace}, liveDeployment); err == nil {
 		if liveDeployment.Spec.Replicas != nil && *liveDeployment.Spec.Replicas == 0 {
-			r.Log.V(1).Info("Deployment is scaled down. Not overriding the replica count.",
+			r.Log.V(1).Info("Deployment is scaled down, not overriding the replica count",
 				"deployment", types.NamespacedName{
 					Namespace: deployment.Namespace,
 					Name:      deployment.Name,
@@ -934,9 +959,17 @@ func doNotRequeue() (ctrl.Result, error) {
 }
 
 func requeue(err error) (ctrl.Result, error) {
-	return ctrl.Result{}, err
+	return ctrl.Result{Requeue: true}, err
 }
 
-func requeueWithDelay() (ctrl.Result, error) {
-	return ctrl.Result{RequeueAfter: defaultRequeueDelay}, nil
+func requeueWithDelay(delay time.Duration) (ctrl.Result, error) {
+	if delay == 0 {
+		delay = defaultRequeueDelay
+	}
+
+	return ctrl.Result{RequeueAfter: delay}, nil
+}
+
+func requeueWithDefaultDelay() (ctrl.Result, error) {
+	return requeueWithDelay(defaultRequeueDelay)
 }
