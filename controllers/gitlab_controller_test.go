@@ -630,7 +630,7 @@ global:
 
 			It("Should stop when Secret does not exist", func() {
 				By("Confirming no StatefulSets are created due to missing secrets")
-				Eventually(getObjectPromise(fmt.Sprintf("%s-%s", releaseName, gitlabctl.DefaultPostgresComponentName), &appsv1.StatefulSet{}),
+				Consistently(getObjectPromise(fmt.Sprintf("%s-%s", releaseName, gitlabctl.DefaultPostgresComponentName), &appsv1.StatefulSet{}),
 					PollTimeout, PollInterval).ShouldNot(Succeed())
 			})
 		})

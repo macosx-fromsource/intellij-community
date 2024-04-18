@@ -51,14 +51,14 @@ func (r *GitLabReconciler) reconcileRedisStatefulSet(ctx context.Context, adapte
 }
 
 func (r *GitLabReconciler) validateExternalRedisConfiguration(ctx context.Context, adapter gitlab.Adapter) error {
-	defaultRedisSecretName := adapter.Values().GetString("global.redis.password.secret")
+	defaultRedisSecretName := adapter.Values().GetString("global.redis.auth.secret")
 	if defaultRedisSecretName == "" {
 		defaultRedisSecretName = fmt.Sprintf("%s-%s-secret", adapter.ReleaseName(), gitlabctl.RedisComponentName(adapter))
 	}
 
 	// If external Redis global password is enabled, ensure it was created.
 	if adapter.WantsComponent(component.Redis) {
-		redisSecretName := adapter.Values().GetString("global.redis.password.secret", defaultRedisSecretName)
+		redisSecretName := adapter.Values().GetString("global.redis.auth.secret", defaultRedisSecretName)
 		if err := r.ensureSecret(ctx, adapter, redisSecretName); err != nil {
 			return err
 		}
@@ -68,8 +68,8 @@ func (r *GitLabReconciler) validateExternalRedisConfiguration(ctx context.Contex
 	for _, subqueue := range gitlabctl.RedisSubqueues() {
 		if host := adapter.Values().GetString(fmt.Sprintf("global.redis.%s.host", subqueue)); host != "" {
 			// Subqueue is configured. Ensure its password was created.
-			if passwordEnabled := adapter.Values().GetBool(fmt.Sprintf("global.redis.%s.password.enabled", subqueue), true); passwordEnabled {
-				subqueueSecretName := adapter.Values().GetString(fmt.Sprintf("global.redis.%s.password.secret", subqueue), defaultRedisSecretName)
+			if passwordEnabled := adapter.Values().GetBool(fmt.Sprintf("global.redis.%s.auth.enabled", subqueue), true); passwordEnabled {
+				subqueueSecretName := adapter.Values().GetString(fmt.Sprintf("global.redis.%s.auth.secret", subqueue), defaultRedisSecretName)
 				if err := r.ensureSecret(ctx, adapter, subqueueSecretName); err != nil {
 					return err
 				}
