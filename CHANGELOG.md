@@ -1,3 +1,9 @@
+## 0.31.0 (2024-04-18)
+
+### changed (1 change)
+
+- [Change 'redis.password' key to 'redis.auth'](gitlab-org/cloud-native/gitlab-operator@b002c6d08a58f7a9d22ced48c07d71045dfdae06) ([merge request](gitlab-org/cloud-native/gitlab-operator!786))
+
 ## 0.30.3 (2024-04-15)
 
 No changes.
