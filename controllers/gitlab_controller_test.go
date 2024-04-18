@@ -686,7 +686,6 @@ global:
 			releaseName := "minio-enabled"
 			cfgMapName := fmt.Sprintf("%s-minio-config-cm", releaseName)
 			serviceName := fmt.Sprintf("%s-minio-svc", releaseName)
-			jobName := fmt.Sprintf("%s-minio-create-buckets-1", releaseName)
 			ingressName := fmt.Sprintf("%s-minio", releaseName)
 			pvcName := fmt.Sprintf("%s-minio", releaseName)
 			deploymentName := fmt.Sprintf("%s-minio", releaseName)
@@ -707,7 +706,7 @@ global:
 					PollTimeout, PollInterval).Should(Succeed())
 
 				By("Checking MinIO Job exists")
-				Eventually(getObjectPromise(jobName, &batchv1.Job{}),
+				Eventually(listObjectsPromise("app=minio", &batchv1.JobList{}, 1),
 					PollTimeout, PollInterval).Should(Succeed())
 
 				By("Checking MinIO Ingress exists")
@@ -735,7 +734,6 @@ global:
 		When("Bundled MinIO is disabled", func() {
 			releaseName := "minio-disabled"
 			cfgMapName := fmt.Sprintf("%s-minio-config-cm", releaseName)
-			jobName := fmt.Sprintf("%s-minio-create-buckets-1", releaseName)
 			ingressName := fmt.Sprintf("%s-minio", releaseName)
 			pvcName := fmt.Sprintf("%s-minio", releaseName)
 			serviceName := fmt.Sprintf("%s-minio-svc", releaseName)
@@ -767,8 +765,8 @@ global:
 					PollTimeout, PollInterval).ShouldNot(Succeed())
 
 				By("Checking MinIO Job does not exist")
-				Eventually(getObjectPromise(jobName, &batchv1.Job{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
+				Eventually(listObjectsPromise("app=minio", &batchv1.JobList{}, 0),
+					PollTimeout, PollInterval).Should(Succeed())
 
 				By("Checking MinIO Ingress does not exist")
 				Eventually(getObjectPromise(ingressName, &networkingv1.Ingress{}),
