@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -75,8 +76,12 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:    scheme.Scheme,
-		Namespace: Namespace,
+		Scheme: scheme.Scheme,
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				Namespace: {},
+			},
+		},
 	})
 	Expect(err).ToNot(HaveOccurred())
 

@@ -14,9 +14,10 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
-
-	"k8s.io/kube-openapi/pkg/validation/strfmt"
 )
 
 type TLSGenerator struct {
@@ -29,6 +30,70 @@ type TLSGenerator struct {
 
 var ErrInvalidAlgorithmSize = errors.New("invalid algorithm/size pair")
 
+var (
+	durationMatcher = regexp.MustCompile(`((\d+)\s*([A-Za-zµ]+))`)
+
+	timeUnits = [][]string{
+		{"ns", "nano"},
+		{"us", "µs", "micro"},
+		{"ms", "milli"},
+		{"s", "sec"},
+		{"m", "min"},
+		{"h", "hr", "hour"},
+		{"d", "day"},
+		{"w", "wk", "week"},
+	}
+
+	timeMultiplier = map[string]time.Duration{
+		"ns": time.Nanosecond,
+		"us": time.Microsecond,
+		"ms": time.Millisecond,
+		"s":  time.Second,
+		"m":  time.Minute,
+		"h":  time.Hour,
+		"d":  24 * time.Hour,
+		"w":  7 * 24 * time.Hour,
+	}
+)
+
+func parseDuration(str string) (time.Duration, error) {
+	if dur, err := time.ParseDuration(str); err == nil {
+		return dur, nil
+	}
+
+	var (
+		dur time.Duration
+		ok  bool = false
+	)
+
+	for _, match := range durationMatcher.FindAllStringSubmatch(str, -1) {
+		factor, err := strconv.Atoi(match[2]) // converts string to int
+		if err != nil {
+			return 0, err
+		}
+
+		unit := strings.ToLower(strings.TrimSpace(match[3]))
+
+		for _, variants := range timeUnits {
+			last := len(variants) - 1
+			multiplier := timeMultiplier[variants[0]]
+
+			for i, variant := range variants {
+				if (last == i && strings.HasPrefix(unit, variant)) || strings.EqualFold(variant, unit) {
+					ok = true
+					dur += time.Duration(factor) * multiplier
+				}
+			}
+		}
+	}
+
+	if ok {
+		return dur, nil
+	}
+
+	return 0, fmt.Errorf("unable to parse %s as duration", str)
+}
+
 func NewTLSGenerator(sizeAnnotation, algorithmAnnotation, lifespanAnnotation, commonNameAnnotation string, hostAnnotations []string) (*TLSGenerator, error) {
 	size, err := ParseSize(sizeAnnotation)
 	if err != nil {
@@ -40,7 +105,7 @@ func NewTLSGenerator(sizeAnnotation, algorithmAnnotation, lifespanAnnotation, co
 		return nil, err
 	}
 
-	lifespan, err := strfmt.ParseDuration(lifespanAnnotation)
+	lifespan, err := parseDuration(lifespanAnnotation)
 	if err != nil {
 		return nil, err
 	}
