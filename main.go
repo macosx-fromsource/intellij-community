@@ -26,7 +26,10 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	kubectlscheme "k8s.io/kubectl/pkg/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	appsv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers"
@@ -91,16 +94,22 @@ func main() {
 	setupLog.Info("setting operator scope", "scope", operatorScope)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                     scheme,
-		MetricsBindAddress:         metricsAddr,
-		Port:                       9443,
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port: 9443,
+		}),
 		LeaderElection:             enableLeaderElection,
 		LeaderElectionResourceLock: resourcelock.LeasesResourceLock,
 		LeaderElectionID:           "852d23b0.gitlab.com",
-		Namespace:                  watchNamespace,
-		HealthProbeBindAddress:     settings.HealthProbeBindAddress,
-		ReadinessEndpointName:      settings.ReadinessEndpointName,
-		LivenessEndpointName:       settings.LivenessEndpointName,
+		Cache: cache.Options{
+			DefaultNamespaces: watchNamespace,
+		},
+		HealthProbeBindAddress: settings.HealthProbeBindAddress,
+		ReadinessEndpointName:  settings.ReadinessEndpointName,
+		LivenessEndpointName:   settings.LivenessEndpointName,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -146,7 +155,7 @@ func main() {
 }
 
 // getWatchNamespace returns the Namespace the operator should be watching for changes.
-func getWatchNamespace() (string, error) {
+func getWatchNamespace() (map[string]cache.Config, error) {
 	// WatchNamespaceEnvVar is the constant for env variable WATCH_NAMESPACE
 	// which specifies the Namespace to watch.
 	// An empty value means the operator is running with cluster scope.
@@ -154,8 +163,8 @@ func getWatchNamespace() (string, error) {
 
 	ns, found := os.LookupEnv(watchNamespaceEnvVar)
 	if !found {
-		return "", fmt.Errorf("%s not set", watchNamespaceEnvVar)
+		return map[string]cache.Config{}, fmt.Errorf("%s not set", watchNamespaceEnvVar)
 	}
 
-	return ns, nil
+	return map[string]cache.Config{ns: {}}, nil
 }
