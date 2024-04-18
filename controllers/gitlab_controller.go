@@ -184,22 +184,22 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return requeueWithDefaultDelay()
 	}
 
-	if adapter.WantsComponent(component.PostgreSQL) {
-		if err := r.reconcilePostgres(ctx, adapter, template); err != nil {
-			return requeue(err)
-		}
-	} else {
-		if err := r.validateExternalPostgresConfiguration(ctx, adapter); err != nil {
-			return requeue(err)
-		}
-	}
-
 	if adapter.WantsComponent(component.Redis) {
 		if err := r.reconcileRedis(ctx, adapter, template); err != nil {
 			return requeue(err)
 		}
 	} else {
 		if err := r.validateExternalRedisConfiguration(ctx, adapter); err != nil {
+			return requeue(err)
+		}
+	}
+
+	if adapter.WantsComponent(component.PostgreSQL) {
+		if err := r.reconcilePostgres(ctx, adapter, template); err != nil {
+			return requeue(err)
+		}
+	} else {
+		if err := r.validateExternalPostgresConfiguration(ctx, adapter); err != nil {
 			return requeue(err)
 		}
 	}
