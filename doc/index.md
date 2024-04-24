@@ -13,6 +13,35 @@ Use the GitLab Operator to run GitLab in
 [OpenShift](https://docs.gitlab.com/ee/install/openshift_and_gitlab/index.html) or on
 another Kubernetes-compatible platform.
 
+The GitLab Operator is under active development and is not yet suitable for production use. For more information, see our
+[`Minimal` to `Viable` Epic](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/23).
+
+<!--This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations.-->
+WARNING:
+The default values of the _GitLab custom resource_ are not intended for production use**.
+With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,
+are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
+For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/ee/administration/reference_architectures/#cloud-native-hybrid).
+GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
+
+## Known issues
+
+GitLab Operator does not support:
+
+- Migration from GitLab Chart or Linux package to GitLab Operator. For migration of the installation method, you must follow steps similar to the
+  [manual migration steps](https://docs.gitlab.com/charts/installation/migration/package_to_helm.html).
+  Support for automatic migration is proposed in [GitLab Operator issue 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567).
+- Deployment by using the [GitLab Environment Toolkit](https://gitlab.com/gitlab-org/gitlab-environment-toolkit).
+  Support for this integration is proposed in [GitLab Operator issue 1571](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1571).
+- [GitLab Geo](https://docs.gitlab.com/ee/administration/geo/) installation and configuration. You cannot use GitLab Operator for deploying of primary or
+  secondary sites. Support for Geo is tracked in [GitLab Operator issue 1568](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1568).
+- Git over SSH with [OpenShift routes](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html).
+  For more information, see [GitLab Operator documentation on OpenShift Routes](openshift_ingress.md#openshift-routes).
+
+GitLab Operator has any other limitation of GitLab Chart. GitLab Operator relies on GitLab Chart to provision Kubernetes resources. Therefore, any limitation
+in GitLab Chart impacts GitLab Operator. Removing the GitLab Chart dependency from GitLab Operator is proposed in
+[Cloud Native epic 64](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/64).
+
 ## Installation
 
 Instructions on how to install the GitLab Operator can be found our [installation document](installation.md).
