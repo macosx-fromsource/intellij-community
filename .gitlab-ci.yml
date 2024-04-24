@@ -18,6 +18,7 @@ variables:
   DOMAIN_GKE125: "gitlab-operator-v125.helm-charts.win"
   DOMAIN_GKE126: "gitlab-operator-v126.k8s-ft.win"
   DOMAIN_GKE127: "gitlab-operator-v127.k8s-ft.win"
+  DOMAIN_GKE129: "gitlab-operator-v129.k8s-ft.win"
   DOMAIN_VCLUSTER128: "gitlab-operator-v127.k8s-ft.win"
   # Namespace built into default manifest
   NAMESPACE: "gitlab-system"
@@ -94,6 +95,7 @@ include:
   - local: ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
   - local: ci/review-gke127.gitlab-ci.yml
+  - local: ci/review-gke129.gitlab-ci.yml
   - local: ci/review-ocp415.gitlab-ci.yml
   - local: ci/review-vcluster128.gitlab-ci.yml
 

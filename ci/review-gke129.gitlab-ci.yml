@@ -1,0 +1,71 @@
+# GKE 1.29
+build_review_gke129:
+  extends: .build_review_template
+  variables:
+    DOMAIN: $DOMAIN_GKE129
+
+create_review_gke129:
+  extends: .create_review_template
+  environment: &environment_gke129
+    name: &env_gke_name129 operator129_review/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_GKE129
+    on_stop: stop_review_gke129
+    auto_stop_in: 1 hour
+  needs:
+    - build_review_gke129
+
+review_gke129:
+  extends: .review_template
+  variables:
+    DOMAIN: $DOMAIN_GKE129
+    AGENT_NAME: operator129-ci-cluster
+    AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
+  before_script:
+    - kubectl config get-contexts
+    - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
+    - kubectl config set-context --current --namespace=$TESTS_NAMESPACE
+  needs:
+    - create_review_gke129
+    # we need build_* dependency to receive appropriate artifacts
+    - build_review_gke129
+  environment: *environment_gke129
+  resource_group: *env_gke_name129
+
+qa_gke129:
+  extends: .qa
+  stage: qa
+  variables:
+    DOMAIN: $DOMAIN_GKE129
+  needs:
+    - review_gke129
+
+qa_gke129_full_suite_trigger:
+  extends: .qa_full_suite_trigger
+  script: echo 'The job will trigger Full E2E suite against GKE 1.27'
+
+qa_gke129_full:
+  extends: .qa
+  stage: qa
+  parallel: 7
+  variables:
+    DOMAIN: $DOMAIN_GKE129
+    QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
+  needs:
+    - review_gke129
+    - qa_gke129_full_suite_trigger
+
+stop_review_gke129:
+  extends: .stop_review_template
+  variables:
+    DOMAIN: $DOMAIN_GKE129
+    AGENT_NAME: operator129-ci-cluster
+    AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
+  before_script:
+    - kubectl config get-contexts
+    - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
+    - kubectl config set-context --current --namespace=$TESTS_NAMESPACE
+  environment:
+    name: *env_gke_name129
+    action: stop
+  needs:
+    - build_review_gke129
