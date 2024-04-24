@@ -6,14 +6,15 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Installation
 
-WARNING:
-The default Operator configuration is **not intended for production**.
-The default resource creates an implementation where _all_ GitLab services are
-deployed in the cluster, which is **not suitable for production workloads**.
-For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/ee/administration/reference_architectures/#cloud-native-hybrid).
-
-NOTE:
 The GitLab Operator is under active development and is not yet suitable for production use. See our [`Minimal` to `Viable` Epic](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/23) for more information.
+
+<!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
+WARNING:
+The default values of the _GitLab custom resource_ are not intended for production use**.
+With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,
+are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
+For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/ee/administration/reference_architectures/#cloud-native-hybrid).
+GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
 
 This document describes how to deploy the GitLab Operator via manifests in your Kubernetes or OpenShift cluster.
 
