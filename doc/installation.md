@@ -18,7 +18,11 @@ GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefec
 
 This document describes how to deploy the GitLab Operator via manifests in your Kubernetes or OpenShift cluster.
 
-If using OpenShift, these steps are typically handled by the Operator Lifecycle Manager (OLM) once an operator bundle is published. However, to test the most recent operator images, users may need to install the operator using the deployment manifests available in the operator repository.
+<!--This warning block is duplicated in ../config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml.
+Changes should be reflected in both locations.-->
+If using OpenShift, installation is typically handled by the Operator Lifecycle Manager (OLM).
+**Installation using OLM is considered experimental.** GitLab does not support any issues related to instances deployed using OLM.
+For more information on potential issues with OLM, see [issue 241](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/241).
 
 ## Prerequisites
 

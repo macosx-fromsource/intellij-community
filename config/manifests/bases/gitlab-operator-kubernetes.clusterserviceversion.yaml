@@ -90,6 +90,9 @@ spec:
   description: |
     # Overview
 
+    **Installation using OLM is considered experimental.** GitLab does not support any issues related to instances deployed using OLM.
+    For more information on potential issues with OLM, see [issue 241](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/241).
+
     The GitLab operator is responsible for managing the full lifecycle of GitLab instances in your Kubernetes or Openshift container platforms.
 
     [Documentation](https://docs.gitlab.com/charts/installation/operator.html)
