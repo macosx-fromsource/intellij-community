@@ -148,34 +148,70 @@ Ingress in OpenShift requires extra consideration. See our [notes on OpenShift I
 
 ## Installing the GitLab Operator
 
-1. Deploy the GitLab Operator.
+Start by selecting an installation method.
 
-   ```shell
-   GL_OPERATOR_VERSION=<your_desired_version> # https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases
-   PLATFORM=kubernetes # or "openshift"
-   kubectl create namespace gitlab-system
-   kubectl apply -f https://gitlab.com/api/v4/projects/18899486/packages/generic/gitlab-operator/${GL_OPERATOR_VERSION}/gitlab-operator-${PLATFORM}-${GL_OPERATOR_VERSION}.yaml
-   ```
+::Tabs
 
-   This command first deploys the service accounts, roles and role bindings used by the operator, and then the operator itself.
+:::TabTitle Manifest
 
-   By default, the Operator watches the namespace where it is deployed.
-   To instead watch at the cluster scope, remove the `WATCH_NAMESPACE`
-   environment variable from the Deployment in the manifest under:
-   `spec.template.spec.containers[0].env` and re-run the `kubectl apply` command above.
+First, retrieve a release manifest from the
+[Operator releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
+Select the manifest that matches your target platform: Kuberentes or OpenShift.
 
-   NOTE:
-   Running the Operator at the cluster scope is considered experimental.
-   See [issue #100](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/100) for more information.
+Next, create the namespace where the operator will be installed.
+In the manifest, the namespace is set to `gitlab-system` by default.
+To change the namespace, either update the manifest manually or consider
+using the Helm chart where this key and others can be easily configured.
 
-   Experimental:
-   Alternatively, deploy the GitLab Operator via Helm.
+```shell
+kubectl create namespace gitlab-system
+```
 
-   ```shell
-   helm repo add gitlab-operator https://gitlab.com/api/v4/projects/18899486/packages/helm/stable
-   helm repo update
-   helm install gitlab-operator gitlab-operator/gitlab-operator --create-namespace --namespace gitlab-system
-   ```
+Finally, apply the manifest:
+
+```shell
+kubectl apply -f gitlab-operator-<platform>.yaml
+```
+
+:::TabTitle Helm Chart
+
+First, add the GitLab Helm repository and retrieve the latest udpates.
+
+```shell
+helm repo add gitlab https://charts.gitlab.io
+helm repo update
+```
+
+You can then install the GitLab Operator chart:
+
+```shell
+helm install gitlab-operator gitlab/gitlab-operator \
+  --create-namespace \
+  --namespace gitlab-system
+```
+
+See [`values.yaml`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/deploy/chart/values.yaml)
+for all available configuration options.
+
+:::TabTitle OLM
+
+The GitLab Operator is available in the following OLM channels:
+
+| Channel | Listing | Source |
+| -|-|-|
+| OperatorHub Community Operators | [Link](https://operatorhub.io/operator/gitlab-operator-kubernetes) | [Link](https://github.com/k8s-operatorhub/community-operators) |
+| OpenShift Community Operators   | Available in the embedded OperatorHub in OpenShift and OKD | [Link](https://github.com/redhat-openshift-ecosystem/community-operators-prod) |
+| OpenShift Certified Operators   | [Link](https://catalog.redhat.com/software/container-stacks/detail/5ec3fcb08b6f188e53644c0f) | [Link](https://github.com/redhat-openshift-ecosystem/certified-operators) |
+
+::EndTabs
+
+Confirm the installation by checking the status of the Operator Deployment:
+
+```shell
+kubectl -n gitlab-system get deployment gitlab-controller-manager
+```
+
+## Installing GitLab
 
 1. Create a GitLab custom resource (CR).
 
