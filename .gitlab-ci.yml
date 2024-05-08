@@ -49,6 +49,7 @@ variables:
   BUILDX_K8S_AUTO_STOP_IN: '2 hours'
   # Architectures to build via buildx
   BUILDX_ARCHS: amd64 # amd64,arm64 in project settings
+  PREFLIGHT_VERSION: "1.9.1" # to be overridden on project level
 
   GITLAB_CHART_VERSION: ""
 
@@ -832,7 +833,7 @@ image_certification:
     REGISTRY_USER: $RH_CERTIFICATION_REGISTRY_USER
     REGISTRY_PASSWORD: $RH_CERTIFICATION_REGISTRY_PASSWORD
     COMPONENT_NAME: gitlab-operator
-  image: registry.gitlab.com/gitlab-org/cloud-native/preflight:1.9.1
+  image: registry.gitlab.com/gitlab-org/cloud-native/preflight:$PREFLIGHT_VERSION
   retry: 1
   allow_failure: true
   before_script:
