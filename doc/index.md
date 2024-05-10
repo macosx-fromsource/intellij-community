@@ -18,7 +18,7 @@ The GitLab Operator is under active development and is not yet suitable for prod
 
 <!--This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations.-->
 WARNING:
-The default values of the _GitLab custom resource_ are not intended for production use**.
+The default values of the _GitLab custom resource_ are **not intended for production use**.
 With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,
 are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
 For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/ee/administration/reference_architectures/#cloud-native-hybrid).
