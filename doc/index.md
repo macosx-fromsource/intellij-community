@@ -37,6 +37,8 @@ GitLab Operator does not support:
   secondary sites. Support for Geo is tracked in [GitLab Operator issue 1568](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1568).
 - Git over SSH with [OpenShift routes](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html).
   For more information, see [GitLab Operator documentation on OpenShift Routes](openshift_ingress.md#openshift-routes).
+- Database migrations of the (experimental) registry metadata database.
+  For more information, see [GitLab Operator issue 1599](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1599).
 
 GitLab Operator has any other limitation of GitLab Chart. GitLab Operator relies on GitLab Chart to provision Kubernetes resources. Therefore, any limitation
 in GitLab Chart impacts GitLab Operator. Removing the GitLab Chart dependency from GitLab Operator is proposed in
