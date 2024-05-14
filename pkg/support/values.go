@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/imdario/mergo"
+	"dario.cat/mergo"
 	"github.com/pkg/errors"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/strvals"

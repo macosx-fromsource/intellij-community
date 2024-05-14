@@ -349,9 +349,9 @@ tasks:
   ginkgo:
     desc: Ensures ginkgo is installed for testing.
     cmds:
-      - go install github.com/onsi/ginkgo/v2/ginkgo@v2.9.5
+      - go install github.com/onsi/ginkgo/v2/ginkgo@v2.17.3
     status:
-      - ginkgo version | grep -q 2.9.5
+      - ginkgo version | grep -q 2.17.3
 
   unit-tests:
     desc: Runs unit tests locally, but skip the slow controller tests.
