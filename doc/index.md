@@ -13,8 +13,8 @@ Use the GitLab Operator to run GitLab in
 [OpenShift](https://docs.gitlab.com/ee/install/openshift_and_gitlab/index.html) or on
 another Kubernetes-compatible platform.
 
-The GitLab Operator is under active development and is not yet suitable for production use. For more information, see our
-[`Minimal` to `Viable` Epic](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/23).
+NOTE:
+The GitLab Operator has [known limitations](#known-issues) and is only suitable for specific scenarios in production use.
 
 <!--This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations.-->
 WARNING:
