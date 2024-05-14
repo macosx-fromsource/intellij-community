@@ -6,7 +6,8 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Installation
 
-The GitLab Operator is under active development and is not yet suitable for production use. See our [`Minimal` to `Viable` Epic](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/23) for more information.
+NOTE:
+The GitLab Operator has [known limitations](index.md#known-issues) and is only suitable for specific scenarios in production use.
 
 <!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
 WARNING:
