@@ -42,6 +42,13 @@ manager:
     # ref: https://sdk.operatorframework.io/docs/building-operators/golang/references/logging
     level: info
   kubeRbacProxy:
+    image:
+      registry: gcr.io
+      repository: kubebuilder
+      name: kube-rbac-proxy
+      tag: v0.14.1
+      # digest:
+      # pullPolicy: IfNotPresent
     resources:
       limits:
         cpu: 500m
