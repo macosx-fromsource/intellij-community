@@ -751,6 +751,12 @@ global:
       connection:
         secret: global-object-storage-secret
         key: value
+gitlab:
+  toolbox:
+		backups:
+			objectStorage:
+			  config:
+			    secret: backup-secret
 `
 			_ = chartValues.AddFromYAML(values)
 
