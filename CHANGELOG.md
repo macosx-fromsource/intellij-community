@@ -1,3 +1,17 @@
+## 1.0.0 (2024-05-16)
+
+### added (1 change)
+
+- [[CI] Add Kubernetes 1.27 CI Jobs](gitlab-org/cloud-native/gitlab-operator@8ed5da92bf936a1058e2a8e272e7d604b6237228) ([merge request](gitlab-org/cloud-native/gitlab-operator!795))
+
+### deprecated (1 change)
+
+- [Removed OpenShift 4.11 tests](gitlab-org/cloud-native/gitlab-operator@314d1efdf5b1e3512ab56dbf2d5acbedc935e270) ([merge request](gitlab-org/cloud-native/gitlab-operator!750))
+
+### fixed (1 change)
+
+- [Fix specs checking for MinIO create buckets Job](gitlab-org/cloud-native/gitlab-operator@9b77664b8adecbaa1f1615e09f2d41c7b3b97f05) ([merge request](gitlab-org/cloud-native/gitlab-operator!791))
+
 ## 0.31.2 (2024-05-08)
 
 No changes.
