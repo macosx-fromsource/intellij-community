@@ -73,7 +73,7 @@ To publish the GitLab Operator to OperatorHub:
    Note that we're temporarily overriding previously set values to have Kind-Specific bundle etc.
 
    ```shell
-   OSDK_BASE_DIR=".build/operatortest1" KIND_CLUSTER_NAME="optest1" BUNDLE_IMAGE_TAG="beta1" DOCKER="podman" OPERATOR_TAG=0.6.0 KIND_CONFIG="${HOME}/work/gitlab/examples/kind/kind-ssl.yaml" KIND_IMAGE="kindest/node:v1.22.4" scripts/olm_bundle.sh step1 step2
+   OSDK_BASE_DIR=".build/operatortest1" KIND_CLUSTER_NAME="optest1" BUNDLE_IMAGE_TAG="beta1" DOCKER="podman" OPERATOR_TAG=0.6.0 KIND_CONFIG="${HOME}/work/gitlab/examples/kind/kind-ssl.yaml" KIND_IMAGE="kindest/node:v1.25.9" scripts/olm_bundle.sh step1 step2
    ```
 
    1. Wait for the `packagemanifest` for `gitlab-operator-kubernetes` to become available (note that we skip over `Community Operators`):
@@ -125,7 +125,7 @@ To publish the GitLab Operator to OperatorHub:
       export BUNDLE_IMAGE_TAG="beta1"
       export KIND_CLUSTER_NAME="optest1u"
       export KIND_CONFIG="${HOME}/work/gitlab/examples/kind/kind-ssl.yaml" 
-      export KIND_IMAGE="kindest/node:v1.22.4"
+      export KIND_IMAGE="kindest/node:v1.25.9"
       ```
 
    1. Make sure to create **NEW** KinD cluster:
