@@ -1,9 +1,6 @@
 run:
   timeout: 5m
   issues-exit-code: 1
-  skip-dirs:
-    - api
-    - controllers/runner
 
 linters-settings:
   goimports:
@@ -11,11 +8,11 @@ linters-settings:
     # packages in the `imports` block.
     local-prefixes: gitlab.com/gitlab-org/cloud-native/gitlab-operator
 
-whitespace:
-  multi-if: true   # Enforces newlines (or comments) after every multi-line if statement
-  multi-func: true # Enforces newlines (or comments) after every multi-line function signature
+  whitespace:
+    multi-if: true # Enforces newlines (or comments) after every multi-line if statement
+    multi-func: true # Enforces newlines (or comments) after every multi-line function signature
 
-wsl:
+  wsl:
     # If true append is only allowed to be cuddled if appending value is
     # matching variables, fields or types on line above. Default is true.
     strict-append: true
@@ -92,3 +89,6 @@ issues:
     - path: _test\.go
       linters:
         - goconst
+  exclude-dirs:
+    - api
+    - controllers/runner

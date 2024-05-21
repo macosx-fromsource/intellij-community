@@ -50,10 +50,6 @@ func GetTemplate(adapter gitlab.Adapter) (helm.Template, error) {
 
 	template, err := builder.Render(adapter.Values())
 	if err != nil {
-		return template, err
-	}
-
-	if err != nil {
 		logger.Error(err, "Failed to render the template")
 
 		return template, err
