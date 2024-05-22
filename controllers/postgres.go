@@ -9,7 +9,7 @@ import (
 )
 
 func (r *GitLabReconciler) reconcilePostgres(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	if err := r.reconcilePostgresConfigMap(ctx, adapter, template); err != nil {
+	if err := r.reconcilePostgresConfigMaps(ctx, adapter, template); err != nil {
 		return err
 	}
 
@@ -24,9 +24,15 @@ func (r *GitLabReconciler) reconcilePostgres(ctx context.Context, adapter gitlab
 	return nil
 }
 
-func (r *GitLabReconciler) reconcilePostgresConfigMap(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+func (r *GitLabReconciler) reconcilePostgresConfigMaps(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	if err := r.createOrPatch(ctx, gitlabctl.PostgresConfigMap(adapter, template), adapter); err != nil {
 		return err
+	}
+
+	if extConfig := gitlabctl.PostgresExtendedConfigMap(adapter, template); extConfig != nil {
+		if err := r.createOrPatch(ctx, gitlabctl.PostgresExtendedConfigMap(adapter, template), adapter); err != nil {
+			return err
+		}
 	}
 
 	return nil

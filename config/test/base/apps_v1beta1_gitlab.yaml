@@ -17,3 +17,7 @@ spec:
           configureCertmanager: false
           tls:
             secretName: TLSSECRETNAME
+      postgresql:
+        primary:
+          extendedConfiguration: |-
+            max_connections = 200

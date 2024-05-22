@@ -78,6 +78,17 @@ func PostgresConfigMap(adapter gitlab.Adapter, template helm.Template) client.Ob
 	return initDBConfigMap
 }
 
+func PostgresExtendedConfigMap(adapter gitlab.Adapter, template helm.Template) client.Object {
+	name := fmt.Sprintf("%s-%s-extended-configuration", adapter.ReleaseName(), PostgresComponentName(adapter))
+	extendedConfigMap := template.Query().ObjectByKindAndName(ConfigMapKind, name)
+
+	if extendedConfigMap != nil {
+		updateCommonLabels(adapter.ReleaseName(), PostgresComponentName(adapter), extendedConfigMap.GetLabels())
+	}
+
+	return extendedConfigMap
+}
+
 // PostgresService returns the common Service of the PostgreSQL component.
 func PostgresService(adapter gitlab.Adapter, template helm.Template) client.Object {
 	pgServices := PostgresServices(adapter, template)
