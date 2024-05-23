@@ -46,7 +46,7 @@ in GitLab Chart impacts GitLab Operator. Removing the GitLab Chart dependency fr
 
 ## Installation
 
-Instructions on how to install the GitLab Operator can be found our [installation document](installation.md).
+Instructions on how to install the GitLab Operator can be found in our [installation document](installation.md).
 
 We list details of how we use
 [Security Context Constraints](security_context_constraints.md) in their respective document.
