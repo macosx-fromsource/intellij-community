@@ -1,9 +1,12 @@
 package charts
 
 import (
+	"cmp"
 	"log"
 
 	"github.com/mitchellh/copystructure"
+	"golang.org/x/exp/slices"
+	"golang.org/x/mod/semver"
 	"helm.sh/helm/v3/pkg/chart"
 )
 
@@ -67,14 +70,27 @@ func (c Catalog) Names() []string {
 
 // Versions returns the list of the available versions of the named Chart in
 // this catalog.
+// The result is sorted in descending order.
 func (c Catalog) Versions(name string) []string {
-	return c.collect(func(chart *chart.Chart) string {
+	results := c.collect(func(chart *chart.Chart) string {
 		if chart.Metadata.Name == name {
 			return chart.Metadata.Version
 		} else {
 			return ""
 		}
 	})
+
+	// Sort the result in descending order.
+	// Example: 1.0.0, 1.0.0-beta, 0.9.0
+	slices.SortFunc(results, func(a, b string) int {
+		if res := semver.Compare("v"+b, "v"+a); res != 0 {
+			return res
+		} else {
+			return cmp.Compare(b, a)
+		}
+	})
+
+	return results
 }
 
 // AppVersions returns the list of the available appVersions of the named Chart

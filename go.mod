@@ -12,6 +12,8 @@ require (
 	github.com/onsi/gomega v1.33.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.71.2
+	golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0
+	golang.org/x/mod v0.17.0
 	helm.sh/helm/v3 v3.12.3
 	k8s.io/api v0.29.4
 	k8s.io/apimachinery v0.29.4
@@ -127,7 +129,6 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/crypto v0.22.0 // indirect
-	golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/oauth2 v0.19.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect

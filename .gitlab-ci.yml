@@ -290,6 +290,27 @@ review-docs-cleanup:
     - !reference [.skip_if_docs_branch]
     - !reference [.if_commit_branch_or_mr_branch]
 
+.test_job_custom_ref:
+  extends: .test_job
+  needs:
+    - job: danger-review
+      optional: true
+  artifacts:
+    paths:
+      - charts/
+  variables:
+    CHARTS_REF: master
+  before_script:
+    - task retrieve-charts-custom-ref # pull the charts from the specified branch before running tests to get the version
+    - mkdir coverage
+    - CHART_VERSION=$(grep $(./scripts/retrieve_gitlab_charts_custom_ref.sh --ref) CHART_NIGHTLY_VERSION | sed -n 1p) && export CHART_VERSION || exit 1
+    - echo "Testing with chart version ${CHART_VERSION}@${CHARTS_REF}"
+  rules:
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_docs_branch]
+    - !reference [.if_default_branch]
+    - !reference [.manual_if_commit_branch_or_mr_branch]
+
 unit_tests:
   extends: .test_job
   script: TEST_UTIL=ginkgo2 task unit-tests
@@ -303,6 +324,16 @@ slow_unit_tests:
   parallel:
     matrix:
       - VERSION_INDEX: ["1", "2", "3"]
+
+unit_tests_custom_ref:
+  extends: .test_job_custom_ref
+  allow_failure: true
+  script: SKIP_OPERATION_TESTS=yes TEST_UTIL=ginkgo2 task unit-tests
+
+slow_unit_tests_custom_ref:
+  extends: .test_job_custom_ref
+  allow_failure: true
+  script: SKIP_OPERATION_TESTS=yes TEST_UTIL=ginkgo2 task slow-unit-tests
 
 .docker_build_job:
   extends: .cache

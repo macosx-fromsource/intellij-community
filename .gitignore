@@ -114,3 +114,6 @@ workspace-template.yml
 gl-code-quality-report.json
 
 *.env
+
+# Output from retrieve_gitlab_charts_custom_ref.sh
+CHART_NIGHTLY_VERSION
