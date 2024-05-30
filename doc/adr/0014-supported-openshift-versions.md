@@ -4,7 +4,9 @@ Date: 2021-11-24
 
 ## Status
 
-Proposed
+Accepted
+
+Referred by [22. OpenShift and Kubernetes platform versions in CI](0022-openshift-and-kubernetes-platform-versions-in-ci.md)
 
 ## Context
 

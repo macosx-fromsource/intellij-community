@@ -4,6 +4,8 @@ Date: 2024-03-26
 
 Status: Accepted
 
+Referred by [22. OpenShift and Kubernetes platform versions in CI](0022-openshift-and-kubernetes-platform-versions-in-ci.md)
+
 ## Context
 
 The Distribution team needs to define how we support GitLab on various
