@@ -57,6 +57,9 @@ env:
   TEST_IMG: registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-1.20
   TEST_CR_FILES_DIR: "config/test/base"
 
+  # Chart retrieval configuration
+  CHARTS_REF: master
+
 tasks:
 
   default:
@@ -333,6 +336,17 @@ tasks:
     cmds:
       - ./scripts/retrieve_gitlab_charts.sh
 
+  retrieve-charts-custom-ref:
+    desc: Retrieves GitLab charts from a custom ref (defaults to master).
+    sources:
+      - ./scripts/retrieve_gitlab_charts_custom_ref.sh
+    cmds:
+      - ./scripts/retrieve_gitlab_charts_custom_ref.sh
+    generates:
+      - CHART_NIGHTLY_VERSION
+    status: # check whether the requested version is in the charts directory
+      - ls -A charts | sort | grep -q $(./scripts/retrieve_gitlab_charts_custom_ref.sh --ref)
+
   docker-build:
     desc: Build the Docker image using `$CONTAINER_CLI build`.
     deps:
@@ -354,22 +368,28 @@ tasks:
       - ginkgo version | grep -q 2.17.3
 
   unit-tests:
-    desc: Runs unit tests locally, but skip the slow controller tests.
+    desc: |
+      Runs unit tests locally, but skip the slow controller tests.
+      Remember to retrieve the correct charts before running this task.
     deps:
-      - retrieve-charts
       - ginkgo
     vars:
       TEST_PKGS: '{{ default "./..." .TEST_PKGS }}'
       SKIP_ENVTEST: '{{ default "yes" .SKIP_ENVTEST }}'
       TEST_UTIL: '{{ default "ginkgo" .TEST_UTIL }}'
+      SKIP_OPERATION_TESTS: '{{ default "no" .SKIP_OPERATION_TESTS }}'
+      # if skip operation test, skip the operation_test.go file
+      EXTRA_FLAGS: '{{ if eq .SKIP_OPERATION_TESTS "yes" }}--skip-file=operation_test{{ end }}'
     cmds:
       - >-
         CHART_VERSION=$CHART_VERSION
         SKIP_ENVTEST={{ .SKIP_ENVTEST }}
-        {{ .TEST_UTIL }} -cover -output-dir=coverage {{ .TEST_PKGS }}
+        {{ .TEST_UTIL }} -cover -output-dir=coverage {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
 
   slow-unit-tests:
-    desc: Runs unit tests locally, including the slow controller tests.
+    desc: |
+      Runs unit tests locally, including the slow controller tests.
+      Remember to retrieve the correct charts before running this task.
     cmds:
       - task: unit-tests
         vars:

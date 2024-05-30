@@ -15,6 +15,7 @@ const (
 )
 
 // AvailableChartVersions lists the version of available GitLab Charts.
+// The results are sorted in descending order.
 func AvailableChartVersions() []string {
 	return charts.GlobalCatalog().Versions(GitLabChartName)
 }
