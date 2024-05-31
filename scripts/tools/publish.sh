@@ -264,6 +264,7 @@ publish_redhat_community() {
 }
 
 publish_redhat_marketplace() {
+	  PREVIOUS_OPERATOR_VERSION=${PREVIOUS_OPERATOR_VERSION:?"PREVIOUS_OPERATOR_VERSION is required for publishing to Certified catalog"}
     fork_operators "${RH_OWNER}" "${RH_REPOSITORY}"
     pull_operators "${RH_BUILD_DIR}"
     checkout_publish_branch "${RH_BUILD_DIR}"
