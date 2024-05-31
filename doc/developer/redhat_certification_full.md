@@ -231,7 +231,7 @@ OSDK_BASE_DIR=".build/cert" \
 ## Properly annotate bundle for submission
 
 ```shell
-BUNDLE_DIR=.build/cert/bundle \
+BUNDLE_DIR=.build/cert/bundle PREVIOUS_OPERATOR_VERSION="x.y.z" \
     redhat/operator-certification/scripts/configure_bundle.sh adjust_annotations adjust_csv
 ```
 
