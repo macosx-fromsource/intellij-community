@@ -34,23 +34,37 @@ The impact to Operator must be considered when submitting a change to Chart. Thi
 is included as an item in the approval checklist of Chart merge request
 template as a reminder.
 
+NOTE:
+Providing an automated mechanism of testing this is
+being investigated in Chart [issue 4900](https://gitlab.com/gitlab-org/charts/gitlab/-/issues/4900).
+
 To evaluate the impact of changes to Chart on Operator, consider
 whether the change will be automatically ingested by Operator or not. The
 only way to accomplish this with certainty is to inspect the Operator codebase
 manually, searching for related references to resources that are sourced from
 Chart, and see if Operator interacts with the related change in any way
-that requires adjustment. Providing an automated mechanism of testing this is
-being investigated in Chart [issue 4900](https://gitlab.com/gitlab-org/charts/gitlab/-/issues/4900).
+that requires adjustment.
 
-In the meantime, the following examples can help with identifying the possible impacts:
+In the meantime, the following examples are considered risky:
 
 - Changes to resource naming or labeling scheme, such as `.metadata.name` and/or `.metadata.labels`
 - Changes to resource group and/or version, such as `.apiVersion`
+- Adding new resources.
 - Changing ServiceAccount names or RBAC policies
+- Changing security contexts.
 - Upgrading Chart dependencies, such as Redis or PostgreSQL chart versions
 - Chart-breaking changes that are introduced in major releases or stop versions
+
+Examples of low risk changes are:
+
+- Changing default values.
+- Adding new configuration keys to existing ConfigMaps.
+- Adding new environment variables to existing resources.
 
 An example of a change that is automatically ingested is Chart
 [merge request 3247](https://gitlab.com/gitlab-org/charts/gitlab/-/merge_requests/3247). It added a new field
 inside of resources that Operator does not manipulate directly, only retrieving them from
 the rendered Helm template and reconciling them in the cluster.
+
+If you consider a MR risky, please request a review from an Operator
+reviewer or maintainer.
