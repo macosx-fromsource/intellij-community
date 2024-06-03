@@ -26,6 +26,7 @@ docker_build_and_push() {
   docker buildx build \
     $(printf ' -t %s ' $*) \
     --platform "$(platform_arg)" \
+    --build-arg GO_VERSION="${GO_VERSION}" \
     --push \
     .
 }

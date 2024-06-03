@@ -376,7 +376,6 @@ tasks:
     vars:
       TEST_PKGS: '{{ default "./..." .TEST_PKGS }}'
       SKIP_ENVTEST: '{{ default "yes" .SKIP_ENVTEST }}'
-      TEST_UTIL: '{{ default "ginkgo" .TEST_UTIL }}'
       SKIP_OPERATION_TESTS: '{{ default "no" .SKIP_OPERATION_TESTS }}'
       # if skip operation test, skip the operation_test.go file
       EXTRA_FLAGS: '{{ if eq .SKIP_OPERATION_TESTS "yes" }}--skip-file=operation_test{{ end }}'
@@ -384,7 +383,7 @@ tasks:
       - >-
         CHART_VERSION=$CHART_VERSION
         SKIP_ENVTEST={{ .SKIP_ENVTEST }}
-        {{ .TEST_UTIL }} -cover -output-dir=coverage {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
+        ginkgo -cover -output-dir=coverage {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
 
   slow-unit-tests:
     desc: |
@@ -418,7 +417,7 @@ tasks:
         -e KUBECONFIG=""
         -e USE_EXISTING_CLUSTER="false"
         $TEST_IMG
-        ginkgo2 -cover -outputdir=coverage {{.TEST_PKGS}}
+        ginkgo -cover -outputdir=coverage {{.TEST_PKGS}}
 
   unit-tests-in-docker:
     desc: Run unit tests in Docker, but skip the slow controller tests.

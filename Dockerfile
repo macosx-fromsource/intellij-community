@@ -1,5 +1,6 @@
 # Build the manager binary
-FROM --platform=${BUILDPLATFORM} golang:1.21 as builder
+ARG GO_VERSION=1.22
+FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION} as builder
 WORKDIR /workspace
 
 # Copy in any existing Go cache, and download
