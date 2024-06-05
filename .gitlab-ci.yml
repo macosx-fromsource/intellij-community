@@ -507,35 +507,6 @@ review_4_14:
   environment: *environment_4_14
   resource_group: *env_4_14_name
 
-# GKE
-build_review_gke:
-  extends: .build_review_template
-  variables:
-    DOMAIN: $DOMAIN_GKE
-
-create_review_gke:
-  extends: .create_review_template
-  environment: &environment_gke
-    name: &env_gke_name gke/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
-    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_GKE
-    on_stop: stop_review_gke
-    auto_stop_in: 1 hour
-  needs:
-    - build_review_gke
-
-review_gke:
-  extends: .review_template
-  variables:
-    DOMAIN: $DOMAIN_GKE
-  before_script:
-    - export KUBECONFIG="$KUBECONFIG_GKE"
-  needs:
-    - create_review_gke
-    # we need build_* dependency to receive appropriate artifacts
-    - build_review_gke
-  environment: *environment_gke
-  resource_group: *env_gke_name
-
 # GKE 1.25
 build_review_gke125:
   extends: .build_review_template
@@ -674,30 +645,6 @@ qa_4_14_full:
     - review_4_14
     - qa_4_14_full_suite_trigger
 
-# QA GKE
-qa_gke:
-  extends: .qa
-  stage: qa
-  variables:
-    DOMAIN: $DOMAIN_GKE
-  needs:
-    - review_gke
-
-qa_gke_full_suite_trigger:
-  extends: .qa_full_suite_trigger
-  script: echo 'The job will trigger Full E2E suite against GKE'
-
-qa_gke_full:
-  extends: .qa
-  stage: qa
-  parallel: 7
-  variables:
-    DOMAIN: $DOMAIN_GKE
-    QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
-  needs:
-    - review_gke
-    - qa_gke_full_suite_trigger
-
 # QA GKE 1.25
 qa_gke125:
   extends: .qa
@@ -781,18 +728,6 @@ stop_review_openshift_4_14:
     action: stop
   needs:
     - build_review_4_14
-
-stop_review_gke:
-  extends: .stop_review_template
-  variables:
-    DOMAIN: $DOMAIN_GKE
-  before_script:
-    - export KUBECONFIG="$KUBECONFIG_GKE"
-  environment:
-    name: gke/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
-    action: stop
-  needs:
-    - build_review_gke
 
 stop_review_gke125:
   extends: .stop_review_template
