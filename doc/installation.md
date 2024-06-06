@@ -17,7 +17,7 @@ are deployed in a Kubernetes cluster, which is **not suitable for production wor
 For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/ee/administration/reference_architectures/#cloud-native-hybrid).
 GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
 
-This document describes how to deploy the GitLab Operator via manifests in your Kubernetes or OpenShift cluster.
+This document describes how to deploy the GitLab Operator by using manifests in your Kubernetes or OpenShift cluster.
 
 <!--This warning block is duplicated in ../config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml.
 Changes should be reflected in both locations.-->
