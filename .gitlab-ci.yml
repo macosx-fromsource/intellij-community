@@ -213,7 +213,7 @@ docs-lint links:
   dependencies: []
   script:
     # Check Markdown links
-    - lychee --offline --include-fragments doc/**/*.md
+    - lychee --offline --include-fragments doc
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
