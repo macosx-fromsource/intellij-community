@@ -109,7 +109,7 @@ install_gitlab_operator() {
 
 verify_operator_is_running() {
   echo 'Verifying that operator is running'
-  kubectl wait --for=condition=Available -n "$TESTS_NAMESPACE" "deployment/${NAME_OVERRIDE}-controller-manager"
+  kubectl wait --for=condition=Available -n "$TESTS_NAMESPACE" "deployment/${NAME_OVERRIDE}-controller-manager" --timeout 120s
 }
 
 build_gitlab_custom_resource() {

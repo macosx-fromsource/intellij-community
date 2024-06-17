@@ -163,6 +163,7 @@
     - vcluster_create
     - vcluster_run kubectl version
     - vcluster_run task install_certmanager
+    - vcluster_run task wait_certmanager
     # Run deployment
     - vcluster_run ./scripts/test.sh create_namespace
     - vcluster_run ./scripts/test.sh prepare_build_directories

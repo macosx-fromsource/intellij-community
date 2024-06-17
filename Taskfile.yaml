@@ -111,6 +111,14 @@ tasks:
           ACTION: 'apply'
           MANIFEST: $CERT_MANAGER_MANIFEST
 
+  wait_certmanager:
+    desc: Waits for the rollout of the certmanager deployments.
+    cmds:
+      - >-
+        kubectl rollout status deployment
+        -n cert-manager
+        -l "app.kubernetes.io/instance=cert-manager"
+
   uninstall_certmanager:
     desc: Uninstalls Cert Manager from YAML manifest at given version.
     cmds:
