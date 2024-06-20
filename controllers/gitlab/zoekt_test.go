@@ -25,7 +25,7 @@ var _ = Describe("Zoekt resources", func() {
 
 		wantsZoekt = adapter.WantsComponent(component.Zoekt)
 		statefulSet = ZoektStatefulSet(template)
-		deployment = ZoektDeployment(template)
+		deployment = ZoektDeployment(template, adapter)
 		services = ZoektServices(template)
 		ingress = ZoektIngress(template)
 		certificate = ZoektCertificate(template)

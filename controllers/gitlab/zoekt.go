@@ -4,6 +4,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab"
 )
 
 // ZoektStatefulSet returns the StatefulSet for the Zoekt component.
@@ -12,8 +13,15 @@ func ZoektStatefulSet(template helm.Template) client.Object {
 }
 
 // ZoektStatefulSet returns the StatefulSet for the Zoekt component.
-func ZoektDeployment(template helm.Template) client.Object {
-	return template.Query().ObjectByKindAndComponent(DeploymentKind, ZoektComponentName)
+func ZoektDeployment(template helm.Template, adapter gitlab.Adapter) client.Object {
+	deployment := template.Query().ObjectByKindAndComponent(DeploymentKind, ZoektComponentName)
+
+	// Zoekt chart currently sets no explicit namespace.
+	if deployment != nil {
+		deployment.SetNamespace(adapter.Name().Namespace)
+	}
+
+	return deployment
 }
 
 // ZoektConfigMaps returns the ConfigMap for the Zoekt component.
