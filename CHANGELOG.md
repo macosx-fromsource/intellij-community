@@ -1,3 +1,11 @@
+## 1.1.0 (2024-06-20)
+
+### changed (3 changes)
+
+- [Update Go from 1.21 to 1.22](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/db81731407111f3804d3a4ac2befdba11d57cc04) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/825))
+- [Update go dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/54a6c9b1d4e6d3d3d2cda7728db9d98e14d4de95) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/820))
+- [Base final image on ubi micro instead of minimal](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/724d505da2c6dcd4ed7283ff006578d4e309f426) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/821))
+
 ## 1.0.2 (2024-06-12)
 
 No changes.
