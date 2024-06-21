@@ -12,7 +12,7 @@ func ZoektStatefulSet(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(StatefulSetKind, ZoektComponentName)
 }
 
-// ZoektStatefulSet returns the StatefulSet for the Zoekt component.
+// ZoektDeployment returns the Deployment for the Zoekt component.
 func ZoektDeployment(template helm.Template, adapter gitlab.Adapter) client.Object {
 	deployment := template.Query().ObjectByKindAndComponent(DeploymentKind, ZoektComponentName)
 
