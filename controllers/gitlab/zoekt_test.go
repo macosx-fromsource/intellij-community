@@ -14,7 +14,8 @@ const zoektEnabled = "gitlab-zoekt.install"
 var _ = Describe("Zoekt resources", func() {
 	var values support.Values
 	var wantsZoekt bool
-	var statefulSet, service, ingress, certificate, configMap client.Object
+	var statefulSet, ingress, certificate, deployment client.Object
+	var services, configMaps []client.Object
 
 	JustBeforeEach(func() {
 		mockGitLab := CreateMockGitLab(releaseName, namespace, values)
@@ -23,11 +24,12 @@ var _ = Describe("Zoekt resources", func() {
 		Expect(err).To(BeNil())
 
 		wantsZoekt = adapter.WantsComponent(component.Zoekt)
-		statefulSet = ZoektStatefulSet(template, adapter)
-		service = ZoektService(template, adapter)
-		ingress = ZoektIngress(template, adapter)
-		certificate = ZoektCertificate(template, adapter)
-		configMap = ZoektConfigMap(template, adapter)
+		statefulSet = ZoektStatefulSet(template)
+		deployment = ZoektDeployment(template, adapter)
+		services = ZoektServices(template)
+		ingress = ZoektIngress(template)
+		certificate = ZoektCertificate(template)
+		configMaps = ZoektConfigMaps(template)
 	})
 
 	When("Zoekt is enabled", func() {
@@ -41,10 +43,11 @@ var _ = Describe("Zoekt resources", func() {
 		It("Should contain Zoekt resources", func() {
 			Expect(wantsZoekt).To(BeTrue())
 			Expect(statefulSet).NotTo(BeNil())
-			Expect(service).NotTo(BeNil())
+			Expect(deployment).NotTo(BeNil())
+			Expect(services).To(HaveLen(2))
 			Expect(ingress).NotTo(BeNil())
 			Expect(certificate).NotTo(BeNil())
-			Expect(configMap).NotTo(BeNil())
+			Expect(configMaps).To(HaveLen(2))
 		})
 	})
 
@@ -57,10 +60,11 @@ var _ = Describe("Zoekt resources", func() {
 		It("Should not contain Zoekt resources", func() {
 			Expect(wantsZoekt).To(BeFalse())
 			Expect(statefulSet).To(BeNil())
-			Expect(service).To(BeNil())
+			Expect(deployment).To(BeNil())
+			Expect(services).To(HaveLen(0))
 			Expect(ingress).To(BeNil())
 			Expect(certificate).To(BeNil())
-			Expect(configMap).To(BeNil())
+			Expect(configMaps).To(HaveLen(0))
 		})
 	})
 })
