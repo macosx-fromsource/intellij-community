@@ -9,7 +9,7 @@ import (
 )
 
 func (r *GitLabReconciler) reconcileZoekt(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	if err := r.reconcileZoektConfigMap(ctx, adapter, template); err != nil {
+	if err := r.reconcileZoektConfigMaps(ctx, adapter, template); err != nil {
 		return err
 	}
 
@@ -17,11 +17,15 @@ func (r *GitLabReconciler) reconcileZoekt(ctx context.Context, adapter gitlab.Ad
 		return err
 	}
 
+	if err := r.reconcileZoektDeployment(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	if err := r.reconcileZoektStatefulSet(ctx, adapter, template); err != nil {
 		return err
 	}
 
-	if err := r.reconcileZoektService(ctx, adapter, template); err != nil {
+	if err := r.reconcileZoektServices(ctx, adapter, template); err != nil {
 		return err
 	}
 
@@ -32,30 +36,50 @@ func (r *GitLabReconciler) reconcileZoekt(ctx context.Context, adapter gitlab.Ad
 	return nil
 }
 
-func (r *GitLabReconciler) reconcileZoektConfigMap(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	return r.createOrPatch(ctx, gitlabctl.ZoektConfigMap(template, adapter), adapter)
+func (r *GitLabReconciler) reconcileZoektConfigMaps(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	configMaps := gitlabctl.ZoektConfigMaps(template)
+
+	for _, configMap := range configMaps {
+		if err := r.createOrPatch(ctx, configMap, adapter); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *GitLabReconciler) reconcileZoektStatefulSet(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	return r.createOrPatch(ctx, gitlabctl.ZoektStatefulSet(template, adapter), adapter)
+	return r.createOrPatch(ctx, gitlabctl.ZoektStatefulSet(template), adapter)
 }
 
-func (r *GitLabReconciler) reconcileZoektService(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	return r.createOrPatch(ctx, gitlabctl.ZoektService(template, adapter), adapter)
+func (r *GitLabReconciler) reconcileZoektServices(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	services := gitlabctl.ZoektServices(template)
+
+	for _, svc := range services {
+		if err := r.createOrPatch(ctx, svc, adapter); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *GitLabReconciler) reconcileZoektIngress(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	if ing := gitlabctl.ZoektIngress(template, adapter); ing != nil {
-		return r.createOrPatch(ctx, gitlabctl.ZoektIngress(template, adapter), adapter)
+	if ing := gitlabctl.ZoektIngress(template); ing != nil {
+		return r.createOrPatch(ctx, gitlabctl.ZoektIngress(template), adapter)
 	}
 
 	return nil
 }
 
 func (r *GitLabReconciler) reconcileZoektCertificate(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	if cert := gitlabctl.ZoektCertificate(template, adapter); cert != nil {
+	if cert := gitlabctl.ZoektCertificate(template); cert != nil {
 		return r.createOrPatch(ctx, cert, adapter)
 	}
 
 	return nil
+}
+
+func (r *GitLabReconciler) reconcileZoektDeployment(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	return r.createOrPatch(ctx, gitlabctl.ZoektDeployment(template, adapter), adapter)
 }
