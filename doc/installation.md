@@ -50,8 +50,8 @@ The GitLab Operator supports the following Kubernetes versions:
 | 1.29               | Supported                    | 1.0.0                    | x86-64        | 2025-02-28  |
 | 1.28               | Supported                    | 1.0.0                    | x86-64        | 2024-10-28  |
 | 1.27               | Supported                    | 0.29.0                   | x86-64        | 2024-06-28  |
-| 1.26               | Supported                    | 0.24.0                   | x86-64        | 2024-02-28  |
-| 1.25               | Supported                    | 0.24.0                   | x86-64        | 2023-10-28  |
+| 1.26               | Deprecated                   | 0.24.0                   | x86-64        | 2024-02-28  |
+| 1.25               | Deprecated                   | 0.24.0                   | x86-64        | 2023-10-28  |
 | 1.24               | Deprecated                   | 0.24.0                   | x86-64        | 2023-07-28  |
 | 1.23               | Deprecated                   | 0.24.0                   | x86-64        | 2023-02-28  |
 | 1.22               | Deprecated                   | 0.24.0                   | x86-64        | 2022-10-28  |
