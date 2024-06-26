@@ -368,19 +368,10 @@ tasks:
     cmds:
       - $CONTAINER_CLI push $IMG_REGISTRY/$IMG_REPOSITORY/$IMG_NAME:$TAG
 
-  ginkgo:
-    desc: Ensures ginkgo is installed for testing.
-    cmds:
-      - go install github.com/onsi/ginkgo/v2/ginkgo@v2.17.3
-    status:
-      - ginkgo version | grep -q 2.17.3
-
   unit-tests:
     desc: |
       Runs unit tests locally, but skip the slow controller tests.
       Remember to retrieve the correct charts before running this task.
-    deps:
-      - ginkgo
     vars:
       TEST_PKGS: '{{ default "./..." .TEST_PKGS }}'
       SKIP_ENVTEST: '{{ default "yes" .SKIP_ENVTEST }}'
@@ -391,7 +382,7 @@ tasks:
       - >-
         CHART_VERSION=$CHART_VERSION
         SKIP_ENVTEST={{ .SKIP_ENVTEST }}
-        ginkgo -cover -output-dir=coverage {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
+        go run github.com/onsi/ginkgo/v2/ginkgo -cover -output-dir=coverage {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
 
   slow-unit-tests:
     desc: |
@@ -425,7 +416,7 @@ tasks:
         -e KUBECONFIG=""
         -e USE_EXISTING_CLUSTER="false"
         $TEST_IMG
-        ginkgo -cover -outputdir=coverage {{.TEST_PKGS}}
+        go run github.com/onsi/ginkgo/v2/ginkgo -cover -outputdir=coverage {{.TEST_PKGS}}
 
   unit-tests-in-docker:
     desc: Run unit tests in Docker, but skip the slow controller tests.
