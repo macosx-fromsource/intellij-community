@@ -368,7 +368,7 @@ slow_unit_tests_custom_ref:
     - podman login -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}" "${CI_REGISTRY}"
     # Update module cache so it can be saved in CI cache (only the dependencies required to build)
     - mkdir -p .go
-    - podman run -v "${GOPATH}:/go" -v "${CI_PROJECT_DIR}:/code" -w /code golang:${GO_VERSION} go list ./...
+    - podman run ${PODMAN_OPTS} -v "${GOPATH}:/go" -v "${CI_PROJECT_DIR}:/code" -w /code golang:${GO_VERSION} go list ./...
   interruptible: false
 
 build_branch_image:
@@ -411,6 +411,7 @@ build_latest_image:
 build_bundle_image:
   extends: .podman_build_job
   variables:
+    PODMAN_OPTS: "--cgroups=disabled"
     BUNDLE_REGISTRY: ${CI_REGISTRY_IMAGE}/bundle
     COMPILE_ONLY: "false"
     DOCKER: "podman"
