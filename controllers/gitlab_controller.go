@@ -44,7 +44,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	certmanagerv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
+	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 
 	apiv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"

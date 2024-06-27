@@ -7,8 +7,8 @@ toolchain go1.22.4
 require (
 	dario.cat/mergo v1.0.0
 	github.com/Masterminds/semver/v3 v3.2.1
+	github.com/cert-manager/cert-manager v1.15.0
 	github.com/go-logr/logr v1.4.2
-	github.com/jetstack/cert-manager v1.6.1
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/onsi/ginkgo/v2 v2.17.3
 	github.com/onsi/gomega v1.33.1
@@ -160,6 +160,7 @@ require (
 	k8s.io/klog/v2 v2.120.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240521193020-835d969ad83a // indirect
 	oras.land/oras-go v1.2.5 // indirect
+	sigs.k8s.io/gateway-api v1.1.0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.17.2 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.17.1 // indirect

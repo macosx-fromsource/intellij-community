@@ -3,9 +3,9 @@ package internal
 import (
 	"fmt"
 
-	acmev1 "github.com/jetstack/cert-manager/pkg/apis/acme/v1"
-	certmanagerv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	certmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	acmev1 "github.com/cert-manager/cert-manager/pkg/apis/acme/v1"
+	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	certmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab"

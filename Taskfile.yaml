@@ -19,7 +19,7 @@ env:
 
   ## Cert Manager
   # https://cert-manager.io/docs/installation/#default-static-install
-  CERT_MANAGER: 1.6.1
+  CERT_MANAGER: 1.15.0
   CERT_MANAGER_MANIFEST: https://github.com/cert-manager/cert-manager/releases/download/v{{ .CERT_MANAGER }}/cert-manager.yaml
 
   ## Metrics Server

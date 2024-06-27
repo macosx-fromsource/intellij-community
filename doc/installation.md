@@ -117,14 +117,11 @@ When configuring the GitLab CR, be sure to set `nginx-ingress.enabled=false` to 
 To create a certificate for the operator's Kubernetes webhook, [cert-manager](https://cert-manager.io) is used. You should
 use [cert-manager](https://cert-manager.io) for the GitLab certificates as well.
 
-Because the operator needs a certificate for the Kubernetes webhook, you can't use the cert-manager bundled with the GitLab Chart. Instead, install cert-manager before you install the operator.
+Because the operator needs a certificate for the Kubernetes webhook, you can't use the cert-manager bundled with the GitLab
+Chart. Instead, install cert-manager before you install the operator.
 
-To install cert-manager, see the [installation documentation](https://cert-manager.io/docs/installation/) for your platform and tooling.
-
-Our codebase targets [cert-manager 1.6.1](https://cert-manager.io/v1.6-docs/).
-
-NOTE:
-Because [cert-manager 1.6](https://github.com/jetstack/cert-manager/releases/tag/v1.6.0) removed some deprecated APIs, if you deploy cert-manager 1.6 or higher, you need at least GitLab Operator 0.4.
+Follow the [installation documentation](https://cert-manager.io/docs/installation/) to install a
+[supported cert-manager release](https://cert-manager.io/docs/releases/) for your platform and tooling.
 
 ### Metrics
 
