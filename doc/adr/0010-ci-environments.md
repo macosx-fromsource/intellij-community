@@ -15,11 +15,11 @@ Also, if a developer manually retried one of the jobs that deploys to the cluste
 To address this, we had a couple options:
 
 1. Use `needs: [functional_tests_{x,y,z}]` on the cleanup jobs to ensure they only ran when those jobs were successful.
-1. Use [GitLab CI environments](https://docs.gitlab.com/ee/ci/environments) to relate these jobs to each other around the concept of an "environment"
+1. Use [GitLab CI environments](https://docs.gitlab.com/ee/ci/environments/index.html) to relate these jobs to each other around the concept of an "environment"
 
 ## Decision
 
-Using [GitLab CI environments](https://docs.gitlab.com/ee/ci/environments) helps us conceptually tie together the jobs that deploy to an environment and the jobs that clean up an environment. This is the approach we use in Charts CI, and it ensures that releases are automatically cleaned up upon merge or after the specified `auto_stop_in` time period is met. This also ensures the cleanup jobs are only run in these situations since they are set to `when: manual`. Additionally, developers can "pin" the environment to prevent it from being automatically cleaned up in the event that they would like to investigate the release running in the cluster(s).
+Using [GitLab CI environments](https://docs.gitlab.com/ee/ci/environments/index.html) helps us conceptually tie together the jobs that deploy to an environment and the jobs that clean up an environment. This is the approach we use in Charts CI, and it ensures that releases are automatically cleaned up upon merge or after the specified `auto_stop_in` time period is met. This also ensures the cleanup jobs are only run in these situations since they are set to `when: manual`. Additionally, developers can "pin" the environment to prevent it from being automatically cleaned up in the event that they would like to investigate the release running in the cluster(s).
 
 This approach gives us parity with other CI configurations used in the Distribution team, and also gives use additional functionality such as the aforementioned automatic cleanups and environment pinning.
 

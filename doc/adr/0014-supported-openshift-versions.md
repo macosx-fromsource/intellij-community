@@ -17,10 +17,10 @@ charts we based our support schedule on the versions of managed Kubernetes popul
 cloud providers offer.
 
 Managed OpenShift offerings from
-[Red Hat](https://docs.openshift.com/dedicated/osd_policy/osd-life-cycle.html#rosa-life-cycle-dates_osd-life-cycle),
-[Azure](https://docs.microsoft.com/en-us/azure/openshift/support-lifecycle#azure-red-hat-openshift-release-calendar), and
+[Red Hat](https://docs.openshift.com/dedicated/osd_architecture/osd_policy/osd-life-cycle.html#rosa-life-cycle-dates_osd-life-cycle),
+[Azure](https://learn.microsoft.com/en-us/azure/openshift/support-lifecycle#azure-red-hat-openshift-release-calendar), and
 [AWS](https://www.redhat.com/en/technologies/cloud-computing/openshift/aws) were consulted.
-[GCP](https://cloud.google.com/architecture/partners/openshift-on-gcp) does not offer a managed OpenShift service.
+[GCP](https://cloud.google.com/compute/docs/containers) does not offer a managed OpenShift service.
 
 ## Decision
 
