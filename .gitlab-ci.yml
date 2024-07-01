@@ -980,6 +980,10 @@ trigger-public-release:
 issue-bot:
   stage: report
   image: registry.gitlab.com/gitlab-org/distribution/issue-bot:latest
+  variables:
+    # Create issues for all forks in https://gitlab.com/gitlab-org/cloud-native/gitlab-operator.
+    ISSUE_TRACKER_PROJECT_ID: "18899486"
+    ISSUE_TRACKER_BASE_URL: "https://gitlab.com/"
   script: /issue-bot
   rules:
     - if: $ISSUE_BOT_API_TOKEN == null
