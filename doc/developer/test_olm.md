@@ -16,7 +16,7 @@ Versions listed are the ones known to work, lower versions may work but were not
 - `helm-3.10.1` (`asdf`)
 - `kustomize-4.5.7` (`asdf`)
 - `yq-4.29.2` (`asdf`)
-- `opm-1.26.2` (is auto-downloaded by script, or can be installed via `asdf` using [asdf-opm](https://gitlab.com/dmakovey/asdf-opm.git) plugin)
+- `opm-1.26.2` (is auto-downloaded by script, or can be installed via `asdf` using [asdf-opm](https://gitlab.com/dmakovey/asdf-opm) plugin)
 - `kind-0.17.0` (`asdf`)
 - `docker` (could be replaced by `podman` via `DOCKER="podman"`)
 - `podman` (some of the OperatorSDK toolchain use podman)

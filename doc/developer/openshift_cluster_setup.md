@@ -69,7 +69,8 @@ NOTE:
 The variables `CLUSTER_NAME` and `BASE_DOMAIN` are combined to build the domain name for the cluster.
 
 NOTE:
-Creating a cluster with `FIPS_ENABLED` set to `true` may cause issues with third party software. We are investigating [this in issue](https://gitlab.com/gitlab-org/charts/gitlab/-/issues/3153).
+Creating a cluster with `FIPS_ENABLED` set to `true` may cause issues with third party software.
+We are investigating this in this issue: `https://gitlab.com/gitlab-org/charts/gitlab/-/issues/3153`.
 
 ## Destroy your OpenShift cluster
 
