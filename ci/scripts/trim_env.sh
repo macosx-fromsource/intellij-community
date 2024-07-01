@@ -11,7 +11,9 @@ export OLD_TESTS_NAMESPACE=${TESTS_NAMESPACE}
 #   TESTS_NAMESPACE contains: <commit_sha>-<branch_name>
 #   For a valid DNS name TEST_NAMESPACES must be trimmed to:
 #     63 (max DNS label) - 8 (max service name) - 1 (hyphen) = 54 characters
-export TESTS_NAMESPACE=${TESTS_NAMESPACE:0:54}
+TESTS_NAMESPACE=${TESTS_NAMESPACE:0:54}
+export TESTS_NAMESPACE=${TESTS_NAMESPACE%%+(-)}
+
 export HOSTSUFFIX=${HOSTSUFFIX:0:54}
 echo "Trimmed HOSTSUFFIX ${HOSTSUFFIX}"
 echo "Trimmed TESTS_NAMESPACE ${TESTS_NAMESPACE}"
