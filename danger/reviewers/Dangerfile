@@ -3,7 +3,8 @@
 return if helper.has_scoped_label_with_scope?("workflow")
 
 REVIEWERS_MESSAGE = <<~MSG
-Please add the ~"workflow::ready for review" label once you think the MR is ready to for an initial review.
+Please add the ~"workflow::ready for review" label once you think the MR is ready to for an initial review, and assign
+a reviewer based on the Reviewer Roulette suggestion below.
 
 Merge requests are handled according to the workflow documented in our [handbook](https://about.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/merge_requests.html#workflow) and should receive a response within the limit documented in our [First-response SLO](https://about.gitlab.com/handbook/engineering/workflow/code-review/#first-response-slo).
 
