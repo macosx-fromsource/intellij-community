@@ -6,6 +6,8 @@
 # This script should be sourced to make the exported environment
 # variables accessible for other buildx scripts.
 
+# Enable extended globbing to sanitize the namespace.
+shopt -s extglob
 
 if [ "${BUILDX_K8S_DISABLE}" == "true" ]; then
   echo "Skipping buildx configure"

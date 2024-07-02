@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Enable extended globbing to sanitize the namespace.
+shopt -s extglob
+
 echo "Initial HOSTSUFFIX ${HOSTSUFFIX}"
 echo "Initial TESTS_NAMESPACE ${TESTS_NAMESPACE}"
 export OLD_HOSTSUFFIX=${HOSTSUFFIX}
