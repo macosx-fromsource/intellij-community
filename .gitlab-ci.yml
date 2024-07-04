@@ -845,20 +845,53 @@ issue-bot:
 
 create_followup_issue:
   stage: followup
-  image: curlimages/curl:latest
+  image: registry.gitlab.com/gitlab-org/gitlab-build-images:alpine-bash-jq-curl-git
   allow_failure: true
   script:
     - content=$(sed -e "s/X.Y.Z/${CI_COMMIT_TAG}/g" .gitlab/issue_templates/release.md)
     - title="Publish Operator ${CI_COMMIT_TAG}"
     - |
-      curl -H "PRIVATE-TOKEN: ${OPERATOR_RELEASE_ISSUE_TOKEN}" -X POST \
+      issue_id=$(curl -fS -H "PRIVATE-TOKEN: ${OPERATOR_RELEASE_ISSUE_TOKEN}" -X POST \
            -d "title=${title}" -d "description=${content}" \
-           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/issues"
+           "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/issues" | jq '.iid')
+    - echo "OPERATOR_RELEASE_ISSUE_ID=${issue_id}" >> followup_issue.env
   rules:
     - !reference [.if_release_tag_on_canonical]
   needs:
     - publish_release
+  artifacts:
+    reports:
+      dotenv: followup_issue.env
 
+# Validate a operator release. Currently uses ocp 4.14 cluster.
+# When trigerred manually, it needs:
+# - OPERATOR_RELEASE_ISSUE_ID: the issue id of the followup issue
+# - OPERATOR_RELEASE_VERSION: the version of the operator release
+validate_release_4_14:
+  stage: followup
+  allow_failure: true
+  image:
+    name: registry.gitlab.com/gitlab-org/gitlab-build-images:alpine-bash-jq-curl-git
+  variables:
+    OPERATOR_RELEASE_ISSUE_ID: $OPERATOR_RELEASE_ISSUE_ID # from create_followup_issue dotenv, or manual input
+    OPERATOR_RELEASE_PROJECT_ID: $CI_PROJECT_ID
+    OPERATOR_RELEASE_VERSION: $CI_COMMIT_TAG
+    OPERATOR_RELEASE_TOKEN: $OPERATOR_RELEASE_ISSUE_TOKEN # The issue bot
+    OPERATOR_RELEASE_COMMENT: "true"
+    # KUBECONFIG: $KUBECONFIG_OCP_4_14 # Override in before_script
+  before_script:
+    - apk add -U kubectl # TODO: consider to bundle kubectl in the image
+    - export KUBECONFIG="$KUBECONFIG_OCP_4_14" # Use the CI cluster
+  script:
+    - ./scripts/release_validate.sh "${OPERATOR_RELEASE_VERSION}"
+  rules:
+    - if: !reference [.if_release_tag_on_canonical, if]
+      when: delayed
+      start_in: 3 day
+      needs:
+        - job: create_followup_issue
+          artifacts: true
+    - !reference [.manual_if_commit_branch_or_mr_branch]
 
 debug_chart_version:
   stage: prepare
@@ -910,4 +943,3 @@ other_chart_versions:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
   ## rules:
   ##   - when: on_success
-  
