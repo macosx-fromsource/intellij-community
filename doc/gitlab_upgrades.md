@@ -30,7 +30,7 @@ The upgrade flow behaves like this:
 
 In future reconcile loops, this branch of logic is skipped because the desired version (from `spec.chart.version`) matches the current version (from `status.version`).
 
-## How to update GitLab
+## How to upgrade GitLab
 
 Below are the steps to upgrade a GitLab instance using the GitLab Operator.
 
