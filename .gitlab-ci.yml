@@ -19,6 +19,7 @@ variables:
   DOMAIN_VCLUSTER128: "gitlab-operator-v127.k8s-ft.win"
   # Namespace built into default manifest
   NAMESPACE: "gitlab-system"
+  TAG: ${CI_COMMIT_SHORT_SHA}
   HOSTSUFFIX: "${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_SLUG}"
   TLSSECRETNAME: "gitlab-ci-tls"
   # docker configuration
