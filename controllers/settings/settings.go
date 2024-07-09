@@ -19,12 +19,6 @@ var (
 	// variable to change it.
 	ManagerServiceAccount = "gitlab-manager"
 
-	// AppAnyUIDServiceAccount is the name of the ServiceAccount that is used by GitLab components
-	// that can run under the 'anyuid' SecurityContextConstraint.
-	// The default value is "gitlab-app-anyuid". Use GITLAB_APP_ANYUID_SERVICE_ACCOUNT environment
-	// variable to change it.
-	AppAnyUIDServiceAccount = "gitlab-app-anyuid"
-
 	// AppNonRootServiceAccount is the name of the ServiceAccount that is used by GitLab components
 	// that can run under the 'nonroot' SecurityContextConstraint.
 	// The default value is "gitlab-app-nonroot". Use GITLAB_APP_NONROOT_SERVICE_ACCOUNT environment
@@ -67,7 +61,6 @@ var (
 const (
 	envHelmChartsDirectory      = "HELM_CHARTS"
 	envManagerServiceAccount    = "GITLAB_MANAGER_SERVICE_ACCOUNT"
-	envAppAnyUIDServiceAccount  = "GITLAB_APP_ANYUID_SERVICE_ACCOUNT"
 	envAppNonRootServiceAccount = "GITLAB_APP_NONROOT_SERVICE_ACCOUNT"
 	envNGINXServiceAccount      = "NGINX_SERVICE_ACCOUNT"
 	envPrometheusServiceAccount = "PROMETHEUS_SERVICE_ACCOUNT"
@@ -85,11 +78,6 @@ func Load() {
 	mgrServiceAccount := os.Getenv(envManagerServiceAccount)
 	if mgrServiceAccount != "" {
 		ManagerServiceAccount = mgrServiceAccount
-	}
-
-	appAnyUIDServiceAccount := os.Getenv(envAppAnyUIDServiceAccount)
-	if appAnyUIDServiceAccount != "" {
-		AppAnyUIDServiceAccount = appAnyUIDServiceAccount
 	}
 
 	appNonRootServiceAccount := os.Getenv(envAppNonRootServiceAccount)

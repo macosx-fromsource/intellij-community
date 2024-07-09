@@ -66,9 +66,6 @@ spec:
         name: gitlab-app-nonroot
         version: v1
       - kind: ServiceAccount
-        name: gitlab-app-anyuid
-        version: v1
-      - kind: ServiceAccount
         name: gitlab-manager
         version: v1
       - kind: ServiceAccount

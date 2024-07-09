@@ -4,4 +4,4 @@ certmanager-issuer:
 gitlab:
   webservice:
     serviceAccount:
-      name: {{ .Settings.AppAnyUIDServiceAccount }}
+      name: {{ .Settings.AppNonRootServiceAccount }}

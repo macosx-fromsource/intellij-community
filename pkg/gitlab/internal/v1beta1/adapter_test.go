@@ -249,7 +249,7 @@ func addChartDefaultExamples(examples support.Values) {
 
 func addOperatorDefaultExamples(examples support.Values) {
 	examples["certmanager-issuer.email"] = "admin@example.com"
-	examples["gitlab.webservice.serviceAccount.name"] = settings.AppAnyUIDServiceAccount
+	examples["gitlab.webservice.serviceAccount.name"] = settings.AppNonRootServiceAccount
 }
 
 func addOperatorOverrideExamples(examples support.Values) {

@@ -51,7 +51,7 @@ env:
   BUNDLE_CHANNELS: --channels=$CHANNELS
   BUNDLE_DEFAULT_CHANNEL: --default-channel=$DEFAULT_CHANNEL
   BUNDLE_METADATA_OPTS: "$BUNDLE_CHANNELS $BUNDLE_DEFAULT_CHANNEL"
-  BUNDLE_OPTS: --extra-service-accounts=gitlab-manager,gitlab-nginx-ingress,gitlab-app-anyuid,gitlab-app-nonroot
+  BUNDLE_OPTS: --extra-service-accounts=gitlab-manager,gitlab-nginx-ingress,gitlab-app-nonroot
 
   # Testing configuration
   TEST_IMG: registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-1.20

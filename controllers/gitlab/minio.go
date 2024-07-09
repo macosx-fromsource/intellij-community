@@ -18,14 +18,23 @@ func MinioJob(adapter gitlab.Adapter, template helm.Template) client.Object {
 	// Set ServiceAccountName and SecurityContext, as the Helm Chart does not currently
 	// support setting them.
 	// https://gitlab.com/gitlab-org/charts/gitlab/-/issues/3192
-	var rootUser int64
+	var user int64 = 1000
+
+	if runAsUser, err := adapter.Values().GetValue("minio.securityContext.runAsUser"); err != nil {
+		if uid, ok := runAsUser.(int64); ok {
+			user = uid
+		}
+	}
 
 	job := obj.(*batchv1.Job)
-	job.Spec.Template.Spec.ServiceAccountName = settings.AppAnyUIDServiceAccount
+	job.Spec.Template.Spec.ServiceAccountName = settings.AppNonRootServiceAccount
 	job.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-		RunAsUser: &rootUser,
-		FSGroup:   &rootUser,
+		RunAsUser: &user,
+		FSGroup:   &user,
 	}
+
+	job.Spec.Template.Spec.Containers[0].Env = append(
+		job.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "HOME", Value: "/tmp"})
 
 	return job
 }
