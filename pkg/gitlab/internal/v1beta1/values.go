@@ -114,7 +114,6 @@ func init() {
 
 	appSettings = map[string]string{
 		"AppNonRootServiceAccount": settings.AppNonRootServiceAccount,
-		"AppAnyUIDServiceAccount":  settings.AppAnyUIDServiceAccount,
 		"CertmanagerIssuerEmail":   defaultCertManagerIssuerEmail,
 		"ManagerServiceAccount":    settings.ManagerServiceAccount,
 		"NginxServiceAccount":      settings.NGINXServiceAccount,

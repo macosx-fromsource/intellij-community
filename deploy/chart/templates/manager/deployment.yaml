@@ -57,8 +57,6 @@ spec:
         {{- end }}
         - name: GITLAB_MANAGER_SERVICE_ACCOUNT
           value: {{ include "manager.serviceAccount.name" . }}
-        - name: GITLAB_APP_ANYUID_SERVICE_ACCOUNT
-          value: {{ include "app.serviceAccount.name" . }}-anyuid
         - name: GITLAB_APP_NONROOT_SERVICE_ACCOUNT
           value: {{ include "app.serviceAccount.name" . }}-nonroot
         - name: NGINX_SERVICE_ACCOUNT

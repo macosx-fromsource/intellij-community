@@ -65,7 +65,7 @@ generate_bundle(){
       | (
           cd ${OSDK_BASE_DIR}
           ${OPERATOR_SDK} generate bundle -q --overwrite \
-              --extra-service-accounts gitlab-manager,gitlab-nginx-ingress,gitlab-app-anyuid,gitlab-app-nonroot \
+              --extra-service-accounts gitlab-manager,gitlab-nginx-ingress,gitlab-app-nonroot \
               --version ${OLM_PACKAGE_VERSION} \
               --default-channel=stable \
               --channels=stable,unstable \
