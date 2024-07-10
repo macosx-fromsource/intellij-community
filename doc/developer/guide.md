@@ -6,11 +6,11 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Developer Guide
 
-This developer guide aims to walk a new developer on how to setup up their environment to be able to contribute to this project.
+This developer guide aims to walk a new developer on how to set up their environment to be able to contribute to this project.
 
 ## Setting up development environment
 
-To setup your system for development of the operator, follow the steps below:
+To set up your system for development of the operator, follow the steps below:
 
 1. Clone the `gitlab-operator` repository into your GOPATH.
 
