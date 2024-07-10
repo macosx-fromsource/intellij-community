@@ -27,4 +27,4 @@ You can limit the scope of the release by passing one or more targets. Use:
 - `redhat-community` for `OpenShift OperatorHub`
 - `redhat-marketplace` for `OpenShift Certified Operators`
 
-/assign @mnielsen @pursultani
+/assign @clemensbeck @pursultani
