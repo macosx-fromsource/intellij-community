@@ -333,15 +333,11 @@ slow_unit_tests_custom_ref:
     action: stop
 
 .podman_build_job:
-  extends: .cache
   stage: release
   needs: ["pull_charts"]
   before_script:
     - sed -i 's#^driver.*$#driver = "vfs"#g' /etc/containers/storage.conf
     - podman login -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}" "${CI_REGISTRY}"
-    # Update module cache so it can be saved in CI cache (only the dependencies required to build)
-    - mkdir -p .go
-    - podman run ${PODMAN_OPTS} -v "${GOPATH}:/go" -v "${CI_PROJECT_DIR}:/code" -w /code golang:${GO_VERSION} go list ./...
   interruptible: false
 
 build_branch_image:
@@ -384,20 +380,27 @@ build_latest_image:
 build_bundle_image:
   extends: .podman_build_job
   variables:
-    PODMAN_OPTS: "--cgroups=disabled"
-    BUNDLE_REGISTRY: ${CI_REGISTRY_IMAGE}/bundle
+    OLM_PACKAGE_NAME: "gitlab-operator-kubernetes"
+    BUNDLE_REGISTRY: ${CI_REGISTRY_IMAGE}/bundle-staging
+    OLM_PACKAGE_VERSION: 0.0.${CI_PIPELINE_ID}
+    OPERATOR_TAG: ${CI_COMMIT_SHORT_SHA}
+    BUNDLE_IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
     COMPILE_ONLY: "false"
     DOCKER: "podman"
     OPM_DOCKER: "podman"
-    OLM_PACKAGE_NAME: "gitlab-operator-kubernetes"
+    PODMAN_OPTS: "--cgroups=disabled"
   script:
-    - export OLM_PACKAGE_VERSION=${CI_COMMIT_TAG:-${TAG}}
-    - export OPERATOR_TAG=${CI_COMMIT_TAG:-${TAG}}
-    - export TAG=${CI_COMMIT_TAG:-${TAG}}
-    - export BUNDLE_IMAGE_TAG=${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}
     - scripts/olm_bundle.sh publish
   rules:
-    - !reference [.if_release_tag_on_canonical]
+    - !reference [.skip_if_docs_branch]
+    - !reference [.if_default_branch]
+    - !reference [.if_commit_branch_or_mr_branch]
+    - if: !reference [.if_release_tag_on_canonical, if]
+      variables:
+        OLM_PACKAGE_VERSION: ${CI_COMMIT_TAG}
+        OPERATOR_TAG: ${CI_COMMIT_TAG}
+        BUNDLE_IMAGE_TAG: ${CI_COMMIT_TAG}
+        BUNDLE_REGISTRY: ${CI_REGISTRY_IMAGE}/bundle
 
 approve_cluster_tests:
   stage: cluster_tests_approval
