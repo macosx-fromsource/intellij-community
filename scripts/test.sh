@@ -217,7 +217,7 @@ test_gitlab_endpoint() {
 
   echo "Testing GitLab endpoint: $endpoint"
   sleep 5
-  curl --retry 5 --retry-delay 10 -fIL "$endpoint"
+  curl --retry 5 --retry-delay 10 --retry-connrefused -fIL "$endpoint"
 }
 
 # main
