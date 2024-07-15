@@ -97,3 +97,10 @@
 .skip_if_chart_version_pipeline: 
   if: '$PIPELINE_TYPE == "chart_version"'
   when: never
+
+.if_gitlab_chart_child_pipeline: &if_gitlab_chart_child_pipeline
+  if: '$CI_PIPELINE_SOURCE == "pipeline" && $TRIGGER_PROJECT == "gitlab-org/charts/gitlab"'
+
+.skip_if_gitlab_chart_child_pipeline: &skip_if_gitlab_chart_child_pipeline
+  <<: *if_gitlab_chart_child_pipeline
+  when: never

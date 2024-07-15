@@ -85,6 +85,7 @@
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 .create_review_template:
@@ -102,6 +103,7 @@
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 .review_template:
@@ -141,6 +143,7 @@
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 .review_vcluster_template:
@@ -207,6 +210,7 @@
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 .qa_full_suite_trigger:
@@ -220,6 +224,7 @@
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.if_scheduled_pipeline] # nightly pipelines
     - !reference [.manual_if_commit_branch_or_mr_branch]
 
@@ -248,6 +253,7 @@
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.manual_if_commit_branch_or_mr_branch]
     - !reference [.manual_if_stable_branch]
     - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
