@@ -11,5 +11,5 @@ operator-sdk 1.34.1
 opm 1.41.1 https://gitlab.com/dmakovey/asdf-opm.git
 task 3.37.2
 tekton-cli 0.32.0
-vale 3.4.2
+vale 3.6.1
 yq 4.44.1
