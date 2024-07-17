@@ -7,7 +7,7 @@ build_review_gke129:
 create_review_gke129:
   extends: .create_review_template
   environment: &environment_gke129
-    name: &env_gke_name129 operator129_review/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    name: &env_gke_name129 operator129_review/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
     url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_GKE129
     on_stop: stop_review_gke129
     auto_stop_in: 1 hour

@@ -9,7 +9,7 @@ build_review_vcluster128:
 create_review_vcluster128:
   extends: .create_review_template
   environment: &environment_vc128
-    name: &env_vc_name128 ${VCLUSTER_ENVIRONMENT_PREFIX}review_vcluster128/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    name: &env_vc_name128 ${VCLUSTER_ENVIRONMENT_PREFIX}review_vcluster128/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
     url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_VCLUSTER128
     on_stop: stop_review_vcluster128
     auto_stop_in: 1 hour

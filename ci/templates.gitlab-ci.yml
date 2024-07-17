@@ -191,7 +191,7 @@
     KNAPSACK_TEST_FILE_PATTERN: "qa/specs/features/**/*_spec.rb"
     KNAPSACK_GENERATE_REPORT: "true"
   script:
-    - export QA_ENVIRONMENT_URL="https://gitlab-${HOSTSUFFIX}.${DOMAIN}"
+    - export QA_ENVIRONMENT_URL="https://gitlab-${TESTS_NAMESPACE}.${DOMAIN}"
     - echo $QA_ENVIRONMENT_URL $GITLAB_VERSION
     - gem install gitlab-qa
     - echo "Running - 'gitlab-qa Test::Instance::Any EE:$GITLAB_VERSION $QA_ENVIRONMENT_URL -- $QA_OPTIONS'"
