@@ -87,3 +87,13 @@
 
 .if_scheduled_pipeline: &if_scheduled_pipeline
   if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+.if_chart_version_pipeline: 
+  if: '$PIPELINE_TYPE == "chart_version"'
+
+.if_not_chart_version_pipeline: 
+  if: '$PIPELINE_TYPE != "chart_version"'
+
+.skip_if_chart_version_pipeline: 
+  if: '$PIPELINE_TYPE == "chart_version"'
+  when: never

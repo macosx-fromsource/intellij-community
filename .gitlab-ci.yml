@@ -50,7 +50,11 @@ variables:
   BUILDX_ARCHS: amd64 # amd64,arm64 in project settings
   PREFLIGHT_VERSION: "1.9.1" # to be overridden on project level
 
-  GITLAB_CHART_VERSION: ""
+  # We need GITLAB_CHART_VERSION and ENVIRONMENT_SUFFIX to be fully unset for pipeline logic to work correctly
+  # Empty stings can be used to override seetings and lead to unexpected outcomes
+  # GITLAB_CHART_VERSION: 
+  # ENVIRONMENT_SUFFIX: 
+  PIPELINE_TYPE: default # default, chart_version 
 
 stages:
   - check
@@ -69,6 +73,7 @@ stages:
   - followup
 
 workflow:
+  name: $GITLAB_CHART_VERSION
   rules:
     # Avoid duplicate pipeline when an MR is open
     - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
@@ -90,12 +95,18 @@ include:
   - template: Jobs/Dependency-Scanning.latest.gitlab-ci.yml
     rules:
       - if: '$CI_PROJECT_PATH == "gitlab-org/cloud-native/gitlab-operator"'
+      # - !reference [.if_not_chart_version_pipeline]
+      - if: '$PIPELINE_TYPE != "chart_version"'
   - template: Jobs/Secret-Detection.latest.gitlab-ci.yml
     rules:
       - if: '$CI_PROJECT_PATH == "gitlab-org/cloud-native/gitlab-operator"'
+      # - !reference [.if_not_chart_version_pipeline]
+      - if: '$PIPELINE_TYPE != "chart_version"'
   - template: Jobs/SAST.latest.gitlab-ci.yml
     rules:
       - if: '$CI_PROJECT_PATH == "gitlab-org/cloud-native/gitlab-operator"'
+      # - !reference [.if_not_chart_version_pipeline]
+      - if: '$PIPELINE_TYPE != "chart_version"'
   - local: ci/rules.gitlab-ci.yml
   - local: ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
@@ -115,6 +126,7 @@ pull_charts:
       - charts/
   rules:
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_release_tag]
     - !reference [.if_commit_branch_or_mr_branch]
   needs:
@@ -137,6 +149,7 @@ lint_code:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
   needs:
     - job: danger-review
@@ -157,6 +170,7 @@ docs-lint content:
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 docs-lint markdown:
@@ -174,6 +188,7 @@ docs-lint markdown:
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 docs-lint links:
@@ -191,6 +206,7 @@ docs-lint links:
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 .review-docs:
@@ -262,6 +278,7 @@ review-docs-cleanup:
   rules:
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 .test_job_custom_ref:
@@ -282,6 +299,7 @@ review-docs-cleanup:
   rules:
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_default_branch]
     - !reference [.manual_if_commit_branch_or_mr_branch]
 
@@ -350,6 +368,7 @@ build_branch_image:
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_default_branch]
     - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 build_tag_image:
@@ -393,6 +412,7 @@ build_bundle_image:
     - scripts/olm_bundle.sh publish
   rules:
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_default_branch]
     - !reference [.if_commit_branch_or_mr_branch]
     - if: !reference [.if_release_tag_on_canonical, if]
@@ -429,7 +449,7 @@ build_review_4_12:
 create_review_4_12:
   extends: .create_review_template
   environment: &environment_4_12
-    name: &env_4_12_name openshift_4_12/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    name: &env_4_12_name openshift_4_12/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
     url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_OPENSHIFT_4_12
     on_stop: stop_review_openshift_4_12
     auto_stop_in: 1 hour
@@ -462,7 +482,7 @@ build_review_4_13:
 create_review_4_13:
   extends: .create_review_template
   environment: &environment_4_13
-    name: &env_4_13_name openshift_4_13/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    name: &env_4_13_name openshift_4_13/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
     url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_OPENSHIFT_4_13
     on_stop: stop_review_openshift_4_13
     auto_stop_in: 1 hour
@@ -495,7 +515,7 @@ build_review_4_14:
 create_review_4_14:
   extends: .create_review_template
   environment: &environment_4_14
-    name: &env_4_14_name openshift_4_14/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    name: &env_4_14_name openshift_4_14/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
     url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_OPENSHIFT_4_14
     on_stop: stop_review_openshift_4_14
     auto_stop_in: 1 hour
@@ -595,7 +615,7 @@ stop_review_openshift_4_12:
   before_script:
     - export KUBECONFIG="$KUBECONFIG_OCP_4_12"
   environment:
-    name: openshift_4_12/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    name: *env_4_12_name
     action: stop
   needs:
     - build_review_4_12
@@ -607,7 +627,7 @@ stop_review_openshift_4_13:
   before_script:
     - export KUBECONFIG="$KUBECONFIG_OCP_4_13"
   environment:
-    name: openshift_4_13/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    name: *env_4_13_name
     action: stop
   needs:
     - build_review_4_13
@@ -619,7 +639,7 @@ stop_review_openshift_4_14:
   before_script:
     - export KUBECONFIG="$KUBECONFIG_OCP_4_14"
   environment:
-    name: openshift_4_14/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    name: *env_4_14_name
     action: stop
   needs:
     - build_review_4_14
@@ -667,6 +687,7 @@ image_certification:
       - reports/*
   rules:
     - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_release_tag]
     - !reference [.if_redhat_certification]
     - !reference [.if_commit_branch_or_mr_branch]
@@ -837,3 +858,56 @@ create_followup_issue:
     - !reference [.if_release_tag_on_canonical]
   needs:
     - publish_release
+
+
+debug_chart_version:
+  stage: prepare
+  image: busybox
+  script:
+    - echo "$GITLAB_CHART_VERSION"
+    - echo "$TESTS_NAMESPACE"
+    - echo "$PIPELINE_TYPE"
+
+create_chart_pipelines:
+  stage: prepare
+  script:
+    - |
+        for cv in $(tail -n +2 CHART_VERSIONS)
+        do
+          _es="-${cv//./-}"
+          sed -e "s/@@CHART@@/${cv}/g; s/@@SUFFIX@@/${_es}/g" ci/trigger-template.yml.tpl >> other_charts.yml
+        done
+  artifacts:
+    when: on_success
+    access: all
+    paths:
+      - other_charts.yml
+  rules:
+    - !reference [.skip_if_chart_version_pipeline]
+    - if: '$GITLAB_CHART_VERSION == null'
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+
+other_chart_versions:
+  stage: release
+  needs: 
+    - create_chart_pipelines
+    - job: build_branch_image
+      optional: true
+      artifacts: false
+    - job: build_tag_image
+      optional: true
+      artifacts: false
+    - job: build_latest_image
+      optional: true
+      artifacts: false
+  trigger:
+    include:
+      - artifact: other_charts.yml
+        job: create_chart_pipelines
+  rules:
+    - !reference [.skip_if_chart_version_pipeline]
+    - if: '$GITLAB_CHART_VERSION == null'
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+  ## rules:
+  ##   - when: on_success
+  

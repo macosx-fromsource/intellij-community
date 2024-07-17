@@ -8,6 +8,7 @@ start_buildx:
   script:
     - echo "Initialized buildx_${CI_COMMIT_REF_SLUG} environment"
   rules:
+   - !reference [.skip_if_chart_version_pipeline]
    - !reference [build_branch_image, rules]
    - !reference [build_tag_image, rules]
    - !reference [build_latest_image, rules]
