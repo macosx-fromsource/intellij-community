@@ -279,6 +279,7 @@ review-docs-cleanup:
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
 .test_job_custom_ref:
@@ -301,6 +302,7 @@ review-docs-cleanup:
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_default_branch]
+    - !reference [.if_gitlab_chart_child_pipeline]
     - !reference [.manual_if_commit_branch_or_mr_branch]
 
 unit_tests:
@@ -432,6 +434,7 @@ approve_cluster_tests:
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_stable_branch]
     - !reference [.skip_if_default_branch]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.manual_if_commit_branch_or_mr_branch]
   needs:
     - job: danger-review
@@ -839,6 +842,7 @@ issue-bot:
   rules:
     - if: $ISSUE_BOT_API_TOKEN == null
       when: never
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.on_failure_if_release_tag]
     - !reference [.on_failure_if_stable_branch]
     - !reference [.on_failure_if_default_branch]
@@ -884,6 +888,7 @@ create_chart_pipelines:
       - other_charts.yml
   rules:
     - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - if: '$GITLAB_CHART_VERSION == null'
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
 
@@ -906,6 +911,7 @@ other_chart_versions:
         job: create_chart_pipelines
   rules:
     - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
     - if: '$GITLAB_CHART_VERSION == null'
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
   ## rules:
