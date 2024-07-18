@@ -14,7 +14,7 @@ require (
 	github.com/onsi/gomega v1.33.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.75.1
-	golang.org/x/exp v0.0.0-20240707233637-46b078467d37
+	golang.org/x/exp v0.0.0-20240716175740-e3f259677ff7
 	golang.org/x/mod v0.19.0
 	helm.sh/helm/v3 v3.12.3
 	k8s.io/api v0.30.2
