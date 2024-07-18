@@ -1,3 +1,24 @@
+## 1.2.0 (2024-07-18)
+
+### changed (12 changes)
+
+- [Update k8s.io/utils digest to 18e509b](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a6b006acbe148a36fec57c1a391862d131bd3437) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/883))
+- [Move all workloads to `nonroot-v2` SCC](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7a009fa7f2ed672bf4003077cf743527980d5eb2) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/838))
+- [Update golang.org/x/exp digest to 46b0784](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5a85097d2af8f51da5072eea0917f42f6607415a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/878))
+- [Update Go from 1.22.4 to 1.22.5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2e3e5e6569656839303b2b58e8e9dd82ab8fd6b4) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/871))
+- [Update dependency danger-review to v1.4.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e6cdf30d92463b2bad92f2ec5d7c7395b33aecae) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/869))
+- [Update module github.com/cert-manager/cert-manager to v1.15.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f2f23bc8f77472b49e5adcef5d70618eeeebaa3d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/865))
+- [Deprecate support for Kubernetes 1.25 and 1.26](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/cdedd67845efe498cc49a57758e65d48aefc803a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/857))
+- [Update module github.com/onsi/ginkgo/v2 to v2.19.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3a3a3d470d470710dd7b02577847d5fd1f12ef25) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/856))
+- [Update golang.org/x/exp digest to 7f521ea](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/782da95a1e47e7d9fc265335c02b7ffb9e1d876d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/853))
+- [Update cert-manager from 1.6.1 to 1.15.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5ed0059a33aa320576c153b1ef26cd4379e0b321) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/846))
+- [Update UBI micro base image from 8.10 to 9.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ec4a9a72bf19c199815f43ce9c17f4597873984d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/849))
+- [Update Go dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4c5b0796a3b70f4ac047390d854ecd62ecd55d73) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/845))
+
+### fixed (1 change)
+
+- [Fix support for Zoekt](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4682de07d011af41341f956a011c4fcceb92913e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/850))
+
 ## 1.1.2 (2024-07-10)
 
 No changes.
