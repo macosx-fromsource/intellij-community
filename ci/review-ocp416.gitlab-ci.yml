@@ -1,0 +1,66 @@
+build_review_4_16:
+  extends: .build_review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_16
+    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
+  dependencies:
+    - image_certification
+
+create_review_4_16:
+  extends: .create_review_template
+  environment: &environment_4_16
+    name: &env_4_16_name openshift_4_16/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
+    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_OPENSHIFT_4_16
+    on_stop: stop_review_openshift_4_16
+    auto_stop_in: 1 hour
+  needs:
+    - build_review_4_16
+
+review_4_16:
+  extends: .review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_16
+    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
+  before_script:
+    - export KUBECONFIG="$KUBECONFIG_OCP_4_16"
+  needs:
+    - create_review_4_16
+    # we need build_* dependency to receive appropriate artifacts
+    - build_review_4_16
+  environment: *environment_4_16
+  resource_group: *env_4_16_name
+
+qa_4_16:
+  extends: .qa
+  stage: qa
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_16
+  needs:
+    - review_4_16
+
+qa_4_16_full_suite_trigger:
+  extends: .qa_full_suite_trigger
+  script: echo 'The job will trigger Full E2E suite against OpenShift 4.16'
+
+qa_4_16_full:
+  extends: .qa
+  stage: qa
+  parallel: 7
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_16
+    QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
+  needs:
+    - review_4_16
+    - qa_4_16_full_suite_trigger
+
+stop_review_openshift_4_16:
+  extends: .stop_review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT_4_16
+  before_script:
+    - export KUBECONFIG="$KUBECONFIG_OCP_4_16"
+  environment:
+    name: *env_4_16_name
+    action: stop
+  needs:
+    - build_review_4_16
