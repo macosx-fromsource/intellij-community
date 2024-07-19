@@ -10,7 +10,6 @@ variables:
   BUILD_DIR: ".build"
   INSTALL_DIR: ".install"
   DOMAIN_OPENSHIFT_4_12: "apps.ocp-ci-41221.k8s-ft.win"
-  DOMAIN_OPENSHIFT_4_13: "apps.ocp-ci-41317.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_14: "apps.ocp-ci-4146.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_15: "apps.ocp-ci-4153.k8s-ft.win"
   DOMAIN_GKE: "gitlab-operator.k8s-ft.win"
@@ -473,39 +472,6 @@ review_4_12:
   environment: *environment_4_12
   resource_group: *env_4_12_name
 
-# OCP 4.13
-build_review_4_13:
-  extends: .build_review_template
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_13
-    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
-  dependencies:
-    - image_certification
-
-create_review_4_13:
-  extends: .create_review_template
-  environment: &environment_4_13
-    name: &env_4_13_name openshift_4_13/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
-    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_OPENSHIFT_4_13
-    on_stop: stop_review_openshift_4_13
-    auto_stop_in: 1 hour
-  needs:
-    - build_review_4_13
-
-review_4_13:
-  extends: .review_template
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_13
-    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
-  before_script:
-    - export KUBECONFIG="$KUBECONFIG_OCP_4_13"
-  needs:
-    - create_review_4_13
-    # we need build_* dependency to receive appropriate artifacts
-    - build_review_4_13
-  environment: *environment_4_13
-  resource_group: *env_4_13_name
-
 # OCP 4.14
 build_review_4_14:
   extends: .build_review_template
@@ -563,30 +529,6 @@ qa_4_12_full:
     - review_4_12
     - qa_4_12_full_suite_trigger
 
-# QA OCP 4.13
-qa_4_13:
-  extends: .qa
-  stage: qa
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_13
-  needs:
-    - review_4_13
-
-qa_4_13_full_suite_trigger:
-  extends: .qa_full_suite_trigger
-  script: echo 'The job will trigger Full E2E suite against OpenShift 4.13'
-
-qa_4_13_full:
-  extends: .qa
-  stage: qa
-  parallel: 7
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_13
-    QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
-  needs:
-    - review_4_13
-    - qa_4_13_full_suite_trigger
-
 # QA OCP 4.14
 qa_4_14:
   extends: .qa
@@ -622,18 +564,6 @@ stop_review_openshift_4_12:
     action: stop
   needs:
     - build_review_4_12
-
-stop_review_openshift_4_13:
-  extends: .stop_review_template
-  variables:
-    DOMAIN: $DOMAIN_OPENSHIFT_4_13
-  before_script:
-    - export KUBECONFIG="$KUBECONFIG_OCP_4_13"
-  environment:
-    name: *env_4_13_name
-    action: stop
-  needs:
-    - build_review_4_13
 
 stop_review_openshift_4_14:
   extends: .stop_review_template
