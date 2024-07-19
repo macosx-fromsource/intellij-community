@@ -912,6 +912,8 @@ other_chart_versions:
   rules:
     - !reference [.skip_if_chart_version_pipeline]
     - !reference [.skip_if_gitlab_chart_child_pipeline]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_docs_branch]
     - if: '$GITLAB_CHART_VERSION == null'
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
   ## rules:
