@@ -12,6 +12,7 @@ variables:
   DOMAIN_OPENSHIFT_4_12: "apps.ocp-ci-41221.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_14: "apps.ocp-ci-4146.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_15: "apps.ocp-ci-4153.k8s-ft.win"
+  DOMAIN_OPENSHIFT_4_16: "apps.ocp-ci-4163.k8s-ft.win"
   DOMAIN_GKE: "gitlab-operator.k8s-ft.win"
   DOMAIN_GKE127: "gitlab-operator-v127.k8s-ft.win"
   DOMAIN_GKE129: "gitlab-operator-v129.k8s-ft.win"
@@ -109,10 +110,7 @@ include:
   - local: ci/rules.gitlab-ci.yml
   - local: ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
-  - local: ci/review-gke127.gitlab-ci.yml
-  - local: ci/review-gke129.gitlab-ci.yml
-  - local: ci/review-ocp415.gitlab-ci.yml
-  - local: ci/review-vcluster128.gitlab-ci.yml
+  - local: ci/review-*.gitlab-ci.yml
 
 default:
   interruptible: true
