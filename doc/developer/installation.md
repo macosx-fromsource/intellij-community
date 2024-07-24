@@ -35,6 +35,8 @@ Please consult the "Prerequisites" section of the [installation](../installation
    When working on a merge request, override the default `latest` tag used by the `deploy_operator` by setting the `TAG` environment variable to the name of your branch. For
    example: `TAG=my-mr-branch-name task deploy_operator`.
 
+   When working on a forked MR, the branch name might result in a malformed image name, as this pipeline ran in the fork. After you have assessed that the code poses no security risk to our pipelines, trigger a manual pipeline in our project, and use the commit sha as the `TAG`. For example: `TAG=7f954ee1 task deploy_operator`.
+
    NOTE:
    You must deploy GitLab to the operator namespace. Other namespaces aren't supported.
 
