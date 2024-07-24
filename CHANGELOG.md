@@ -19,6 +19,10 @@
 
 - [Fix support for Zoekt](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4682de07d011af41341f956a011c4fcceb92913e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/850))
 
+## 1.1.3 (2024-07-24)
+
+No changes.
+
 ## 1.1.2 (2024-07-10)
 
 No changes.
