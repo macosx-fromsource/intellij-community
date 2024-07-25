@@ -63,9 +63,6 @@ linters:
     - testpackage
     - dupl
     - funlen
-    - golint
-    - interfacer
-    - maligned
     - prealloc
     - ineffassign
 
