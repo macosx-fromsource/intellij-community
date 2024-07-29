@@ -92,7 +92,7 @@ spec:
 
     The GitLab operator is responsible for managing the full lifecycle of GitLab instances in your Kubernetes or Openshift container platforms.
 
-    [Documentation](https://docs.gitlab.com/charts/installation/operator.html)
+    [Documentation](https://docs.gitlab.com/operator/)
 
     The operator, while new and still actively being developed, aims to:
     - ease installation and configuration of GitLab instances
@@ -108,7 +108,7 @@ spec:
 
     # Prerequisites
 
-    Please visit [Prerequisites](https://docs.gitlab.com/charts/installation/operator.html#prerequisites) section of GitLab Operator Documentation.
+    Please visit [Prerequisites](https://docs.gitlab.com/operator/installation.html#prerequisites) section of GitLab Operator Documentation.
 
     ## IngressClass
 
@@ -149,7 +149,7 @@ spec:
   - name: GitLab Docs
     url: https://docs.gitlab.com/
   - name: GitLab Operator Documentation
-    url: https://docs.gitlab.com/charts/installation/operator.html
+    url: https://docs.gitlab.com/operator/
   - name: GitLab and Kubernetes
     url: https://about.gitlab.com/solutions/kubernetes/
   - name: Gitlab Reference Architecture
