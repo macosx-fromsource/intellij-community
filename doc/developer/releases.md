@@ -41,3 +41,22 @@ create the `REDHAT_API_TOKEN` environmental variable. This variable is set
 to the personal token generated on the [Connect portal](https://connect.redhat.com/account/api-keys).
 The token used by GitLab CI is stored in the 1Password Build vault under the
 "Red HatCertification Token" entry.
+
+## Retagging a release
+
+When a release pipeline fails or other fixes need to be merged before
+a release can be published, the tag needs to be re-created.
+
+This is done by:
+
+1. Merge the required fixes into the stable branch.
+1. Delete the tag in [dev fork](https://dev.gitlab.org/gitlab/cloud-native/gitlab-operator).
+1. Delete the tag in [canonical](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator).
+1. Create the tag again on the HEAD of the stable branch.
+   
+   Important: The tag **must** have a description of the following format: `Version a.b.c - supports GitLab Charts x, y, z`
+   Without this description the tag is not considered by release tools on the next
+   regular release.
+
+1. Confirm the tag pipeline passes.
+1. Confirm the tag is mirrored to dev.
