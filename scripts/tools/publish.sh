@@ -98,6 +98,12 @@ check_requirements() {
     local stable_branch="${VERSION%*.*}"
     stable_branch="${stable_branch/./-}-stable"
 
+    printf '[requirement check] PREVIOUS_OPERATOR_VERSION is defined: '
+    run_check test -n "${PREVIOUS_OPERATOR_VERSION:-}"
+
+    printf '[requirement check] script is running on the %s branch: ' "${stable_branch}"
+    run_check test "$(git rev-parse --abbrev-ref HEAD)" = "${stable_branch}"
+
     for the_remote in ${CANONICAL_REMOTE} ${SECURITY_REMOTE} ${BUILD_REMOTE}; do
         printf '[requirement check] remote %s has %s tag: ' "${the_remote}" "${VERSION}"
         run_check git ls-remote -q --tags --exit-code "${the_remote}" "${VERSION}"
@@ -184,7 +190,7 @@ create_bundle() {
 annotate_bundle() {
     local bundle_dir="${1}"
 
-    BUNDLE_DIR="${bundle_dir}/bundle" redhat/operator-certification/scripts/configure_bundle.sh adjust_annotations adjust_csv
+    BUNDLE_DIR="${bundle_dir}/bundle" redhat/operator-certification/scripts/configure_bundle.sh adjust_annotations adjust_csv set_upgrade_path
 }
 
 copy_bundle() {
@@ -232,9 +238,11 @@ publish_operatorhub() {
     checkout_publish_branch "${OH_BUILD_DIR}"
     edit_manifest
     create_bundle "${OH_BUNDLE_DIR}"
+
     copy_bundle "${OH_BUILD_DIR}" "${OH_BUNDLE_DIR}"
     commit_publish_branch "${OH_BUILD_DIR}"
 
+    cd "${OH_BUILD_DIR}"
     echo "Creating community operator PR in ${OH_OWNER}/${OH_REPOSITORY}"
     gh pr create \
         -R "${OH_OWNER}/${OH_REPOSITORY}" \
@@ -254,6 +262,7 @@ publish_redhat_community() {
     copy_bundle "${RHC_BUILD_DIR}" "${RHC_BUNDLE_DIR}"
     commit_publish_branch "${RHC_BUILD_DIR}"
 
+    cd "${RHC_BUILD_DIR}"
     echo "Creating community operator PR in ${RHC_OWNER}/${RHC_REPOSITORY}"
     gh pr create \
         -R "${RHC_OWNER}/${RHC_REPOSITORY}" \
@@ -264,7 +273,6 @@ publish_redhat_community() {
 }
 
 publish_redhat_marketplace() {
-	  PREVIOUS_OPERATOR_VERSION=${PREVIOUS_OPERATOR_VERSION:?"PREVIOUS_OPERATOR_VERSION is required for publishing to Certified catalog"}
     fork_operators "${RH_OWNER}" "${RH_REPOSITORY}"
     pull_operators "${RH_BUILD_DIR}"
     checkout_publish_branch "${RH_BUILD_DIR}"
