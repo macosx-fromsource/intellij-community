@@ -1,3 +1,26 @@
+## 1.3.0 (2024-08-15)
+
+### changed (18 changes)
+
+- [Update sigs.k8s.io/controller-runtime to v0.18.5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/077c60a5b220d639f016f6f5e234bbfef62079be) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/947))
+- [Update golang.org/x/exp to 0cdaa3a](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c88fe7069756fe613b6505821614be5e00283759) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/945))
+- [Update k8s.io/kube-openapi to 8e68654](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a8c9f44405f52ea6e711aeb5017fb0599683b6d9) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/944))
+- [Update Go from 1.22.5 to 1.22.6](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3ecb6ca3e7000d341ca0cf7bf4e75ade0d3dd636) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/943))
+- [Update github.com/onsi/ginkgo/v2 to v2.20.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ecf5ee33eba108bd6ea24858c3cca52a18abb28a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/941))
+- [Update golang.org/x/mod to v0.20.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/130b21d1e3e17f067a76aa27332504b79edcee58) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/937))
+- [Update k8s.io/kube-openapi to 7a9a4e8](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1266c54f79694f3e1036dfb9bb59373c74f1ba70) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/931))
+- [Update indirect](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e61dcd5b6b5c23a36fdcfe4d90eb92369bd9d6cf) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/920))
+- [Update github.com/cert-manager/cert-manager to v1.15.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0e710eb5df0fa4fa6032180e73268d10ba07361d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/935))
+- [Update testing](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/93055709311107a45ce212e9d81667e7cfdd11c3) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/933))
+- [Update github.com/onsi/gomega to v1.34.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/82c30487282172fccadb5c4da9e42155430d5942) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/930))
+- [Update indirect k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b393dc2fb207923038f4a0a8a2ad737da8c9de41) by @gitlab-dependency-update-bot ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/917))
+- [Update prom-op-api/monitoring to v0.75.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c3d0f6ab8d65db7748507ff662fe165a164bcf57) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/918))
+- [Update indirect dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/934900b4232eddcef438c73d0fec12b4706773db) by @gitlab-dependency-update-bot ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/915))
+- [Update golang.org/x/exp digest to e3f2596](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0ec8b56f182039bc07a0aaec05501b5d06da164e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/887))
+- [Update k8s.io to v0.30.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/864b9d01fd06d6ada97a21f2c8623025b1178592) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/889))
+- [Add support for OpenShift 4.16](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/dd40ad8275128f402e89ad058a7f614d5ffe1a8e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/890))
+- [Update module prometheus-operator/monitoring to v0.75.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/db676b23f94e6dbb7dcd7736fa495cd050025ae6) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/861))
+
 ## 1.2.2 (2024-08-07)
 
 No changes.
