@@ -133,9 +133,9 @@ pull_charts:
 lint_code:
   extends: .cache
   stage: test
-  image: golangci/golangci-lint:v1.59-alpine
+  image: golangci/golangci-lint:v1.60-alpine
   script:
-    - go install github.com/go-task/task/v3/cmd/task@v3.22.0
+    - go install github.com/go-task/task/v3/cmd/task@v3.38.0
     - PATH="${PATH}:${GOPATH}/bin" task lint
   artifacts:
     reports:
