@@ -33,8 +33,8 @@ variables:
   # OCP_RESOURCES_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/openshift-resources-${CI_COMMIT_TAG}.yaml"
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}"
   ISSUE_BOT_LABELS_EXTRA: "group::distribution"
-  GO_VERSION: "1.22.6"
-  GO_MINOR: "1.22"
+  GO_VERSION: "1.23.0"
+  GO_MINOR: "1.23"
   QA_FULL_SUITE_OPTIONS: '--tag ~smoke --tag ~skip_live_env --tag ~orchestrated --tag ~transient'
   CI_TOOLS_VERSION: "4.34.0"
   # Buildx cluster connection settings are set at project level:
