@@ -22,7 +22,7 @@ Two CLI tools are required to create an OpenShift cluster (`openshift-install`) 
 A pull secret is required to fetch images from Red Hat's private Docker registry.
 Every developer has a different pull secret associated with their Red Hat account.
 
-To get the CLI tools and your pull secret, go to <https://cloud.redhat.com/openshift/install/gcp/installer-provisioned> and log in with your Red Hat account.
+To get the CLI tools and your pull secret, go to <https://console.redhat.com/openshift/install/gcp/installer-provisioned> and log in with your Red Hat account.
 On this page, download the latest version of the installer and command-line tools with the links provided. Extract these packages and place `openshift-install` and `oc` in your `PATH`.
 
 Copy the pull secret to your clipboard and write the content to a file `pull_secret` in the root of this repository. This file is gitignored.
@@ -38,7 +38,7 @@ Check [configuration options below](#configuration-options) and ensure that [req
 Run `./scripts/create_openshift_cluster.sh` to create your OpenShift cluster in Google Cloud.
 This will be a 6 node cluster with 3 control plane (master) nodes and 3 worker nodes ([configuration template](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/scripts/install-config.template.yaml)). This takes around 40 minutes. Follow the instructions at the end of the console output to connect to the cluster.
 
-Once created, you should be able to see your cluster registered here: <https://cloud.redhat.com/openshift/>. All installation logs and metadata will be stored in the `install-$CLUSTER_NAME/` directory in this repository. This folder is gitignored.
+Once created, you should be able to see your cluster registered here: <https://console.redhat.com/openshift/>. All installation logs and metadata will be stored in the `install-$CLUSTER_NAME/` directory in this repository. This folder is gitignored.
 
 If this cluster is meant to be used by other teammates or CI, create a new item in the 1Password Cloud Native vault and attach these files placed in `INSTALL_DIR`:
 
