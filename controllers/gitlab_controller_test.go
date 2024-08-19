@@ -828,29 +828,69 @@ gitlab:
 		})
 
 		When("Bundled NGINX is enabled", func() {
-			releaseName := "nginx-enabled"
-			controllerServiceName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
-			controllerDeploymentName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
+			When("Controller Kind is Deployment", func() {
+				releaseName := "nginx-deployment-enabled"
+				controllerServiceName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
+				controllerResourceName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
+				nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
+				chartValues := support.Values{}
 
-			BeforeEach(func() {
-				createGitLabResource(releaseName, support.Values{})
-				processSharedSecretsJob(releaseName)
+				BeforeEach(func() {
+					createGitLabResource(releaseName, chartValues)
+					processSharedSecretsJob(releaseName)
+				})
+
+				It("Should create NGINX resources by default and continue the reconcile loop", func() {
+					By("Checking NGINX Controller Service exists")
+					Eventually(getObjectPromise(controllerServiceName, &corev1.Service{}),
+						PollTimeout, PollInterval).Should(Succeed())
+
+					By("Checking NGINX Controller Deployment exists")
+					Eventually(getObjectPromise(controllerResourceName, &appsv1.Deployment{}),
+						PollTimeout, PollInterval).Should(Succeed())
+
+					By("Checking NGINX Controller DaemonSet does not exist")
+					Consistently(getObjectPromise(controllerResourceName, &appsv1.DaemonSet{}),
+						10*time.Second, PollInterval).ShouldNot(Succeed())
+
+					By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
+					Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
+						PollTimeout, PollInterval).Should(Succeed())
+				})
 			})
 
-			It("Should create NGINX resources by default and continue the reconcile loop", func() {
-				By("Checking NGINX Controller Service exists")
-				Eventually(getObjectPromise(controllerServiceName, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
+			When("Controller Kind is DaemonSet", func() {
+				releaseName := "nginx-daemonset-enabled"
+				controllerServiceName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
+				controllerResourceName := fmt.Sprintf("%s-%s-controller", releaseName, gitlabctl.NGINXComponentName)
+				nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
+				chartValues := support.Values{}
+				_ = chartValues.SetValue("nginx-ingress.controller.kind", "DaemonSet")
 
-				By("Checking NGINX Controller Deployment exists")
-				Eventually(getObjectPromise(controllerDeploymentName, &appsv1.Deployment{}),
-					PollTimeout, PollInterval).Should(Succeed())
+				BeforeEach(func() {
+					createGitLabResource(releaseName, chartValues)
+					processSharedSecretsJob(releaseName)
+				})
 
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
+				It("Should create NGINX resources by default and continue the reconcile loop", func() {
+					By("Checking NGINX Controller Service exists")
+					Eventually(getObjectPromise(controllerServiceName, &corev1.Service{}),
+						PollTimeout, PollInterval).Should(Succeed())
+
+					By("Checking NGINX Controller DaemonSet exists")
+					Eventually(getObjectPromise(controllerResourceName, &appsv1.DaemonSet{}),
+						PollTimeout, PollInterval).Should(Succeed())
+
+					By("Checking NGINX Controller Deployment does not exist")
+					Consistently(getObjectPromise(controllerResourceName, &appsv1.Deployment{}),
+						10*time.Second, PollInterval).ShouldNot(Succeed())
+
+					By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
+					Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
+						PollTimeout, PollInterval).Should(Succeed())
+				})
 			})
+
 		})
 	})
 })

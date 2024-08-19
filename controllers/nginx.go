@@ -27,5 +27,11 @@ func (r *GitLabReconciler) reconcileNGINX(ctx context.Context, adapter gitlab.Ad
 		}
 	}
 
+	for _, dep := range gitlabctl.NGINXDaemonSets(adapter, template) {
+		if err := r.createOrPatch(ctx, dep, adapter); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

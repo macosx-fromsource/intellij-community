@@ -66,6 +66,22 @@ func NGINXDeployments(adapter gitlab.Adapter, template helm.Template) []client.O
 	return result
 }
 
+// NGINXDaemonSets returns the Deployments of the NGINX Component.
+func NGINXDaemonSets(adapter gitlab.Adapter, template helm.Template) []client.Object {
+	result := template.Query().ObjectsByKindAndLabels(DaemonSetKind, map[string]string{
+		"app": NGINXComponentName,
+	})
+
+	// Namespaces are properly set on NGINX objects in Chart version 5.6.0.
+	// When all of Operator's supported CHART_VERSIONS are at or above 5.6.0,
+	// we can remove this override.
+	for _, dep := range result {
+		dep.SetNamespace(adapter.Name().Namespace)
+	}
+
+	return result
+}
+
 // NGINXAnnotations returns the annotations for Ingress objects.
 func NGINXAnnotations() map[string]string {
 	return map[string]string{
