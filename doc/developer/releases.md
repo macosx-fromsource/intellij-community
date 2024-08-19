@@ -53,7 +53,7 @@ This is done by:
 1. Delete the tag in [dev fork](https://dev.gitlab.org/gitlab/cloud-native/gitlab-operator).
 1. Delete the tag in [canonical](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator).
 1. Create the tag again on the HEAD of the stable branch.
-   
+
    Important: The tag **must** have a description of the following format: `Version a.b.c - supports GitLab Charts x, y, z`
    Without this description the tag is not considered by release tools on the next
    regular release.
