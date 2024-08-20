@@ -39,6 +39,8 @@ GitLab Operator does not support:
   For more information, see [GitLab Operator documentation on OpenShift Routes](openshift_ingress.md#openshift-routes).
 - Database migrations of the (experimental) registry metadata database.
   For more information, see [GitLab Operator issue 1599](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1599).
+- GKE workload identify to authenticate with GKE object storage.
+  For more information, see [GitLab Operator issue 1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737).
 
 GitLab Operator has any other limitation of GitLab Chart. GitLab Operator relies on GitLab Chart to provision Kubernetes resources. Therefore, any limitation
 in GitLab Chart impacts GitLab Operator. Removing the GitLab Chart dependency from GitLab Operator is proposed in
