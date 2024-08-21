@@ -100,22 +100,6 @@ minio:
       app.kubernetes.io/component: minio
       app.kubernetes.io/instance: {{ .ReleaseName }}-minio
 
-nginx-ingress:
-  labels:
-    app.kubernetes.io/name: {{ .ReleaseName }}
-    app.kubernetes.io/part-of: gitlab
-    app.kubernetes.io/managed-by: gitlab-operator
-    app.kubernetes.io/component: nginx-ingress
-    app.kubernetes.io/instance: {{ .ReleaseName }}-nginx-ingress
-  rbac:
-    create: false
-  serviceAccount:
-    create: false
-    name: {{ .Settings.NginxServiceAccount }}
-  defaultBackend:
-    serviceAccount:
-      name: {{ .Settings.AppNonRootServiceAccount }}
-
 postgresql:
   commonLabels:
     gitlab.io/component: postgresql
