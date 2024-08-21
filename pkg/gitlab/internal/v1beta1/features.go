@@ -1,6 +1,8 @@
 package v1beta1
 
 import (
+	"strings"
+
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/component"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
@@ -47,6 +49,18 @@ func newCheckEnabled(keys ...string) gitlab.FeatureCheck {
 }
 
 var mapComponentEnabled = map[gitlab.Component]gitlab.FeatureCheck{
+	component.GeoLogcursor: func(values support.Values) bool {
+		if !newCheckEnabled("global.geo.enabled")(values) {
+			return false
+		}
+
+		geoRole := values.GetString("global.geo.role")
+		if strings.ToLower(geoRole) != "secondary" {
+			return false
+		}
+
+		return newCheckEnabledWithDefault(true, "gitlab.geo-logcursor.enabled")(values)
+	},
 	component.Gitaly:         newCheckEnabled("global.gitaly.enabled"),
 	component.GitLabExporter: newCheckEnabled("gitlab.gitlab-exporter.enabled"),
 	component.GitLabPages:    newCheckEnabled("global.pages.enabled"),

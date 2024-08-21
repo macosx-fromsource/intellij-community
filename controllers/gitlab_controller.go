@@ -320,6 +320,12 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
+	if adapter.WantsComponent(component.GeoLogcursor) {
+		if err := r.reconcileGeoLogcursor(ctx, adapter, template); err != nil {
+			return requeue(err)
+		}
+	}
+
 	if isUpgrade {
 		if err := r.setStatusCondition(ctx, adapter, status.ConditionUpgrading, true, fmt.Sprintf("GitLab is upgrading from %s to %s", adapter.CurrentVersion(), adapter.DesiredVersion())); err != nil {
 			return requeue(err)
