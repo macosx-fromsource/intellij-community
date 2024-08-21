@@ -8,9 +8,9 @@ import (
 )
 
 // NGINXConfigMaps returns the ConfigMaps of the NGINX component.
-func NGINXConfigMaps(adapter gitlab.Adapter, template helm.Template) []client.Object {
+func NGINXConfigMaps(adapter gitlab.Adapter, template helm.Template, isGeo bool) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{
-		"app": NGINXComponentName,
+		"app": nginxComponentName(isGeo),
 	})
 
 	// Namespaces are properly set on NGINX objects in Chart version 5.6.0.
@@ -24,9 +24,9 @@ func NGINXConfigMaps(adapter gitlab.Adapter, template helm.Template) []client.Ob
 }
 
 // NGINXServices returns the Services of the NGINX Component.
-func NGINXServices(adapter gitlab.Adapter, template helm.Template) []client.Object {
+func NGINXServices(adapter gitlab.Adapter, template helm.Template, isGeo bool) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
-		"app": NGINXComponentName,
+		"app": nginxComponentName(isGeo),
 	})
 
 	// Namespaces are properly set on NGINX objects in Chart version 5.6.0.
@@ -40,8 +40,8 @@ func NGINXServices(adapter gitlab.Adapter, template helm.Template) []client.Obje
 }
 
 // NGINXServiceMonitor returns the ServiceMonitor for the NGINX Ingress component.
-func NGINXServiceMonitor(template helm.Template) client.Object {
-	result := template.Query().ObjectByKindAndComponent(ServiceMonitorKind, NGINXComponentName)
+func NGINXServiceMonitor(template helm.Template, isGeo bool) client.Object {
+	result := template.Query().ObjectByKindAndComponent(ServiceMonitorKind, nginxComponentName(isGeo))
 
 	if result != nil {
 		result.SetNamespace(template.Namespace())
@@ -51,9 +51,9 @@ func NGINXServiceMonitor(template helm.Template) client.Object {
 }
 
 // NGINXDeployments returns the Deployments of the NGINX Component.
-func NGINXDeployments(adapter gitlab.Adapter, template helm.Template) []client.Object {
+func NGINXDeployments(adapter gitlab.Adapter, template helm.Template, isGeo bool) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(DeploymentKind, map[string]string{
-		"app": NGINXComponentName,
+		"app": nginxComponentName(isGeo),
 	})
 
 	// Namespaces are properly set on NGINX objects in Chart version 5.6.0.
@@ -74,4 +74,12 @@ func NGINXAnnotations() map[string]string {
 		"nginx.ingress.kubernetes.io/proxy-read-timeout":      "900",
 		"nginx.ingress.kubernetes.io/proxy-request-buffering": "off",
 	}
+}
+
+func nginxComponentName(isGeo bool) string {
+	if isGeo {
+		return NGINXGeoComponentName
+	}
+
+	return NGINXComponentName
 }

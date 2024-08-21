@@ -56,6 +56,7 @@ var mapComponentEnabled = map[gitlab.Component]gitlab.FeatureCheck{
 	component.Migrations:     newCheckEnabled("gitlab.migrations.enabled"),
 	component.MinIO:          newCheckEnabled("global.minio.enabled"),
 	component.NginxIngress:   newCheckEnabled("nginx-ingress.enabled"),
+	component.NginxGeo:       newCheckEnabled("nginx-ingress-geo.enabled"),
 	component.PostgreSQL:     newCheckEnabled("postgresql.install"),
 	component.Praefect:       newCheckEnabled("global.praefect.enabled"),
 	component.Prometheus:     newCheckEnabled("prometheus.install"),

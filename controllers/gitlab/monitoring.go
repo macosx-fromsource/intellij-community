@@ -20,7 +20,12 @@ var (
 		{component.GitLabShell, ShellServiceMonitor},
 		{component.GitLabKAS, KasServiceMonitor},
 		{component.GitLabPages, PagesServiceMonitor},
-		{component.NginxIngress, NGINXServiceMonitor},
+		{component.NginxIngress, func(template helm.Template) client.Object {
+			return NGINXServiceMonitor(template, false)
+		}},
+		{component.NginxGeo, func(template helm.Template) client.Object {
+			return NGINXServiceMonitor(template, true)
+		}},
 		{component.Praefect, PraefectServiceMonitor},
 		{component.Redis, RedisServiceMonitor},
 		{component.Registry, RegistryServiceMonitor},

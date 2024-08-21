@@ -16,6 +16,7 @@ const (
 	Migrations     gitlab.Component = "migrations"
 	MinIO          gitlab.Component = "minio"
 	NginxIngress   gitlab.Component = "nginx-ingress"
+	NginxGeo       gitlab.Component = "nginx-ingress-geo"
 	PostgreSQL     gitlab.Component = "postgresql"
 	Praefect       gitlab.Component = "praefect"
 	Prometheus     gitlab.Component = "prometheus"
