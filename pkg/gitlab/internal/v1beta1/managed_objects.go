@@ -76,7 +76,7 @@ var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersion
 	}, {
 		Group:    "apps",
 		Version:  "v1",
-		Resource: "daemonset",
+		Resource: "daemonsets",
 	}, {
 		Group:    "networking.k8s.io",
 		Version:  "v1",
