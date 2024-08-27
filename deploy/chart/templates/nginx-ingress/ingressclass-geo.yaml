@@ -1,0 +1,13 @@
+{{- if (index .Values "nginx-ingress").geo.ingressClass.enabled }}
+# We don't support namespaced ingressClass yet
+# So a ClusterRole and a ClusterRoleBinding is required
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: {{ include "name" . }}-nginx-geo
+spec:
+  # Must match the `--controller-class` value in the NGINX Geo Controller Deployment,
+  # configurable via:
+  #   nginx-ingress-geo.controller.ingressClassResource.controllerValue
+  controller: k8s.io/ingress-nginx-geo
+{{- end }}

@@ -70,6 +70,14 @@ nginx-ingress:
       serviceMonitor:
         enabled: true
 
+nginx-ingress-geo:
+  enabled: true
+  controller:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
 redis:
   metrics:
     serviceMonitor:

@@ -64,6 +64,9 @@ const (
 	// NGINXComponentName is the common name of NGINX Ingress.
 	NGINXComponentName = "nginx-ingress"
 
+	// NGINXGeoComponentName is the common name of NGINX Ingress for Geo traffic.
+	NGINXGeoComponentName = "nginx-ingress-geo"
+
 	// NGINXDefaultBackendComponentName is the common name of NGINX DefaultBackend.
 	NGINXDefaultBackendComponentName = "defaultbackend"
 

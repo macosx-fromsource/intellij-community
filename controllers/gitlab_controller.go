@@ -159,7 +159,13 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	if adapter.WantsComponent(component.NginxIngress) {
-		if err := r.reconcileNGINX(ctx, adapter, template); err != nil {
+		if err := r.reconcileNGINX(ctx, adapter, template, false); err != nil {
+			return requeue(err)
+		}
+	}
+
+	if adapter.WantsComponent(component.NginxGeo) {
+		if err := r.reconcileNGINX(ctx, adapter, template, true); err != nil {
 			return requeue(err)
 		}
 	}
