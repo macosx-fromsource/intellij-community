@@ -80,6 +80,7 @@ rules:
     - coordination.k8s.io
     resourceNames:
       - ingress-controller-leader
+      - ingress-controller-leader-geo
     resources:
       - leases
     verbs:
