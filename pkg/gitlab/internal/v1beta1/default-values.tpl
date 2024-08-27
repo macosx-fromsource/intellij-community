@@ -38,4 +38,7 @@ nginx-ingress-geo:
   defaultBackend:
     serviceAccount:
       name: {{ .Settings.AppNonRootServiceAccount }}
+  controller:
+    ingressClassResource:
+      controllerValue: k8s.io/ingress-nginx-geo
 
