@@ -8,12 +8,12 @@ the GitLab custom resource by setting the `spec.chart.values`.
 
 ## Ingress class
 
-The GitLab Operator does not come with a IngressClass of the secondary
+The GitLab Operator does not come with an IngressClass of the secondary
 [NGINX Ingress](https://docs.gitlab.com/charts/charts/nginx/#gitlab-geo).
 
 This controller and IngressClass are only needed if:
 
-1. You want to use a unified URL for GitLab Geo, and
+1. You want to use a unified URL for GitLab Geo.
 1. Your primary Ingress controller overrides incoming `X-Forwarded-For`
    headers (the bundled default NGINX chart does).
 
@@ -28,7 +28,7 @@ The IngressClass is not included in the default manifest and OLM release.
 Create it manually:
 
 ```shell
-$ kubectl apply -f - <<EOF
+kubectl apply -f - <<EOF
 apiVersion: networking.k8s.io/v1
 kind: IngressClass
 metadata:
@@ -48,3 +48,5 @@ nginx-ingress:
     ingressClass:
       enabled: true
 ```
+
+::EndTabs
