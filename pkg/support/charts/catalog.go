@@ -3,9 +3,9 @@ package charts
 import (
 	"cmp"
 	"log"
+	"slices"
 
 	"github.com/mitchellh/copystructure"
-	"golang.org/x/exp/slices"
 	"golang.org/x/mod/semver"
 	"helm.sh/helm/v3/pkg/chart"
 )
