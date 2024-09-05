@@ -13,7 +13,7 @@ var ErrInvalidSize = errors.New("invalid size")
 var validSizes = []uint64{0, 256, 384, 521, 1024, 2048, 4096}
 
 func ParseSize(annotation string) (Size, error) {
-	size, err := strconv.ParseUint(annotation, 10, 64)
+	size, err := strconv.ParseUint(annotation, 10, 32)
 
 	if numError, ok := err.(*strconv.NumError); ok {
 		err = numError.Err
@@ -27,6 +27,7 @@ func ParseSize(annotation string) (Size, error) {
 		return Size(0), fmt.Errorf("size: %d %w", size, ErrInvalidSize)
 	}
 
+	//nolint:gosec
 	return Size(size), nil
 }
 
