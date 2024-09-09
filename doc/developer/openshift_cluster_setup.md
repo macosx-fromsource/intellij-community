@@ -98,6 +98,6 @@ See [doc/installation.md](installation.md) for instruction on installing the Git
 - `openshift-installer` source: <https://github.com/openshift/installer>
 - `oc` source: <https://github.com/openshift/oc>
 - `openshift-installer` and `oc` packages: <https://mirror.openshift.com/pub/openshift-v4/clients/ocp/>
-- OpenShift Container Project (OCP) architecture docs: <https://docs.openshift.com/container-platform/4.10/architecture/index.html>
-- OpenShift GCP docs: <https://docs.openshift.com/container-platform/4.15/installing/installing_gcp/installing-gcp-account.html>
+- OpenShift Container Project (OCP) architecture documentation: <https://docs.openshift.com/container-platform/4.10/architecture/index.html>
+- OpenShift GCP documentation: <https://docs.openshift.com/container-platform/4.15/installing/installing_gcp/installing-gcp-account.html>
 - OpenShift troubleshooting guide: <https://docs.openshift.com/container-platform/4.15/support/troubleshooting/troubleshooting-installations.html>
