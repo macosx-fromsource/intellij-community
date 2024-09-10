@@ -60,7 +60,7 @@ func main() {
 		enableLeaderElection bool
 	)
 
-	flag.StringVar(&metricsAddr, "metrics-addr", ":8080",
+	flag.StringVar(&metricsAddr, "metrics-addr", ":8443",
 		"The address the metric endpoint binds to.")
 	flag.BoolVar(&enableMetricsFilter, "enable-metrics-auth-filter", true,
 		"If set, the metrics endpoint is is served with a authentication and authorization filter.")

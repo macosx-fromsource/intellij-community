@@ -25,7 +25,7 @@ spec:
       {{- end }}
       containers:
       - args:
-        - --metrics-addr=127.0.0.1:8080
+        - --metrics-addr=:8443
         - --enable-leader-election
         - --zap-devel={{ .Values.manager.debug.enabled }}
         - --zap-log-level={{ .Values.manager.log.level }}
@@ -45,6 +45,8 @@ spec:
           protocol: TCP
         - containerPort: 6060
           name: health-port
+        - containerPort: 8443
+          name: metrics
         env:
         {{- if not .Values.watchCluster }}
         - name: WATCH_NAMESPACE
