@@ -154,7 +154,7 @@ lint_code:
 
 docs-lint content:
   stage: test
-  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.6.1-markdownlint2-0.13.0-lychee-0.15.1
+  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.7.1-markdownlint2-0.13.0-lychee-0.15.1
   cache: {}
   needs:
     - job: danger-review
@@ -172,7 +172,7 @@ docs-lint content:
 
 docs-lint markdown:
   stage: test
-  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.6.1-markdownlint2-0.13.0-lychee-0.15.1
+  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.7.1-markdownlint2-0.13.0-lychee-0.15.1
   cache: {}
   needs:
     - job: danger-review
@@ -190,7 +190,7 @@ docs-lint markdown:
 
 docs-lint links:
   stage: test
-  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.6.1-markdownlint2-0.13.0-lychee-0.15.1
+  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.7.1-markdownlint2-0.13.0-lychee-0.15.1
   cache: {}
   needs:
     - job: danger-review
