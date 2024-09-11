@@ -50,9 +50,9 @@ a release can be published, the tag needs to be re-created.
 This is done by:
 
 1. Merge the required fixes into the stable branch.
+1. Delete the tag in [canonical](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator).
 1. Delete the tag in the [security fork](https://gitlab.com/gitlab-org/security/cloud-native/gitlab-operator).
 1. Delete the tag in the [dev fork](https://dev.gitlab.org/gitlab/cloud-native/gitlab-operator).
-1. Delete the tag in [canonical](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator).
 1. Confirm the `CHART_VERSIONS` are up to date.
 1. Confirm the `appVersion` and `version` in `deploy/chart/Chart.yaml` is up to date.
 1. Create the tag again on the HEAD of the stable branch.
