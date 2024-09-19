@@ -130,27 +130,6 @@ Creates the full image path for use in manifests.
 {{- end -}}
 
 {{/*
-Return the kube-rbac-proxy image digest to use.
-*/}}
-{{- define "kubeRbacProxy.image.digest" -}}
-{{-   if .Values.manager.kubeRbacProxy.image.digest -}}
-{{-     printf "@%s" .Values.manager.kubeRbacProxy.image.digest -}}
-{{-   end -}}
-{{- end -}}
-
-{{/*
-Creates the full kube-rbac-proxy image path for use in manifests.
-*/}}
-{{- define "manager.kubeRbacProxy.image.fullPath" -}}
-{{-   $registry := .Values.manager.kubeRbacProxy.image.registry -}}
-{{-   $repository := .Values.manager.kubeRbacProxy.image.repository -}}
-{{-   $name := .Values.manager.kubeRbacProxy.image.name -}}
-{{-   $tag := .Values.manager.kubeRbacProxy.image.tag -}}
-{{-   $digest := include "kubeRbacProxy.image.digest" . -}}
-{{-   printf "%s/%s/%s:%s%s" $registry $repository $name $tag $digest | quote -}}
-{{- end -}}
-
-{{/*
 Create the name of the app service account to use
 */}}
 {{- define "webhook.service.name" -}}

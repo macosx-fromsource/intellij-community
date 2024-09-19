@@ -25,7 +25,7 @@ spec:
       {{- end }}
       containers:
       - args:
-        - --metrics-addr=127.0.0.1:8080
+        - --metrics-addr=:8443
         - --enable-leader-election
         - --zap-devel={{ .Values.manager.debug.enabled }}
         - --zap-log-level={{ .Values.manager.log.level }}
@@ -45,6 +45,8 @@ spec:
           protocol: TCP
         - containerPort: 6060
           name: health-port
+        - containerPort: 8443
+          name: metrics
         env:
         {{- if not .Values.watchCluster }}
         - name: WATCH_NAMESPACE
@@ -80,21 +82,6 @@ spec:
         - mountPath: /tmp/k8s-webhook-server/serving-certs
           name: cert
           readOnly: true
-      - args:
-        - --secure-listen-address=0.0.0.0:8443
-        - --upstream=http://127.0.0.1:8080/
-        - --logtostderr=true
-        - --v=0
-        image: {{ include "manager.kubeRbacProxy.image.fullPath" $ }}
-        {{- if .Values.manager.kubeRbacProxy.image.pullPolicy }}
-        imagePullPolicy: {{ .Values.manager.kubeRbacProxy.image.pullPolicy | quote }}
-        {{- end }}
-        name: kube-rbac-proxy
-        resources: {{- toYaml .Values.manager.kubeRbacProxy.resources | nindent 10 }}
-        ports:
-        - containerPort: 8443
-          name: https
-          protocol: TCP
       serviceAccountName: {{ include "manager.serviceAccount.name" . }}
       terminationGracePeriodSeconds: 10
       volumes:
