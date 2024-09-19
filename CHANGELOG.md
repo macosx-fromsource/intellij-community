@@ -1,3 +1,23 @@
+## 1.4.0 (2024-09-19)
+
+### changed (11 changes)
+
+- [Update k8s.io](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3f300781ab4552c6590408b99904eed92ae37e0c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/979))
+- [Update prom-op-api/monitoring to v0.76.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/fae5a8bb5705ebefb02b69592906466e9acda484) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/970))
+- [Update Go from 1.23.0 to 1.23.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/21f98d2eb86966f17cebd63ff7dc5e400e153f3f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/974))
+- [Update github.com/Masterminds/semver/v3 to v3.3.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/976e966b9b74046d9a54dd5338661bed3b2b49f5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/967))
+- [Update testing](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/11d5ee3ffc2cc1e1cc81cc757e873a4b1311fdc0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/968))
+- [Update github.com/onsi/ginkgo/v2 to v2.20.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/872ca8a927550c601547d56f9ca6fd9a677ebd2f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/964))
+- [Update dario.cat/mergo to v1.0.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e441d8b57d693d37270dcdf22b01d6b1e97ccf85) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/955))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/209c82f19bdfa534cdff6804b1c9c6617dcf08fc) by @gitlab-dependency-update-bot ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/949))
+- [Update github.com/cert-manager/cert-manager to v1.15.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f619b60bfae189eabee1b207cafedc7e36a6eb8c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/953))
+- [Update Go to 1.23](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9f952caafb5390b44e3f56e5164713fc4a8bc213) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/952))
+- [Update prom-op-api/monitoring to v0.76.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ab18ae9c569ac4c7e7e73d0a452ff95f22a94490) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/950))
+
+### added (1 change)
+
+- [Support NGINX Ingress for Geo traffic](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a21ab91043386e55350081b649e7784ff5800202) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/959))
+
 ## 1.3.3 (2024-09-17)
 
 No changes.
