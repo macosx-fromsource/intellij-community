@@ -98,8 +98,6 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 		_ = values.SetValue("global.hosts.domain", "greatexpectations.com")
 
 		/* Operator overrides these */
-		_ = values.SetValue("global.serviceAccount.enabled", false)
-		_ = values.SetValue("global.ingress.apiVersion", "networking.k8s.io/v1beta1")
 		_ = values.SetValue("gitlab-runner.install", true)
 		_ = values.SetValue("certmanager.install", true)
 
@@ -127,7 +125,9 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 
 	It("uses user-defined values over operator default values", func() {
 		values := support.Values{}
+		_ = values.SetValue("global.serviceAccount.enabled", false)
 		_ = values.SetValue("gitlab.webservice.serviceAccount.name", "great-service-account")
+		_ = values.SetValue("global.ingress.apiVersion", "networking.k8s.io/v1beta1")
 
 		a, err := NewAdapter(context.TODO(),
 			newGitLabResource(getChartVersion(), values))
@@ -136,6 +136,8 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 		Expect(a).NotTo(BeNil())
 
 		Expect(a.values.GetValue("gitlab.webservice.serviceAccount.name")).To(Equal("great-service-account"))
+		Expect(a.values.GetValue("global.ingress.apiVersion")).To(Equal("networking.k8s.io/v1beta1"))
+		Expect(a.values.GetValue("global.serviceAccount.enabled")).To(BeFalse())
 	})
 
 	It("wants default components and features when not specified otherwise", func() {
@@ -248,19 +250,18 @@ func addChartDefaultExamples(examples support.Values) {
 }
 
 func addOperatorDefaultExamples(examples support.Values) {
-	examples["certmanager-issuer.email"] = "admin@example.com"
-	examples["gitlab.webservice.serviceAccount.name"] = settings.AppNonRootServiceAccount
-}
-
-func addOperatorOverrideExamples(examples support.Values) {
 	examples["global.serviceAccount.name"] = settings.AppNonRootServiceAccount
 	examples["global.ingress.apiVersion"] = "networking.k8s.io/v1" // ""
 	examples["global.serviceAccount.enabled"] = true               // false
-	examples["certmanager.install"] = false                        // true
-	examples["gitlab-runner.install"] = false                      // true
-	examples["shared-secrets.securityContext.runAsUser"] = ""      // 1000
-	examples["shared-secrets.securityContext.fsGroup"] = ""        // 1000
+	examples["certmanager-issuer.email"] = "admin@example.com"
+	examples["shared-secrets.securityContext.runAsUser"] = "" // 1000
+	examples["shared-secrets.securityContext.fsGroup"] = ""   // 1000
 	examples["shared-secrets.serviceAccount.name"] = settings.ManagerServiceAccount
+}
+
+func addOperatorOverrideExamples(examples support.Values) {
+	examples["certmanager.install"] = false   // true
+	examples["gitlab-runner.install"] = false // true
 }
 
 func addUserDefinedExamples(examples, values support.Values) {

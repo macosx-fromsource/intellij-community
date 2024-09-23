@@ -1,11 +1,68 @@
+global:
+  image:
+    pullPolicy: IfNotPresent
+
+  ingress:
+    apiVersion: networking.k8s.io/v1
+    {{ if .UseCertManager }}
+    annotations:
+      cert-manager.io/issuer: {{ .ReleaseName }}-issuer
+      acme.cert-manager.io/http01-edit-in-place: true
+    {{ end }}
+
+  serviceAccount:
+    enabled: true
+    create: false
+    name: {{ .Settings.AppNonRootServiceAccount }}
+
 certmanager-issuer:
   email: {{ .Settings.CertmanagerIssuerEmail }}
 
-gitlab:
-  webservice:
-    serviceAccount:
+postgresql:
+  serviceAccount:
+    enabled: true
+    create: false
+    name: {{ .Settings.AppNonRootServiceAccount }}
+  securityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+
+redis:
+  serviceAccount:
+    name: {{ .Settings.AppNonRootServiceAccount }}
+  securityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+
+shared-secrets:
+  serviceAccount:
+    create: false
+    name: {{ .Settings.ManagerServiceAccount }}
+  securityContext:
+    runAsUser: ''
+    fsGroup: ''
+
+prometheus:
+  rbac:
+    create: false
+  serviceAccounts:
+    server:
+      create: false
+      name: {{ .Settings.PrometheusServiceAccount }}
+    alertmanager:
+      create: false
+      name: {{ .Settings.AppNonRootServiceAccount }}
+    nodeExporter:
+      create: false
+      name: {{ .Settings.AppNonRootServiceAccount }}
+    pushgateway:
+      create: false
       name: {{ .Settings.AppNonRootServiceAccount }}
 
+gitlab-zoekt:
+  serviceAccount:
+    create: false
+    name: {{ .Settings.AppNonRootServiceAccount }}
 
 nginx-ingress:
   labels:
