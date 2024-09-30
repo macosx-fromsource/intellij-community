@@ -17,6 +17,13 @@
 .if_release_tag_on_canonical: &if_release_tag_on_canonical
   if: '$CI_SERVER_HOST == "gitlab.com" && $CI_PROJECT_PATH == "gitlab-org/cloud-native/gitlab-operator" && $CI_COMMIT_TAG =~ /^[0-9]+\.[0-9]+\.[0-9]+(-(rc|RC|beta)\d*)?$/'
 
+.if_not_canonical: &if_not_canonical
+  if: '$CI_SERVER_HOST != "gitlab.com" || $CI_PROJECT_PATH != "gitlab-org/cloud-native/gitlab-operator"'
+
+.skip_if_not_canonical:
+  <<: *if_not_canonical
+  when: never
+
 .skip_if_release_tag: &skip_if_release_tag
   <<: *if_release_tag
   when: never
