@@ -10,5 +10,8 @@ operator-sdk 1.36.1
 opm 1.45.0
 task 3.38.0
 tekton-cli 0.32.0
-vale 3.7.1
 yq 4.44.3
+
+# For linting documentation
+markdownlint-cli2 0.14.0
+vale 3.7.1

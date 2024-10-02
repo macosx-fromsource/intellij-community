@@ -27,7 +27,7 @@ termination. This can be done with the following command:
 kubectl logs deployment/gitlab-controller-manager -c manager -f -n <namespace>
 ```
 
-Additionally, the operator depends on Cert Manager in order to create TLS
+Additionally, the operator depends on Cert Manager to create TLS
 certificate for proper operation. The TLS certificate gets created as a
 Secret and mounted as a volume on the operator Pod. Problems with obtaining
 the TLS certificate can be found in the event log for the Namespace.
