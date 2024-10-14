@@ -890,7 +890,56 @@ gitlab:
 						PollTimeout, PollInterval).Should(Succeed())
 				})
 			})
+		})
 
+		Context("Registry", func() {
+			When("Registry database migrations are enabled", func() {
+				releaseName := "registry"
+				chartValues := support.Values{}
+
+				// Enable registry migrations and disable/externalize some components to
+				// skip reconciler logic not relevant to the registry migrations.
+				_ = chartValues.AddFromYAML(`
+registry:
+  database:
+    enabled: true
+    migrations:
+      enabled: true
+global:
+  redis:
+    host: redis.example.com
+  psql:
+    host: psql.example.com
+    password:
+      secret: psql-secret
+      key: psql-key
+  gitaly:
+    enabled: false
+    external:
+    - name: default
+      hostname: gitaly.example.com
+gitlab:
+  webservice:
+    enabled: false
+  sidekiq:
+    enabled: false
+redis:
+  install: false
+postgresql:
+  install: false
+`)
+
+				BeforeEach(func() {
+					Expect(createObject(newSecret("psql-secret", Namespace, "psql-key", "foo"), true)).Should(Succeed())
+					createGitLabResource(releaseName, chartValues)
+					processSharedSecretsJob(releaseName)
+				})
+
+				It("Should create the registry migrations job", func() {
+					Eventually(listObjectsPromise("app=registry", &batchv1.JobList{}, 1),
+						PollTimeout, PollInterval).Should(Succeed())
+				})
+			})
 		})
 	})
 })
