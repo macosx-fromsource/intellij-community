@@ -1,3 +1,12 @@
+## 1.5.0 (2024-10-17)
+
+### changed (4 changes)
+
+- [Update Go from 1.23.1 to 1.23.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c84ecb7a75b4ad1d76e96e355fa39d7c52da2924) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/990))
+- [Update golang.org/x/mod to v0.21.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2e3aaa5ae3da0ab36b551a5a74cbc3275a95f45d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/971))
+- [Update k8s.io/utils to 49e7df5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/84d88fa6cfebbd596656a331a150525226e3c54e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/982))
+- [Migrate from kube-rbac-proxy to authn/authz filter](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9fcae9758a23ed910b3e4792e32527467ca02014) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/977))
+
 ## 1.4.2 (2024-10-09)
 
 No changes.
