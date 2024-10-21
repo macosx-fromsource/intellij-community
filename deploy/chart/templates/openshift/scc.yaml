@@ -4,7 +4,7 @@ allowHostIPC: false
 allowHostNetwork: false
 allowHostPID: false
 allowHostPorts: false
-allowPrivilegeEscalation: true
+allowPrivilegeEscalation: false
 allowPrivilegedContainer: false
 allowedCapabilities: null
 apiVersion: {{ include "scc.apiVersion" . }}
@@ -27,6 +27,8 @@ seLinuxContext:
   type: MustRunAs
 supplementalGroups:
   type: MustRunAs
+seccompProfiles:
+- runtime/default
 volumes:
 - secret
 {{- end }}
