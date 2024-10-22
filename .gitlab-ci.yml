@@ -428,7 +428,7 @@ approve_cluster_tests:
   image: alpine:latest
   script: echo "Proceeding to tests in CI clusters..."
   rules:
-    - !reference [.skip_if_dev_mirror]
+    - !reference [.skip_if_not_canonical]
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_release_tag]
     - !reference [.skip_if_stable_branch]
