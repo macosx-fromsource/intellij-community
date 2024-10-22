@@ -79,6 +79,12 @@ nginx-ingress:
   defaultBackend:
     serviceAccount:
       name: {{ .Settings.AppNonRootServiceAccount }}
+  controller:
+    # Port securty context related values from chart 8.5.0+
+    # for SCC compatability with older charts.
+    # Can be removed once the minimum chart version is 8.5.0.
+    image:
+      allowPrivilegeEscalation: false
 
 nginx-ingress-geo:
   labels:
@@ -98,4 +104,8 @@ nginx-ingress-geo:
   controller:
     ingressClassResource:
       controllerValue: k8s.io/ingress-nginx-geo
-
+    # Port securty context related values from chart 8.5.0+
+    # for SCC compatability with older charts.
+    # Can be removed once the minimum chart version is 8.5.0.
+    image:
+      allowPrivilegeEscalation: false
