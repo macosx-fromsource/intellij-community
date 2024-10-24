@@ -5,6 +5,7 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
 
@@ -14,6 +15,8 @@ global:
   pages:
     enabled: true
   praefect:
+    enabled: true
+  kas:
     enabled: true
 
 registry:
@@ -43,8 +46,11 @@ gitlab:
         enabled: true
   kas:
     metrics:
-      serviceMonitor:
+      enabled: true
+      podMonitor:
         enabled: true
+      serviceMonitor:
+        enabled: false
   praefect:
     metrics:
       serviceMonitor:
@@ -108,9 +114,34 @@ var _ = Describe("Monitoring", func() {
 			Expect(err).To(BeNil())
 		})
 
-		It("Should contain all Monitoring resources", func() {
-			Expect(serviceMonitors).To(HaveLen(len(serviceMonitorComponentMap)))
-			Expect(podMonitors).To(HaveLen(len(podMonitorComponentMap)))
+		When("KAS PodMonitor is enabled, ServiceMonitor is disabled", func() {
+			BeforeEach(func() {
+				Expect(chartValues.SetValue("gitlab.kas.metrics.serviceMonitor.enabled", false)).To(BeNil())
+				Expect(chartValues.SetValue("gitlab.kas.metrics.podMonitor.enabled", true)).To(BeNil())
+			})
+
+			It("Should contain all Monitoring resources", func() {
+				// KAS PodMonitor is not supported prior to Chart version 8.5.0
+				if IsChartVersionOlderThan(helm.GetChartVersion(), ChartVersion85) {
+					Expect(serviceMonitors).To(HaveLen(len(serviceMonitorComponentMap) - 1))
+					Expect(podMonitors).To(HaveLen(len(podMonitorComponentMap) - 1))
+				} else {
+					Expect(serviceMonitors).To(HaveLen(len(serviceMonitorComponentMap) - 1))
+					Expect(podMonitors).To(HaveLen(len(podMonitorComponentMap)))
+				}
+			})
+		})
+
+		When("KAS PodMonitor is disabled, ServiceMonitor is enabled", func() {
+			BeforeEach(func() {
+				Expect(chartValues.SetValue("gitlab.kas.metrics.serviceMonitor.enabled", true)).To(BeNil())
+				Expect(chartValues.SetValue("gitlab.kas.metrics.podMonitor.enabled", false)).To(BeNil())
+			})
+
+			It("Should contain all Monitoring resources", func() {
+				Expect(serviceMonitors).To(HaveLen(len(serviceMonitorComponentMap)))
+				Expect(podMonitors).To(HaveLen(len(podMonitorComponentMap) - 1))
+			})
 		})
 	})
 

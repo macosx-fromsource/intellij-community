@@ -25,3 +25,7 @@ func KasService(template helm.Template) client.Object {
 func KasServiceMonitor(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(ServiceMonitorKind, KasComponentName)
 }
+
+func KasPodMonitor(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(PodMonitorKind, KasComponentName)
+}
