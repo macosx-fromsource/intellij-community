@@ -97,7 +97,8 @@ const (
 	gitlabComponentLabel = "gitlab.io/component"
 	appLabel             = "app"
 
-	ChartVersion7 = "7.0.0"
+	ChartVersion7  = "7.0.0"
+	ChartVersion85 = "8.5.0"
 )
 
 // RedisSubqueues is the array of possible Redis subqueues.

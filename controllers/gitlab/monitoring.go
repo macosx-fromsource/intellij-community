@@ -35,6 +35,7 @@ var (
 
 	podMonitorComponentMap = []componentMap{
 		{component.Sidekiq, SidekiqPodMonitor},
+		{component.GitLabKAS, KasPodMonitor},
 	}
 )
 
