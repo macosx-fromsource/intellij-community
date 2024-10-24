@@ -33,8 +33,6 @@ GitLab Operator does not support:
   Support for automatic migration is proposed in [GitLab Operator issue 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567).
 - Deployment by using the [GitLab Environment Toolkit](https://gitlab.com/gitlab-org/gitlab-environment-toolkit).
   Support for this integration is proposed in [GitLab Operator issue 1571](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1571).
-- [GitLab Geo](https://docs.gitlab.com/ee/administration/geo/) installation and configuration. You cannot use GitLab Operator for deploying of primary or
-  secondary sites. Support for Geo is tracked in [GitLab Operator issue 1568](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1568).
 - Git over SSH with [OpenShift routes](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html).
   For more information, see [GitLab Operator documentation on OpenShift Routes](openshift_ingress.md#openshift-routes).
 - Database migrations of the (experimental) registry metadata database.
