@@ -13,6 +13,10 @@ func (r *GitLabReconciler) reconcileRegistry(ctx context.Context, adapter gitlab
 		return err
 	}
 
+	if err := r.reconcileRegistryMigrationsJob(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	if err := r.reconcileRegistryDeployment(ctx, adapter, template); err != nil {
 		return err
 	}
@@ -66,4 +70,20 @@ func (r *GitLabReconciler) reconcileRegistryIngress(ctx context.Context, adapter
 	}
 
 	return nil
+}
+
+func (r *GitLabReconciler) reconcileRegistryMigrationsJob(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	migrationsJob := gitlabctl.RegistryMigrationsJob(template)
+	if migrationsJob == nil {
+		return nil
+	}
+
+	if exists, err := r.jobExists(ctx, migrationsJob); err != nil {
+		return err
+	} else if exists {
+		r.Log.V(2).Info("registry migrations Job already exists")
+		return nil
+	}
+
+	return r.createOrPatch(ctx, migrationsJob, adapter)
 }

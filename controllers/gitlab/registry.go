@@ -34,3 +34,7 @@ func RegistryConfigMap(adapter gitlab.Adapter, template helm.Template) client.Ob
 func RegistryIngress(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(IngressKind, RegistryComponentName)
 }
+
+func RegistryMigrationsJob(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(JobKind, RegistryComponentName)
+}
