@@ -1,3 +1,9 @@
+---
+stage: Systems
+group: Distribution
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+---
+
 # Configure the GitLab Operator with GitLab Geo
 
 The requirements, limitations and Geo configuration of the Operator
@@ -19,9 +25,9 @@ This controller and IngressClass are only needed if:
 
 The process of creating the IngressClass depends on your installation method:
 
-:: Tabs
+::Tabs
 
-:: TabTitle Manifest and OLM
+:::TabTitle Manifest and OLM
 
 The IngressClass is not included in the default manifest and OLM release.
 
@@ -38,7 +44,7 @@ spec:
 EOF
 ```
 
-:: TabTitle Helm Chart
+:::TabTitle Helm Chart
 
 Enable the IngressClass by updating your values:
 
