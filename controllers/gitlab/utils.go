@@ -94,6 +94,9 @@ const (
 	// ZoektComponentName is the common name of Zoekt.
 	ZoektComponentName = "gitlab-zoekt"
 
+	// GeoLogcursorComponentName is the common name of Geo Logcursor.
+	GeoLogcursorComponentName = "geo-logcursor"
+
 	gitlabComponentLabel = "gitlab.io/component"
 	appLabel             = "app"
 

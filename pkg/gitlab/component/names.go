@@ -7,6 +7,7 @@ import (
 const (
 	GitLab gitlab.Component = "gitlab"
 
+	GeoLogcursor   gitlab.Component = "geo-logcursor"
 	Gitaly         gitlab.Component = "gitaly"
 	GitLabExporter gitlab.Component = "gitlab-exporter"
 	GitLabPages    gitlab.Component = "gitlab-pages"
