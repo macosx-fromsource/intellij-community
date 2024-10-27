@@ -50,11 +50,11 @@ The GitLab Operator supports the following Kubernetes versions:
 | 1.29               | Supported                    | 1.0.0                    | x86-64        | 2025-02-28  |
 | 1.28               | Supported                    | 1.0.0                    | x86-64        | 2024-10-28  |
 | 1.27               | Supported                    | 0.29.0                   | x86-64        | 2024-06-28  |
-| 1.26               | Deprecated                   | 0.24.0                   | x86-64        | 2024-02-28  |
-| 1.25               | Deprecated                   | 0.24.0                   | x86-64        | 2023-10-28  |
-| 1.24               | Deprecated                   | 0.24.0                   | x86-64        | 2023-07-28  |
-| 1.23               | Deprecated                   | 0.24.0                   | x86-64        | 2023-02-28  |
-| 1.22               | Deprecated                   | 0.24.0                   | x86-64        | 2022-10-28  |
+| 1.26               | Unsupported                  | 0.24.0                   | x86-64        | 2024-02-28  |
+| 1.25               | Unsupported                  | 0.24.0                   | x86-64        | 2023-10-28  |
+| 1.24               | Unsupported                  | 0.24.0                   | x86-64        | 2023-07-28  |
+| 1.23               | Unsupported                  | 0.24.0                   | x86-64        | 2023-02-28  |
+| 1.22               | Unsupported                  | 0.24.0                   | x86-64        | 2022-10-28  |
 
 :::TabTitle OpenShift
 
@@ -70,7 +70,7 @@ The GitLab Operator supports the following OpenShift versions:
 | 4.14               | Supported                    | 0.27.0                   | x86-64        | 2026-10-31  |
 | 4.13               | Supported                    | 0.24.0                   | x86-64        | 2024-11-17  |
 | 4.12               | Supported                    | 0.24.0                   | x86-64        | 2025-01-17  |
-| 4.11               | Deprecated                   | 0.24.0                   | x86-64        | 2024-02-10  |
+| 4.11               | Unsupported                  | 0.24.0                   | x86-64        | 2024-02-10  |
 
 ::EndTabs
 
