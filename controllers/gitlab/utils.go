@@ -40,6 +40,9 @@ const (
 	// RegistryComponentName is the common name of the Registry.
 	RegistryComponentName = "registry"
 
+	// RegistryMigrationComponentName is the name of the Registry migration job.
+	RegistryMigrationComponentName = "registry-migrations"
+
 	// WebserviceComponentName is the common name of Webservice.
 	WebserviceComponentName = "webservice"
 
