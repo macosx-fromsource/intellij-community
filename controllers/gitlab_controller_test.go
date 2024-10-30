@@ -936,7 +936,7 @@ postgresql:
 				})
 
 				It("Should create the registry migrations job", func() {
-					Eventually(listObjectsPromise("app in ( registry, registry-migrations)", &batchv1.JobList{}, 1),
+					Eventually(listObjectsPromise("app in ( registry, registry-migrations )", &batchv1.JobList{}, 1),
 						PollTimeout, PollInterval).Should(Succeed())
 				})
 			})
