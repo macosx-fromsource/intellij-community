@@ -1,3 +1,17 @@
+## 1.6.0 (2024-10-31)
+
+### changed (3 changes)
+
+- [Update k8s.io](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0986e21780ecbe0534bee773a61aeac16037ec86) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1002))
+- [Update github.com/cert-manager/cert-manager to v1.16.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/60a3049eea25bc11c3d13a82b80a09e2a9e30f95) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/998))
+- [Update github.com/cert-manager/cert-manager to v1.16.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4269eda49dc8eef59a7d58f423196fc60f9ed2dc) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/992))
+
+### added (3 changes)
+
+- [Add support for KAS PodMonitor](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b274fd25dd397dd889bdda1ecd3a1ec4d017565c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/995))
+- [Add support for OpenShift 4.17](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3a1ffcf2fb12468d79ef30a35ddd7202393fbc6d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1000))
+- [Add support for GitLab Geo](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/8710695add3e4c33437c25d00e8556967255588f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/960))
+
 ## 1.5.1 (2024-10-23)
 
 No changes.
