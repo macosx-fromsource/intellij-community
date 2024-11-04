@@ -14,11 +14,8 @@ variables:
   DOMAIN_OPENSHIFT_4_15: "apps.ocp-ci-4153.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_16: "apps.ocp-ci-4163.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_17: "apps.ocp-ci-4172.k8s-ft.win"
-  DOMAIN_GKE: "gitlab-operator.k8s-ft.win"
-  DOMAIN_GKE127: "gitlab-operator-v127.k8s-ft.win"
   DOMAIN_GKE129: "gitlab-operator-v129.k8s-ft.win"
   DOMAIN_GKE130: "gitlab-operator-v130.k8s-ft.win"
-  DOMAIN_VCLUSTER128: "gitlab-operator-v127.k8s-ft.win"
   DOMAIN_VCLUSTER131: "gitlab-operator-v127.k8s-ft.win"
 
   # Namespace built into default manifest
