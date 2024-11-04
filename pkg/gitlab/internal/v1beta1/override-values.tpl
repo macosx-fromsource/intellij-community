@@ -5,6 +5,13 @@ gitlab-runner:
   install: false
 
 global:
+  {{ if .UseCertManager }}
+  ingress:
+    annotations:
+      cert-manager.io/issuer: {{ .ReleaseName }}-issuer
+      acme.cert-manager.io/http01-edit-in-place: true
+  {{ end }}
+
   common:
     labels:
       app.kubernetes.io/name: {{ .ReleaseName }}

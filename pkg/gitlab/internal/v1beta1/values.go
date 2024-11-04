@@ -52,17 +52,20 @@ func (w *Adapter) applyUserDefinedValues(_ context.Context) error {
 }
 
 func (w *Adapter) applyOperatorDefaultValues(_ context.Context) error {
-	return w.loadValuesFromTemplate(defaultValuesTemplate)
+	return w.loadValuesFromTemplate(defaultValuesTemplate, w.templateParameters())
 }
 
 func (w *Adapter) applyOperatorOverrideValues(_ context.Context) error {
-	return w.loadValuesFromTemplate(overrideValuesTemplate)
+	params := w.templateParameters()
+	params["UseCertManager"] = w.WantsFeature(ConfigureCertManager)
+
+	return w.loadValuesFromTemplate(overrideValuesTemplate, params)
 }
 
-func (w *Adapter) loadValuesFromTemplate(template *template.Template) error {
+func (w *Adapter) loadValuesFromTemplate(template *template.Template, templateParams map[string]interface{}) error {
 	var buf *strings.Builder = &strings.Builder{}
 
-	if err := template.Execute(buf, w.templateParameters()); err != nil {
+	if err := template.Execute(buf, templateParams); err != nil {
 		return errors.Wrapf(err, "failed to render: %s", template.Name())
 	}
 
@@ -75,9 +78,8 @@ func (w *Adapter) loadValuesFromTemplate(template *template.Template) error {
 
 func (w *Adapter) templateParameters() map[string]interface{} {
 	return map[string]interface{}{
-		"ReleaseName":    w.ReleaseName(),
-		"UseCertManager": w.WantsFeature(ConfigureCertManager),
-		"Settings":       appSettings,
+		"ReleaseName": w.ReleaseName(),
+		"Settings":    appSettings,
 	}
 }
 
