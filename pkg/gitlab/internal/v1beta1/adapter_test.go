@@ -138,6 +138,14 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 		Expect(a.values.GetValue("gitlab.webservice.serviceAccount.name")).To(Equal("great-service-account"))
 		Expect(a.values.GetValue("global.ingress.apiVersion")).To(Equal("networking.k8s.io/v1beta1"))
 		Expect(a.values.GetValue("global.serviceAccount.enabled")).To(BeFalse())
+
+		ingressVal, err := a.values.GetValue("global.ingress.annotations")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ingressVal).To(BeAssignableToTypeOf(map[string]interface{}{}))
+
+		globalIngressAnnotations := ingressVal.(map[string]interface{})
+		Expect(globalIngressAnnotations["cert-manager.io/issuer"]).To(MatchRegexp("\\w*-issuer"))
+		Expect(globalIngressAnnotations["acme.cert-manager.io/http01-edit-in-place"]).To(BeTrue())
 	})
 
 	It("wants default components and features when not specified otherwise", func() {
@@ -196,6 +204,8 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 			component.PostgreSQL, component.Redis)
 		checkEnabledFeatures(a, ReplaceGitalyWithPraefect)
 		checkDisabledFeatures(a, ConfigureCertManager)
+
+		Expect(a.values.GetValue("global.ingress.annotations")).To(BeEmpty())
 	})
 })
 

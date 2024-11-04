@@ -4,11 +4,6 @@ global:
 
   ingress:
     apiVersion: networking.k8s.io/v1
-    {{ if .UseCertManager }}
-    annotations:
-      cert-manager.io/issuer: {{ .ReleaseName }}-issuer
-      acme.cert-manager.io/http01-edit-in-place: true
-    {{ end }}
 
   serviceAccount:
     enabled: true
