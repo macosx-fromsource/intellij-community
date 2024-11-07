@@ -1,6 +1,6 @@
 module gitlab.com/gitlab-org/cloud-native/gitlab-operator
 
-go 1.22.4
+go 1.23
 
 toolchain go1.23.2
 
@@ -13,7 +13,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.35.1
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.2
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.78.1
 	golang.org/x/mod v0.21.0
 	helm.sh/helm/v3 v3.12.3
 	k8s.io/api v0.31.2
@@ -166,8 +166,8 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.1 // indirect
-	k8s.io/apiextensions-apiserver v0.31.1 // indirect
-	k8s.io/apiserver v0.31.1 // indirect
+	k8s.io/apiextensions-apiserver v0.31.2 // indirect
+	k8s.io/apiserver v0.31.2 // indirect
 	k8s.io/cli-runtime v0.31.2 // indirect
 	k8s.io/component-base v0.31.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
