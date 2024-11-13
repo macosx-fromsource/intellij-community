@@ -36,5 +36,9 @@ func RegistryIngress(template helm.Template) client.Object {
 }
 
 func RegistryMigrationsJob(template helm.Template) client.Object {
+	if job := template.Query().ObjectByKindAndComponent(JobKind, RegistryMigrationComponentName); job != nil {
+		return job
+	}
+
 	return template.Query().ObjectByKindAndComponent(JobKind, RegistryComponentName)
 }
