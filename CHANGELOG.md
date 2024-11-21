@@ -1,3 +1,17 @@
+## 1.7.0 (2024-11-21)
+
+### changed (5 changes)
+
+- [Remove CI testing for Kubernetes 1.27 and 1.28](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ad817c161ff849e8a5758e8c79e15f5931bc32ee) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1014))
+- [Update Go from 1.23.2 to 1.23.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7b3dad70dd015afe19c07a30da376a058eace492) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1020))
+- [Update prom-op-api/monitoring to v0.78.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ed7468877b4c45a88b07201e94a70f057f1c5c1e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/981))
+- [Update ginkgo and gomega](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9faf2f9ab02b5d10826b9b87b2eaa2a69f208663) by @gitlab-dependency-update-bot ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1008))
+- [Update k8s.io/utils to 6fe5fd8](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/472733478cc565df78700be39a792485293fb342) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1013))
+
+### fixed (1 change)
+
+- [Fix non-overridable certmanager annotation on Ingress objects](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/fc423e806eccb10b2ba8b32af6bcfae2125c1b3e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1007))
+
 ## 1.6.1 (2024-11-13)
 
 No changes.
