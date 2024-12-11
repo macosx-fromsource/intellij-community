@@ -21,3 +21,32 @@ spec:
         primary:
           extendedConfiguration: |-
             max_connections = 200
+      gitlab:
+        webservice:
+          minReplicas: 1
+          maxReplicas: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1500M
+        sidekiq:
+          minReplicas: 1
+          maxReplicas: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1000M
+        gitlab-shell:
+          minReplicas: 1
+          maxReplicas: 2
+      nginx-ingress:
+        controller:
+          replicaCount: 1
+      redis:
+        resources:
+          requests:
+            cpu: 100m
+      minio:
+        resources:
+          requests:
+            cpu: 100m
