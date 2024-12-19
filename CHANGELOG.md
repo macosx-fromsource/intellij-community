@@ -1,3 +1,17 @@
+## 1.8.0 (2024-12-19)
+
+### changed (9 changes)
+
+- [Update testing dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3310c996c06f98df82014f9753dbad96ec3734dc) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1036))
+- [Update sigs.k8s.io/controller-runtime to v0.19.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5e60b94d2fbbcada6f006fa14e5da8ba19afb10d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1035))
+- [Pin registry.access.redhat.com/ubi9-micro Docker tag to a410623](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/aec7af44c1dfe7799736fb8720871e1474d50ceb) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1034))
+- [Update dependency danger-review to v2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f1702312a952828e96a9da6caabc9b7e68a162aa) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1033))
+- [Update golang.org/x/mod to v0.22.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/dc380e3ab862d68ea449b247f41ff9a0c7a1b361) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1021))
+- [Update k8s.io API and client libraries](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/38d29a07a5543cbd72a055914fe427978a3fbcdd) by @gitlab-dependency-update-bot ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1026))
+- [Update prom-op-api/monitoring to v0.78.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/18d159bb23f4180c3d41cfc30cb2a8aad54efe20) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1027))
+- [Update github.com/Masterminds/semver/v3 to v3.3.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4ae7fe52046e2497ef72580792cfdf460a809fd8) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1023))
+- [Update registry.access.redhat.com/ubi9-micro Docker tag to v9.5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5a9811f00259e34950297edeea63a096f5fc40a0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1022))
+
 ## 1.7.2 (2024-12-11)
 
 No changes.
