@@ -7,7 +7,7 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 # Configure the GitLab Operator with GitLab Geo
 
 The requirements, limitations and Geo configuration of the Operator
-are the same as for the [GitLab chart](https://docs.gitlab.com/charts/advanced/geo/). 
+are the same as for the [GitLab chart](https://docs.gitlab.com/charts/advanced/geo/).
 
 To deploy Geo sites with the Operator, apply the Helm chart values to
 the GitLab custom resource by setting the `spec.chart.values`.
