@@ -80,7 +80,7 @@ We welcome any compatibility issues with releases newer than those listed above 
 
 Some GitLab features might not work on deprecated versions and versions older than the versions listed above.
 
-For some components, like the [agent for Kubernetes](https://docs.gitlab.com/ee/user/clusters/agent/#gitlab-agent-for-kubernetes-supported-cluster-versions) and [GitLab Charts](https://docs.gitlab.com/charts/installation/cloud/#supported-kubernetes-versions), GitLab might support different cluster versions.
+For some components, like the [agent for Kubernetes](https://docs.gitlab.com/ee/user/clusters/agent/) and [GitLab Charts](https://docs.gitlab.com/charts/installation/cloud/), GitLab might support different cluster versions.
 
 Starting with 16.7, the Operator is built for x86-64 and arm64.
 The arm64 images are not tested in CI and are not recommended for production use.
