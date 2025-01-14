@@ -27,7 +27,6 @@ func ParseSize(annotation string) (Size, error) {
 		return Size(0), fmt.Errorf("size: %d %w", size, ErrInvalidSize)
 	}
 
-	//nolint:gosec
 	return Size(size), nil
 }
 

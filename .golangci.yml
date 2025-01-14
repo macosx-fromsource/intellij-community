@@ -9,7 +9,7 @@ linters-settings:
     local-prefixes: gitlab.com/gitlab-org/cloud-native/gitlab-operator
 
   whitespace:
-    multi-if: true # Enforces newlines (or comments) after every multi-line if statement
+    multi-if: false
     multi-func: true # Enforces newlines (or comments) after every multi-line function signature
 
   wsl:

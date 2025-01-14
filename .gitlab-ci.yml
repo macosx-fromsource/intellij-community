@@ -34,7 +34,7 @@ variables:
   # OCP_RESOURCES_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/openshift-resources-${CI_COMMIT_TAG}.yaml"
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}"
   ISSUE_BOT_LABELS_EXTRA: "group::distribution"
-  GO_VERSION: "1.23.3"
+  GO_VERSION: "1.23.4"
   GO_MINOR: "1.23"
   QA_FULL_SUITE_OPTIONS: '--tag ~smoke --tag ~skip_live_env --tag ~orchestrated --tag ~transient'
   CI_TOOLS_VERSION: "4.34.0"
@@ -134,7 +134,7 @@ pull_charts:
 lint_code:
   extends: .cache
   stage: test
-  image: golangci/golangci-lint:v1.60-alpine
+  image: golangci/golangci-lint:v1.63-alpine
   script:
     - go install github.com/go-task/task/v3/cmd/task@v3.38.0
     - PATH="${PATH}:${GOPATH}/bin" task lint

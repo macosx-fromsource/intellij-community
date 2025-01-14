@@ -97,7 +97,7 @@ func PostgresService(adapter gitlab.Adapter, template helm.Template) client.Obje
 		if !strings.HasSuffix(s.GetName(), "-headless") &&
 			!strings.HasSuffix(s.GetName(), "-metrics") &&
 			!strings.HasSuffix(s.GetName(), "-read") {
-			return s //nolint:whitespace
+			return s
 		}
 	}
 
