@@ -1,3 +1,12 @@
+## 1.9.0 (2025-01-16)
+
+### changed (4 changes)
+
+- [Update prom-op-api/monitoring to v0.79.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2c37435d297024db44255c8518963e1e1950f89a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1044))
+- [Update Go from 1.23.3 to 1.23.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/bae171d967b030d4b87139cb7ce1996bb081857a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1051))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/cb93749e6965337f3e75eefc6d834f7de67c62a3) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1041))
+- [Update testing dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/29ad297295496eb7f6de3a1bcc4769534bc5bcf3) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1040))
+
 ## 1.8.3 (2025-01-15)
 
 No changes.
