@@ -102,7 +102,7 @@ nodeSelector:
   kubernetes.io/arch: amd64
 ```
 
-This ensures that the Operator runs on `amd64` nodes, using the platform that we currently test.
+This ensures that the Operator runs on `amd64` nodes using the platform that we test.
 
 See [epic 10928](https://gitlab.com/groups/gitlab-org/-/epics/10938) for more information on the arm64 support for CNG images.
 
