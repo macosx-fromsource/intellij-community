@@ -80,14 +80,14 @@ tasks:
           local TMP_DIR=$(mktemp -d)
           cd $TMP_DIR
           go mod init tmp
-          GOBIN=$workdir GO111MODULE=on go get sigs.k8s.io/$1
+          GOBIN=$workdir GO111MODULE=on go install sigs.k8s.io/$1
           cd $workdir
           rm -rf $TMP_DIR
           unset TMP_DIR
         }
-        download controller-tools/cmd/controller-gen@v0.7.0
+        download controller-tools/cmd/controller-gen@v0.16.5
         download controller-runtime/tools/setup-envtest@latest
-        download kustomize/kustomize/v3@v3.8.7
+        download kustomize/kustomize/v5@v5.6.0
     status:
       - test -f ./controller-gen
       - test -f ./kustomize
