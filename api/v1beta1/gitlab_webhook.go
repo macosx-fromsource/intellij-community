@@ -17,6 +17,9 @@ limitations under the License.
 package v1beta1
 
 import (
+	"context"
+	"fmt"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -32,60 +35,85 @@ import (
 var gitlablog = logf.Log.WithName("gitlab-resource")
 
 // SetupWebhookWithManager adds webhook to the controller runtime Manager.
-func (r *GitLab) SetupWebhookWithManager(mgr ctrl.Manager) error {
+func SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
-		For(r).
+		For(&GitLab{}).
+		WithValidator(&GitLabCustomValidator{}).
 		Complete()
 }
 
 // +kubebuilder:webhook:verbs=create;update,path=/validate-apps-gitlab-com-v1beta1-gitlab,mutating=false,failurePolicy=fail,groups=apps.gitlab.com,resources=gitlabs,versions=v1beta1,name=vgitlab.kb.io,admissionReviewVersions=v1,sideEffects=None
 
-var _ webhook.Validator = &GitLab{}
+type GitLabCustomValidator struct{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *GitLab) ValidateCreate() (warnings admission.Warnings, err error) {
-	gitlablog.Info("validate create", "name", r.Name)
+var _ webhook.CustomValidator = &GitLabCustomValidator{}
 
-	if validateErr := r.validateChartVersion(); validateErr != nil {
-		err = newError(r.Name, validateErr)
+// ValidateUpdate validates create request for GitLab resources.
+func (r *GitLabCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+	gitlab, ok := obj.(*GitLab)
+
+	if !ok {
+		return nil, r.wrongTypeError(obj)
+	}
+
+	gitlablog.Info("validate create", "name", gitlab.GetName())
+
+	if validateErr := r.validateChartVersion(gitlab); validateErr != nil {
+		err = newError(gitlab.GetName(), validateErr)
 		return
 	}
 
 	return
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *GitLab) ValidateUpdate(old runtime.Object) (warnings admission.Warnings, err error) {
-	gitlablog.Info("validate update", "name", r.Name)
+// ValidateUpdate validates update request for GitLab resources.
+func (r *GitLabCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
+	gitlab, ok := newObj.(*GitLab)
 
-	if validateErr := r.validateChartVersion(); validateErr != nil {
-		err = newError(r.Name, validateErr)
+	if !ok {
+		return nil, r.wrongTypeError(newObj)
+	}
+
+	gitlablog.Info("validate update", "name", gitlab.GetName())
+
+	if validateErr := r.validateChartVersion(gitlab); validateErr != nil {
+		err = newError(gitlab.GetName(), validateErr)
 		return
 	}
 
 	return
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *GitLab) ValidateDelete() (warnings admission.Warnings, err error) {
-	gitlablog.Info("validate delete", "name", r.Name)
+// ValidateDelete validates delete request for GitLab resources.
+func (r *GitLabCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+	gitlab, ok := obj.(*GitLab)
+
+	if !ok {
+		return nil, r.wrongTypeError(obj)
+	}
+
+	gitlablog.Info("validate delete", "name", gitlab.GetName())
 
 	return
 }
 
-func (r GitLab) validateChartVersion() *field.Error {
+func (r *GitLabCustomValidator) validateChartVersion(obj *GitLab) *field.Error {
 	key := field.NewPath("spec").Child("chart").Child("version")
-	value := r.Spec.Chart.Version
+	value := obj.Spec.Chart.Version
 
 	if value == "" {
 		return field.Invalid(key, value, "chart version must be configured")
 	}
 
-	if _, err := helm.ChartVersionSupported(r.Spec.Chart.Version); err != nil {
+	if _, err := helm.ChartVersionSupported(obj.Spec.Chart.Version); err != nil {
 		return field.Invalid(key, value, err.Error())
 	}
 
 	return nil
+}
+
+func (r *GitLabCustomValidator) wrongTypeError(obj runtime.Object) error {
+	return fmt.Errorf("expected a GitLab object but got %T", obj)
 }
 
 func newError(name string, err *field.Error) error {

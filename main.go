@@ -148,7 +148,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&appsv1beta1.GitLab{}).SetupWebhookWithManager(mgr); err != nil {
+	if err = appsv1beta1.SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "GitLab")
 		os.Exit(1)
 	}
