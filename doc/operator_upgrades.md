@@ -6,6 +6,10 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Upgrading the Operator
 
+DETAILS:
+**Tier:** Free, Premium, Ultimate
+**Offering:** GitLab Self-Managed
+
 Below are instructions to upgrade the GitLab Operator.
 
 Prior to upgrading, it is strongly recommended to [perform a backup](https://docs.gitlab.com/charts/backup-restore/).

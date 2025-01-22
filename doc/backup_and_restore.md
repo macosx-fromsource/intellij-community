@@ -6,6 +6,10 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Backup and Restore GitLab
 
+DETAILS:
+**Tier:** Free, Premium, Ultimate
+**Offering:** GitLab Self-Managed
+
 This document outlines how to backup and restore your GitLab instance using Toolbox.
 
 ## General backup and restore guidance

@@ -6,6 +6,10 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Troubleshooting the Operator
 
+DETAILS:
+**Tier:** Free, Premium, Ultimate
+**Offering:** GitLab Self-Managed
+
 This document is a collection of notes and tips to assist in troubleshooting
 the installation of the GitLab Operator and the deployment of a GitLab
 instance from the GitLab custom resource.
