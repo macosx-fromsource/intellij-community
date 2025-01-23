@@ -30,7 +30,8 @@ FROM registry.access.redhat.com/ubi9-micro:9.5@sha256:a410623c2b8e9429f9606af821
 LABEL name=gitlab-operator \
       vendor='GitLab, Inc.' \
       description='Operator to deploy GitLab instances' \
-      summary='GitLab is a DevOps lifecycle tool that provides Git repositories'
+      summary='GitLab is a DevOps lifecycle tool that provides Git repositories' \
+      maintainer='GitLab Self-Managed'
 
 # Allow the chart directory to be overwritten with --build-arg
 ARG CHART_DIR="/charts"
