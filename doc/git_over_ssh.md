@@ -6,6 +6,10 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Support for Git over SSH
 
+DETAILS:
+**Tier:** Free, Premium, Ultimate
+**Offering:** GitLab Self-Managed
+
 This document provides configuration guidelines for Git over SSH on various environments/platforms.
 
 ## Overview

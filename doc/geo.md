@@ -6,6 +6,10 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Configure the GitLab Operator with GitLab Geo
 
+DETAILS:
+**Tier:** Free, Premium, Ultimate
+**Offering:** GitLab Self-Managed
+
 The requirements, limitations and Geo configuration of the Operator
 are the same as for the [GitLab chart](https://docs.gitlab.com/charts/advanced/geo/).
 

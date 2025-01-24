@@ -6,6 +6,10 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # Installation
 
+DETAILS:
+**Tier:** Free, Premium, Ultimate
+**Offering:** GitLab Self-Managed
+
 NOTE:
 The GitLab Operator has [known limitations](index.md#known-issues) and is only suitable for specific scenarios in production use.
 

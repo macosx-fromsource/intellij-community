@@ -6,6 +6,10 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 
 # GitLab Operator
 
+DETAILS:
+**Tier:** Free, Premium, Ultimate
+**Offering:** GitLab Self-Managed
+
 The [GitLab Operator](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator) is an installation and management method that follows the
 [Kubernetes Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
 
