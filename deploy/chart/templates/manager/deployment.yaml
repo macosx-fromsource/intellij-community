@@ -29,6 +29,7 @@ spec:
         - --enable-leader-election
         - --zap-devel={{ .Values.manager.debug.enabled }}
         - --zap-log-level={{ .Values.manager.log.level }}
+        - --zap-time-encoding={{ .Values.manager.log.timeEncoding }}
         command:
         - /manager
         image: {{ include "gitlab.image.fullPath" $imageCfg }}
