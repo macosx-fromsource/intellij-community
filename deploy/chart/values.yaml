@@ -41,6 +41,9 @@ manager:
     #   or any integer value > 0 which corresponds to custom debug levels of increasing verbosity.
     # ref: https://sdk.operatorframework.io/docs/building-operators/golang/references/logging
     level: info
+    # 'timeEncoding' can be one of:
+    #   'epoch', 'millis', 'nano', 'iso8601', 'rfc3339' or 'rfc3339nano'
+    timeEncoding: epoch
   serviceAccount:
     # Specifies whether a service account should be created
     create: true
