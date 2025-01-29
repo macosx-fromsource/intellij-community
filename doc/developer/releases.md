@@ -2,9 +2,8 @@
 stage: Systems
 group: Distribution
 info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+title: Versioning
 ---
-
-# Versioning
 
 The GitLab Operator uses [semver versioning](https://semver.org/). Version tags should
 [be the semver version string](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr/0009-version-tagging.md).
