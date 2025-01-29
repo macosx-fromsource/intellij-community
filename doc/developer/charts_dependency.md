@@ -2,9 +2,8 @@
 stage: Systems
 group: Distribution
 info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+title: Dependency on GitLab Charts
 ---
-
-# Dependency on GitLab Charts
 
 The GitLab Operator (also just known as "Operator") depends on the [GitLab Helm Charts](https://gitlab.com/gitlab-org/charts/gitlab) (also just known as "Chart").
 as described in

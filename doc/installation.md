@@ -2,16 +2,15 @@
 stage: Systems
 group: Distribution
 info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+title: Installation
 ---
-
-# Installation
 
 DETAILS:
 **Tier:** Free, Premium, Ultimate
 **Offering:** GitLab Self-Managed
 
 NOTE:
-The GitLab Operator has [known limitations](index.md#known-issues) and is only suitable for specific scenarios in production use.
+The GitLab Operator has [known limitations](_index.md#known-issues) and is only suitable for specific scenarios in production use.
 
 <!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
 WARNING:
