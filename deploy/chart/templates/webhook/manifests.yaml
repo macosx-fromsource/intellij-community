@@ -28,7 +28,7 @@ webhooks:
   {{- if not .Values.watchCluster }}
   namespaceSelector:
     matchExpressions:
-    - key: name
+    - key: kubernetes.io/metadata.name
       operator: In
       values:
       - {{ .Release.Namespace }}
