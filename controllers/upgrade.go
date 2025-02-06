@@ -41,6 +41,10 @@ func (r *GitLabReconciler) unpauseDeployments(ctx context.Context, adapter gitla
 			return err
 		}
 
+		if err := adapter.PopulateManagedObjects(deployment); err != nil {
+			return err
+		}
+
 		deployment.Spec.Paused = false
 
 		// If unpausing during an upgrade, then set BYPASS_SCHEMA_VERSION.
@@ -69,6 +73,10 @@ func (r *GitLabReconciler) rollingUpdateDeployments(ctx context.Context, adapter
 	for i := range deployments {
 		deployment, err := r.getDeployment(ctx, adapter, deployments[i].GetName())
 		if err != nil {
+			return err
+		}
+
+		if err := adapter.PopulateManagedObjects(deployment); err != nil {
 			return err
 		}
 
