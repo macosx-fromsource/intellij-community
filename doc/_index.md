@@ -19,7 +19,7 @@ another Kubernetes-compatible platform.
 NOTE:
 The GitLab Operator has [known limitations](#known-issues) and is only suitable for specific scenarios in production use.
 
-<!--This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations.-->
+<!-- This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
 WARNING:
 The default values of the _GitLab custom resource_ are **not intended for production use**.
 With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,

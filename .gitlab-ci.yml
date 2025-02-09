@@ -155,7 +155,7 @@ lint_code:
 
 docs-lint content:
   stage: test
-  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.18.0
+  image: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.15.1
   cache: {}
   needs:
     - job: danger-review
@@ -173,7 +173,7 @@ docs-lint content:
 
 docs-lint markdown:
   stage: test
-  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.18.0
+  image: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.15.1
   cache: {}
   needs:
     - job: danger-review
@@ -191,7 +191,7 @@ docs-lint markdown:
 
 docs-lint links:
   stage: test
-  image: registry.gitlab.com/gitlab-org/gitlab-docs/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.18.0
+  image: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.15.1
   cache: {}
   needs:
     - job: danger-review
@@ -201,6 +201,30 @@ docs-lint links:
   script:
     # Check Markdown links
     - lychee --offline --include-fragments doc
+  rules:
+    - !reference [.skip_if_dev_mirror]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.if_commit_branch_or_mr_branch]
+
+docs-test hugo:
+  stage: test
+  image: ${CI_DEPENDENCY_PROXY_DIRECT_GROUP_IMAGE_PREFIX}/hugomods/hugo:exts-0.139.4
+  before_script:
+    - apk add --no-cache git make nodejs npm bash
+    - git clone --depth 1 https://gitlab.com/gitlab-org/technical-writing/docs-gitlab-com.git
+    - cd docs-gitlab-com
+    - make add-latest-icons
+    # Copy the current project's docs to the appropriate location in the docs website
+    - mkdir content/operator
+    - cp -r ../doc/* content/operator/
+  script:
+    # Test that Hugo will build
+    - hugo --gc --printPathWarnings --panicOnWarning
+    # Test for invalid index pages
+    # See https://gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/-/blob/main/scripts/check-index-filenames.sh
+    - make check-index-pages SEARCH_DIR="../doc"
+  when: manual # Drop this when we launch the Hugo site
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
