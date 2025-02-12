@@ -123,6 +123,7 @@
     # Restore short-named deployment files first (because artifact paths won't accept dynamic vars)
     - !reference [.restore_build_artifacts, script]
     # Run deployment
+    - kubectl version --output=json
     - ./scripts/test.sh
     # And we need to copy things around, again
     - !reference [.copy_install_artifacts, script]
