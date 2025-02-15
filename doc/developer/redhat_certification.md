@@ -76,8 +76,11 @@ Forks for both the certified and marketplace operators have already been created
 - [certified-operators](https://github.com/gl-distribution-oc/certified-operators) or
 - [redhat-marketplace-operators](https://github.com/gl-distribution-oc/redhat-marketplace-operators)
 
-NOTE:
+{{< alert type="note" >}}
+
 Use of `operator_certification.sh` wrapper script below is optional.
+
+{{< /alert >}}
 
 1. Clone fork locally:
 

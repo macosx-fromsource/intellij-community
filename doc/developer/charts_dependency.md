@@ -33,9 +33,12 @@ The impact to Operator must be considered when submitting a change to Chart. Thi
 is included as an item in the approval checklist of Chart merge request
 template as a reminder.
 
-NOTE:
+{{< alert type="note" >}}
+
 Providing an automated mechanism of testing this is
 being investigated in Chart [issue 4900](https://gitlab.com/gitlab-org/charts/gitlab/-/issues/4900).
+
+{{< /alert >}}
 
 To evaluate the impact of changes to Chart on Operator, consider
 whether the change will be automatically ingested by Operator or not. The

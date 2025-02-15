@@ -113,8 +113,11 @@ ocp-ci-4717-abcde-worker-c-5gq6r.c.cloud-native-123456.internal   Ready    worke
 
 ### Job timeouts
 
-NOTE:
+{{< alert type="note" >}}
+
 Timeouts for Jobs can be configured. If the timeout is reached, then the GitLab Controller will return an error that the Job could not be completed in time.
+
+{{< /alert >}}
 
 To configure these, update the `env` value in
 [`deploy/chart/values.yaml`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/deploy/chart/values.yaml).

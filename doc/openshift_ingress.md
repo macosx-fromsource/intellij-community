@@ -5,9 +5,12 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 title: Ingress in OpenShift
 ---
 
-DETAILS:
-**Tier:** Free, Premium, Ultimate
-**Offering:** GitLab Self-Managed
+{{< details >}}
+
+- Tier: Free, Premium, Ultimate
+- Offering: GitLab Self-Managed
+
+{{< /details >}}
 
 Two supported methods exist for providing Ingress in OpenShift with the GitLab Operator:
 
@@ -51,11 +54,14 @@ If this patch is applied after Ingresses have already been created, manually del
 the Ingresses. The GitLab Operator manually recreates them. They should be
 properly owned by the NGINX Ingress Controller and ignored by the OpenShift Router.
 
-NOTE:
+{{< alert type="note" >}}
+
 A bug can occur when manually deleting Ingresses.
 The workaround is to manually delete the GitLab Operator controller Pod. Refer to
 [#315](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/315)
 for more information.
+
+{{< /alert >}}
 
 For troubleshooting SCC-related issues blocking creation of NGINX-Ingress Controller, see additional documentation in our [Operator Troubleshooting doc](troubleshooting.md#openshift-specific-problems).
 
@@ -89,9 +95,12 @@ To use the NGINX Ingress Controller for Ingress, complete the following:
              domain: yourdomain.com
    ```
 
-   NOTE:
-   By default, CertManager creates and manages TLS certificates for the GitLab-related Ingresses.
+   {{< alert type="note" >}}
+
+By default, CertManager creates and manages TLS certificates for the GitLab-related Ingresses.
    See the [TLS documentation](https://docs.gitlab.com/charts/installation/tls.html) for more options.
+
+   {{< /alert >}}
 
 1. Follow the rest of the installation instructions, applying the GitLab CR and confirming that the CR status is eventually `Ready`.
 1. Find the external IP address of the NGINX Ingress Controller's Service (of type LoadBalancer):
@@ -111,9 +120,12 @@ To use the NGINX Ingress Controller for Ingress, complete the following:
    Creating individual A records rather than a wildcard A record ensures that existing Routes (such as the Route for the OpenShift
    dashboard) continue to work as expected.
 
-   NOTE:
-   These records need to exist in _both_ the public **and** private zones in your cloud provider's network settings.
+   {{< alert type="note" >}}
+
+These records need to exist in _both_ the public **and** private zones in your cloud provider's network settings.
    Parity between these zones ensures proper cluster-internal routing and allows CertManager to properly issue Certificates.
+
+   {{< /alert >}}
 
 GitLab should then be available at `https://gitlab.yourdomain.com`.
 
@@ -135,9 +147,12 @@ graph TD
     SRV_W --connects to--> DPL_W[Deployment/gitlab-webservice-default]
 ```
 
-NOTE:
+{{< alert type="note" >}}
+
 Using Routes for Ingress instead of the NGINX Ingress Controller means that [Git over SSH](git_over_ssh.md)
 is not supported.
+
+{{< /alert >}}
 
 ### Setup
 
@@ -176,12 +191,15 @@ To use OpenShift Routes for Ingress, complete the following:
                route.openshift.io/termination: "edge"
    ```
 
-   NOTE:
-   By default, CertManager creates and manage TLS certificates for the GitLab-related Routes.
+   {{< alert type="note" >}}
+
+By default, CertManager creates and manage TLS certificates for the GitLab-related Routes.
    See the [TLS documentation](https://docs.gitlab.com/charts/installation/tls.html) for more options.
    If the OpenShift cluster is secured with a wildcard certificate,
    [option 2](https://docs.gitlab.com/charts/installation/tls.html#option-2-use-your-own-wildcard-certificate)
    allows the wildcard certificate to secure the GitLab-related Routes.
+
+   {{< /alert >}}
 
 1. Follow the rest of the installation instructions, applying the GitLab CR and confirming that the CR status is eventually `Ready`.
 
