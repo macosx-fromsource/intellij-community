@@ -13,7 +13,7 @@ being created from a known good commit from master/main branch, and a Git tag
 being created from this stable branch. When new patch releases need to be done,
 the commits are cherry-picked into these stable branches and tagged.
 
-We will implement similar for Operator releases, following the implementation of [release branches with GitLab flow](https://docs.gitlab.com/ee/topics/gitlab_flow.html#release-branches-with-gitlab-flow) used in our other projects.
+We will implement similar for Operator releases, following the implementation of [release branches with GitLab flow](https://docs.gitlab.com/topics/gitlab_flow/#release-branches-with-gitlab-flow) used in our other projects.
 
 ## Decision
 

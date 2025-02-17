@@ -90,6 +90,6 @@ Below are resources related to GitLab upgrades.
 - [(Operator) GitLab Upgrades](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/gitlab_upgrades.md)
 - [(Charts) Upgrade guide](https://docs.gitlab.com/charts/installation/upgrade.html)
 - [(Charts) Version mappings](https://docs.gitlab.com/charts/installation/version_mappings.html)
-- [GitLab upgrade paths](https://docs.gitlab.com/ee/update/#upgrade-paths)
-- [GitLab version-specific changes](https://docs.gitlab.com/ee/update/package/index.html#version-specific-changes)
+- [GitLab upgrade paths](https://docs.gitlab.com/update/#upgrade-paths)
+- [GitLab version-specific changes](https://docs.gitlab.com/update/package/#version-specific-changes)
 - [Changes between GitLab versions](https://gitlab-com.gitlab.io/cs-tools/gitlab-cs-tools/what-is-new-since/?tab=features)

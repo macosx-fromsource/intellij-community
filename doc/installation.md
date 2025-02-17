@@ -24,7 +24,7 @@ The GitLab Operator has [known limitations](_index.md#known-issues) and is only 
 The default values of the _GitLab custom resource_ are **not intended for production use**.
 With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,
 are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
-For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/ee/administration/reference_architectures/#cloud-native-hybrid).
+For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
 GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
 {{< /alert >}}
 
@@ -95,7 +95,7 @@ We welcome any compatibility issues with releases newer than those listed above 
 
 Some GitLab features might not work on deprecated versions and versions older than the versions listed above.
 
-For some components, like the [agent for Kubernetes](https://docs.gitlab.com/ee/user/clusters/agent/) and [GitLab Charts](https://docs.gitlab.com/charts/installation/cloud/), GitLab might support different cluster versions.
+For some components, like the [agent for Kubernetes](https://docs.gitlab.com/user/clusters/agent/) and [GitLab Charts](https://docs.gitlab.com/charts/installation/cloud/), GitLab might support different cluster versions.
 
 Starting with 16.7, the Operator is built for x86-64 and arm64.
 The arm64 images are not tested in CI and are not recommended for production use.
@@ -294,7 +294,7 @@ To log in you need to retrieve the initial root password for your deployment. Se
 ## Recommended next steps
 
 After completing your installation, consider taking the
-[recommended next steps](https://docs.gitlab.com/ee/install/next_steps.html),
+[recommended next steps](https://docs.gitlab.com/install/next_steps/),
 including authentication options and sign-up restrictions.
 
 ### OpenShift
