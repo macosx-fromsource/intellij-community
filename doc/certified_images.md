@@ -5,9 +5,12 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 title: RedHat-certified images
 ---
 
-DETAILS:
-**Tier:** Free, Premium, Ultimate
-**Offering:** GitLab Self-Managed
+{{< details >}}
+
+- Tier: Free, Premium, Ultimate
+- Offering: GitLab Self-Managed
+
+{{< /details >}}
 
 The following table lists the images that the GitLab Operator deploys. The table includes links to the
 RedHat Technology Portal project listings where these images can be managed by GitLab team members.

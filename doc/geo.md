@@ -5,9 +5,12 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 title: Configure the GitLab Operator with GitLab Geo
 ---
 
-DETAILS:
-**Tier:** Free, Premium, Ultimate
-**Offering:** GitLab Self-Managed
+{{< details >}}
+
+- Tier: Free, Premium, Ultimate
+- Offering: GitLab Self-Managed
+
+{{< /details >}}
 
 The requirements, limitations and Geo configuration of the Operator
 are the same as for the [GitLab chart](https://docs.gitlab.com/charts/advanced/geo/).
@@ -28,9 +31,9 @@ This controller and IngressClass are only needed if:
 
 The process of creating the IngressClass depends on your installation method:
 
-::Tabs
+{{< tabs >}}
 
-:::TabTitle Manifest and OLM
+{{< tab title="Manifest and OLM" >}}
 
 The IngressClass is not included in the default manifest and OLM release.
 
@@ -47,7 +50,9 @@ spec:
 EOF
 ```
 
-:::TabTitle Helm Chart
+{{< /tab >}}
+
+{{< tab title="Helm Chart" >}}
 
 Enable the IngressClass by updating your values:
 
@@ -58,4 +63,6 @@ nginx-ingress:
       enabled: true
 ```
 
-::EndTabs
+{{< /tab >}}
+
+{{< /tabs >}}

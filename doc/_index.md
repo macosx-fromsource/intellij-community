@@ -5,9 +5,12 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 title: GitLab Operator
 ---
 
-DETAILS:
-**Tier:** Free, Premium, Ultimate
-**Offering:** GitLab Self-Managed
+{{< details >}}
+
+- Tier: Free, Premium, Ultimate
+- Offering: GitLab Self-Managed
+
+{{< /details >}}
 
 The [GitLab Operator](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator) is an installation and management method that follows the
 [Kubernetes Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/).
@@ -16,16 +19,23 @@ Use the GitLab Operator to run GitLab in
 [OpenShift](https://docs.gitlab.com/ee/install/openshift_and_gitlab/index.html) or on
 another Kubernetes-compatible platform.
 
-NOTE:
+{{< alert type="note" >}}
+
 The GitLab Operator has [known limitations](#known-issues) and is only suitable for specific scenarios in production use.
 
+{{< /alert >}}
+
 <!-- This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
-WARNING:
+
+{{< alert type="warning" >}}
+
 The default values of the _GitLab custom resource_ are **not intended for production use**.
 With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,
 are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
 For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/ee/administration/reference_architectures/#cloud-native-hybrid).
 GitLab does not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
+
+{{< /alert >}}
 
 ## Known issues
 

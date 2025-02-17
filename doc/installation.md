@@ -5,20 +5,28 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 title: Installation
 ---
 
-DETAILS:
-**Tier:** Free, Premium, Ultimate
-**Offering:** GitLab Self-Managed
+{{< details >}}
 
-NOTE:
+- Tier: Free, Premium, Ultimate
+- Offering: GitLab Self-Managed
+
+{{< /details >}}
+
+{{< alert type="note" >}}
+
 The GitLab Operator has [known limitations](_index.md#known-issues) and is only suitable for specific scenarios in production use.
 
+{{< /alert >}}
+
 <!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
-WARNING:
+{{< alert type="warning" >}}
+
 The default values of the _GitLab custom resource_ are **not intended for production use**.
 With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,
 are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
 For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/ee/administration/reference_architectures/#cloud-native-hybrid).
 GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
+{{< /alert >}}
 
 This document describes how to deploy the GitLab Operator by using manifests in your Kubernetes or OpenShift cluster.
 
@@ -39,9 +47,9 @@ For more information on potential issues with OLM, see [issue 241](https://gitla
 
 ### Cluster
 
-::Tabs
+{{< tabs >}}
 
-:::TabTitle Kubernetes
+{{< tab title="Kubernetes" >}}
 
 To create a traditional Kubernetes cluster, consider using [official tooling](https://kubernetes.io/docs/tasks/tools/) or your preferred method of installation.
 
@@ -60,7 +68,9 @@ The GitLab Operator supports the following Kubernetes versions:
 | 1.23               | Unsupported                  | 0.24.0                   | x86-64        | 2023-02-28  |
 | 1.22               | Unsupported                  | 0.24.0                   | x86-64        | 2022-10-28  |
 
-:::TabTitle OpenShift
+{{< /tab >}}
+
+{{< tab title="OpenShift" >}}
 
 To create an OpenShift cluster, see the [OpenShift cluster setup documentation](developer/openshift_cluster_setup.md) for an example of how to create a _development environment_.
 
@@ -76,7 +86,9 @@ The GitLab Operator supports the following OpenShift versions:
 | 4.12               | Supported                    | 0.24.0                   | x86-64        | 2025-01-17  |
 | 4.11               | Unsupported                  | 0.24.0                   | x86-64        | 2024-02-10  |
 
-::EndTabs
+{{< /tab >}}
+
+{{< /tabs >}}
 
 The GitLab Operator aims to support new minor Kubernetes and OpenShift versions three months after their initial releases.
 We welcome any compatibility issues with releases newer than those listed above in our [issue tracker](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues).
@@ -131,17 +143,21 @@ Follow the [installation documentation](https://cert-manager.io/docs/installatio
 
 ### Metrics
 
-::Tabs
+{{< tabs >}}
 
-:::TabTitle Kubernetes
+{{< tab title="Kubernetes" >}}
 
 Install the [metrics server](https://github.com/kubernetes-sigs/metrics-server#installation) so the HorizontalPodAutoscalers can retrieve pod metrics.
 
-:::TabTitle OpenShift
+{{< /tab >}}
+
+{{< tab title="OpenShift" >}}
 
 OpenShift ships with [Prometheus Adapter](https://docs.openshift.com/container-platform/4.9/monitoring/monitoring-overview.html) by default, so all you need to do is set `spec.chart.values.prometheus.install=false` in your GitLab custom resource to prevent the GitLab Operator from installing another instance.
 
-::EndTabs
+{{< /tab >}}
+
+{{< /tabs >}}
 
 ### Configure Domain Name Services
 
@@ -155,9 +171,9 @@ Ingress in OpenShift requires extra consideration. See our [notes on OpenShift I
 
 Start by selecting an installation method.
 
-::Tabs
+{{< tabs >}}
 
-:::TabTitle Manifest
+{{< tab title="Manifest" >}}
 
 First, retrieve a release manifest from the
 [Operator releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
@@ -178,7 +194,9 @@ Finally, apply the manifest:
 kubectl apply -f gitlab-operator-<platform>.yaml
 ```
 
-:::TabTitle Helm Chart
+{{< /tab >}}
+
+{{< tab title="Helm Chart" >}}
 
 First, add the GitLab Helm repository and retrieve the latest udpates.
 
@@ -198,7 +216,9 @@ helm install gitlab-operator gitlab/gitlab-operator \
 See [`values.yaml`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/deploy/chart/values.yaml)
 for all available configuration options.
 
-:::TabTitle OLM
+{{< /tab >}}
+
+{{< tab title="OLM" >}}
 
 The GitLab Operator is available in the following OLM channels:
 
@@ -208,7 +228,9 @@ The GitLab Operator is available in the following OLM channels:
 | OpenShift Community Operators   | Available in the embedded OperatorHub in OpenShift and OKD | [Link](https://github.com/redhat-openshift-ecosystem/community-operators-prod) |
 | OpenShift Certified Operators   | [Link](https://catalog.redhat.com/software/container-stacks/detail/5ec3fcb08b6f188e53644c0f) | [Link](https://github.com/redhat-openshift-ecosystem/certified-operators) |
 
-::EndTabs
+{{< /tab >}}
+
+{{< /tabs >}}
 
 Confirm the installation by checking the status of the Operator Deployment:
 
@@ -292,8 +314,11 @@ to pin the Operator's version or to upgrade to a non-latest version.
 - If the Operator and specified chart version are incompatible, configuration changes to the chart can fail with
   [errors about the chart version](operator_upgrades.md#step-5-update-the-chart-version-in-the-gitlab-custom-resource-cr).
 
-NOTE:
+{{< alert type="note" >}}
+
 [OLM currently does not support downgrading Operators](https://github.com/operator-framework/operator-lifecycle-manager/issues/1177).
+
+{{< /alert >}}
 
 ## Uninstall the GitLab Operator
 

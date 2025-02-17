@@ -64,12 +64,17 @@ Configuration can be applied during runtime by setting environment variables. Al
 | `SSH_PUBLIC_KEY`      | Content of SSH public key file                            | Content of `$SSH_PUBLIC_KEY_FILE` |
 | `LOG_LEVEL`           | Verbosity of `openshift-install` output                   | `info` |
 
-NOTE:
+{{< alert type="note" >}}
+
 The variables `CLUSTER_NAME` and `BASE_DOMAIN` are combined to build the domain name for the cluster.
 
-NOTE:
+{{< /alert >}}
+
+{{< alert type="note" >}}
+
 Creating a cluster with `FIPS_ENABLED` set to `true` may cause issues with third party software.
 We are investigating this in this issue: `https://gitlab.com/gitlab-org/charts/gitlab/-/issues/3153`.
+{{< /alert >}}
 
 ## Destroy your OpenShift cluster
 

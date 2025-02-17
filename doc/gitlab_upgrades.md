@@ -5,9 +5,12 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 title: Upgrading GitLab
 ---
 
-DETAILS:
-**Tier:** Free, Premium, Ultimate
-**Offering:** GitLab Self-Managed
+{{< details >}}
+
+- Tier: Free, Premium, Ultimate
+- Offering: GitLab Self-Managed
+
+{{< /details >}}
 
 The GitLab Operator is capable of managing upgrades between versions of GitLab. This document includes background context on how the upgrade flow works under the hood, along with instructions to perform a GitLab upgrade.
 
