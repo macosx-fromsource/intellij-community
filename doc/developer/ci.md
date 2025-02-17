@@ -11,7 +11,7 @@ The review environments are automatically uninstalled after 1 hour. If you need 
 on the [Environments page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/environments). However, make sure to manually trigger the jobs
 in the `Cleanup` stage when you're done. This helps to ensure that the clusters have enough resources to run review apps for other merge requests.
 
-See the [environments documentation](https://docs.gitlab.com/ee/ci/environments/index.html) for more information.
+See the [environments documentation](https://docs.gitlab.com/ci/environments/) for more information.
 
 ## OpenShift CI clusters
 
@@ -176,7 +176,7 @@ $ gcloud container clusters resize \
 
 ## QA pipelines
 
-By default, QA pipelines will include Smoke suite - a [small subset of fast end-to-end functional tests](https://docs.gitlab.com/ee/development/testing_guide/smoke.html)
+By default, QA pipelines will include Smoke suite - a [small subset of fast end-to-end functional tests](https://docs.gitlab.com/development/testing_guide/smoke/)
 to quickly ensure that basic functionality is working. If additional testing is required, it's possible to trigger manual
 QA pipeline with Full suite of end-to-end tests using `qa_<cluster>_full_suite_manual_trigger` job for the specific cluster.
 
