@@ -18,7 +18,7 @@ The release pipeline will contain a `certification_upload` job when the
 repository has been tagged with a semver version (i.e. `1.0.0`). This job
 will trigger the Red Hat API to request the image be passed through
 Red Hat's certification pipeline. The results of the certification pipeline
-are published through Red Hat's Connect portal.
+are published through the Red Hat Connect portal.
 
 It is also possible to pass a release candidate tag (i.e. `1.0.0-rc1`) or a
 beta tag (i.e. `1.0.0-beta1`) to trigger the `certification_upload` job.
