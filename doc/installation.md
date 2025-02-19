@@ -198,7 +198,7 @@ kubectl apply -f gitlab-operator-<platform>.yaml
 
 {{< tab title="Helm Chart" >}}
 
-First, add the GitLab Helm repository and retrieve the latest udpates.
+First, add the GitLab Helm repository and retrieve the latest updates.
 
 ```shell
 helm repo add gitlab https://charts.gitlab.io
