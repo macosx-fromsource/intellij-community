@@ -1,3 +1,23 @@
+## 1.10.0 (2025-02-20)
+
+### changed (11 changes)
+
+- [Update ubi9-micro to d115f8a](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/17f045d64d531b14764b29de2c384fb71f6e55f4) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1082))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/736c336ee3095518b47a8f68170559a91fd6b926) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1083))
+- [Update ubi9-micro to 4a2052e](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e0c51acc4921dba9b1401bc19441f5810ad73291) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1073))
+- [Update prom-op-api/monitoring to v0.80.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ff9b4f7cb268262903c5032bbc7edd63efdc217e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1070))
+- [Update Go from 1.23.5 to 1.23.6](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/d91d7622594b3298a6bb14590e7adc4d19b4c340) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1072))
+- [Update golang.org/x/mod to v0.23.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f406fb77866dff7a638e380e5182b17a9588b5b4) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1069))
+- [Update ubi9-micro to a434c4b](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/40e9ea50557be1ffc2d7cbdac75adf97c5438d4b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1068))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f9118c2d3c4501d5553d420d24976941e4ee1df4) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1054))
+- [Update sigs.k8s.io/controller-runtime from v.0.19.4 to v0.20.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5fef91fa7f6d8285193ee74f3505802b60dc4f30) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1061))
+- [Update Go from 1.23.4 to 1.23.5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a1b48fb2cc758854f8145c39aecfde98fb28ad20) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1060))
+- [Update ubi9-micro to f6e0a71](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/d54eaccecf999beb26b4edff642218c823656a4d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1039))
+
+### added (1 change)
+
+- [Operator chart: Support custom zap-time-encoding](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/6fe72feff375cc48b362397f3396e3bbe4abda2f) by @thomasgl-orange ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1064))
+
 ## 1.9.2 (2025-02-12)
 
 No changes.
