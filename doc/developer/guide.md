@@ -48,37 +48,37 @@ gitlab-operator
 $ tree -dL 2 .
 .
 ├── api
-│   └── v1beta1
+│   └── v1beta1
 ├── bundle
-│   ├── manifests
-│   ├── metadata
-│   └── tests
+│   ├── manifests
+│   ├── metadata
+│   └── tests
 ├── config
-│   ├── certmanager
-│   ├── crd
-│   ├── default
-│   ├── deploy
-│   ├── manager
-│   ├── manifests
-│   ├── prometheus
-│   ├── rbac
-│   ├── samples
-│   ├── scorecard
-|   ├── test
-│   └── webhook
+│   ├── certmanager
+│   ├── crd
+│   ├── default
+│   ├── deploy
+│   ├── manager
+│   ├── manifests
+│   ├── prometheus
+│   ├── rbac
+│   ├── samples
+│   ├── scorecard
+│   ├── test
+│   └── webhook
 ├── controllers
-│   ├── backup
-│   ├── gitlab
-│   ├── helpers
-│   ├── runner
-│   ├── settings
-│   ├── testdata
-│   └── utils
+│   ├── backup
+│   ├── gitlab
+│   ├── helpers
+│   ├── runner
+│   ├── settings
+│   ├── testdata
+│   └── utils
 ├── doc
 ├── hack
-│   └── assets
+│   └── assets
 ├── helm
-│   └── testdata
+│   └── testdata
 └── scripts
     └── manifests
 ```
