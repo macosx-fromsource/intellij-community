@@ -43,7 +43,7 @@ kubectl apply -f \
   https://gitlab.com/api/v4/projects/18899486/packages/generic/gitlab-operator/${VERSION}/gitlab-operator-kubernetes-${VERSION}.yaml
 ```
 
-This command will apply any changes to the related manifests, including the new Deployment image to use.
+This command applies any changes to the related manifests, including the new Deployment image to use.
 
 ## Step 4: Confirm that the new version of the Operator becomes the leader
 
