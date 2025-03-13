@@ -6,7 +6,7 @@ title: RedHat Operator Bundle certification process
 ---
 
 This document outlines certification process for OLM bundle submission for RedHat Marketplace. It is based on
-[Red Hat Software Certification Workflow Guide](https://docs.redhat.com/en/documentation/red_hat_software_certification/2024/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-working-with-operators).
+[Red Hat Software Certification Workflow Guide](https://docs.redhat.com/en/documentation/red_hat_software_certification/2025/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-working-with-operators).
 
 The following process is partially automated in `scripts/tools/publish.sh`.
 You can use `publish.sh ${VERSION} redhat-marketplace` to run this process.

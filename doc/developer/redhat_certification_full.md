@@ -6,7 +6,7 @@ title: RedHat Operator Bundle certification process
 ---
 
 This document outlines certification process for OLM bundle submission for RedHat Marketplace. It is based on
-[Red Hat Software Certification Workflow Guide](https://docs.redhat.com/en/documentation/red_hat_software_certification/2024/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-working-with-operators).
+[Red Hat Software Certification Workflow Guide](https://docs.redhat.com/en/documentation/red_hat_software_certification/2025/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-working-with-operators).
 
 Below process outlines **full** setup for certification.
 
@@ -43,7 +43,7 @@ Existing OpenShift cluster is required. If using already provisioned OpenShift c
 
 ### OpenShift-provisioning pipeline
 
-One way to provision a new OpenShift cluster is using [OpenShift-provisioning pipeline](https://gitlab.com/gitlab-org/distribution/infrastructure/openshift-provisioning)
+One way to provision a new OpenShift cluster is using the OpenShift-provisioning pipeline (`https://gitlab.com/gitlab-org/distribution/infrastructure/openshift-provisioning`).
 
 Pipeline creates convenient artifact that includes auth information for cluster as well as all necessary binaries. Download Zip file for the artifact produced by `deploy_cluster` job and extract it into some convenient location (`${HOME}/mycluster`)
 
@@ -158,7 +158,8 @@ redhat/operator-certification/scripts/install_oco.sh create_manifest \
 
 ### Create API token (PAT)
 
-In GitHub navigate to [profile settings](https://github.com/settings/profile) `Developer settings`/`Personal access tokens` and generate a new ("classic") one with scope `repo`. Save it to a local file in secure location (`${HOME}/secure/github_api_token.txt`)
+In GitHub navigate to profile settings (`https://github.com/settings/profile`), `Developer settings`/`Personal access tokens`, and generate a new ("classic") one with scope `repo`.
+Save it to a local file in a secure location (`${HOME}/secure/github_api_token.txt`).
 
 **NOTE** this token as access to **all** of GitHub user's repos at this point.
 
