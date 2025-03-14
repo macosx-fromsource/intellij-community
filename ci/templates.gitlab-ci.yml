@@ -215,7 +215,7 @@
     - !reference [.if_commit_branch_or_mr_branch]
 
 .qa_full_suite_trigger:
-  image: alpine
+  image: ${ALPINE_IMAGE}
   stage: qa-trigger
   when: manual
   artifacts:
