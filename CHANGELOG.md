@@ -1,3 +1,18 @@
+## 1.11.0 (2025-03-20)
+
+### changed (10 changes)
+
+- [Update github.com/cert-manager/cert-manager to v1.17.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0fc062a7c6ac66ae3a92f618db74313ad3403c79) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1024))
+- [Update golang.org/x/mod to v0.24.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/13d4988d70783f97f658f0057d2d7ff178361f4a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1093))
+- [Update k8s.io dependencies to v0.32.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1c222c713aef33258594d3f2b1daf78e9b2fb484) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1099))
+- [Update ubi9-micro to 8a6071b](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4ebb53964e4e8d326633b41f86e29bcd1aaa77b9) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1101))
+- [Update prom-op-api/monitoring to v0.81.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/16d710833fa481fc6debf4b9effadd9c92b18968) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1098))
+- [Update ubi9-micro to 91828a5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/fed167d037a75930704ae4a23a1c3c9620cb3103) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1097))
+- [Update Go from 1.23.6 to 1.23.7](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/6e2b9cf7f82a955fb7e0e2ae36f225b35aa1a3d5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1096))
+- [Update sigs.k8s.io/controller-runtime to v0.20.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f5f9d43439831811b8fae4c523dc4fc4e8ff6d6a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1095))
+- [Update github.com/onsi/ginkgo/v2 to v2.23.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ec92c8a1bc24c80812a26174232aec07df6939c3) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1094))
+- [Update prom-op-api/monitoring to v0.80.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/03c7002d7af5b46594f90e561d8ff0cd0a401584) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1088))
+
 ## 1.10.2 (2025-03-12)
 
 No changes.
