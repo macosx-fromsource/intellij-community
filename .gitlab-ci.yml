@@ -1,7 +1,7 @@
 image: "registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-${GO_MINOR}"
 
 variables:
-  DOCKER_VERSION: "24.0.6"
+  DOCKER_VERSION: "28.0.1"
   VCLUSTER_AGENT_NAME: "operator129-ci-cluster"
   VCLUSTER_ENVIRONMENT_PREFIX: "operator129_"
   # Configuration of K8s
@@ -57,6 +57,14 @@ variables:
   # GITLAB_CHART_VERSION: 
   # ENVIRONMENT_SUFFIX: 
   PIPELINE_TYPE: default # default, chart_version 
+
+  # Pull DockerHub images through dependency proxy to not hit rate limits.
+  CURL_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/curlimages/curl:8.12.1
+  ALPINE_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/alpine:3.21
+  RUBY_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ruby:3.2-alpine
+  GOLANGCI_LINT_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/golangci/golangci-lint:v1.63-alpine
+  GO_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/golang:${GO_VERSION}
+  DOCKER_DIND_IMAGE: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/docker:${DOCKER_VERSION}-dind
 
 stages:
   - check
@@ -135,7 +143,7 @@ pull_charts:
 lint_code:
   extends: .cache
   stage: test
-  image: golangci/golangci-lint:v1.63-alpine
+  image: ${GOLANGCI_LINT_IMAGE}
   script:
     - go install github.com/go-task/task/v3/cmd/task@v3.38.0
     - PATH="${PATH}:${GOPATH}/bin" task lint
@@ -231,7 +239,7 @@ docs-test hugo:
     - !reference [.if_commit_branch_or_mr_branch]
 
 .review-docs:
-  image: ruby:3.2-alpine
+  image: ${RUBY_IMAGE}
   stage: review
   cache: {}
   dependencies: []
@@ -349,19 +357,29 @@ slow_unit_tests_custom_ref:
   allow_failure: true
   script: SKIP_OPERATION_TESTS=yes TEST_UTIL=ginkgo2 task slow-unit-tests
 
+.dind:
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+  services:
+    - name: ${DOCKER_DIND_IMAGE}
+      alias: docker
+
 .docker_build_job:
-  extends: .cache
+  extends:
+    - .cache
+    - .dind
   stage: release
   needs: ["pull_charts"]
   image: registry.gitlab.com/gitlab-org/gitlab-omnibus-builder/distribution_ci_tools:${CI_TOOLS_VERSION}
-  services:
-    - docker:${DOCKER_VERSION}-dind
   variables:
     DOCKER_TAGS: ""
   before_script:
-    - docker login -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}" "${CI_REGISTRY}"
+    # Login to project registry.
+    - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
+    # Login to dependency proxy.
+    - echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login $CI_DEPENDENCY_PROXY_SERVER -u $CI_DEPENDENCY_PROXY_USER --password-stdin
     # Update module cache so it can be saved in CI cache (only the dependencies required to build)
-    - docker run -v "${GOPATH}:/go" -v "${CI_PROJECT_DIR}:/code" -w /code golang:${GO_VERSION} go list ./...
+    - docker run -v "${GOPATH}:/go" -v "${CI_PROJECT_DIR}:/code" -w /code ${GO_IMAGE} go list ./...
     - source ci/scripts/buildx/lib/build.sh
     - source ci/scripts/buildx/lib/configure.sh
     - ci/scripts/buildx/bootstrap.sh
@@ -446,7 +464,7 @@ build_bundle_image:
 
 approve_cluster_tests:
   stage: cluster_tests_approval
-  image: alpine:latest
+  image: ${ALPINE_IMAGE}
   script: echo "Proceeding to tests in CI clusters..."
   rules:
     - !reference [.skip_if_not_canonical]
@@ -663,7 +681,7 @@ build_chart:
 
 upload_chart:
   stage: publish
-  image: curlimages/curl:latest
+  image: ${CURL_IMAGE}
   needs:
     - build_chart
   rules:
@@ -680,7 +698,7 @@ upload_chart:
 # Release chart to charts.gitlab.io
 release_chart:
   stage: publish
-  image: curlimages/curl:latest
+  image: ${CURL_IMAGE}
   needs:
     - build_chart
   rules:
@@ -714,7 +732,7 @@ build_manifest:
 
 upload_manifest:
   stage: publish
-  image: curlimages/curl:latest
+  image: ${CURL_IMAGE}
   needs:
     - build_manifest
   rules:
@@ -850,7 +868,7 @@ validate_release_4_14:
 
 debug_chart_version:
   stage: prepare
-  image: busybox
+  image: ${ALPINE_IMAGE}
   script:
     - echo "$GITLAB_CHART_VERSION"
     - echo "$TESTS_NAMESPACE"

@@ -184,8 +184,7 @@
   # properly. Has to be done individually for each job that extends .qa
   image: registry.gitlab.com/gitlab-org/gitlab-omnibus-builder/distribution_ci_tools:4.22.0
   stage: qa
-  services:
-  - docker:${DOCKER_VERSION}-dind
+  extends: .dind
   variables:
     QA_ARTIFACTS_DIR: $CI_PROJECT_DIR
     QA_CAN_TEST_PRAEFECT: "false"
@@ -215,7 +214,7 @@
     - !reference [.if_commit_branch_or_mr_branch]
 
 .qa_full_suite_trigger:
-  image: alpine
+  image: ${ALPINE_IMAGE}
   stage: qa-trigger
   when: manual
   artifacts:

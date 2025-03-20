@@ -1,6 +1,6 @@
 # Build the manager binary
-ARG GO_VERSION=1.23
-FROM --platform=${BUILDPLATFORM} golang:${GO_VERSION} AS builder
+ARG BUILD_IMAGE=docker.io/golang:1.23
+FROM --platform=${BUILDPLATFORM} ${BUILD_IMAGE} AS builder
 WORKDIR /workspace
 
 # Copy in any existing Go cache, and download
