@@ -42,7 +42,7 @@ GitLab does not support any issues related to PostgreSQL, Redis, Gitaly, Praefec
 GitLab Operator does not support:
 
 - Migration from GitLab Chart or Linux package to GitLab Operator. For migration of the installation method, you must follow steps similar to the
-  [manual migration steps](https://docs.gitlab.com/charts/installation/migration/package_to_helm.html).
+  [manual migration steps](https://docs.gitlab.com/charts/installation/migration/package_to_helm/).
   Support for automatic migration is proposed in [GitLab Operator issue 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567).
 - Deployment by using the [GitLab Environment Toolkit](https://gitlab.com/gitlab-org/gitlab-environment-toolkit).
   Support for this integration is proposed in [GitLab Operator issue 1571](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1571).

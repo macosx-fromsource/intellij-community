@@ -68,7 +68,7 @@ For troubleshooting SCC-related issues blocking creation of NGINX-Ingress Contro
 ### Configuration
 
 By default, the GitLab Operator deploys the GitLab
-[fork of the NGINX Ingress Controller chart](https://docs.gitlab.com/charts/charts/nginx/fork.html).
+[fork of the NGINX Ingress Controller chart](https://docs.gitlab.com/charts/charts/nginx/fork/).
 
 To use the NGINX Ingress Controller for Ingress, complete the following:
 
@@ -98,7 +98,7 @@ To use the NGINX Ingress Controller for Ingress, complete the following:
    {{< alert type="note" >}}
 
 By default, CertManager creates and manages TLS certificates for the GitLab-related Ingresses.
-   See the [TLS documentation](https://docs.gitlab.com/charts/installation/tls.html) for more options.
+   See the [TLS documentation](https://docs.gitlab.com/charts/installation/tls/) for more options.
 
    {{< /alert >}}
 
@@ -194,9 +194,9 @@ To use OpenShift Routes for Ingress, complete the following:
    {{< alert type="note" >}}
 
 By default, CertManager creates and manage TLS certificates for the GitLab-related Routes.
-   See the [TLS documentation](https://docs.gitlab.com/charts/installation/tls.html) for more options.
+   See the [TLS documentation](https://docs.gitlab.com/charts/installation/tls/) for more options.
    If the OpenShift cluster is secured with a wildcard certificate,
-   [option 2](https://docs.gitlab.com/charts/installation/tls.html#option-2-use-your-own-wildcard-certificate)
+   [option 2](https://docs.gitlab.com/charts/installation/tls/#option-2-use-your-own-wildcard-certificate)
    allows the wildcard certificate to secure the GitLab-related Routes.
 
    {{< /alert >}}

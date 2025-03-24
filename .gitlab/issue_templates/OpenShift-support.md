@@ -3,7 +3,7 @@
 - [OpenShift release post](<insert link here>)
 - [Parent Epic: Support deploying GitLab on new versions of OpenShift](https://gitlab.com/groups/gitlab-org/-/epics/13683)
 - [GitLab OpenShift release support policy](https://handbook.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/k8s-release-support-policy/)
-- [Operator supported OpenShift releases](https://docs.gitlab.com/operator/installation.html?tab=OpenShift)
+- [Operator supported OpenShift releases](https://docs.gitlab.com/operator/installation/?tab=OpenShift#cluster)
 
 
 ## Checklist

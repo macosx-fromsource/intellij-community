@@ -22,7 +22,7 @@ Note that this does not include the GitLab Runner. For more information, see the
 
 ## Documentation
 
-Information on installation, usage, and contributing to the GitLab Operator can be found at the [documentation site](https://docs.gitlab.com/operator).
+Information on installation, usage, and contributing to the GitLab Operator can be found at the [documentation site](https://docs.gitlab.com/operator/).
 
 ## Owned Custom Resource: GitLab
 

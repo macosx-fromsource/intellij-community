@@ -28,7 +28,7 @@ the images that have been built on top of the
 a requirement for certification by RedHat. The GitLab Operator image itself only has one variant, which is already
 built on top of UBI.
 
-See the [Charts documentation on UBI images](https://docs.gitlab.com/charts/advanced/ubi/index.html)
+See the [Charts documentation on UBI images](https://docs.gitlab.com/charts/advanced/ubi/)
 for more information, including example Helm values to use these images.
 
 | Component                   | Registry path                                                                                            | RedHat Technology Portal |

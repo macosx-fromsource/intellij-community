@@ -67,7 +67,7 @@ export GITLAB_CHART_DIR=~/work/gitlab \
        GITLAB_ACME_EMAIL="somebody@gitlab.com" \
        GITLAB_CR_DEPLOY_MODE="certmanager"
 
-# https://docs.gitlab.com/charts/installation/cloud/gke.html
+# https://docs.gitlab.com/charts/installation/cloud/gke/
 PROJECT="gcp-project-123" CLUSTER_NAME="mydomain" \
     bash ${GITLAB_CHART_DIR}/scripts/gke_bootstrap_script.sh up
 
