@@ -80,7 +80,7 @@ Related issues for objects not being supported in OperatorHubs:
 ## Problems with deployment of GitLab instance
 
 In addition to the information presented here, one should consult the
-GitLab Helm chart [troubleshooting documentation](https://docs.gitlab.com/charts/troubleshooting/index.html).
+GitLab Helm chart [troubleshooting documentation](https://docs.gitlab.com/charts/troubleshooting/).
 
 ### Core services not ready
 
@@ -202,7 +202,7 @@ As a reminder, the bundled MinIO instance is [not recommended for production use
 In GitLab 16.0, GitLab defaults to using two database connections that point to the same PostgreSQL database.
 
 If you wish to switch back to single database connection, refer to
-[configuring multiple database connections](https://docs.gitlab.com/charts/charts/globals.html#configure-multiple-database-connections).
+[configuring multiple database connections](https://docs.gitlab.com/charts/charts/globals/#configure-multiple-database-connections).
 
 ### Disabling or Renaming components
 

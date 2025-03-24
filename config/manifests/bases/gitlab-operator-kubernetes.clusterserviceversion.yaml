@@ -108,7 +108,7 @@ spec:
 
     # Prerequisites
 
-    Please visit [Prerequisites](https://docs.gitlab.com/operator/installation.html#prerequisites) section of GitLab Operator Documentation.
+    Please visit [Prerequisites](https://docs.gitlab.com/operator/installation/#prerequisites) section of GitLab Operator Documentation.
 
     ## IngressClass
 
@@ -153,7 +153,7 @@ spec:
   - name: GitLab and Kubernetes
     url: https://about.gitlab.com/solutions/kubernetes/
   - name: Gitlab Reference Architecture
-    url: https://docs.gitlab.com/ee/administration/reference_architectures/
+    url: https://docs.gitlab.com/administration/reference_architectures/
   - name: GitLab Contact Sales
     url: https://about.gitlab.com/sales/
   maintainers:

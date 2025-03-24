@@ -163,7 +163,7 @@ OpenShift ships with [Prometheus Adapter](https://docs.openshift.com/container-p
 
 You need an internet-accessible domain to which you can add a DNS record.
 
-See our [networking and DNS documentation](https://docs.gitlab.com/charts/installation/tools.html#networking-and-dns) for more details on connecting your domain to the GitLab components. You use the configuration mentioned in this section when defining your GitLab custom resource (CR).
+See our [networking and DNS documentation](https://docs.gitlab.com/charts/installation/tools/#networking-and-dns) for more details on connecting your domain to the GitLab components. You use the configuration mentioned in this section when defining your GitLab custom resource (CR).
 
 Ingress in OpenShift requires extra consideration. See our [notes on OpenShift Ingress](openshift_ingress.md) for more information.
 
@@ -289,7 +289,7 @@ kubectl -n gitlab-system get deployment gitlab-controller-manager
 
   When the CR is reconciled (the status of the GitLab resource is `Running`), you can access GitLab in your browser at `https://gitlab.example.com`.
 
-To log in you need to retrieve the initial root password for your deployment. See the [Helm Chart documentation](https://docs.gitlab.com/charts/installation/deployment.html#initial-login) for further instructions.
+To log in you need to retrieve the initial root password for your deployment. See the [Helm Chart documentation](https://docs.gitlab.com/charts/installation/deployment/#initial-login) for further instructions.
 
 ## Recommended next steps
 
