@@ -188,3 +188,16 @@ The Operator image can be built for multiple architectures, by configuring a Kub
 variables. Set the `BUILDX_ARCHS` to a comma-separated string of the target architectures (for example `amd64,arm64`). If `BUILDX_K8S_DISABLE` is set to `true` - autmatically reduces number of platforms to build for down to `amd64`.
 
 If no Kubernetes driver is configured you can (cross-) compile only one architecture.
+
+## DockerHub rate limits
+
+By default, CI uses images from DockerHub. The shared runners by default use a
+mirror to avoid hitting DockerHub rate limits. If you use custom runnners, that
+don't use caching or mirroring, you should enable the [dependency proxy](https://docs.gitlab.com/user/packages/dependency_proxy/)
+by setting the `DOCKERHUB_PREFIX` to your proxy, for example
+`DOCKERHUB_PREFIX: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}`, and
+`DEPENDENCY_PROXY_LOGIN="true"`.
+
+The container build context by default uses the gcr DockerHub mirror. This
+behavior can be changed by overriding the `DOCKER_OPTIONS` or `DOCKER_MIRROR`
+variables.
