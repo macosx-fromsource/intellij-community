@@ -1,16 +1,16 @@
 github-cli 2.36.0
-golang 1.23.7
-golangci-lint 1.63.4
-helm 3.15.3
-k9s 0.26.7
-kind 0.17.0
-kubebuilder 3.16.0
-kustomize 5.4.3
-operator-sdk 1.36.1
-opm 1.45.0
-task 3.38.0
+golang 1.24.1
+golangci-lint 1.64.8
+helm 3.17.2
+k9s 0.40.10
+kind 0.27.0
+kubebuilder 4.5.1
+kustomize 5.6.0
+operator-sdk 1.39.2
+opm 1.51.0
+task 3.42.1
 tekton-cli 0.32.0
-yq 4.44.3
+yq 4.45.1
 
 # For linting documentation
 markdownlint-cli2 0.17.1

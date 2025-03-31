@@ -27,9 +27,9 @@ function vcluster_create() {
   vcluster create "${VCLUSTER_NAME}" \
     --upgrade \
     --namespace="${VCLUSTER_NAME}" \
-    --kubernetes-version=1."${VCLUSTER_K8S_MINOR_VERSION}" \
     --connect=false \
-    --update-current=false
+    --update-current=false \
+    --set controlPlane.distro.k8s.version="${VCLUSTER_K8S_VERSION}"
   kubectl label --overwrite namespace "${VCLUSTER_NAME}" release="${TESTS_NAMESPACE}"
 }
 
