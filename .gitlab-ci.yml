@@ -35,8 +35,8 @@ variables:
   # OCP_RESOURCES_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/openshift-resources-${CI_COMMIT_TAG}.yaml"
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}"
   ISSUE_BOT_LABELS_EXTRA: "group::distribution"
-  GO_VERSION: "1.23.7"
-  GO_MINOR: "1.23"
+  GO_VERSION: "1.24.1"
+  GO_MINOR: "1.24"
   QA_FULL_SUITE_OPTIONS: '--tag ~smoke --tag ~skip_live_env --tag ~orchestrated --tag ~transient'
   CI_TOOLS_VERSION: "4.34.0"
   # Buildx cluster connection settings are set at project level:
@@ -64,7 +64,7 @@ variables:
   CURL_IMAGE: ${DOCKERHUB_PREFIX}/curlimages/curl:8.12.1
   ALPINE_IMAGE: ${DOCKERHUB_PREFIX}/alpine:3.21
   RUBY_IMAGE: ${DOCKERHUB_PREFIX}/ruby:3.2-alpine
-  GOLANGCI_LINT_IMAGE: ${DOCKERHUB_PREFIX}/golangci/golangci-lint:v1.63-alpine
+  GOLANGCI_LINT_IMAGE: ${DOCKERHUB_PREFIX}/golangci/golangci-lint:v1.64-alpine
   GO_IMAGE: ${DOCKERHUB_PREFIX}/golang:${GO_VERSION}
   DOCKER_DIND_IMAGE: ${DOCKERHUB_PREFIX}/docker:${DOCKER_VERSION}-dind
 
@@ -299,7 +299,7 @@ review-docs-cleanup:
     HELM_CHARTS: "${CI_PROJECT_DIR}/charts"
     KUBECONFIG: "" # to ensure that the CI cluster is not used
     USE_EXISTING_CLUSTER: "false" # to ensure we don't use the $KUBECONFIG value
-    KUBEBUILDER_ASSETS: "/usr/local/kubebuilder/bin"
+    KUBEBUILDER_ASSETS: "/usr/local/bin"
   before_script:
     - mkdir coverage
     - export CHART_VERSION=$(sed -n ${VERSION_INDEX}p CHART_VERSIONS)

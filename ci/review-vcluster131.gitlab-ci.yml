@@ -26,7 +26,7 @@ review_vcluster131:
     DOMAIN: ${DOMAIN_VCLUSTER131}
     AGENT_NAME: ${VCLUSTER_AGENT_NAME}
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
-    VCLUSTER_K8S_MINOR_VERSION: "31"
+    VCLUSTER_K8S_VERSION: "v1.31.6"
   environment: *environment_vc131
   resource_group: *env_vc_name131
   needs:
@@ -43,7 +43,7 @@ stop_review_vcluster131:
     DOMAIN: ${DOMAIN_VCLUSTER131}
     AGENT_NAME: ${VCLUSTER_AGENT_NAME}
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
-    VCLUSTER_K8S_MINOR_VERSION: "31"
+    VCLUSTER_K8S_VERSION: "v1.31.6"
   environment:
     name: *env_vc_name131
     action: stop
