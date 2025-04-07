@@ -24,11 +24,11 @@ In this configuration, traffic flows as follows:
 ```mermaid
 graph TD
     U(End User) --> GTLB([gitlab.domain.com])
-    GTLB --resolves to--> SRV_N[/Service/gitlab-nginx-ingress-controller/]
-    SRV_N --connects to--> DPL_N[Deployment/gitlab-nginx-ingress-controller]
+    GTLB -- resolves to --> SRV_N[/Service/gitlab-nginx-ingress-controller/]
+    SRV_N -- connects to --> DPL_N[Deployment/gitlab-nginx-ingress-controller]
     DPL_N -- looks up corresponding ingress --> ING{{Ingress/gitlab-webservice-default}}
-    ING --proxies to--> SRV_W[/Service/gitlab-webservice-default/]
-    SRV_W --connects to--> DPL_W[Deployment/gitlab-webservice-default]
+    ING -- proxies to --> SRV_W[/Service/gitlab-webservice-default/]
+    SRV_W -- connects to --> DPL_W[Deployment/gitlab-webservice-default]
 ```
 
 ### Workaround for OpenShift Router overriding NGINX Ingress Controller
@@ -140,11 +140,11 @@ In this configuration, traffic flows as follows:
 ```mermaid
 graph TD
     U(End User) --> GTLB([gitlab.domain.com])
-    GTLB --resolves to--> SRV_R[/Service/router-default/]
-    SRV_R --connects to--> DPL_R[Deployment/router-default]
+    GTLB -- resolves to --> SRV_R[/Service/router-default/]
+    SRV_R -- connects to --> DPL_R[Deployment/router-default]
     DPL_R -- looks up corresponding Route --> RT{{Route/gitlab-webservice-default-xyz}}
-    RT --proxies to--> SRV_W[/Service/gitlab-webservice-default/]
-    SRV_W --connects to--> DPL_W[Deployment/gitlab-webservice-default]
+    RT -- proxies to --> SRV_W[/Service/gitlab-webservice-default/]
+    SRV_W -- connects to --> DPL_W[Deployment/gitlab-webservice-default]
 ```
 
 {{< alert type="note" >}}
