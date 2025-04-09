@@ -68,6 +68,8 @@ variables:
   GO_IMAGE: ${DOCKERHUB_PREFIX}/golang:${GO_VERSION}
   DOCKER_DIND_IMAGE: ${DOCKERHUB_PREFIX}/docker:${DOCKER_VERSION}-dind
 
+  DOCS_LINT_IMAGE: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.21-vale-3.11.2-markdownlint2-0.17.2-lychee-0.18.1
+
 stages:
   - check
   - prepare
@@ -166,7 +168,7 @@ lint_code:
 
 docs-lint content:
   stage: test
-  image: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.15.1
+  image: $DOCS_LINT_IMAGE
   cache: {}
   needs:
     - job: danger-review
@@ -184,7 +186,7 @@ docs-lint content:
 
 docs-lint markdown:
   stage: test
-  image: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.15.1
+  image: $DOCS_LINT_IMAGE
   cache: {}
   needs:
     - job: danger-review
@@ -202,7 +204,7 @@ docs-lint markdown:
 
 docs-lint links:
   stage: test
-  image: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.20-vale-3.9.3-markdownlint2-0.17.1-lychee-0.15.1
+  image: $DOCS_LINT_IMAGE
   cache: {}
   needs:
     - job: danger-review
