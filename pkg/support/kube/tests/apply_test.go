@@ -28,7 +28,7 @@ var _ = Describe("ApplyObject", func() {
 			},
 		}
 		Eventually(GetObject(d)).Should(Succeed())
-		g := d.ObjectMeta.Generation
+		g := d.Generation
 
 		obj = ReadObject("apply/deployment-2")
 		Expect(
@@ -64,7 +64,7 @@ var _ = Describe("ApplyObject", func() {
 			},
 		}
 		Eventually(GetObject(d)).Should(Succeed())
-		g := d.ObjectMeta.Generation
+		g := d.Generation
 
 		obj = ReadObject("apply/deployment-1")
 		Expect(
@@ -101,7 +101,7 @@ var _ = Describe("ApplyObject", func() {
 			},
 		}
 		Eventually(GetObject(j)).Should(Succeed())
-		g := j.ObjectMeta.Generation
+		g := j.Generation
 
 		obj = ReadObject("apply/job-1")
 		Expect(
@@ -127,7 +127,7 @@ var _ = Describe("ApplyObject", func() {
 			},
 		}
 		Eventually(GetObject(d)).Should(Succeed())
-		g := d.ObjectMeta.Generation
+		g := d.Generation
 
 		obj = ReadObject("apply/deployment-1")
 		Expect(
@@ -161,7 +161,7 @@ var _ = Describe("ApplyObject", func() {
 			},
 		}
 		Eventually(GetObject(d)).Should(Succeed())
-		g := d.ObjectMeta.Generation
+		g := d.Generation
 
 		obj = ReadObject("apply/deployment-2", UnstructuredYAMLCodec)
 		Expect(

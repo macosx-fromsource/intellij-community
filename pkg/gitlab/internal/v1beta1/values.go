@@ -63,7 +63,7 @@ func (w *Adapter) applyOperatorOverrideValues(_ context.Context) error {
 }
 
 func (w *Adapter) loadValuesFromTemplate(template *template.Template, templateParams map[string]interface{}) error {
-	var buf *strings.Builder = &strings.Builder{}
+	var buf = &strings.Builder{}
 
 	if err := template.Execute(buf, templateParams); err != nil {
 		return errors.Wrapf(err, "failed to render: %s", template.Name())

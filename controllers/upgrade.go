@@ -80,7 +80,7 @@ func (r *GitLabReconciler) rollingUpdateDeployments(ctx context.Context, adapter
 			return err
 		}
 
-		deployment.Spec.Template.ObjectMeta.Annotations[gitlabLastRestartAnnotationKey] = time.Now().Format(timeFormat)
+		deployment.Spec.Template.Annotations[gitlabLastRestartAnnotationKey] = time.Now().Format(timeFormat)
 		removeInitContainerEnvVar(deployment, initContainerNameDependencies, envVarNameBypassSchemaVersion)
 
 		if err := r.Update(ctx, deployment); err != nil {
@@ -134,13 +134,13 @@ func (r *GitLabReconciler) unpauseWebserviceAndSidekiqIfEnabled(ctx context.Cont
 func (r *GitLabReconciler) webserviceAndSidekiqRunningIfEnabled(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	if adapter.WantsComponent(component.Webservice) {
 		if !r.webserviceRunning(ctx, adapter, template) {
-			return fmt.Errorf("Webservice has not started fully")
+			return fmt.Errorf("webservice has not started fully")
 		}
 	}
 
 	if adapter.WantsComponent(component.Sidekiq) {
 		if !r.sidekiqRunning(ctx, adapter, template) {
-			return fmt.Errorf("Sidekiq has not started fully")
+			return fmt.Errorf("sidekiq has not started fully")
 		}
 	}
 

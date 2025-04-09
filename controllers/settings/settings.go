@@ -44,15 +44,15 @@ var (
 	// ReadinessEndpointName returns the endpoint name for the readiness probe.
 	ReadinessEndpointName = "/readiness"
 
-	// AliveStatus returns an error if not alive, and nil if alive.
-	AliveStatus = fmt.Errorf("not alive")
+	// ErrAliveStatus returns an error if not alive, and nil if alive.
+	ErrAliveStatus = fmt.Errorf("not alive")
 
-	// ReadyStatus returns an error if not ready, and nil if ready.
-	ReadyStatus = fmt.Errorf("not ready")
+	// ErrReadyStatus returns an error if not ready, and nil if ready.
+	ErrReadyStatus = fmt.Errorf("not ready")
 
 	// HealthzCheck returns the checker.
-	HealthzCheck = func(_ *http.Request) error { return AliveStatus }
-	ReadyzCheck  = func(_ *http.Request) error { return ReadyStatus }
+	HealthzCheck = func(_ *http.Request) error { return ErrAliveStatus }
+	ReadyzCheck  = func(_ *http.Request) error { return ErrReadyStatus }
 
 	DefaultKubeVersion     *chartutil.KubeVersion = nil
 	DefaultKubeAPIVersions chartutil.VersionSet   = chartutil.VersionSet{}

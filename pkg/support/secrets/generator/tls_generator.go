@@ -63,7 +63,7 @@ func parseDuration(str string) (time.Duration, error) {
 
 	var (
 		dur time.Duration
-		ok  bool = false
+		ok  = false
 	)
 
 	for _, match := range durationMatcher.FindAllStringSubmatch(str, -1) {

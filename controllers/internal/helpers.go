@@ -9,7 +9,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
+
 	networkingv1 "k8s.io/api/networking/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -58,7 +58,7 @@ func ToggleDeploymentPause(obj client.Object, pause bool) error {
 // This function is a bit complicated, but breaking it up may not increase legibility.
 //
 //nolint:nestif,gocognit
-func PopulateAttachedSecrets(template v1.PodTemplateSpec) map[string]map[string]struct{} {
+func PopulateAttachedSecrets(template corev1.PodTemplateSpec) map[string]map[string]struct{} {
 	result := map[string]map[string]struct{}{}
 
 	// Populate volumes
@@ -107,7 +107,7 @@ func PopulateAttachedSecrets(template v1.PodTemplateSpec) map[string]map[string]
 	}
 
 	// Populate environment variables
-	allContainers := make([]v1.Container, len(template.Spec.InitContainers)+len(template.Spec.Containers))
+	allContainers := make([]corev1.Container, len(template.Spec.InitContainers)+len(template.Spec.Containers))
 	allContainers = append(allContainers, template.Spec.InitContainers...)
 	allContainers = append(allContainers, template.Spec.Containers...)
 
@@ -153,7 +153,7 @@ func PopulateAttachedSecrets(template v1.PodTemplateSpec) map[string]map[string]
 }
 
 // SecretChecksum returns a checksum for a given Secret.
-func SecretChecksum(secret v1.Secret, keys map[string]struct{}) string {
+func SecretChecksum(secret corev1.Secret, keys map[string]struct{}) string {
 	ks := make([]string, len(secret.Data))
 	for k := range secret.Data {
 		ks = append(ks, k)

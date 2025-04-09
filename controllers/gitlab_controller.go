@@ -541,7 +541,7 @@ func isSafeToDelete(ctx context.Context, obj client.Object) (bool, error) {
 	if gvk.Kind == "Job" {
 		numActive, _, err := unstructured.NestedInt64(existing.Object, "status", "active")
 		if err != nil {
-			return false, fmt.Errorf("Can not find number of active Pods for Job %s", obj.GetName())
+			return false, fmt.Errorf("can not find number of active Pods for Job %s", obj.GetName())
 		}
 
 		return numActive == 0, nil
@@ -550,7 +550,7 @@ func isSafeToDelete(ctx context.Context, obj client.Object) (bool, error) {
 	if gvk.Kind == "CronJob" {
 		lstActive, _, err := unstructured.NestedSlice(existing.Object, "status", "active")
 		if err != nil {
-			return false, fmt.Errorf("Can not find list of active Pods for CronJob %s", obj.GetName())
+			return false, fmt.Errorf("can not find list of active Pods for CronJob %s", obj.GetName())
 		}
 
 		return len(lstActive) == 0, nil
@@ -767,7 +767,7 @@ func (r *GitLabReconciler) reconcileIngress(ctx context.Context, templateObject 
 	doPatch := true
 	regex := regexp.MustCompile("/.well-known/acme-challenge/+")
 
-	for _, path := range found.Spec.Rules[0].IngressRuleValue.HTTP.Paths {
+	for _, path := range found.Spec.Rules[0].HTTP.Paths {
 		if regex.MatchString(path.Path) {
 			logger.V(1).Info("Ingress contains ACME challenge path, skipping patch for now", "Ingress", found.Name)
 
@@ -932,8 +932,8 @@ func (r *GitLabReconciler) annotateSecretsChecksum(ctx context.Context, adapter 
 			continue
 		}
 
-		if template.ObjectMeta.Annotations == nil {
-			template.ObjectMeta.Annotations = map[string]string{}
+		if template.Annotations == nil {
+			template.Annotations = map[string]string{}
 		}
 
 		key := fmt.Sprintf("checksum/secret-%s", secretName)
@@ -943,7 +943,7 @@ func (r *GitLabReconciler) annotateSecretsChecksum(ctx context.Context, adapter 
 			return err
 		}
 
-		template.ObjectMeta.Annotations[truncatedKey] = hash
+		template.Annotations[truncatedKey] = hash
 	}
 
 	return nil
@@ -956,7 +956,7 @@ func (r *GitLabReconciler) ensureSecret(ctx context.Context, adapter gitlab.Adap
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("Secret '%s' not found", lookupKey)
+			return fmt.Errorf("secret '%s' not found", lookupKey)
 		}
 
 		return err
