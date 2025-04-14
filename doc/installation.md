@@ -79,13 +79,13 @@ The GitLab Operator supports the following OpenShift versions:
 
 | OpenShift release  | Status                       | Minimum Operator version | Architectures | End of life |
 |--------------------|------------------------------|--------------------------|---------------|-------------|
-| 4.17               | Supported                    | 1.6.0                    | x86-64        | 2026-04-01         |
+| 4.18               | Supported                    | 1.9.0                    | x86-64        | 2028-02-25  |
+| 4.17               | Supported                    | 1.6.0                    | x86-64        | 2026-04-01  |
 | 4.16               | Supported                    | 1.3.0                    | x86-64        | 2027-06-27  |
 | 4.15               | Supported                    | 0.31.0                   | x86-64        | 2025-08-27  |
 | 4.14               | Supported                    | 0.27.0                   | x86-64        | 2026-10-31  |
 | 4.13               | Supported                    | 0.24.0                   | x86-64        | 2024-11-17  |
-| 4.12               | Supported                    | 0.24.0                   | x86-64        | 2025-01-17  |
-| 4.11               | Unsupported                  | 0.24.0                   | x86-64        | 2024-02-10  |
+| 4.12               | Supported                    | 0.24.0                   | x86-64        | 2026-01-17  |
 
 {{< /tab >}}
 
