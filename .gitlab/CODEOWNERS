@@ -33,3 +33,7 @@ Dangerfile @gitlab-org/maintainers/gitlab-operator @balasankarc
 
 ^[Documentation Directories] @gl-docsteam
 /doc/
+
+# Localization
+[Localization Team] @gitlab-com/localization/maintainers
+/doc-locale/**
