@@ -242,6 +242,43 @@ docs-test hugo:
     - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
 
+docs-i18n-lint content:
+  stage: test
+  image: $DOCS_LINT_IMAGE
+  cache: {}
+  needs:
+    - job: danger-review
+      optional: true
+  before_script: []
+  dependencies: []
+  script:
+    # Lint prose
+    - vale --minAlertLevel error --filter='.Name matches "gitlab_docs"' doc-locale
+  rules:
+    - !reference [.skip_if_dev_mirror]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.if_commit_branch_or_mr_branch]
+
+docs-i18n-lint markdown:
+  stage: test
+  image: $DOCS_LINT_IMAGE
+  cache: {}
+  needs:
+    - job: danger-review
+      optional: true
+  before_script: []
+  dependencies: []
+  script:
+    # Lint Markdown
+    - markdownlint-cli2 'doc-locale/**/*.md'
+  rules:
+    - !reference [.skip_if_dev_mirror]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.if_commit_branch_or_mr_branch]
+    - allow_failure: true # Tell us what's breaking, but allow the failure
+
 .review-docs:
   image: ${RUBY_IMAGE}
   stage: review
