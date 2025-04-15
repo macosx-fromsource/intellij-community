@@ -85,7 +85,7 @@ GitLab Helm chart [troubleshooting documentation](https://docs.gitlab.com/charts
 ### Core services not ready
 
 The GitLab Operator relies on installing instances of Redis, PostgreSQL and
-Gitaly. These are known as the core services. If after deploying a GitLab
+Gitaly, which are known as the core services. If after deploying a GitLab
 customer resource there are an excessive number of operator log messages
 stating that the core services are not ready, then it is one of these
 services that is having problems becoming operational.
