@@ -1,3 +1,15 @@
+## 1.12.0 (2025-04-17)
+
+### changed (7 changes)
+
+- [Update ubi9-micro to dca8bc1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3df2b302c52a970838c5ba6f249536e4cf369264) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1126))
+- [Update testing dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7c2a87fa7d7997441d8ed1fcbf4813fc77bfc75d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1105))
+- [Update golang to v1.24.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9c15a30042d6be332f28236684152dd5e727c335) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1122))
+- [Update Go from 1.23.7 to 1.24.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0ae4b2f1048e9de8e3480f722b73a51de343c4e7) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1110))
+- [Update danger-review to v2.1.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1a5065559145dd4749df21f82c502c00781bb73c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1120))
+- [Update ubi9-micro to 414cfa2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/063840281a697bfcb0fb3383f961ada3aa14b50b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1113))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3dd6072ac069498fa8fe8e5a52b2c669c89c7eeb) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1111))
+
 ## 1.11.3 (2025-04-09)
 
 No changes.
