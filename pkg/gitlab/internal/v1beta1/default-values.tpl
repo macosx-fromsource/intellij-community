@@ -23,6 +23,9 @@ postgresql:
     runAsUser: 1000
 
 redis:
+  master:
+    serviceAccount:
+      name: {{ .Settings.AppNonRootServiceAccount }}
   serviceAccount:
     name: {{ .Settings.AppNonRootServiceAccount }}
   securityContext:
