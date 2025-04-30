@@ -13,6 +13,10 @@ in the `Cleanup` stage when you're done. This helps to ensure that the clusters 
 
 See the [environments documentation](https://docs.gitlab.com/ci/environments/) for more information.
 
+## Token Management
+
+Read about our [IaC managed Project Access Tokens](https://gitlab.com/gitlab-org/distribution/runbooks/-/blob/main/iac-managed-project-access-tokens.md).
+
 ## OpenShift CI clusters
 
 We manage OpenShift clusters in Google Cloud that are used for acceptance tests, including QA suite.
