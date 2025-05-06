@@ -62,12 +62,12 @@ getmanifest() {
 # Check if version exists in the manifest.
 # It always prints the latest version, and will return 1 if version does not exist.
 has_version() {
-    entries=$(jq -r '.items[] | select( .metadata.name == "gitlab-operator-kubernetes") | .status.channels[] | select( .name == "stable" ) | .entries | sort_by(.version) | reverse')
-    latest=$(echo "$entries" | jq -r '.[0].version')
+    channel=$(jq -r '.items[] | select( .metadata.name == "gitlab-operator-kubernetes") | .status.channels[] | select( .name == "stable" )')
+    latest=$(echo "$channel" | jq -r '.currentCSVDesc.version')
     echo_stderr "Latest version: $latest"
     echo "$latest"
 
-    found=$(echo "$entries" | jq -r '.[] | select(.version == "'"$1"'")')
+    found=$(echo "$channel" | jq -r '.entries[] | select(.version == "'"$1"'")')
     if [[ -z "$found" ]]; then
         echo_warn "Version $1 not found"
         return 1
@@ -77,7 +77,7 @@ has_version() {
 }
 
 latest_version() {
-    jq -r '.items[] | select( .metadata.name == "gitlab-operator-kubernetes") | .status.channels[] | select( .name == "stable" ) | .entries | sort_by(.version) | reverse | .[0].version'
+    jq -r '.items[] | select( .metadata.name == "gitlab-operator-kubernetes") | .status.channels[] | select( .name == "stable" ) | .currentCSVDesc.version'
 }
 
 catalog_has_version() {

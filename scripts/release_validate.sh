@@ -63,6 +63,12 @@ validate() {
             retval=1
         fi
     done
+
+    # if the script runs in a CI environment, print the job URL $CI_JOB_URL
+    if [[ ! -z "$CI_JOB_URL" ]]; then
+        echo '**If needed, you can retry the [:repeat: `validate_release` job]('"$CI_JOB_URL"') that generated this comment.**'
+    fi
+
     set -e # Re-enable exit on error
 
     return $retval
