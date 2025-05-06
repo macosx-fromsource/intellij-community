@@ -6,44 +6,47 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func PrometheusDeployments(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(DeploymentKind, map[string]string{
+var prometheusSubcharts = []string{"prometheus", "alertmanager", "prometheus-node-exporter", "prometheus-pushgateway"}
+
+func prometheusObjectsByKind(template helm.Template, kind string) []client.Object {
+	objects := template.Query().ObjectsByKindAndLabels(kind, map[string]string{
 		"app": PrometheusComponentName,
 	})
+
+	if len(objects) == 0 {
+		for _, chart := range prometheusSubcharts {
+			chartObjs := template.Query().ObjectsByKindAndLabels(kind, map[string]string{"app.kubernetes.io/name": chart})
+			objects = append(objects, chartObjs...)
+		}
+	}
+
+	return objects
+}
+
+func PrometheusDeployments(template helm.Template) []client.Object {
+	return prometheusObjectsByKind(template, DeploymentKind)
 }
 
 func PrometheusStatefulSets(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(StatefulSetKind, map[string]string{
-		"app": PrometheusComponentName,
-	})
+	return prometheusObjectsByKind(template, StatefulSetKind)
 }
 
 func PrometheusDaemonSets(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(DaemonSetKind, map[string]string{
-		"app": PrometheusComponentName,
-	})
+	return prometheusObjectsByKind(template, DaemonSetKind)
 }
 
 func PrometheusServices(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
-		"app": PrometheusComponentName,
-	})
+	return prometheusObjectsByKind(template, ServiceKind)
 }
 
 func PrometheusConfigMaps(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{
-		"app": PrometheusComponentName,
-	})
+	return prometheusObjectsByKind(template, ConfigMapKind)
 }
 
 func PrometheusPersistentVolumeClaims(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(PersistentVolumeClaimKind, map[string]string{
-		"app": PrometheusComponentName,
-	})
+	return prometheusObjectsByKind(template, PersistentVolumeClaimKind)
 }
 
 func PrometheusIngresses(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(IngressKind, map[string]string{
-		"app": PrometheusComponentName,
-	})
+	return prometheusObjectsByKind(template, IngressKind)
 }
