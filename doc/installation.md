@@ -223,11 +223,11 @@ for all available configuration options.
 
 The GitLab Operator is available in the following OLM channels:
 
-| Channel | Listing | Source |
-| -|-|-|
-| OperatorHub Community Operators | [Link](https://operatorhub.io/operator/gitlab-operator-kubernetes) | [Link](https://github.com/k8s-operatorhub/community-operators) |
-| OpenShift Community Operators   | Available in the embedded OperatorHub in OpenShift and OKD | [Link](https://github.com/redhat-openshift-ecosystem/community-operators-prod) |
-| OpenShift Certified Operators   | [Link](https://catalog.redhat.com/software/container-stacks/detail/5ec3fcb08b6f188e53644c0f) | [Link](https://github.com/redhat-openshift-ecosystem/certified-operators) |
+| Channel                                                                                                 | Listing |
+|---------------------------------------------------------------------------------------------------------|---------|
+| [OperatorHub Community Operators](https://github.com/k8s-operatorhub/community-operators)               | [Link](https://operatorhub.io/operator/gitlab-operator-kubernetes) |
+| [OpenShift Community Operators](https://github.com/redhat-openshift-ecosystem/community-operators-prod) | Available in the embedded OperatorHub in OpenShift and OKD |
+| [OpenShift Certified Operators](https://github.com/redhat-openshift-ecosystem/certified-operators)      | [Link](https://catalog.redhat.com/software/container-stacks/detail/5ec3fcb08b6f188e53644c0f) |
 
 {{< /tab >}}
 
