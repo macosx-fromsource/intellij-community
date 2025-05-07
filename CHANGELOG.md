@@ -1,3 +1,9 @@
+## 1.12.2 (2025-05-07)
+
+### fixed (1 change)
+
+- [Fix Redis service account configuration](https://gitlab.com/gitlab-org/security/cloud-native/gitlab-operator/-/commit/2859a5ae52f97388d885e9004c278259fe0cc4cd)
+
 ## 1.12.1 (2025-04-23)
 
 No changes.
