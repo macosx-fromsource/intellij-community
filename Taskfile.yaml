@@ -174,9 +174,9 @@ tasks:
       # and print linting issues to stdout in the format: path/to/file:line description
       - >-
         golangci-lint run
-        --timeout 10m0s
-        --print-issued-lines=false
-        --out-format code-climate:gl-code-quality-report.json,line-number
+        --output.text.path=stdout
+        --output.text.print-issued-lines=false
+        --output.code-climate.path=gl-code-quality-report.json
 
   manager:
     desc: Build the manager binary using `go build`.

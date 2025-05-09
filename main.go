@@ -155,10 +155,10 @@ func main() {
 	// +kubebuilder:scaffold:builder
 
 	// Report Operator as "alive" to probe.
-	settings.AliveStatus = nil
+	settings.ErrAliveStatus = nil
 
 	// Report Operator as "ready" to probe.
-	settings.ReadyStatus = nil
+	settings.ErrReadyStatus = nil
 
 	setupLog.Info("starting manager")
 

@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -132,8 +131,8 @@ var _ = Describe("Prometheus", func() {
 	})
 })
 
-func matchAllPrometheusElements(match gomega.OmegaMatcher, components ...string) gomega.OmegaMatcher {
-	return MatchElements(prometheusComponent, AllowDuplicates, matchAllElements(match, components...))
+func matchAllPrometheusElements(match OmegaMatcher, components ...string) OmegaMatcher {
+	return MatchAllElements(prometheusComponent, matchAllElements(match, components...))
 }
 
 func prometheusTemplate(values support.Values, enableNodeExporter bool, enablePushgateway bool) (helm.Template, gitlab.Adapter) {

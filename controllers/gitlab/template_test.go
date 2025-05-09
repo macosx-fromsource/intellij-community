@@ -52,7 +52,7 @@ var _ = Describe("Template", func() {
 })
 
 // dumpTemplate() will serialize the template and display the YAML for debugging.
-func dumpTemplate(template helm.Template) string { //nolint:golint,unused
+func dumpTemplate(template helm.Template) string { //nolint:unused
 	output := new(strings.Builder)
 
 	s := k8sjson.NewYAMLSerializer(k8sjson.DefaultMetaFactory, scheme.Scheme, scheme.Scheme)
@@ -68,7 +68,7 @@ func dumpTemplate(template helm.Template) string { //nolint:golint,unused
 // dumpTemplateToFile() will output the Helm template to a file.
 // Note: the file is written to where the test runs NOT from where the
 // tests were run from.
-func dumpTemplateToFile(template helm.Template, filename string) error { //nolint:golint,deadcode,unused
+func dumpTemplateToFile(template helm.Template, filename string) error { //nolint:unused
 	// #nosec G304 -- trusted input
 	fh, err := os.Create(filename)
 	if err != nil {
@@ -83,7 +83,7 @@ func dumpTemplateToFile(template helm.Template, filename string) error { //nolin
 }
 
 // dumpHelmValues() will output the current values that Helm is using.
-func dumpHelmValues(values support.Values) string { //nolint:golint,unused
+func dumpHelmValues(values support.Values) string { //nolint:unused
 	output, _ := json.MarshalIndent(values, "", "    ")
 	return string(output)
 }
@@ -91,7 +91,7 @@ func dumpHelmValues(values support.Values) string { //nolint:golint,unused
 // dumpHelmValuesToFile() will output the current values to a file.
 // Note: the file is written to where the test runs NOT from where the
 // tests were run from.
-func dumpHelmValuesToFile(values support.Values, filename string) error { //nolint:golint,deadcode,unused
+func dumpHelmValuesToFile(values support.Values, filename string) error { //nolint:unused
 	// #nosec G304 -- trusted input
 	fh, err := os.Create(filename)
 	if err != nil {

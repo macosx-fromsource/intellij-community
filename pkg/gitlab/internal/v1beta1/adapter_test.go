@@ -56,15 +56,15 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 		Expect(a.Hash()).To(BeEmpty())
 
 		/* Pretend object is populated by with client */
-		g.ObjectMeta.Generation = 1
-		g.ObjectMeta.UID = "abcdef"
+		g.Generation = 1
+		g.UID = "abcdef"
 
 		h1 := a.Hash()
 		Expect(h1).NotTo(BeEmpty())
 		Expect(h1).To(Equal("abcdef-1"))
 
 		/* Pretend object is re-populated by with client */
-		g.ObjectMeta.Generation = 2
+		g.Generation = 2
 
 		h2 := a.Hash()
 		Expect(h2).NotTo(BeEmpty())

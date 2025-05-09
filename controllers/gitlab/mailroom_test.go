@@ -11,7 +11,7 @@ import (
 const (
 	gitLabMailroomEnabled = "gitlab.mailroom.enabled"
 	incomingEmailEnabled  = "global.appConfig.incomingEmail.enabled"
-	incomingEmailSecret   = "global.appConfig.incomingEmail.password.secret" //nolint:golint,gosec
+	incomingEmailSecret   = "global.appConfig.incomingEmail.password.secret" //nolint:gosec
 )
 
 var _ = Describe("CustomResourceAdapter", func() {

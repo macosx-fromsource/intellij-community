@@ -1,91 +1,70 @@
+version: "2"
 run:
-  timeout: 5m
   issues-exit-code: 1
-
-linters-settings:
-  goimports:
-    # Expects local packages to be listed separately from third party
-    # packages in the `imports` block.
-    local-prefixes: gitlab.com/gitlab-org/cloud-native/gitlab-operator
-
-  whitespace:
-    multi-if: false
-    multi-func: true # Enforces newlines (or comments) after every multi-line function signature
-
-  wsl:
-    # If true append is only allowed to be cuddled if appending value is
-    # matching variables, fields or types on line above. Default is true.
-    strict-append: true
-    # Allow calls and assignments to be cuddled as long as the lines have any
-    # matching variables, fields or types. Default is true.
-    allow-assign-and-call: true
-    # Allow multiline assignments to be cuddled. Default is true.
-    allow-multiline-assign: true
-    # Allow declarations (var) to be cuddled.
-    allow-cuddle-declarations: false
-    # Allow trailing comments in ending of blocks
-    allow-trailing-comment: false
-    # Force newlines in end of case at this limit (0 = never).
-    force-case-trailing-whitespace: 0
-
-# https://golangci-lint.run/usage/linters/
 linters:
-  fast: false
   enable:
-    # Enabled by default
-    - errcheck
-    - gosimple
-    - govet
-    - staticcheck
-    - typecheck
-    - unused
-    # Disabled by default, but desired for this project
-    - unconvert
+    - asciicheck
+    - dogsled
+    - exhaustive
+    - gocognit
     - goconst
     - gocyclo
-    - gocognit
-    - asciicheck
-    - gofmt
-    - goimports
-    - misspell
-    - unparam
-    - dogsled
-    - nakedret
+    - godot
     - godox
+    - gosec
+    - misspell
+    - nakedret
+    - nestif
+    - nolintlint
+    - unconvert
+    - unparam
     - whitespace
     - wsl
-    - godot
-    - nestif
-    - exhaustive
-    - nolintlint
-    - gosec
   disable:
-    - testpackage
     - dupl
     - funlen
-    - prealloc
     - ineffassign
-
+    - prealloc
+    - testpackage
+  settings:
+    whitespace:
+      multi-if: false
+      multi-func: true
+    wsl:
+      strict-append: true
+      allow-assign-and-call: true
+      allow-multiline-assign: true
+      force-case-trailing-whitespace: 0
+      allow-trailing-comment: false
+      allow-cuddle-declarations: false
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - goconst
+        path: _test\.go
+    paths:
+      - api
+      - controllers/runner
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  # Independently from option `exclude` we use default exclude patterns,
-  # it can be disabled by this option. To list all
-  # excluded by default patterns execute `golangci-lint run --help`.
-  # Default value for this option is true.
-  exclude-use-default: false
-
-  # Maximum issues count per one linter.
-  # Set to 0 to disable.
-  # Default: 50
   max-issues-per-linter: 0
-  # Maximum count of issues with the same text.
-  # Set to 0 to disable.
-  # Default: 3
   max-same-issues: 0
-
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - goconst
-  exclude-dirs:
-    - api
-    - controllers/runner
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - gitlab.com/gitlab-org/cloud-native/gitlab-operator
+  exclusions:
+    generated: lax
+    paths:
+      - api
+      - controllers/runner
+      - third_party$
+      - builtin$
+      - examples$

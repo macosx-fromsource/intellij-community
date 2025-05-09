@@ -65,7 +65,7 @@ variables:
   CURL_IMAGE: ${DOCKERHUB_PREFIX}/curlimages/curl:8.12.1
   ALPINE_IMAGE: ${DOCKERHUB_PREFIX}/alpine:3.21
   RUBY_IMAGE: ${DOCKERHUB_PREFIX}/ruby:3.2-alpine
-  GOLANGCI_LINT_IMAGE: ${DOCKERHUB_PREFIX}/golangci/golangci-lint:v1.64-alpine
+  GOLANGCI_LINT_IMAGE: ${DOCKERHUB_PREFIX}/golangci/golangci-lint:v2.1-alpine
   GO_IMAGE: ${DOCKERHUB_PREFIX}/golang:${GO_VERSION}
   DOCKER_DIND_IMAGE: ${DOCKERHUB_PREFIX}/docker:${DOCKER_VERSION}-dind
 
