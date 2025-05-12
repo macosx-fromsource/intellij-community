@@ -1,4 +1,9 @@
-# 14. CI pipelines in dev
+---
+stage: Systems
+group: Distribution
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+title: 14. CI pipelines in dev
+---
 
 Date: 2021-12-07
 

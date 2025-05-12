@@ -1,4 +1,9 @@
-# 17. Structured Specification of GitLab custom resource
+---
+stage: Systems
+group: Distribution
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+title: 17. Structured Specification of GitLab custom resource
+---
 
 Date: 2023-11-28
 
