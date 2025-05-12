@@ -1,4 +1,9 @@
-# 6. GitLab application versions supported
+---
+stage: Systems
+group: Distribution
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+title: 6. GitLab application versions supported
+---
 
 Date: 2020-11-03
 
