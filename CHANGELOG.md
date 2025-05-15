@@ -1,3 +1,18 @@
+## 2.0.0 (2025-05-15)
+
+### changed (2 changes)
+
+- [Update ubi9-micro to 839f169](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b4196b1ec3a8990bc21ff7703441b2d4ce94d1aa) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1145))
+- [Update k8s.io dependencies to v0.32.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/d9acaca24d98b03ff3cbbd3247c69393356de79e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1135))
+
+### added (1 change)
+
+- [Add Kubernetes 1.32 CI testing](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c47e5b228d8b2d1099c01c4e2c56a23c8b2c0690) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1125))
+
+### fixed (1 change)
+
+- [Fix Redis service account configuration](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7f03657ee19ecbdb0e8f7809b1676b7f63cbe5b8) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1134))
+
 ## 1.12.2 (2025-05-07)
 
 ### fixed (1 change)
