@@ -57,7 +57,7 @@ var _ = Describe("Prometheus", func() {
 		It("Should contain Prometheus resources", func() {
 			Expect(wantPrometheus).To(BeTrue())
 			Expect(services).To(
-				matchAllPrometheusElements(Not(BeNil()), prometheusName, alertmanagerName, nodeExporterName, pushgatewayName),
+				matchPrometheusElements(Not(BeNil()), prometheusName, alertmanagerName, nodeExporterName, pushgatewayName),
 			)
 			Expect(configMaps).To(
 				matchAllPrometheusElements(Not(BeNil()), prometheusName, alertmanagerName),
@@ -130,6 +130,10 @@ var _ = Describe("Prometheus", func() {
 		})
 	})
 })
+
+func matchPrometheusElements(match OmegaMatcher, components ...string) OmegaMatcher {
+	return MatchElements(prometheusComponent, AllowDuplicates, matchAllElements(match, components...))
+}
 
 func matchAllPrometheusElements(match OmegaMatcher, components ...string) OmegaMatcher {
 	return MatchAllElements(prometheusComponent, matchAllElements(match, components...))
