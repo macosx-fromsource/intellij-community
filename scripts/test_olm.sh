@@ -67,7 +67,7 @@ export GITLAB_OPERATOR_DIR=${GITLAB_OPERATOR_DIR:-"."}
 GITLAB_CHART_VERSION=${GITLAB_CHART_VERSION:-$(cd "${GITLAB_OPERATOR_DIR}"; git show "${OPERATOR_VERSION}":CHART_VERSIONS | head -n 1)}
 export GITLAB_CHART_VERSION
 
-K8S_VERSION=${K8S_VERSION:-"1.25.9"}
+K8S_VERSION=${K8S_VERSION:-"1.30.8"}
 _cleanup_kind_config="false"
 # export KIND_CONFIG="${GITLAB_CHART_DIR}/examples/kind/kind-ssl.yaml"
 if [ -z "${KIND_CONFIG+}" ]; then

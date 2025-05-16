@@ -23,6 +23,8 @@ OPERATOR_RELEASE_ISSUE_ID=${OPERATOR_RELEASE_ISSUE_ID:-""}
 OPERATOR_RELEASE_PROJECT_ID=${OPERATOR_RELEASE_PROJECT_ID:-""}
 OPERATOR_RELEASE_TOKEN=${OPERATOR_RELEASE_TOKEN:-""}
 
+CLUSTER_TYPE=${CLUSTER_TYPE:-"ocp"}
+
 manifest() {
     $SCRIPT_DIR/olm_manifests.sh "$@"
 }
@@ -50,10 +52,22 @@ echo_warn() {
 # if any of the checks fail, the return value will be 1
 validate() {
     retval=0
+    local -a _catalogs
+
+    case "${CLUSTER_TYPE}" in 
+      ocp)
+        MARKETPLACE_NAMESPACE="openshift-marketplace"
+        _catalogs=(operatorhub community-operators certified-operators)
+        ;;
+      k8s)
+        MARKETPLACE_NAMESPACE="olm"
+        _catalogs=(operatorhubio-catalog)
+        ;;
+    esac
     echo_stderr "Validating operator release ${OPERATOR_RELEASE_VERSION}"
 
     set +e # Disable exit on error
-    for catalog in operatorhub community-operators certified-operators; do
+    for catalog in "${_catalogs[@]}"; do
         echo_stderr "Checking ${catalog}"
         latest=$(manifest catalog_has_version ${catalog} ${OPERATOR_RELEASE_VERSION})
         if [[ "$?" == 0 ]]; then
