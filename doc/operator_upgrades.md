@@ -27,10 +27,14 @@ perform the available chart upgrades _in order_: `5.5.3` -> `5.6.3` -> `5.7.0`.
 
 ## Step 2: Identify the desired Operator version
 
+To determine the next GitLab version to upgrade to, refer to the [GitLab upgrade paths](https://docs.gitlab.com/update/#upgrade-paths), and then identify
+the GitLab Operator version that supports the desired GitLab version.
+
 See our [releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases)
 for the full list of available versions of the GitLab Operator.
 
-For example, if the current Operator version is [release 0.4.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.0),
+For example, if the current GitLab Operator version is [`0.4.0`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.0), and
+the GitLab version that you want to upgrade to is `14.7.1` (chart version `5.7.1`), 
 you could upgrade to [release 0.4.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.1).
 
 ## Step 3: Install the desired version
