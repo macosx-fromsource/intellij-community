@@ -8,6 +8,7 @@
 #  * kubectl
 #  * jq
 
+MARKETPLACE_NAMESPACE=${MARKETPLACE_NAMESPACE:-"openshift-marketplace"}
 set -eo pipefail
 
 echo_stderr() {
@@ -40,7 +41,7 @@ getmanifest() {
 
     set +e # Disable exit on error
     manifest=$(kubectl get packagemanifest \
-        -n openshift-marketplace \
+        -n "${MARKETPLACE_NAMESPACE}" \
         --selector=catalog=$1 \
         --field-selector metadata.name=gitlab-operator-kubernetes -o json)
     retval=$?
