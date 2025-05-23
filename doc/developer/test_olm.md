@@ -43,33 +43,33 @@ Ensure `user.name` and `user.email` are configured in Git.
 
 ### Set up environment
 
-|         variable name          | required |                               default                                |                                                                 description                                                                 |
-| ------------------------------ | -------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OPERATOR_VERSION`             | yes      |                                                                      | Version of Operator to upgrade to                                                                                                           |
-| `PREVIOUS_OPERATOR_VERSION`    | yes      |                                                                      | Version of Operator to upgrade from                                                                                                         |
-| `LOCAL_IP`                     | yes      | `127.0.0.1`                                                          | Local machine IP, needed for `GITLAB_OPERATOR_DOMAIN`. When `GITLAB_OPERATOR_DOMAIN` is provided - `LOCAL_IP` can be omitted                |
-| `GITLAB_OPERATOR_OLM_REGISTRY` | yes      | `registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator/bundle` | OLM Bundles and Catalogs Registry with released bundles and catalogs                                                                        |
-| `BUNDLE_REGISTRY`              | yes      |                                                                      | Staging container registry to publish intermediary OLM Bundles and Catalogs to                                                              |
-| `OLM_TESTING_ENVIRONMENT`      | no       | `./test_olm.env`                                                     | File containing environment variables necessary for test runs                                                                               |
-| `OPERATOR_TAG`                 | no       | `$OPERATOR_VERSION`                                                  | Operator Container tag to test                                                                                                              |
-| `OLM_BUNDLE_SH`                | no       | `scripts/olm_bundle.sh`                                              | Path to underlying `olm_bundle.sh` script                                                                                                   |
-| `PROVISION_AND_DEPLOY_SH`      | no       | `scripts/provision_and_deploy.sh`                                    | Path to underlying `provision_and_deploy.sh` script                                                                                         |
-| `YQ`                           | no       | `yq`                                                                 | Path to `yq` utility                                                                                                                        |
-| `OPM_VERSION`                  | no       | `1.26.2`                                                             | `opm` version to automatically fetch if no binary specified in `OPM`                                                                        |
-| `OPM`                          | no       | `.build/opm`                                                         | Path to `opm` binary. Auto-fetched if empty (using `OPM_VERSION` )                                                                          |
-| `OSDK_BASE_DIR`                | no       | `.build/operatorhub-io`                                              | Directory for intermediate OLM Bundling artifacts storage                                                                                   |
-| `OLM_PACKAGE_VERSION`          | no       | `$OPERATOR_TAG`                                                      | Version to apply to OLM package                                                                                                             |
-| `KUBERNETES_TIMEOUT`           | no       | `120s`                                                               | Timeout for Kubernetes operations                                                                                                           |
+| Variable name                  | Required | Default                                                              | Description |
+|--------------------------------|----------|----------------------------------------------------------------------|-------------|
+| `OPERATOR_VERSION`             | yes      |                                                                      | Version of Operator to upgrade to |
+| `PREVIOUS_OPERATOR_VERSION`    | yes      |                                                                      | Version of Operator to upgrade from |
+| `LOCAL_IP`                     | yes      | `127.0.0.1`                                                          | Local machine IP, needed for `GITLAB_OPERATOR_DOMAIN`. When `GITLAB_OPERATOR_DOMAIN` is provided - `LOCAL_IP` can be omitted |
+| `GITLAB_OPERATOR_OLM_REGISTRY` | yes      | `registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator/bundle` | OLM Bundles and Catalogs Registry with released bundles and catalogs |
+| `BUNDLE_REGISTRY`              | yes      |                                                                      | Staging container registry to publish intermediary OLM Bundles and Catalogs to |
+| `OLM_TESTING_ENVIRONMENT`      | no       | `./test_olm.env`                                                     | File containing environment variables necessary for test runs |
+| `OPERATOR_TAG`                 | no       | `$OPERATOR_VERSION`                                                  | Operator Container tag to test |
+| `OLM_BUNDLE_SH`                | no       | `scripts/olm_bundle.sh`                                              | Path to underlying `olm_bundle.sh` script |
+| `PROVISION_AND_DEPLOY_SH`      | no       | `scripts/provision_and_deploy.sh`                                    | Path to underlying `provision_and_deploy.sh` script |
+| `YQ`                           | no       | `yq`                                                                 | Path to `yq` utility |
+| `OPM_VERSION`                  | no       | `1.26.2`                                                             | `opm` version to automatically fetch if no binary specified in `OPM` |
+| `OPM`                          | no       | `.build/opm`                                                         | Path to `opm` binary. Auto-fetched if empty (using `OPM_VERSION` ) |
+| `OSDK_BASE_DIR`                | no       | `.build/operatorhub-io`                                              | Directory for intermediate OLM Bundling artifacts storage |
+| `OLM_PACKAGE_VERSION`          | no       | `$OPERATOR_TAG`                                                      | Version to apply to OLM package |
+| `KUBERNETES_TIMEOUT`           | no       | `120s`                                                               | Timeout for Kubernetes operations |
 | `DO_NOT_PUBLISH`               | no       | `""`                                                                 | Controls whether to compile and publish current bundle/catalog (to a temporary registry) or use already published ones from public registry |
-| `BUNDLE_VERSION`               | no       | `$OPERATOR_VERSION`                                                  | Version of the bundle to upgrade to                                                                                                         |
-| `PREVIOUS_BUNDLE_VERSION`      | no       | `$PREVIOUS_OPERATOR_VERSION`                                         | Version of the bundle to upgrade from                                                                                                       |
-| `PREVIOUS_CHART_VERSION`       | no       | autogenerated                                                        | Chart version to upgrade from                                                                                                               |
-| `GITLAB_OPERATOR_DOMAIN`       | no       | `${LOCAL_IP}.nip.io`                                                 | Domain to deploy test GitLab instance to                                                                                                    |
-| `GITLAB_OPERATOR_DIR`          | no       | `.`                                                                  | Directory with GitLab Operator repository                                                                                                   |
-| `GITLAB_CHART_VERSION`         | no       | first line in `${GITLAB_OPERATOR_DIR}/CHART_VERSIONS}`               | Chart Version to upgrade to                                                                                                                 |
-| `GITLAB_CHART_REPO`            | no       | `https://gitlab.com/gitlab-org/charts/gitlab`                        | GitLab Helm Chart repository HTTP URI. Mainly used to fetch default KinD configs.                                                           |
-| `K8S_VERSION`                  | no       | `1.25.9`                                                             | K8s version to use for cluster setup                                                                                                        |
-| `KIND_CONFIG`                  | no       | `examples/kind/kind-ssl.yaml` from GitLab Chart's default branch     | KinD configuration file to prepare KinD cluster for GitLab deployment                                                                       |
+| `BUNDLE_VERSION`               | no       | `$OPERATOR_VERSION`                                                  | Version of the bundle to upgrade to |
+| `PREVIOUS_BUNDLE_VERSION`      | no       | `$PREVIOUS_OPERATOR_VERSION`                                         | Version of the bundle to upgrade from |
+| `PREVIOUS_CHART_VERSION`       | no       | autogenerated                                                        | Chart version to upgrade from |
+| `GITLAB_OPERATOR_DOMAIN`       | no       | `${LOCAL_IP}.nip.io`                                                 | Domain to deploy test GitLab instance to |
+| `GITLAB_OPERATOR_DIR`          | no       | `.`                                                                  | Directory with GitLab Operator repository |
+| `GITLAB_CHART_VERSION`         | no       | first line in `${GITLAB_OPERATOR_DIR}/CHART_VERSIONS}`               | Chart Version to upgrade to |
+| `GITLAB_CHART_REPO`            | no       | `https://gitlab.com/gitlab-org/charts/gitlab`                        | GitLab Helm Chart repository HTTP URI. Mainly used to fetch default KinD configs. |
+| `K8S_VERSION`                  | no       | `1.25.9`                                                             | K8s version to use for cluster setup |
+| `KIND_CONFIG`                  | no       | `examples/kind/kind-ssl.yaml` from GitLab Chart's default branch     | KinD configuration file to prepare KinD cluster for GitLab deployment |
 
 For additional variables look at [Provision and deploy](provision_and_deploy.md) and [OperatorHub publishing](operatorhub_publishing.md)
 

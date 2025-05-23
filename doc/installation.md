@@ -33,7 +33,7 @@ This document describes how to deploy the GitLab Operator by using manifests in 
 <!--This warning block is duplicated in ../config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml.
 Changes should be reflected in both locations.-->
 If using OpenShift, installation is typically handled by the Operator Lifecycle Manager (OLM).
-**Installation using OLM is considered experimental.** GitLab does not support any issues related to instances deployed using OLM.
+**Installation using OLM is considered experimental**. GitLab does not support any issues related to instances deployed using OLM.
 For more information on potential issues with OLM, see [issue 241](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/241).
 
 ## Prerequisites
@@ -55,19 +55,19 @@ To create a traditional Kubernetes cluster, consider using [official tooling](ht
 
 The GitLab Operator supports the following Kubernetes versions:
 
-| Kubernetes release | Status                       | Minimum Operator version | Architectures | End of life |
-|--------------------|------------------------------|--------------------------|---------------|-------------|
-| 1.32               | Supported                    | 1.13.0                   | x86-64        | 2026-02-28  |
-| 1.31               | Supported                    | 1.9.0                    | x86-64        | 2025-10-28  |
-| 1.30               | Supported                    | 1.6.0                    | x86-64        | 2025-06-28  |
-| 1.29               | Deprecated                   | 1.0.0                    | x86-64        | 2025-02-28  |
-| 1.28               | Deprecated                   | 1.0.0                    | x86-64        | 2024-10-28  |
-| 1.27               | Deprecated                   | 0.29.0                   | x86-64        | 2024-06-28  |
-| 1.26               | Unsupported                  | 0.24.0                   | x86-64        | 2024-02-28  |
-| 1.25               | Unsupported                  | 0.24.0                   | x86-64        | 2023-10-28  |
-| 1.24               | Unsupported                  | 0.24.0                   | x86-64        | 2023-07-28  |
-| 1.23               | Unsupported                  | 0.24.0                   | x86-64        | 2023-02-28  |
-| 1.22               | Unsupported                  | 0.24.0                   | x86-64        | 2022-10-28  |
+| Kubernetes release | Status      | Minimum Operator version | Architectures | End of life |
+|--------------------|-------------|--------------------------|---------------|-------------|
+| 1.32               | Supported   | 1.13.0                   | x86-64        | 2026-02-28  |
+| 1.31               | Supported   | 1.9.0                    | x86-64        | 2025-10-28  |
+| 1.30               | Supported   | 1.6.0                    | x86-64        | 2025-06-28  |
+| 1.29               | Deprecated  | 1.0.0                    | x86-64        | 2025-02-28  |
+| 1.28               | Deprecated  | 1.0.0                    | x86-64        | 2024-10-28  |
+| 1.27               | Deprecated  | 0.29.0                   | x86-64        | 2024-06-28  |
+| 1.26               | Unsupported | 0.24.0                   | x86-64        | 2024-02-28  |
+| 1.25               | Unsupported | 0.24.0                   | x86-64        | 2023-10-28  |
+| 1.24               | Unsupported | 0.24.0                   | x86-64        | 2023-07-28  |
+| 1.23               | Unsupported | 0.24.0                   | x86-64        | 2023-02-28  |
+| 1.22               | Unsupported | 0.24.0                   | x86-64        | 2022-10-28  |
 
 {{< /tab >}}
 
@@ -77,15 +77,15 @@ To create an OpenShift cluster, see the [OpenShift cluster setup documentation](
 
 The GitLab Operator supports the following OpenShift versions:
 
-| OpenShift release  | Status                       | Minimum Operator version | Architectures | End of life |
-|--------------------|------------------------------|--------------------------|---------------|-------------|
-| 4.18               | Supported                    | 1.9.0                    | x86-64        | 2028-02-25  |
-| 4.17               | Supported                    | 1.6.0                    | x86-64        | 2026-04-01  |
-| 4.16               | Supported                    | 1.3.0                    | x86-64        | 2027-06-27  |
-| 4.15               | Supported                    | 0.31.0                   | x86-64        | 2025-08-27  |
-| 4.14               | Supported                    | 0.27.0                   | x86-64        | 2026-10-31  |
-| 4.13               | Supported                    | 0.24.0                   | x86-64        | 2024-11-17  |
-| 4.12               | Supported                    | 0.24.0                   | x86-64        | 2026-01-17  |
+| OpenShift release | Status    | Minimum Operator version | Architectures | End of life |
+|-------------------|-----------|--------------------------|---------------|-------------|
+| 4.18              | Supported | 1.9.0                    | x86-64        | 2028-02-25  |
+| 4.17              | Supported | 1.6.0                    | x86-64        | 2026-04-01  |
+| 4.16              | Supported | 1.3.0                    | x86-64        | 2027-06-27  |
+| 4.15              | Supported | 0.31.0                   | x86-64        | 2025-08-27  |
+| 4.14              | Supported | 0.27.0                   | x86-64        | 2026-10-31  |
+| 4.13              | Supported | 0.24.0                   | x86-64        | 2024-11-17  |
+| 4.12              | Supported | 0.24.0                   | x86-64        | 2026-01-17  |
 
 {{< /tab >}}
 
