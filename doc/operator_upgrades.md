@@ -34,7 +34,7 @@ See our [releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operat
 for the full list of available versions of the GitLab Operator.
 
 For example, if the current GitLab Operator version is [`0.4.0`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.0), and
-the GitLab version that you want to upgrade to is `14.7.1` (chart version `5.7.1`), 
+the GitLab version that you want to upgrade to is `14.7.1` (chart version `5.7.1`),
 you could upgrade to [release 0.4.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.1).
 
 ## Step 3: Install the desired version

@@ -49,20 +49,20 @@ If this cluster is meant to be used by other teammates or CI, create a new item 
 
 Configuration can be applied during runtime by setting environment variables. All options have defaults, no options are required.
 
-| Variable              | Description                                               | Default |
-|-----------------------|-----------------------------------------------------------|---------|
-| `CLUSTER_NAME`        | Name of cluster                                           | `ocp-$USER` |
-| `BASE_DOMAIN`         | Root domain for cluster                                   | `k8s-ft.win` |
-| `FIPS_ENABLED`        | Enable FIPS cryptography modules                          | `false` |
-| `GCP_PROJECT_ID`      | Google Cloud project ID                                   | `cloud-native-182609` |
-| `GCP_REGION`          | Google Cloud region for cluster                           | `us-central1` |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google Cloud service account JSON file | `gcloud.json` |
-| `GOOGLE_CREDENTIALS`  | Content of Google Cloud service account JSON file         | Content of `$GOOGLE_APPLICATION_CREDENTIALS` |
-| `PULL_SECRET_FILE`    | Path to Red Hat pull secret file                          | `pull_secret` |
-| `PULL_SECRET`         | Content of Red Hat pull secret file                       | Content of `$PULL_SECRET_FILE` |
-| `SSH_PUBLIC_KEY_FILE` | Path to SSH public key file                               | `$HOME/.ssh/id_rsa.pub` |
-| `SSH_PUBLIC_KEY`      | Content of SSH public key file                            | Content of `$SSH_PUBLIC_KEY_FILE` |
-| `LOG_LEVEL`           | Verbosity of `openshift-install` output                   | `info` |
+| Variable                         | Default                                      | Description |
+|----------------------------------|----------------------------------------------|-------------|
+| `CLUSTER_NAME`                   | `ocp-$USER`                                  | Name of cluster |
+| `BASE_DOMAIN`                    | `k8s-ft.win`                                 | Root domain for cluster |
+| `FIPS_ENABLED`                   | `false`                                      | Enable FIPS cryptography modules |
+| `GCP_PROJECT_ID`                 | `cloud-native-182609`                        | Google Cloud project ID |
+| `GCP_REGION`                     | `us-central1`                                | Google Cloud region for cluster |
+| `GOOGLE_APPLICATION_CREDENTIALS` | `gcloud.json`                                | Path to Google Cloud service account JSON file |
+| `GOOGLE_CREDENTIALS`             | Content of `$GOOGLE_APPLICATION_CREDENTIALS` | Content of Google Cloud service account JSON file |
+| `PULL_SECRET_FILE`               | `pull_secret`                                | Path to Red Hat pull secret file |
+| `PULL_SECRET`                    | Content of `$PULL_SECRET_FILE`               | Content of Red Hat pull secret file |
+| `SSH_PUBLIC_KEY_FILE`            | `$HOME/.ssh/id_rsa.pub`                      | Path to SSH public key file |
+| `SSH_PUBLIC_KEY`                 | Content of `$SSH_PUBLIC_KEY_FILE`            | Content of SSH public key file |
+| `LOG_LEVEL`                      | `info`                                       | Verbosity of `openshift-install` output |
 
 {{< alert type="note" >}}
 
@@ -86,12 +86,12 @@ The `metadata.json` file in `INSTALL_DIR` is all that is needed to destroy an Op
 
 Configuration can be applied during runtime by setting the following environment variables. All options have defaults, no options are required.
 
-| Variable | Description | Default |
-| - | - | - |
-| `CLUSTER_NAME` | Name of cluster | `ocp-$USER` |
-| `LOG_LEVEL` | Verbosity of `openshift-install` output | `info` |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google Cloud service account JSON file | `gcloud.json` |
-| `GOOGLE_CREDENTIALS` | Content of Google Cloud service account JSON file | Content of `$GOOGLE_APPLICATION_CREDENTIALS` |
+| Variable                         | Default                                      | Description |
+|----------------------------------|----------------------------------------------|-------------|
+| `CLUSTER_NAME`                   | `ocp-$USER`                                  | Name of cluster |
+| `LOG_LEVEL`                      | `info`                                       | Verbosity of `openshift-install` output |
+| `GOOGLE_APPLICATION_CREDENTIALS` | `gcloud.json`                                | Path to Google Cloud service account JSON file |
+| `GOOGLE_CREDENTIALS`             | Content of `$GOOGLE_APPLICATION_CREDENTIALS` | Content of Google Cloud service account JSON file |
 
 ## Next Steps
 

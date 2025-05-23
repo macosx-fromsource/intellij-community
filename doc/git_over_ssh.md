@@ -22,9 +22,9 @@ The GitLab Operator deploys `gitlab-shell` when `gitlab.gitlab-shell.enabled` is
 
 To summarize the requirements based on the target platform:
 
-| Do you require Git over SSH? | Kubernetes                                  | OpenShift                                                                                |
-| ---------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| No                           | You must use one of the NGINX Ingress providers below (Kubernetes does not have a built-in Ingress provider). | You do not need the Ingress providers below - can use built-in Routes as the Ingress provider.                       |
+| Do you require Git over SSH? | Kubernetes                                                                                                    | OpenShift |
+|------------------------------|---------------------------------------------------------------------------------------------------------------|-----------|
+| No                           | You must use one of the NGINX Ingress providers below (Kubernetes does not have a built-in Ingress provider). | You do not need the Ingress providers below - can use built-in Routes as the Ingress provider. |
 | Yes                          | You must use one of the NGINX Ingress providers below (Kubernetes does not have a built-in Ingress provider). | You must use one of the Ingress providers below - Routes do not support exposing port `22`. |
 
 ## Ingress providers
@@ -47,7 +47,7 @@ As an alternative to the built-in NGINX-Ingress Helm chart fork, the [NGINX Ingr
 
 There are some caveats with this option:
 
-- NGINXINC's TransportServer/GlobalConfiguration custom resource definitions are considered a feature preview and they recommend caution for production use.
+- NGINX Inc. TransportServer/GlobalConfiguration custom resource definitions are considered a feature preview and they recommend caution for production use.
 - The NGINX Inc. Operator is still relatively young, only at version 0.3.0. It doesn't contain nearly as many configuration
   options as the more mature Helm Charts of either flavor.
 - This option still requires _manually_ exposing port `22` on the NGINX Service (this is not configurable in the NGINXIngressController CR).
