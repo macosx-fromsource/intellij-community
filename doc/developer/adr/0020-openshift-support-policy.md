@@ -1,6 +1,6 @@
 ---
-stage: Systems
-group: Distribution
+stage: GitLab Delivery
+group: Self Managed
 info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
 title: 20. OpenShift support policy
 ---
@@ -38,7 +38,7 @@ this table.
 | `4.12`  | `N-2`     |
 | `4.11`  | `N-2`     |
 
-Details can be found at [Distribution Team Kubernetes and OpenShift release support policy](https://handbook.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/k8s-release-support-policy/)
+Details can be found at [Distribution Team Kubernetes and OpenShift release support policy](https://handbook.gitlab.com/handbook/engineering/infrastructure-platforms/gitlab-delivery/distribution/k8s-release-support-policy/)
 
 ## Consequences
 
