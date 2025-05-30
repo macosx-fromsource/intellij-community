@@ -41,7 +41,7 @@ Every cluster is created using the [OpenShift cluster setup documentation](opens
 OpenShift clusters use `machineset`s to pool resources. Default deployment has 4 `machineset`s out of which 2 are utilized.
 We retain that approach and scale 2 active `machineset`s to 2 nodes.
 
-Following [OpenShift scaling documentation](https://docs.openshift.com/container-platform/4.10/scalability_and_performance/recommended-cluster-scaling-practices.html) :
+Following [OpenShift scaling documentation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.10/html/scalability_and_performance/recommended-cluster-scaling-practices) :
 
 ```shell
 $ export KUBECONFIG=~/work/ocp/kubeconfig_4_8
@@ -184,7 +184,7 @@ By default, QA pipelines will include Smoke suite - a [small subset of fast end-
 to quickly ensure that basic functionality is working. If additional testing is required, it's possible to trigger manual
 QA pipeline with Full suite of end-to-end tests using `qa_<cluster>_full_suite_manual_trigger` job for the specific cluster.
 
-To debug failures in tests, please follow [investigate QA failures](https://handbook.gitlab.com/handbook/engineering/infrastructure-platforms/developer-experience/performance-enablement/distribution/#investigate-qa-failures) guide.
+To debug failures in tests, please follow [investigate QA failures](https://handbook.gitlab.com/handbook/engineering/testing/distribution/#investigate-qa-failures) guide.
 
 ## Container builds
 

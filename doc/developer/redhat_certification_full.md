@@ -62,8 +62,8 @@ Follow OpenShift installation documentation to provision new cluster. Make sure 
 - `oc` binary corresponding to OCP release set up
   - See [RedHat files mirror](https://mirror.openshift.com/pub/openshift-v4/clients/ocp/)
 - download `tkn` binary compatible with the release
-  - Documentation for your release, for example [release notes for 4.9](https://docs.openshift.com/container-platform/4.9/cicd/pipelines/op-release-notes.html)
-  - Pre-requisites section from [Chapter 21. Running the certification test suite locally](https://docs.redhat.com/en/documentation/red_hat_software_certification/2024/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-working-with-operators)
+  - Documentation for your release, for example [release notes for 4.9](https://docs.redhat.com/en/documentation/openshift_container_platform/4.9/html/cicd/pipelines#op-release-notes)
+  - Pre-requisites section from [Chapter 22. Running the certification test suite locally](https://docs.redhat.com/en/documentation/red_hat_software_certification/2025/html/red_hat_software_certification_workflow_guide/assembly-running-the-certification-suite-locally_openshift-sw-cert-workflow-working-with-operators)
   - [Teknton CD requirements](https://github.com/tektoncd/pipeline#required-kubernetes-version)
 - contents of the `auth` directory under the installation root directory
 
