@@ -7,7 +7,7 @@ title: Dependency on GitLab Charts
 
 The GitLab Operator (also just known as "Operator") depends on the [GitLab Helm Charts](https://gitlab.com/gitlab-org/charts/gitlab) (also just known as "Chart").
 as described in
-[ADR 0004](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr/0004-integration-of-the-gitlab-chart.md).
+[ADR 0004](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/developer/adr/0004-integration-of-the-gitlab-chart.md).
 
 ## Understanding impact from changes to GitLab Chart
 
