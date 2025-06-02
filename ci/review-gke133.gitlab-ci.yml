@@ -1,71 +1,71 @@
-# GKE 1.30
-build_review_gke130:
+# GKE 1.33
+build_review_gke133:
   extends: .build_review_template
   variables:
-    DOMAIN: $DOMAIN_GKE130
+    DOMAIN: $DOMAIN_GKE133
 
-create_review_gke130:
+create_review_gke133:
   extends: .create_review_template
-  environment: &environment_gke130
-    name: &env_gke_name130 operator130_review/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
-    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_GKE130
-    on_stop: stop_review_gke130
+  environment: &environment_gke133
+    name: &env_gke_name133 operator133_review/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
+    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_GKE133
+    on_stop: stop_review_gke133
     auto_stop_in: 1 hour
   needs:
-    - build_review_gke130
+    - build_review_gke133
 
-review_gke130:
+review_gke133:
   extends: .review_template
   variables:
-    DOMAIN: $DOMAIN_GKE130
-    AGENT_NAME: operator130-ci-cluster
+    DOMAIN: $DOMAIN_GKE133
+    AGENT_NAME: operator133-ci-cluster
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
   before_script:
     - kubectl config get-contexts
     - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
     - kubectl config set-context --current --namespace=$TESTS_NAMESPACE
   needs:
-    - create_review_gke130
+    - create_review_gke133
     # we need build_* dependency to receive appropriate artifacts
-    - build_review_gke130
-  environment: *environment_gke130
-  resource_group: *env_gke_name130
+    - build_review_gke133
+  environment: *environment_gke133
+  resource_group: *env_gke_name133
 
-qa_gke130:
+qa_gke133:
   extends: .qa
   stage: qa
   variables:
-    DOMAIN: $DOMAIN_GKE130
+    DOMAIN: $DOMAIN_GKE133
   needs:
-    - review_gke130
+    - review_gke133
 
-qa_gke130_full_suite_trigger:
+qa_gke133_full_suite_trigger:
   extends: .qa_full_suite_trigger
-  script: echo 'The job will trigger Full E2E suite against GKE 1.30'
+  script: echo 'The job will trigger Full E2E suite against GKE 1.33'
 
-qa_gke130_full:
+qa_gke133_full:
   extends: .qa
   stage: qa
   parallel: 7
   variables:
-    DOMAIN: $DOMAIN_GKE130
+    DOMAIN: $DOMAIN_GKE133
     QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
   needs:
-    - review_gke130
-    - qa_gke130_full_suite_trigger
+    - review_gke133
+    - qa_gke133_full_suite_trigger
 
-stop_review_gke130:
+stop_review_gke133:
   extends: .stop_review_template
   variables:
-    DOMAIN: $DOMAIN_GKE130
-    AGENT_NAME: operator130-ci-cluster
+    DOMAIN: $DOMAIN_GKE133
+    AGENT_NAME: operator133-ci-cluster
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
   before_script:
     - kubectl config get-contexts
     - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
     - kubectl config set-context --current --namespace=$TESTS_NAMESPACE
   environment:
-    name: *env_gke_name130
+    name: *env_gke_name133
     action: stop
   needs:
-    - build_review_gke130
+    - build_review_gke133
