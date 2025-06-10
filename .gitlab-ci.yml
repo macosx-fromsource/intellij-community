@@ -36,7 +36,7 @@ variables:
   # OCP_RESOURCES_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/openshift-resources-${CI_COMMIT_TAG}.yaml"
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}"
   ISSUE_BOT_LABELS_EXTRA: "group::Self Managed"
-  GO_VERSION: "1.24.3"
+  GO_VERSION: "1.24.4"
   GO_MINOR: "1.24"
   QA_FULL_SUITE_OPTIONS: '--tag ~smoke --tag ~skip_live_env --tag ~orchestrated --tag ~transient'
   CI_TOOLS_VERSION: "4.34.0"
