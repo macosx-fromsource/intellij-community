@@ -12,18 +12,23 @@
 ## These rules override the * rule above, so that changes to docs and templates
 ## can be merged by any user who has maintainer rights, but is not included in
 ## the * rule (usually technical writers).
-/.gitlab/issue_templates/*.md
-/.gitlab/merge_request_templates/*.md
-/doc/*.md
-/doc/**/*.md
-/doc/**/*.jpg
-/doc/**/*.png
+!/.gitlab/issue_templates/*.md
+!/.gitlab/merge_request_templates/*.md
+!/doc/*.md
+!/doc/**/*.md
+!/doc/**/*.jpg
+!/doc/**/*.png
 
 ## Technical writing files that do not need `*` rule approval,
 ## but still require an approval from a TW team DRI for each file.
 .markdownlint.yml @marcel.amirault @eread @axil @aqualls @gitlab-org/tw-leadership
 /doc/.markdownlint/ @marcel.amirault @eread @axil @aqualls @gitlab-org/tw-leadership
 /doc/.vale/ @marcel.amirault @eread @axil @aqualls @gitlab-org/tw-leadership
+
+## Localization files that do not need `*` rule approval,
+## but still require an approval from a Localization team DRI for each file.
+/doc-locale/** @gitlab-com/localization/maintainers
+/argo_translation.yml @gitlab-com/localization/maintainers
 
 # Distribution CI/CD
 /ci/scripts/* @gitlab-org/maintainers/gitlab-operator @balasankarc
