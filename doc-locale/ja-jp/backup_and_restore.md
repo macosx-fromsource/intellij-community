@@ -7,8 +7,8 @@ title: GitLabのバックアップと復元
 
 {{< details >}}
 
-- プラン:Free、Premium、Ultimate
-- 製品:GitLab Self-Managed
+- プラン: Free、Premium、Ultimate
+- 製品: GitLab Self-Managed
 
 {{< /details >}}
 
