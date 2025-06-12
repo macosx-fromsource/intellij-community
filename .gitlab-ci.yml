@@ -39,7 +39,7 @@ variables:
   GO_VERSION: "1.24.4"
   GO_MINOR: "1.24"
   QA_FULL_SUITE_OPTIONS: '--tag ~smoke --tag ~skip_live_env --tag ~orchestrated --tag ~transient'
-  CI_TOOLS_VERSION: "4.34.0"
+  CI_TOOLS_VERSION: "5.33.0"
   # Buildx cluster connection settings are set at project level:
   BUILDX_K8S_DISABLE: "true"
   BUILDX_K8S_CLUSTER_NAME: ""
@@ -418,6 +418,10 @@ slow_unit_tests_custom_ref:
   image: registry.gitlab.com/gitlab-org/gitlab-omnibus-builder/distribution_ci_tools:${CI_TOOLS_VERSION}
   variables:
     DOCKER_TAGS: ""
+    COSIGN_YES: "true"  # Skip interactive cosign prompts.
+  id_tokens:
+    SIGSTORE_ID_TOKEN:
+      aud: sigstore
   before_script:
     # Login to project registry.
     - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
@@ -434,6 +438,7 @@ slow_unit_tests_custom_ref:
     - ci/scripts/buildx/bootstrap.sh
   script:
     - docker_build_and_push $DOCKER_TAGS
+    - sign $DOCKER_TAGS
   interruptible: false
   environment:
     name: buildx_${CI_COMMIT_REF_SLUG}
