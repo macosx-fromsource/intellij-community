@@ -19,15 +19,31 @@ platform_arg() {
     delim=",";
   done
 
-  printf "$platform_arg"
+  printf "%s" "$platform_arg"
 }
 
 docker_build_and_push() {
+  local images=( "$@" )
+
+  # shellcheck disable=SC2046
   docker buildx build \
-    $(printf ' -t %s ' $*) \
+    $(printf ' -t %s ' "${images[@]}") \
     --platform "$(platform_arg)" \
     --build-arg BUILD_IMAGE="${GO_IMAGE}" \
     --push \
     .
 }
 
+sign_digest() {
+  local images=("$1")
+  local image=${images[0]}
+  local digest
+  digest="$(skopeo inspect --format="{{index .Digest }}" "docker://${image}")"
+  printf "%s@%s" "$image" "$digest"
+}
+
+sign() {
+  if [ "${SKIP_COSIGN}" != "true" ]; then
+    cosign sign "$(sign_digest "$@")"
+  fi
+}
