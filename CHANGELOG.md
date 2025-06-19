@@ -1,3 +1,22 @@
+## 2.1.0 (2025-06-19)
+
+### changed (14 changes)
+
+- [Update github.com/cert-manager/cert-manager to v1.18.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/6bab0431638cf4924c95c006ea477a00e1f14744) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1187))
+- [Replace v1/Endpoints with discovery.k8s.io/v1/EndpointSlice](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/473593367fcbb7291c0ed885555705a107aa1e48) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1184))
+- [CI: Sign Operator images with cosign](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/36d7b6b7e483b1262360ddcfb93d837726d18c5f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1178))
+- [Update ubi9-micro to 9d241ce](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1933bc3c6ede9ebcd1a6059a73de5d195b509ac0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1182))
+- [Update github.com/cert-manager/cert-manager to v1.18.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e2d53fd1a6126b9c0215aa9bfca81d52cb5aa8dc) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1181))
+- [Update golang to v1.24.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1f2faddd953ee5ed683a60a1c53eb566ad1dfa14) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1177))
+- [Update golang.org/x/mod to v0.25.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/10dfe6b4bee4a04b6f9019024150491ac972c537) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1175))
+- [Update github.com/go-logr/logr to v1.4.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2d9bbb216e8157e771df8a0f93babb4bc192e984) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1170))
+- [Update github.com/cert-manager/cert-manager to v1.17.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a63f3747ecd40c29f572e7545b8aaee82b6c2c79) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1139))
+- [Add support for Kubernetes 1.33](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/64f1e8e2bd64a61a6956df4378016414083ad4de) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1168))
+- [Update golang to v1.24.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/6240b4b4f24309ddf773dce40f526d31107dd4ba) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1149))
+- [Update ubi9-micro to v9.6](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/567dcd792674af0c77ed5701d0da167c78d010d1) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1158))
+- [Update prom-op-api/monitoring to v0.82.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c8f831b53fda4d7845ff1594bb13aa585edb721d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1133))
+- [Update dario.cat/mergo to v1.0.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b35d94b85861f1876f7454ad3298f9508db455e2) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1154))
+
 ## 2.0.2 (2025-06-11)
 
 No changes.
