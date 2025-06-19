@@ -40,6 +40,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -83,7 +84,6 @@ type GitLabReconciler struct {
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core,resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
@@ -91,6 +91,7 @@ type GitLabReconciler struct {
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list;watch;create;update;patch;delete
@@ -806,20 +807,24 @@ func (r *GitLabReconciler) setupAutoscaling(ctx context.Context, adapter gitlab.
 }
 
 func (r *GitLabReconciler) isEndpointReady(ctx context.Context, service string, adapter gitlab.Adapter) bool {
-	var addresses []corev1.EndpointAddress
+	slices := &discoveryv1.EndpointSliceList{}
+	err := r.List(ctx, slices,
+		client.MatchingLabels(map[string]string{
+			discoveryv1.LabelServiceName: service,
+		}),
+		client.InNamespace(adapter.Name().Namespace))
 
-	ep := &corev1.Endpoints{}
-	err := r.Get(ctx, types.NamespacedName{Name: service, Namespace: adapter.Name().Namespace}, ep)
+	if err != nil {
+		r.Log.Error(err, "unable to list EndpointSlices for Service", "service", service, "gitlab", adapter.Name())
 
-	if err != nil && errors.IsNotFound(err) {
+		return false
+	} else if len(slices.Items) == 0 {
+		r.Log.V(1).Info("no EndpointSlices exist for the Service", "service", service, "gitlab", adapter.Name())
+
 		return false
 	}
 
-	for _, subset := range ep.Subsets {
-		addresses = append(addresses, subset.Addresses...)
-	}
-
-	return len(addresses) > 0
+	return true
 }
 
 func (r *GitLabReconciler) ifCoreServicesReady(ctx context.Context, adapter gitlab.Adapter, template helm.Template) (bool, string) {
