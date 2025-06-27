@@ -97,7 +97,7 @@ To use the NGINX Ingress Controller for Ingress, complete the following:
 
    {{< alert type="note" >}}
 
-By default, CertManager creates and manages TLS certificates for the GitLab-related Ingresses.
+   By default, CertManager creates and manages TLS certificates for the GitLab-related Ingresses.
    See the [TLS documentation](https://docs.gitlab.com/charts/installation/tls/) for more options.
 
    {{< /alert >}}
@@ -122,7 +122,7 @@ By default, CertManager creates and manages TLS certificates for the GitLab-rela
 
    {{< alert type="note" >}}
 
-These records need to exist in _both_ the public **and** private zones in your cloud provider's network settings.
+   These records need to exist in _both_ the public **and** private zones in your cloud provider's network settings.
    Parity between these zones ensures proper cluster-internal routing and allows CertManager to properly issue Certificates.
 
    {{< /alert >}}
@@ -193,7 +193,7 @@ To use OpenShift Routes for Ingress, complete the following:
 
    {{< alert type="note" >}}
 
-By default, CertManager creates and manage TLS certificates for the GitLab-related Routes.
+   By default, CertManager creates and manage TLS certificates for the GitLab-related Routes.
    See the [TLS documentation](https://docs.gitlab.com/charts/installation/tls/) for more options.
    If the OpenShift cluster is secured with a wildcard certificate,
    [option 2](https://docs.gitlab.com/charts/installation/tls/#option-2-use-your-own-wildcard-certificate)

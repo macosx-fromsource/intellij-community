@@ -21,11 +21,12 @@ The GitLab Operator has [known limitations](_index.md#known-issues) and is only 
 <!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
 {{< alert type="warning" >}}
 
-The default values of the _GitLab custom resource_ are **not intended for production use**.
-With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,
+The default values of the GitLab custom resource are **not intended for production use**.
+With these values, GitLab Operator creates a GitLab instance where all services, including the persistent data,
 are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
 For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
 GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
+
 {{< /alert >}}
 
 This document describes how to deploy the GitLab Operator by using manifests in your Kubernetes or OpenShift cluster.
@@ -74,7 +75,7 @@ The GitLab Operator supports the following Kubernetes versions:
 
 {{< tab title="OpenShift" >}}
 
-To create an OpenShift cluster, see the [OpenShift cluster setup documentation](developer/openshift_cluster_setup.md) for an example of how to create a _development environment_.
+To create an OpenShift cluster, see the [OpenShift cluster setup documentation](developer/openshift_cluster_setup.md) for an example of how to create a development environment.
 
 The GitLab Operator supports the following OpenShift versions:
 
