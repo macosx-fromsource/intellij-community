@@ -19,7 +19,7 @@ The GitLab Operator is capable of managing upgrades between versions of GitLab. 
 At the beginning of the controller reconcile loop, the Operator checks if the current version matches the desired version.
 
 - If these versions match, then the regular reconcile loop executes, ensuring objects exist that satisfy the configuration provided in the CR spec.
-- If these versions _do not_ match, the regular reconcile loop still executes, but an additional branch of logic executes to handle the upgrade flow.
+- If these versions do not match, the regular reconcile loop still executes, but an additional branch of logic executes to handle the upgrade flow.
 
 The upgrade flow behaves like this:
 

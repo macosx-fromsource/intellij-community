@@ -23,7 +23,7 @@ Before upgrading the Operator, ensure that the current instance of GitLab is upg
 [releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases) under the `Version mapping` headings.
 
 For example, if the current Operator version is [release 0.4.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.0),
-perform the available chart upgrades _in order_: `5.5.3` -> `5.6.3` -> `5.7.0`.
+perform the available chart upgrades in order: `5.5.3` -> `5.6.3` -> `5.7.0`.
 
 ## Step 2: Identify the desired Operator version
 

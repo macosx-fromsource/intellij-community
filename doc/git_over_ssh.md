@@ -50,7 +50,7 @@ There are some caveats with this option:
 - NGINX Inc. TransportServer/GlobalConfiguration custom resource definitions are considered a feature preview and they recommend caution for production use.
 - The NGINX Inc. Operator is still relatively young, only at version 0.3.0. It doesn't contain nearly as many configuration
   options as the more mature Helm Charts of either flavor.
-- This option still requires _manually_ exposing port `22` on the NGINX Service (this is not configurable in the NGINXIngressController CR).
+- This option still requires manually exposing port `22` on the NGINX Service (this is not configurable in the NGINXIngressController CR).
 
 More extensive research is captured in [#58](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/58#note_585883916).
 

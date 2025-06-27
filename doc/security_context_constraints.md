@@ -15,7 +15,7 @@ title: Security context constraints
 ## Overview
 
 Pods in OpenShift receive permissions based on their security context
-constraints. Security context constraints, often abbreviated _**SCC**_,
+constraints. Security context constraints, often abbreviated **SCC**,
 simplify the role based access control mechanism for use in large scale
 deployments. [Administrators may consult the upstream documentation to gain more insight into how security context constraints work and their place in OpenShift](https://docs.openshift.com/container-platform/4.10/authentication/managing-security-context-constraints.html)
 
@@ -28,7 +28,7 @@ Administrators may also consult the following resources:
 
 The `gitlab-controller-manager` deployment creates and manages the pod
 containing the **Operator** processes. This and any other pod it creates and
-manages run with the _**restricted**_ security context constraint.
+manages run with the **restricted** security context constraint.
 
 The **Operator** uses a ServiceAccount with robust permissions allowing it
 to manage all resources required by the GitLab application.
@@ -41,14 +41,14 @@ least privilege.
 ### GitLab application custom resource definitions
 
 Pods deployed by the Operator to satisfy GitLab custom resources use the
-_**non-root-v2**_ security context constraint. Security context constraints for
+**non-root-v2** security context constraint. Security context constraints for
 third party operators and resources are [covered in the next section](#third-party-resource-definitions).
 
 The `gitlab-app-nonroot` ServiceAccounts has no granted privileges and exists solely
-to bind the _**nonroot-v2**_ security context constraints to GitLab application pods.
+to bind the **nonroot-v2** security context constraints to GitLab application pods.
 
 The security context constraints will be tightened in future releases as the
-full _read/write_ behaviors of the GitLab application are validated within
+full read/write behaviors of the GitLab application are validated within
 the OpenShift security model.
 
 {{< alert type="note" >}}
@@ -77,5 +77,5 @@ documentation to learn more about its security context constraints.
 **Operator** deploys the [**cert-manager-operator** from JetStack](https://cert-manager.io/docs/releases/)
 to manage SSL certificates across the GitLab application. The
 **cert-manager-operator** sets no secure context constraints directly, thus
-OpenShift will apply the _**restricted**_ security context constraint by
+OpenShift will apply the **restricted** security context constraint by
 default.

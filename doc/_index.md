@@ -29,8 +29,8 @@ The GitLab Operator has [known limitations](#known-issues) and is only suitable 
 
 {{< alert type="warning" >}}
 
-The default values of the _GitLab custom resource_ are **not intended for production use**.
-With these values, GitLab Operator creates a GitLab instance where _all_ services, including the persistent data,
+The default values of the GitLab custom resource are **not intended for production use**.
+With these values, GitLab Operator creates a GitLab instance where all services, including the persistent data,
 are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
 For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
 GitLab does not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
