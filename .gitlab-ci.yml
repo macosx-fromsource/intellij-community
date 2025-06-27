@@ -272,7 +272,7 @@ docs-i18n-lint markdown:
   dependencies: []
   script:
     # Lint Markdown
-    - markdownlint-cli2 'doc-locale/**/*.md'
+    - cd doc-locale && markdownlint-cli2 --config .markdownlint/.markdownlint-cli2.yaml '**/*.md'
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
