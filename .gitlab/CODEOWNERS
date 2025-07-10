@@ -41,5 +41,5 @@ Dangerfile @gitlab-org/maintainers/gitlab-operator @balasankarc
 
 # Localization
 [Localization Team] @gitlab-com/localization/maintainers
-/doc-locale/**
+/doc-locale/
 /argo_translation.yml
