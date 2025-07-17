@@ -1,3 +1,26 @@
+## 2.2.0 (2025-07-17)
+
+### changed (14 changes)
+
+- [Update golang.org/x/mod to v0.26.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e17125763399c50895ccf4bfa1a1a53128cb3427) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1218))
+- [Update Helm SDK from 3.17.3 to 3.18.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b0c6b4eb511e2697edc48755a5829275b45d9047) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1216))
+- [Update golang to v1.24.5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/588ddefb708a8d77c467b37862a11a6bd4c4824d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1212))
+- [Update ubi9-micro to e62298f](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a2d42cdf6811618173d155c8daf8cc8b9c8d1fb8) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1211))
+- [Update sigs.k8s.io/yaml to v1.5.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4317168afc5689e916aaf44352f847f1c17f6119) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1200))
+- [Update github.com/Masterminds/semver/v3 to v3.4.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/729e17bdf3a7d733097b664c8c292b58f12eb499) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1203))
+- [Update ubi9-micro to ef76ed2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a17f223b8bdc0585839d18ee41a5de65a25a538e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1207))
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.14.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2c93dfd91815ae8fb3027736d9dc614f41bbfea0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1204))
+- [Update ubi9-micro to c2f11c4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ad2d6a67fc55d2a9ca1c65de7a783b03612c16f4) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1199))
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.13.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/d9c7b65d4611aeefefc53c7561afb0d67c4938a5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1194))
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.13.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/50624804c868c5c3f605cba1da4dc6bb6aba7826) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1193))
+- [Update Helm SDK from 3.12.3 to 3.17.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/540986b9ce2977858f7726c839eee216da299914) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1186))
+- [Update k8s.io dependencies to v0.33.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/49250d1f78b5ed6ca3254c314c67f16bd6475c23) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1192))
+- [Update k8s.io/utils to 4c0f3b2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/34bbbfb625f05c975a8ec2879c26b2a15a10c158) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1191))
+
+### added (1 change)
+
+- [Support OpenShift 4.19](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/03fc33eeb14ccdb051671757e1c241d264a52c9f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1198))
+
 ## 2.1.2 (2025-07-09)
 
 No changes.
