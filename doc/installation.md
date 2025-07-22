@@ -181,7 +181,7 @@ Start by selecting an installation method.
 
 First, retrieve a release manifest from the
 [Operator releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
-Select the manifest that matches your target platform: Kuberentes or OpenShift.
+Select the manifest that matches your target platform: Kubernetes or OpenShift.
 
 Next, create the namespace where the operator will be installed.
 In the manifest, the namespace is set to `gitlab-system` by default.
@@ -320,7 +320,7 @@ to pin the Operator's version or to upgrade to a non-latest version.
 
 {{< alert type="note" >}}
 
-[OLM currently does not support downgrading Operators](https://github.com/operator-framework/operator-lifecycle-manager/issues/1177).
+[OLM does not support downgrading Operators](https://github.com/operator-framework/operator-lifecycle-manager/issues/1177).
 
 {{< /alert >}}
 
