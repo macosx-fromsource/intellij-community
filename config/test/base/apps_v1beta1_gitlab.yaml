@@ -41,6 +41,7 @@ spec:
           maxReplicas: 2
       nginx-ingress:
         controller:
+          electionID: ingress-controller-leader
           replicaCount: 1
       redis:
         resources:
