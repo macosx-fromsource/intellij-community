@@ -389,12 +389,10 @@ slow_unit_tests:
 
 unit_tests_custom_ref:
   extends: .test_job_custom_ref
-  allow_failure: true
   script: SKIP_OPERATION_TESTS=yes TEST_UTIL=ginkgo2 task unit-tests
 
 slow_unit_tests_custom_ref:
   extends: .test_job_custom_ref
-  allow_failure: true
   script: SKIP_OPERATION_TESTS=yes TEST_UTIL=ginkgo2 task slow-unit-tests
 
 .dind:

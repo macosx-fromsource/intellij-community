@@ -1,5 +1,4 @@
-certmanager:
-  install: false
+installCertmanager: false
 
 gitlab-runner:
   install: false

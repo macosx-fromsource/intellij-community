@@ -99,7 +99,7 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 
 		/* Operator overrides these */
 		_ = values.SetValue("gitlab-runner.install", true)
-		_ = values.SetValue("certmanager.install", true)
+		_ = values.SetValue("installCertmanager", true)
 
 		a, err := NewAdapter(context.TODO(),
 			newGitLabResource(getChartVersion(), values))
@@ -270,7 +270,7 @@ func addOperatorDefaultExamples(examples support.Values) {
 }
 
 func addOperatorOverrideExamples(examples support.Values) {
-	examples["certmanager.install"] = false   // true
+	examples["installCertmanager"] = false    // true
 	examples["gitlab-runner.install"] = false // true
 }
 
