@@ -7,8 +7,7 @@ spec:
   chart:
     version: CHART_VERSION
     values:
-      certmanager:
-        install: false
+      installCertmanager: false
       global:
         hosts:
           domain: DOMAIN
