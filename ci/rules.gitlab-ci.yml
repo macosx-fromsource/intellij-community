@@ -5,6 +5,10 @@
   <<: *if_commit_branch_or_mr_branch
   when: manual
 
+.manual_allow_failure_if_commit_branch_or_mr_branch: &manual_allow_failure_if_commit_branch_or_mr_branch
+  <<: *manual_if_commit_branch_or_mr_branch
+  allow_failure: true
+
 .if_on_dev: &if_on_dev
   if: '$CI_SERVER_HOST == "dev.gitlab.org" && $CI_PROJECT_PATH == "gitlab/cloud-native/gitlab-operator"'
 

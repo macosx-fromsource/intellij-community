@@ -371,7 +371,7 @@ review-docs-cleanup:
     - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_default_branch]
     - !reference [.if_gitlab_chart_child_pipeline]
-    - !reference [.manual_if_commit_branch_or_mr_branch]
+    - !reference [.manual_allow_failure_if_commit_branch_or_mr_branch]
 
 unit_tests:
   extends: .test_job
