@@ -26,8 +26,6 @@ redis:
   master:
     serviceAccount:
       name: {{ .Settings.AppNonRootServiceAccount }}
-  serviceAccount:
-    name: {{ .Settings.AppNonRootServiceAccount }}
   securityContext:
     fsGroup: 1000
     runAsUser: 1000
