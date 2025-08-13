@@ -43,3 +43,7 @@ Dangerfile @gitlab-org/maintainers/gitlab-operator @balasankarc
 [Localization Team] @gitlab-com/localization/maintainers
 /doc-locale/
 /argo_translation.yml
+
+# Go Dependencies
+go.mod @gitlab-org/maintainers/gitlab-operator @gitlab-org/software-delivery/self-managed
+go.sum @gitlab-org/maintainers/gitlab-operator @gitlab-org/software-delivery/self-managed
