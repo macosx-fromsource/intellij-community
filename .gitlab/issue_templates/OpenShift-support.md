@@ -34,8 +34,7 @@ Follow the checklist below to address the requirements for each project.
   - [ ] Remove entries that are no longer supported
 
 
-/label ~"devops::gitlab delivery" ~"group::Self Managed" ~"section::infrastructure platforms"
-
+/label ~"section::infrastructure platforms" ~"devops::gitlab delivery" ~"group::operate"
 /label ~"type::maintenance" ~"maintenance::pipelines" ~"For scheduling" ~"priority::2"
 
 /epic https://gitlab.com/groups/gitlab-org/-/epics/13683
