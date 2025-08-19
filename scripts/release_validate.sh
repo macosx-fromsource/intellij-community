@@ -57,7 +57,7 @@ validate() {
     case "${CLUSTER_TYPE}" in 
       ocp)
         MARKETPLACE_NAMESPACE="openshift-marketplace"
-        _catalogs=(operatorhub community-operators certified-operators)
+        _catalogs=(ci-stack-operatorhub community-operators certified-operators)
         ;;
       k8s)
         MARKETPLACE_NAMESPACE="olm"
