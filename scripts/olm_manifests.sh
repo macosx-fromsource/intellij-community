@@ -33,7 +33,7 @@ echo_warn() {
 
 getmanifest() {
     if [[ -z "$1" ]]; then
-        echo_warn "Please provide a catalog name, available: certified-operators, community-operators, operatorhub"
+        echo_warn "Please provide a catalog name, available: certified-operators, community-operators, ci-stack-operatorhub"
         return 1
     fi
 
@@ -94,7 +94,7 @@ catalog_latest_version() {
 usage() {
     echo "Usage: $0 [getmanifest|has_version|latest_version|catalog_latest_version|catalog_has_version]"
     echo "Available commands:"
-    echo "  getmanifest <catalog> - Use kubectl to get manifest from a catalog. Available catalog: certified-operators, community-operators, operatorhub"
+    echo "  getmanifest <catalog> - Use kubectl to get manifest from a catalog. Available catalog: certified-operators, community-operators, ci-stack-operatorhub"
     echo "  has_version <version> - Check if version exists, read manifest from stdin, it always prints the latest version, and will return 1 if version does not exist."
     echo "  latest_version - Get latest version, read manifest from stdin"
     echo "  catalog_latest_version <catalog> - Get latest version from catalog"
