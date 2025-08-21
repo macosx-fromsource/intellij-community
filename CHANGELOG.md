@@ -1,3 +1,20 @@
+## 2.3.0 (2025-08-21)
+
+### changed (12 changes)
+
+- [Update k8s.io/utils to 0af2bda](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3ccf823ae55e51f4f83fcce6d49750ec60dbde35) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1255))
+- [Update helm.sh/helm/v3 to v3.18.6](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/92902222c55f51e4f24fa71b4e2cfa4e65c456b2) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1247))
+- [Update github.com/onsi/ginkgo/v2 to v2.24.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/973f4d80ccd591ad9cdcb7d178a14565bbd24a88) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1248))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b4202f6172144e774e3b62e38a9c11a1a45915c7) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1233))
+- [Update github.com/cert-manager/cert-manager to v1.18.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/00ded5a0e17ec6384887d4164f1523550542a433) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1208))
+- [Update golang.org/x/mod to v0.27.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0bfc10626e7a7dfd196c9c9c10e48c85bffb020b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1242))
+- [Update golang to v1.24.6](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9e0a9ee4e5d4de16d6c760de98d955bf7fce1958) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1241))
+- [Update ubi9-micro to 647c02b](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2ff641386e54d22abe2f222d919d51704024603a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1235))
+- [Update github.com/onsi/gomega to v1.38.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0c7b10d181583154af6a9b36dc0d06008d422e91) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1230))
+- [Update k8s.io dependencies to v0.33.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f8a42114fc134721fcd8e7f3176290d3ed0dd176) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1226))
+- [Update ubi9-micro to 233cce2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0dbdd76c876a5da49c29bea2643a06a2f2da436e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1223))
+- [Update prom-op-api/monitoring to v0.84.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5a990f44bebcbb07a541eff80fa8c6f5ed8556d4) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1222))
+
 ## 2.2.3 (2025-08-18)
 
 No changes.
