@@ -69,7 +69,8 @@ generate_bundle(){
               --version ${OLM_PACKAGE_VERSION} \
               --default-channel=stable \
               --channels=stable,unstable \
-              --package=${OLM_PACKAGE_NAME}
+              --package=${OLM_PACKAGE_NAME} \
+              --use-image-digests
         )
 }
 
