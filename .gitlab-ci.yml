@@ -76,6 +76,7 @@ stages:
   - test
   - publish
   - release
+  - release-olm
   - certification
   - cluster_tests_approval
   - review
@@ -441,8 +442,7 @@ slow_unit_tests_custom_ref:
     action: stop
 
 .podman_build_job:
-  stage: release
-  needs: ["pull_charts"]
+  stage: release-olm
   before_script:
     - sed -i 's#^driver.*$#driver = "vfs"#g' /etc/containers/storage.conf
     - podman login -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}" "${CI_REGISTRY}"
@@ -500,6 +500,10 @@ build_bundle_image:
     PODMAN_OPTS: "--cgroups=disabled"
   script:
     - scripts/olm_bundle.sh publish
+  artifacts:
+    expire_in: 3d
+    paths:
+      - $BUILD_DIR
   rules:
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_chart_version_pipeline]
