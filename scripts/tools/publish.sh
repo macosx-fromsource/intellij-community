@@ -312,7 +312,7 @@ publish_redhat_marketplace() {
     gh pr create \
         -R "${RH_OWNER}/${RH_REPOSITORY}" \
         --base main \
-        --head "${GITHUB_ACCOUNT}:${BRANCH_NAME}-pinned" \
+        --head "${GITHUB_ACCOUNT}:${BRANCH_NAME}" \
         --body '' \
         --title "operator gitlab-operator-kubernetes (${VERSION})"
 }
