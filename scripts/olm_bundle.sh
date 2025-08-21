@@ -74,9 +74,17 @@ generate_bundle(){
         )
 }
 
+operator_image() {
+  local project="18899486" #canonical
+  local repository="2034058" # release container repo
+  local digest=$(curl --silent "https://gitlab.com/api/v4/projects/${project}/registry/repositories/${repository}/tags/2.2.4" | jq '.digest')
+
+  echo "${OPERATOR_IMG}":${digest}
+}
+
 patch_bundle(){
   # Point CSV to proper image tag
-  local operator_image="${OPERATOR_IMG}:${OPERATOR_TAG}"
+  local operator_image="$(operator_image)"
   ${YQ} eval -i '(.spec.install.spec.deployments[].spec.template.spec.containers[] | select( .name=="manager").image) |= "'${operator_image}'"' \
     ${OSDK_BASE_DIR}/bundle/manifests/${OLM_PACKAGE_NAME}.clusterserviceversion.yaml
   ${YQ} eval -i '.metadata.annotations.containerImage |= "'${operator_image}'"' \
