@@ -12,11 +12,11 @@ Much of the process is automated by [release-tools](https://gitlab.com/gitlab-or
 1. [ ] Confirm that the [Release](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases) has been created
        with the correct content in the tag message and Release description..
 1. [ ] [OLM bundle testing](doc/developer/test_olm.md) has been completed
-1. [ ] [Release to OperatorHub.io](doc/developer/operatorhub_publishing.md).
-1. [ ] [Release to OpenShift OperatorHub.io](doc/developer/operatorhub_publishing.md)
-1. [ ] [Submit OLM bundle for OpenShift certification](doc/developer/redhat_certification.md)
+1. [ ] Release to OperatorHub.io catalog
+1. [ ] Release to RedHat community catalog
+1. [ ] Release to RedHat certified catalog
 
-Using [publish.sh](scripts/tools/publish.sh) script is recommended for the release-related steps:
+Use the [publish.sh](scripts/tools/publish.sh) script to release to the OLM catalogs:
 
 `scripts/tools/publish.sh VERSION [TARGETS]`
 
@@ -24,7 +24,7 @@ This scripts checks the requirements and submits the Operator to all three targe
 You can limit the scope of the release by passing one or more targets. Use:
 
 - `operatorhub` for `OperatorHub.io`
-- `redhat-community` for `OpenShift OperatorHub`
-- `redhat-marketplace` for `OpenShift Certified Operators`
+- `redhat-community` for `RedHat community catalog`
+- `redhat-marketplace` for `RedHat certified catalog`
 
 /assign @clemensbeck @pursultani @lucus.li
