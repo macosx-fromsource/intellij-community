@@ -32,7 +32,6 @@ func (r *GitLabReconciler) runPreMigrations(ctx context.Context, adapter gitlab.
 
 func (r *GitLabReconciler) runAllMigrations(ctx context.Context, adapter gitlab.Adapter, template helm.Template) (bool, error) {
 	job, err := gitlabctl.MigrationsJob(adapter, template)
-
 	if err != nil {
 		return false, err
 	}

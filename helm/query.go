@@ -79,7 +79,6 @@ func (q *cachingQuery) queryObjectsWithKindArg(key, kindArg string, selector Obj
 					return ok && matchParsedKindArg(obj, gvk, &gk) && selector(obj)
 				},
 			)
-
 			if err != nil {
 				return nil
 			}

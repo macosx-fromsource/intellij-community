@@ -250,6 +250,7 @@ func startServer(socket string, cert []byte, key []byte) (*http.Server, net.List
 
 	go func() {
 		_ = server.ServeTLS(listener, "", "")
+
 		defer func() { _ = listener.Close() }()
 	}()
 
@@ -287,8 +288,8 @@ func certClient(socket string, verify bool) ([]*x509.Certificate, error) {
 		// #nosec G402 -- only for testing
 		InsecureSkipVerify: !verify,
 	}
-	conn, err := tls.Dial("unix", socket, conf)
 
+	conn, err := tls.Dial("unix", socket, conf)
 	if err != nil {
 		return nil, err
 	}

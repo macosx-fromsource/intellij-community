@@ -338,13 +338,11 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				log.Info("ensuring pre-migrations Job has finished")
 
 				job, err := gitlabctl.PreMigrationsJob(adapter, template)
-
 				if err != nil {
 					return requeue(err)
 				}
 
 				exists, err := r.jobExists(ctx, job)
-
 				if err != nil {
 					return requeue(err)
 				}
@@ -492,7 +490,6 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		objLog := log.WithValues("kind", obj.GetObjectKind().GroupVersionKind(), "name", obj.GetName())
 
 		canBeDeleted, err := isSafeToDelete(rtCtx, obj)
-
 		if err != nil {
 			objLog.V(2).Error(err, "unable to determine if it is safe to delete the object")
 			continue
@@ -621,7 +618,6 @@ func (r *GitLabReconciler) jobFinished(ctx context.Context, adapter gitlab.Adapt
 	logger.V(2).Info("checking the status of Job")
 
 	lookup, err := r.lookupJob(ctx, job)
-
 	if err != nil {
 		logger.V(2).Info("failed to check the status of Job", "error", err)
 		return false, err
@@ -659,7 +655,6 @@ func (r *GitLabReconciler) lookupJob(ctx context.Context, job client.Object) (*b
 
 func (r *GitLabReconciler) jobExists(ctx context.Context, job client.Object) (bool, error) {
 	_, err := r.lookupJob(ctx, job)
-
 	if err == nil {
 		return true, nil
 	}
@@ -696,9 +691,9 @@ func (r *GitLabReconciler) createOrPatch(ctx context.Context, templateObject cli
 	if templateObject == nil {
 		r.Log.Info("controller unable to delete managed resources, this is a known issue",
 			"gitlab", adapter.Name())
+
 		return nil
 	}
-
 	// NOTE: This keeps track of the managed objects. It will be removed once we
 	//       migrate to the new framework.
 	if err := adapter.PopulateManagedObjects(templateObject); err != nil {
@@ -722,7 +717,6 @@ func (r *GitLabReconciler) createOrPatch(ctx context.Context, templateObject cli
 
 	outcome, err := kube.ApplyObject(obj, apply.WithContext(ctx),
 		apply.WithClient(r.Client), apply.WithLogger(logger))
-
 	if err != nil {
 		return err
 	}
@@ -749,10 +743,9 @@ func (r *GitLabReconciler) reconcileIngress(ctx context.Context, templateObject 
 	}
 
 	logger := r.Log.WithValues("gitlab", adapter.Name())
-
 	found := &networkingv1.Ingress{}
-	err = r.Get(ctx, types.NamespacedName{Name: ingress.Name, Namespace: adapter.Name().Namespace}, found)
 
+	err = r.Get(ctx, types.NamespacedName{Name: ingress.Name, Namespace: adapter.Name().Namespace}, found)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			logger.V(1).Info("creating Ingress", "Ingress", ingress.Name)
@@ -808,12 +801,13 @@ func (r *GitLabReconciler) setupAutoscaling(ctx context.Context, adapter gitlab.
 
 func (r *GitLabReconciler) isEndpointReady(ctx context.Context, service string, adapter gitlab.Adapter) bool {
 	slices := &discoveryv1.EndpointSliceList{}
+
 	err := r.List(ctx, slices,
 		client.MatchingLabels(map[string]string{
 			discoveryv1.LabelServiceName: service,
 		}),
-		client.InNamespace(adapter.Name().Namespace))
-
+		client.InNamespace(adapter.Name().Namespace),
+	)
 	if err != nil {
 		r.Log.Error(err, "unable to list EndpointSlices for Service", "service", service, "gitlab", adapter.Name())
 
@@ -957,8 +951,8 @@ func (r *GitLabReconciler) annotateSecretsChecksum(ctx context.Context, adapter 
 func (r *GitLabReconciler) ensureSecret(ctx context.Context, adapter gitlab.Adapter, secretName string) error {
 	secret := &corev1.Secret{}
 	lookupKey := types.NamespacedName{Name: secretName, Namespace: adapter.Name().Namespace}
-	err := r.Get(ctx, lookupKey, secret)
 
+	err := r.Get(ctx, lookupKey, secret)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return fmt.Errorf("secret '%s' not found", lookupKey)

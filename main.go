@@ -82,7 +82,6 @@ func main() {
 		populate.WithLogger(logger),
 		populate.WithSearchPath(settings.HelmChartsDirectory),
 	)
-
 	if err != nil {
 		setupLog.Error(err, "unable to populate global catalog")
 		os.Exit(1)
