@@ -77,7 +77,7 @@ generate_bundle(){
 operator_image() {
   local project="18899486" #canonical
   local repository="2034058" # release container repo
-  local digest=$(curl --silent "https://gitlab.com/api/v4/projects/${project}/registry/repositories/${repository}/tags/2.2.4" | jq '.digest')
+  local digest=$(curl --silent "https://gitlab.com/api/v4/projects/${project}/registry/repositories/${repository}/tags/${VERSION}" | jq '.digest')
 
   echo "${OPERATOR_IMG}":${digest}
 }
