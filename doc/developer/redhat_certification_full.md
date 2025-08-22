@@ -231,7 +231,12 @@ OSDK_BASE_DIR=".build/cert" \
 ## Properly annotate bundle for submission
 
 ```shell
+# By default, we use "replaces" upgrade mode
 BUNDLE_DIR=.build/cert/bundle PREVIOUS_OPERATOR_VERSION="x.y.z" \
+    redhat/operator-certification/scripts/configure_bundle.sh adjust_annotations adjust_csv
+
+# Or we can use "skips"
+BUNDLE_DIR=.build/cert/bundle PREVIOUS_OPERATOR_VERSION="x.y.z" OLM_SKIP_VERSION="a.b.c" \
     redhat/operator-certification/scripts/configure_bundle.sh adjust_annotations adjust_csv
 ```
 

@@ -5,7 +5,7 @@ set -eu
 OPENSHIFT_MIN=${OPENSHIFT_MIN:-"4.12"}
 OPENSHIFT_MAX=${OPENSHIFT_MAX:-"4.19"}
 OLM_PACKAGE_NAME="${OLM_PACKAGE_NAME:-"gitlab-operator-kubernetes"}"
-OLM_UPGRADE_MODE=${OLM_UPGRADE_MODE:-"replaces"}
+OLM_SKIP_VERSION=${OLM_SKIP_VERSION:-""}
 
 BUNDLE_DIR=${BUNDLE_DIR:-"."}
 
@@ -28,7 +28,12 @@ adjust_csv() {
 set_upgrade_path() {
     local csv_files=$(grep -l 'kind: ClusterServiceVersion' "${BUNDLE_DIR}"/manifests/*.yaml)
     for csv in $csv_files; do
-        ${YQ} eval -i ".spec.${OLM_UPGRADE_MODE}=\"${OLM_PACKAGE_NAME}.v${PREVIOUS_OPERATOR_VERSION}\"" $csv
+        if [ -n "${OLM_SKIP_VERSION}" ]; then
+            ${YQ} eval -i ".spec.skips=[\"${OLM_PACKAGE_NAME}.v${OLM_SKIP_VERSION}\"]" $csv
+        fi
+        if [ -n "${PREVIOUS_OPERATOR_VERSION}" ]; then
+            ${YQ} eval -i ".spec.replaces=\"${OLM_PACKAGE_NAME}.v${PREVIOUS_OPERATOR_VERSION}\"" $csv
+        fi
     done
 }
 
