@@ -39,6 +39,31 @@ EOU
     exit 0
 }
 
+setup_gnu_sed() {
+    local sed_cmd=""
+    
+    # Check if gsed is available (GNU sed installed via Homebrew on macOS)
+    if command -v gsed &> /dev/null; then
+        sed_cmd="gsed"
+    elif command -v sed &> /dev/null; then
+        # Test if sed is GNU sed by checking for GNU-specific option
+        if sed --version 2>/dev/null | grep -q "GNU sed"; then
+            sed_cmd="sed"
+        else
+            echo "[error] BSD sed detected, please install GNU sed (gsed) or use Homebrew to install it."
+            exit 1
+        fi
+    else
+        echo "[error] No sed command found"
+        exit 1
+    fi
+    
+    echo "$sed_cmd"
+}
+
+# Initialize sed command
+SED_CMD="$(setup_gnu_sed)"
+
 print_targets() {
     printf 'Attempting to publish "%s" to the following targets:\n\n' ${VERSION}
     printf '\t> %s\n' ${TARGET}
@@ -100,6 +125,12 @@ check_requirements() {
 
     printf '[requirement check] PREVIOUS_OPERATOR_VERSION is defined: '
     run_check test -n "${PREVIOUS_OPERATOR_VERSION:-}"
+
+    if [ -n "${OLM_SKIP_VERSION:-}" ]; then
+        printf '[requirement check] Upgrade mode: replaces %s skips %s' "${PREVIOUS_OPERATOR_VERSION}" "${OLM_SKIP_VERSION}"
+    else
+        printf '[requirement check] Upgrade mode: replaces %s' "${PREVIOUS_OPERATOR_VERSION}"
+    fi
 
     printf '[requirement check] script is running on the %s branch: ' "${stable_branch}"
     run_check test "$(git rev-parse --abbrev-ref HEAD)" = "${stable_branch}"
@@ -169,9 +200,9 @@ edit_manifest() {
     cd "${OPERATOR_HOME_DIR}"
 
     local latest_chart_version="$(lookup_chart_version)"
-    sed -i 's/"version": ".*"/"version": "'${latest_chart_version}'"/' \
+    $SED_CMD -i 's/"version": ".*"/"version": "'${latest_chart_version}'"/' \
         config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml
-    sed -i 's/gitlab-operator:.*/gitlab-operator:'${VERSION}'/' \
+    $SED_CMD -i 's/gitlab-operator:.*/gitlab-operator:'${VERSION}'/' \
         config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml
 }
 
@@ -183,7 +214,7 @@ create_bundle() {
     rm -rf "${bundle_dir}/bundle"
     OSDK_BASE_DIR="${bundle_dir}" scripts/olm_bundle.sh build_manifests generate_bundle patch_bundle
     OSDK_BASE_DIR="${bundle_dir}" scripts/olm_bundle.sh validate_bundle
-    sed -i 's/"version": ".*"/"version": "'${latest_chart_version}'"/' \
+    $SED_CMD -i 's/"version": ".*"/"version": "'${latest_chart_version}'"/' \
         "${bundle_dir}/bundle/manifests/gitlab-operator-kubernetes.clusterserviceversion.yaml"
 }
 
@@ -313,7 +344,7 @@ export OPERATORHUB_NAME="${GITLAB_OPERATOR_DIR}"
 [ -n "${SSH_KEY_FILE}" ] && export GIT_SSH_COMMAND="ssh -i ${SSH_KEY_FILE} -o IdentitiesOnly=yes"
 [ -z "${KUBECONFIG:-}" ] && export KUBECONFIG="${BUILD_DIR}/kubeconfig"
 [ -z "${GIT_USERNAME:-}" ] && export GIT_USERNAME="$(git config --global user.name) (Operator Release)"
-[ -z "${GIT_EMAIL:-}" ] && export GIT_EMAIL="$(git config --global user.email | sed 's/@/+operator-release@/')"
+[ -z "${GIT_EMAIL:-}" ] && export GIT_EMAIL="$(git config --global user.email | $SED_CMD 's/@/+operator-release@/')"
 
 export GIT_FORK_REPO_URL="git@github.com:${GITHUB_ACCOUNT}/${RH_REPOSITORY}.git"
 export GIT_BRANCH="${BRANCH_NAME}"

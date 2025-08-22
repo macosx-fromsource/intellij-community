@@ -47,6 +47,7 @@ Ensure `user.name` and `user.email` are configured in Git.
 |--------------------------------|----------|----------------------------------------------------------------------|-------------|
 | `OPERATOR_VERSION`             | yes      |                                                                      | Version of Operator to upgrade to |
 | `PREVIOUS_OPERATOR_VERSION`    | yes      |                                                                      | Version of Operator to upgrade from |
+| `OLM_SKIP_VERSION`             | no       |                                                                      | Version to skip in upgrade process, setting it will change the upgrade strategy to "skips" |
 | `LOCAL_IP`                     | yes      | `127.0.0.1`                                                          | Local machine IP, needed for `GITLAB_OPERATOR_DOMAIN`. When `GITLAB_OPERATOR_DOMAIN` is provided - `LOCAL_IP` can be omitted |
 | `GITLAB_OPERATOR_OLM_REGISTRY` | yes      | `registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator/bundle` | OLM Bundles and Catalogs Registry with released bundles and catalogs |
 | `BUNDLE_REGISTRY`              | yes      |                                                                      | Staging container registry to publish intermediary OLM Bundles and Catalogs to |
