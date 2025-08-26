@@ -40,6 +40,7 @@ const (
 func TestAPIs(t *testing.T) {
 	if skip := os.Getenv("SKIP_ENVTEST"); skip == "yes" {
 		defer GinkgoRecover()
+
 		Skip("skipping cluster-related tests")
 	}
 

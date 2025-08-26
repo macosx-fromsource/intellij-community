@@ -45,7 +45,6 @@ func (q *cachingQuery) ObjectByKindAndComponent(kindArg, component string) clien
 
 	objects := q.queryObjectsWithKindArg(key, kindArg, func(obj runtime.Object) bool {
 		objLabels, err := accessor.Labels(obj)
-
 		if err != nil {
 			return false
 		}

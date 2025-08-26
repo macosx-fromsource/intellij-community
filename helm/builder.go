@@ -55,12 +55,11 @@ type Builder interface {
 // NewBuilder creates a new builder interface for Helm template.
 func NewBuilder(charts charts.Catalog) (Builder, error) {
 	envSettings := cli.New()
-
 	actionConfig := new(action.Configuration)
+
 	actionConfig, err := actionConfig, actionConfig.Init(
 		envSettings.RESTClientGetter(), envSettings.Namespace(),
 		memoryStorageDriver, noopLogger)
-
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +175,6 @@ func (b *defaultBuilder) Render(values support.Values) (Template, error) {
 
 	for _, yaml := range manifests {
 		obj, _, err := decode([]byte(yaml), nil, nil)
-
 		if err != nil {
 			template.warnings = append(template.warnings, err)
 		} else {
