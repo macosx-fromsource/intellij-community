@@ -126,7 +126,7 @@ To publish the GitLab Operator to OperatorHub:
       export BUNDLE_REGISTRY=registry.gitlab.com/dmakovey/gitlab-operator-bundle
       export BUNDLE_IMAGE_TAG="beta1"
       export KIND_CLUSTER_NAME="optest1u"
-      export KIND_CONFIG="${HOME}/work/gitlab/examples/kind/kind-ssl.yaml" 
+      export KIND_CONFIG="${HOME}/work/gitlab/examples/kind/kind-ssl.yaml"
       export KIND_IMAGE="kindest/node:v1.25.9"
       ```
 
@@ -156,7 +156,7 @@ To publish the GitLab Operator to OperatorHub:
 
       OSDK_BASE_DIR=".build/operatortest1" scripts/olm_bundle.sh deploy_catalogsource
 
-      OSDK_BASE_DIR=".build/operatortest1" scripts/olm_bundle.sh deploy_operatorgroup 
+      OSDK_BASE_DIR=".build/operatortest1" scripts/olm_bundle.sh deploy_operatorgroup
       ```
 
    1. wait for the `PackageManifest`:
@@ -169,7 +169,7 @@ To publish the GitLab Operator to OperatorHub:
 
       ```shell
       # deploy previous release
-      OSDK_BASE_DIR=".build/operatortest1" OLM_PACKAGE_VERSION=${PREVIOUS_BUNDLE_VERSION} scripts/olm_bundle.sh deploy_subscription 
+      OSDK_BASE_DIR=".build/operatortest1" OLM_PACKAGE_VERSION=${PREVIOUS_BUNDLE_VERSION} scripts/olm_bundle.sh deploy_subscription
       ```
 
    1. locate `InstallPlan`:
