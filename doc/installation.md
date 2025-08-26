@@ -75,8 +75,6 @@ The GitLab Operator supports the following Kubernetes versions:
 
 {{< tab title="OpenShift" >}}
 
-To create an OpenShift cluster, see the [OpenShift cluster setup documentation](developer/openshift_cluster_setup.md) for an example of how to create a development environment.
-
 The GitLab Operator supports the following OpenShift versions:
 
 | OpenShift release | Status      | Minimum Operator version | Architectures | End of life |

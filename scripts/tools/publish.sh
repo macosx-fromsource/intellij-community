@@ -221,12 +221,6 @@ commit_publish_branch() {
     git push origin "${BRANCH_NAME}" --force
 }
 
-run_redhat_certification_pipeline() {
-    cd "${OPERATOR_HOME_DIR}"
-    redhat/operator-certification/scripts/operator_certification_pipeline.sh create_workspace_template
-    SUBMIT="${SUBMIT:-false}" redhat/operator-certification/scripts/operator_certification_pipeline.sh run_certification_pipeline_automated
-}
-
 cleanup_changes() {
     cd "${OPERATOR_HOME_DIR}"
     git restore ./config
@@ -282,21 +276,14 @@ publish_redhat_marketplace() {
     copy_bundle "${RH_BUILD_DIR}" "${RH_BUNDLE_DIR}"
     commit_publish_branch "${RH_BUILD_DIR}"
 
-    echo "Running RedHat certification pipeline to automatically create PR in ${RH_OWNER}/${RH_REPOSITORY}"
-    run_redhat_certification_pipeline
-
-    # SUBMIT is an environment variable that operator_certification_pipeline.sh uses to automatically submit the PR (which is not working right now).
-    # This is our fallback to submit the PR when it is false (default).
-    if [ "${SUBMIT:-false}" = 'false' ]; then
-        echo "Creating certified operator PR in ${RH_OWNER}/${RH_REPOSITORY}"
-        cd "${RH_BUILD_DIR}"
-        gh pr create \
-            -R "${RH_OWNER}/${RH_REPOSITORY}" \
-            --base main \
-            --head "${GITHUB_ACCOUNT}:${BRANCH_NAME}-pinned" \
-            --body '' \
-            --title "operator gitlab-operator-kubernetes (${VERSION})"
-    fi
+    echo "Creating certified operator PR in ${RH_OWNER}/${RH_REPOSITORY}"
+    cd "${RH_BUILD_DIR}"
+    gh pr create \
+        -R "${RH_OWNER}/${RH_REPOSITORY}" \
+        --base main \
+        --head "${GITHUB_ACCOUNT}:${BRANCH_NAME}" \
+        --body '' \
+        --title "operator gitlab-operator-kubernetes (${VERSION})"
 }
 
 [ -z "${SKIP_CHECKS:-}" ] && check_requirements
