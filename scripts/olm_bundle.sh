@@ -53,7 +53,7 @@ KIND_IMAGE=${KIND_IMAGE:-""}
 OPERATOR_HOME_DIR=$(realpath ${OPERATOR_HOME_DIR})
 
 build_manifests(){
-  task build_operator_openshift
+  TAG=${OPERATOR_TAG} task build_operator_openshift
   task build_test_cr
   ( cd config/scorecard; kustomize build ) > ${BUILD_DIR}/scorecard.yaml
   mkdir -p ${OSDK_BASE_DIR}
@@ -77,9 +77,9 @@ generate_bundle(){
 operator_image() {
   local project="18899486" #canonical
   local repository="2034058" # release container repo
-  local digest=$(curl --silent "https://gitlab.com/api/v4/projects/${project}/registry/repositories/${repository}/tags/${VERSION}" | jq '.digest')
+  local digest=$(curl --silent "https://gitlab.com/api/v4/projects/${project}/registry/repositories/${repository}/tags/${OPERATOR_TAG}" | yq -r '.digest')
 
-  echo "${OPERATOR_IMG}":${digest}
+  echo "${OPERATOR_IMG}@${digest}"
 }
 
 patch_bundle(){
