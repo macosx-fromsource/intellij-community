@@ -2,7 +2,7 @@
 stage: GitLab Delivery
 group: Operate
 info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
-title: Upgrading GitLab
+title: Upgrade GitLab instances with Operator
 ---
 
 {{< details >}}
@@ -12,86 +12,127 @@ title: Upgrading GitLab
 
 {{< /details >}}
 
-The GitLab Operator is capable of managing upgrades between versions of GitLab. This document includes background context on how the upgrade flow works under the hood, along with instructions to perform a GitLab upgrade.
+You can use GitLab Operator to upgrade GitLab instances that were installed by using GitLab Operator. You must first
+upgrade GitLab Operator before you upgrade GitLab.
 
-## How the Operator handles GitLab upgrades
+## Before upgrading the GitLab Operator
 
-At the beginning of the controller reconcile loop, the Operator checks if the current version matches the desired version.
+Before you upgrade, see:
 
-- If these versions match, then the regular reconcile loop executes, ensuring objects exist that satisfy the configuration provided in the CR spec.
-- If these versions do not match, the regular reconcile loop still executes, but an additional branch of logic executes to handle the upgrade flow.
+- Documentation about
+  [restoring data when PersistentVolumeClaim configuration changes](troubleshooting.md#restoring-data-when-persistentvolumeclaim-configuration-changes).
+  This information was particularly relevant in GitLab Operator 0.6.4 when
+  [merge request 419](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/419) replaced GitLab
+  Operator-defined MinIO objects with MinIO objects from the GitLab Helm Charts.
+- Other [information you need before you upgrade](https://docs.gitlab.com/update/plan_your_upgrade/).
 
-The upgrade flow behaves like this:
+You must also identify the version of GitLab Operator required for the version of GitLab you want. You can see mappings
+between GitLab versions, GitLab Helm chart versions, and GitLab Operator versions on the GitLab Operator
+[releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
 
-1. The controller reconciles all Deployments.
-   - The Webservice and Sidekiq Deployments are reconciled but are "paused". This means that the "old" pods stay up until the new Deployments are unpaused.
-1. Pre-migrations run.
-   - This effectively just runs the Migrations job, but skips post-deployment migrations.
-1. The controller unpauses the Webservice and Sidekiq Deployments.
-1. The controller waits for the new Webservice and Sidekiq pods to be running.
-1. Post-migrations run.
-   - This runs the Migrations job (without skipping post-deployment migrations).
-1. The controller performs a rolling update on the Webservice and Sidekiq Deployments.
-1. The controller waits for the restarted Webservice and Sidekiq pods to be running.
+For example, if the current GitLab Operator version is
+[`0.4.0`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.0), and the GitLab version that you
+want to upgrade to is `14.7.1` (GitLab Helm chart version `5.7.1`), you could upgrade to
+[release 0.4.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.1).
 
-In future reconcile loops, this branch of logic is skipped because the desired version (from `spec.chart.version`) matches the current version (from `status.version`).
+## Upgrade the Operator
 
-## How to upgrade GitLab
+To upgrade GitLab Operator before upgrading GitLab:
 
-Below are the steps to upgrade a GitLab instance using the GitLab Operator.
+1. Perform a [backup](https://docs.gitlab.com/charts/backup-restore/).
+1. Install the required version by using `kubectl` to apply the manifest for the required version of GitLab Operator.
 
-### Step 1
+   ```shell
+   VERSION=X.Y.Z
+   kubectl apply -f \
+     https://gitlab.com/api/v4/projects/18899486/packages/generic/gitlab-operator/${VERSION}/gitlab-operator-kubernetes-${VERSION}.yaml
+   ```
 
-Update your GitLab CR's `spec.chart.version` field to a new version. For example:
+   This command applies any changes to the related manifests, including the new deployment image to use.
 
-```diff
-apiVersion: apps.gitlab.com/v1beta1
-kind: GitLab
-metadata:
-  name: gitlab
-spec:
-  chart:
--   version: "5.0.6"
-+   version: "5.1.1"
-    values:
-      ...
-```
+1. Confirm that the new version of the Operator becomes the leader. The GitLab Operator deployment should create a new
+   ReplicaSet with this change, which spawns a new GitLab Operator pod. Meanwhile, the previous GitLab Operator pod
+   shuts down, giving up its leader status. When this happens, the new GitLab Operator pod becomes the leader.
+1. Update the chart version in the GitLab custom resource (CR). In most cases, the available chart versions is not
+   identical between versions of GitLab Operator. When the newer version of GitLab Operator starts, it tries to
+   reconcile the existing GitLab custom resource (CR). You might see an error such as:
 
-### Step 2
+   ```plaintext
+   Configuration error detected: chart version 5.7.0 not supported; please use one of the following: 5.7.1, 5.6.4, 5.5.4
+   ```
 
-Apply your modified GitLab CR to the cluster:
+   To address this, identify a valid version from that release's available chart versions. For example, when upgrading
+   from Operator `0.4.0` to `0.4.1`, update the GitLab CR to an available chart version closest to `5.7.0`, which in this
+   case is `5.7.1`.
 
-```shell
-kubectl -n gitlab-system apply -f mygitlab.yaml
-```
+1. Confirm that GitLab Operator reconciles GitLab as expected. Check the logs from the new operator pod to see if the operator pod
+   upgraded to the defined chart version.
 
-You should see the following message:
+   To confirm that the upgrade was successful, get the status of the GitLab CR:
 
-```shell
-gitlab.apps.gitlab.com/gitlab created
-```
+   ```plaintext
+   $ kubectl get gitlabs -n gitlab-system
+   NAME     STATUS    VERSION
+   gitlab   Running   5.7.1
+   ```
 
-### Step 3
+   The status `Running` means that GitLab Operator could reconcile the changes to the instance. The version should match
+   the chart version specified after GitLab Operator upgrade.
 
-You can watch the progress via the controller logs:
+If you notice any errors, first see our
+[troubleshooting documentation](troubleshooting.md).
+If the answer is not provided there, check for an existing issue or open a new issue in our
+[issue tracker](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues).
 
-```shell
-$ kubectl -n gitlab-system logs deployment/gitlab-controller-manager -c manager -f
-2021-09-14T20:59:12.342Z        INFO    controllers.GitLab      Reconciling GitLab    {"gitlab": "gitlab-system/gitlab"}
-2021-09-14T20:59:12.344Z        DEBUG   controllers.GitLab      version information   {"gitlab": "gitlab-system/gitlab", "upgrade": true, "current version": "", "desired version": "5.0.6"}
-2021-09-14T20:59:18.168Z        INFO    controllers.GitLab      reconciling Webservice and Sidekiq Deployments (paused) {"gitlab": "gitlab-system/gitlab"}
-...
-```
+## Upgrade GitLab by using the GitLab Operator
 
-You see log entries following the upgrade flow outlined above.
+To upgrade a GitLab instance after upgrading GitLab Operator:
 
-You can also view the GitLab CR status in the cluster:
+1. Update the `spec.chart.version` field in the GitLab custom resource to a new version. For example:
 
-```shell
-$ kubectl -n gitlab-system get gitlab
-NAME     STATUS        VERSION
-gitlab   Preparing     5.2.4
-```
+   ```diff
+   apiVersion: apps.gitlab.com/v1beta1
+   kind: GitLab
+   metadata:
+     name: gitlab
+   spec:
+     chart:
+   -   version: "5.0.6"
+   +   version: "5.1.1"
+       values:
+         ...
+   ```
+
+1. Apply the modified GitLab custom resource to the cluster:
+
+   ```shell
+   kubectl -n gitlab-system apply -f mygitlab.yaml
+   ```
+
+   You should see the following message:
+
+   ```shell
+   gitlab.apps.gitlab.com/gitlab created
+   ```
+
+   You can watch the progress in the controller logs. For example:
+
+   ```shell
+   $ kubectl -n gitlab-system logs deployment/gitlab-controller-manager -c manager -f
+   2021-09-14T20:59:12.342Z        INFO    controllers.GitLab      Reconciling GitLab    {"gitlab": "gitlab-system/gitlab"}
+   2021-09-14T20:59:12.344Z        DEBUG   controllers.GitLab      version information   {"gitlab": "gitlab-system/gitlab", "upgrade": true, "current version": "", "desired version": "5.0.6"}
+   2021-09-14T20:59:18.168Z        INFO    controllers.GitLab      reconciling Webservice and Sidekiq Deployments (paused) {"gitlab": "gitlab-system/gitlab"}
+   ...
+   ```
+
+   You see log entries following the upgrade steps outlined above. You can also view the GitLab custom resource status in
+   the cluster:
+
+   ```shell
+   $ kubectl -n gitlab-system get gitlab
+   NAME     STATUS        VERSION
+   gitlab   Preparing     5.2.4
+   ```
 
 When the application is ready and upgraded to the new version, you see it reflected in the `STATUS` column.
 
@@ -103,8 +144,34 @@ gitlab   Running     5.2.4
 
 Status conditions on the GitLab object itself present more detailed information about the application.
 
-## Additional upgrade considerations
+## How GitLab Operator upgrades GitLab
 
-Below are additional topics to consider when before upgrading a GitLab instance.
+At the beginning of the controller reconcile loop, GitLab Operator checks if the current version matches the required
+version.
 
-- [Restoring data when PersistentVolumeClaim configuration changes](troubleshooting.md#restoring-data-when-persistentvolumeclaim-configuration-changes): This was particularly relevant in Operator 0.6.4, when [!419](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/419) replaced the Operator-defined MinIO objects with MinIO objects from the GitLab Helm Charts.
+- If these versions match, then the regular reconcile loop executes, ensuring objects exist that satisfy the
+  configuration provided in the custom resource (CR) spec.
+- If these versions do not match, the regular reconcile loop still executes, but an additional branch of logic executes
+  to handle the upgrade.
+
+In the upgrade:
+
+1. The controller reconciles all deployments. The Webservice and Sidekiq deployments are reconciled but are paused.
+   The old pods stay up until the new deployments are resumed.
+1. Pre-migrations run, which runs the Migrations job, but skips post-deployment migrations.
+1. The controller resumes the Webservice and Sidekiq deployments.
+1. The controller waits for the new Webservice and Sidekiq pods to be running.
+1. Post-migrations run, which runs the Migrations job without skipping post-deployment migrations.
+1. The controller performs a rolling update on the Webservice and Sidekiq deployments.
+1. The controller waits for the restarted Webservice and Sidekiq pods to be running.
+
+In future reconcile loops, this branch of logic is skipped because the desired version
+(from `spec.chart.version`) matches the current version (from `status.version`).
+
+## Related topics
+
+- [Upgrade Helm chart installations](https://docs.gitlab.com/charts/installation/upgrade/)
+- [GitLab Helm chart versions](https://docs.gitlab.com/charts/installation/version_mappings/)
+- [Plan your upgrade path](https://docs.gitlab.com/update/upgrade_paths/)
+- [GitLab upgrade notes](https://docs.gitlab.com/update/versions/)
+- [Changes between GitLab versions](https://gitlab-com.gitlab.io/cs-tools/gitlab-cs-tools/what-is-new-since/?tab=features)
