@@ -227,15 +227,13 @@ docs-test hugo:
     - git clone --depth 1 https://gitlab.com/gitlab-org/technical-writing/docs-gitlab-com.git
     - cd docs-gitlab-com
     - make add-latest-icons
-    # Copy the current project's docs to the appropriate location in the docs website
-    - mkdir content/operator
-    - cp -r ../doc/* content/operator/
   script:
     # Test that Hugo will build
-    - hugo --gc --printPathWarnings --panicOnWarning
+    - hugo --gc --printPathWarnings --panicOnWarning --environment test
     # Test for invalid index pages
     # See https://gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/-/blob/main/scripts/check-index-filenames.sh
     - make check-index-pages SEARCH_DIR="../doc"
+    - make check-index-pages SEARCH_DIR="../doc-locale"
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
