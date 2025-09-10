@@ -311,8 +311,8 @@ to pin the Operator's version or to upgrade to a non-latest version.
 - Set `.spec.approved` to `true` of the `InstallPlan` to approve an manual upgrade.
 - Each GitLab Operator supports a defined subset of GitLab chart versions: upgrades to the GitLab Operator
   must also involve updating the chart version in the GitLab custom resource.
-- If the Operator and specified chart version are incompatible, configuration changes to the chart can fail with
-  [errors about the chart version](operator_upgrades.md#step-5-update-the-chart-version-in-the-gitlab-custom-resource-cr).
+- If GitLab Operator and specified GitLab Helm chart version are incompatible, configuration changes to the chart can
+  fail with [errors about the GitLab Helm chart version](operator_upgrades.md).
 
 {{< alert type="note" >}}
 
