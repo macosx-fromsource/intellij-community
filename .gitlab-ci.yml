@@ -279,6 +279,23 @@ docs-i18n-lint markdown:
     - !reference [.if_commit_branch_or_mr_branch]
     - allow_failure: true # Tell us what's breaking, but allow the failure
 
+# Verify localized documentation files have corresponding English versions
+docs-i18n-lint paths:
+  image: $DOCS_LINT_IMAGE
+  stage: test
+  cache: {}
+  needs:
+    - job: danger-review
+      optional: true
+  before_script: []
+  script:
+    - scripts/docs_i18n_verify_paths.sh
+  rules:
+    - !reference [.skip_if_dev_mirror]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.if_commit_branch_or_mr_branch]
+
 .review-docs:
   image: ${RUBY_IMAGE}
   stage: review
