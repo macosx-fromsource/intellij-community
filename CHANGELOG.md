@@ -1,3 +1,12 @@
+## 2.4.0 (2025-09-18)
+
+### changed (4 changes)
+
+- [Update golang.org/x/mod to v0.28.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c13f9810903156ddf078ba56db28cebb11b9db5a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1275))
+- [Update Go from 1.24.6 to 1.25.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1e8bddccd0f91178f81faf1e7faeb6745cc480b5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1260))
+- [Update prom-op-api/monitoring to v0.85.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ba32b8e8c4369e362d91b1217fe077835b2a05b3) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1238))
+- [Update github.com/onsi/ginkgo/v2 to v2.25.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/677adb78853d8b06a21c413dffdbf65315d95d3b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1257))
+
 ## 2.3.2 (2025-09-10)
 
 No changes.
