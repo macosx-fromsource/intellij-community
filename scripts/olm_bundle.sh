@@ -53,8 +53,8 @@ KIND_IMAGE=${KIND_IMAGE:-""}
 OPERATOR_HOME_DIR=$(realpath ${OPERATOR_HOME_DIR})
 
 build_manifests(){
-  TAG=${OPERATOR_TAG} task build_operator_openshift
-  task build_test_cr
+  TAG=${OPERATOR_TAG} task -f build_operator_openshift
+  task -f build_test_cr
   ( cd config/scorecard; kustomize build ) > ${BUILD_DIR}/scorecard.yaml
   mkdir -p ${OSDK_BASE_DIR}
   ( cd ${OSDK_BASE_DIR}; ln -sf ${OPERATOR_HOME_DIR}/config )
