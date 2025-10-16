@@ -1,3 +1,17 @@
+## 2.5.0 (2025-10-16)
+
+### changed (5 changes)
+
+- [Update golang.org/x/mod to v0.29.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/830205be31c1a240f75ee1774d974ec54da6dc4a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1289))
+- [Update prom-op-api/monitoring to v0.86.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5b1ffee33eee036e6f293dd46a2ca062dbd70405) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1287))
+- [Update helm.sh/helm/v3 to v3.19.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/d99b9cdf4b3b20cd8400151f9f520828c358e3e0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1277))
+- [Update golang to v1.25.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9248b680feed0e6949d868714446a37bf29c1ecf) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1273))
+- [Update ubi9-micro to f45ee3d](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1f3668fb6d70a13c98d272552cc8771dc2eb1f53) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1249))
+
+### added (1 change)
+
+- [Add support for Kubernetes 1.34](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/8d295f3a8f395e9c16f0fbf68368c30ec29dd291) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1283))
+
 ## 2.4.2 (2025-10-08)
 
 No changes.
