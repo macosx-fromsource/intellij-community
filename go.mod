@@ -13,7 +13,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.25.0
 	github.com/onsi/gomega v1.38.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.86.0
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.86.1
 	golang.org/x/mod v0.29.0
 	helm.sh/helm/v3 v3.19.0
 	k8s.io/api v0.34.1
