@@ -12,21 +12,12 @@ title: Backup and Restore GitLab
 
 {{< /details >}}
 
-This document outlines how to backup and restore your GitLab instance using Toolbox.
-
-## General backup and restore guidance
-
-The Operator deploys the [Toolbox chart](https://docs.gitlab.com/charts/charts/gitlab/toolbox/), meaning
-our existing documentation on how to [backup and restore a GitLab instance](https://docs.gitlab.com/charts/backup-restore/)
-is applicable to the Operator.
+GitLab Operator deploys the [Toolbox chart](https://docs.gitlab.com/charts/charts/gitlab/toolbox/).
+To back up and restore your GitLab instance using Toolbox, see [backup and restore GitLab](https://docs.gitlab.com/charts/backup-restore/).
 
 ## Migration between Helm-based and Operator-based installations
 
-Backups created in a Helm-based installation can typically be restored in an Operator-based installation,
-and vice-versa.
+You can restore backups between Helm-based and Operator-based installations.
 
-These flows will be tested more extensively throughout the development of the Operator. See
-[issue #320](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/320) for more information.
-
-Note that environments that leverage external services for stateful components like PostgreSQL and Gitaly
+Environments that use external services for stateful components like PostgreSQL and Gitaly
 are typically easier to migrate.
