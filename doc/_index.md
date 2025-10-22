@@ -41,9 +41,8 @@ GitLab does not support any issues related to PostgreSQL, Redis, Gitaly, Praefec
 
 GitLab Operator does not support:
 
-- Migration from GitLab Chart or Linux package to GitLab Operator. For migration of the installation method, you must follow steps similar to the
-  [manual migration steps](https://docs.gitlab.com/charts/installation/migration/package_to_helm/).
-  Support for automatic migration is proposed in [GitLab Operator issue 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567).
+- Managing existing Helm chart-based instances with GitLab Operator. Support for improvements is proposed in
+  [GitLab Operator issue 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567).
 - Git over SSH with [OpenShift routes](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html).
   For more information, see [GitLab Operator documentation on OpenShift Routes](openshift_ingress.md#openshift-routes).
 - [GKE workload identity](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) and [IAM service accounts](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html) to authenticate workloads to other cloud APIs (such as object storage).
@@ -97,7 +96,7 @@ first review addresses most problems with an MR prior to the final review. High
 volume projects often experience bottlenecks due to maintainer load and this first pass
 helps reduce their load.
 
-### One approval only exceptions 
+### One approval only exceptions
 
 In certain cases we allow MRs to be merged with only one approval.
 
