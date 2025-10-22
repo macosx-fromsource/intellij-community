@@ -12,32 +12,35 @@ title: Upgrade GitLab instances with Operator
 
 {{< /details >}}
 
-You can use GitLab Operator to upgrade GitLab instances that were installed by using GitLab Operator. You must first
-upgrade GitLab Operator before you upgrade GitLab.
+You can use GitLab Operator to upgrade GitLab instances that were installed with GitLab Operator.
 
-## Before upgrading the GitLab Operator
+## Prerequisites
 
-Before you upgrade, see:
+Before you upgrade:
 
-- Documentation about
-  [restoring data when PersistentVolumeClaim configuration changes](troubleshooting.md#restoring-data-when-persistentvolumeclaim-configuration-changes).
-  This information was particularly relevant in GitLab Operator 0.6.4 when
-  [merge request 419](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/419) replaced GitLab
-  Operator-defined MinIO objects with MinIO objects from the GitLab Helm Charts.
-- Other [information you need before you upgrade](https://docs.gitlab.com/update/plan_your_upgrade/).
+1. Consult [information you need before you upgrade](https://docs.gitlab.com/update/plan_your_upgrade/).
+1. Identify the version of GitLab Operator required for the version of GitLab you want. For mappings between
+   GitLab versions, GitLab Helm chart versions, and GitLab Operator versions, see the GitLab Operator
+   [releases](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
 
-You must also identify the version of GitLab Operator required for the version of GitLab you want. You can see mappings
-between GitLab versions, GitLab Helm chart versions, and GitLab Operator versions on the GitLab Operator
-[releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
+## Upgrade GitLab
 
-For example, if the current GitLab Operator version is
-[`0.4.0`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.0), and the GitLab version that you
-want to upgrade to is `14.7.1` (GitLab Helm chart version `5.7.1`), you could upgrade to
-[release 0.4.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases/0.4.1).
+To upgrade GitLab:
 
-## Upgrade the Operator
+1. Consider [turning on maintenance mode](https://docs.gitlab.com/administration/maintenance_mode/) during the upgrade
+   to restrict users from write operations to help not disturb any workflows.
+1. [Upgrade GitLab Runner](https://docs.gitlab.com/runner/install/) to the same version as your target GitLab version.
+1. [Upgrade GitLab Operator](#upgrade-gitlab-operator).
+1. [Upgrade GitLab by using GitLab Operator](#upgrade-gitlab-by-using-gitlab-operator).
 
-To upgrade GitLab Operator before upgrading GitLab:
+After you upgrade:
+
+1. If enabled, [turn off maintenance mode](https://docs.gitlab.com/administration/maintenance_mode/#disable-maintenance-mode).
+1. Run [upgrade health checks](https://docs.gitlab.com/update/plan_your_upgrade/#run-upgrade-health-checks).
+
+### Upgrade GitLab Operator
+
+To upgrade GitLab Operator:
 
 1. Perform a [backup](https://docs.gitlab.com/charts/backup-restore/).
 1. Install the required version by using `kubectl` to apply the manifest for the required version of GitLab Operator.
@@ -50,7 +53,7 @@ To upgrade GitLab Operator before upgrading GitLab:
 
    This command applies any changes to the related manifests, including the new deployment image to use.
 
-1. Confirm that the new version of the Operator becomes the leader. The GitLab Operator deployment should create a new
+1. Confirm that the new version of GitLab Operator becomes the leader. The GitLab Operator deployment should create a new
    ReplicaSet with this change, which spawns a new GitLab Operator pod. Meanwhile, the previous GitLab Operator pod
    shuts down, giving up its leader status. When this happens, the new GitLab Operator pod becomes the leader.
 1. Update the chart version in the GitLab custom resource (CR). In most cases, the available chart versions is not
@@ -79,12 +82,14 @@ To upgrade GitLab Operator before upgrading GitLab:
    The status `Running` means that GitLab Operator could reconcile the changes to the instance. The version should match
    the chart version specified after GitLab Operator upgrade.
 
+#### Troubleshooting
+
 If you notice any errors, first see our
 [troubleshooting documentation](troubleshooting.md).
 If the answer is not provided there, check for an existing issue or open a new issue in our
 [issue tracker](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues).
 
-## Upgrade GitLab by using the GitLab Operator
+### Upgrade GitLab by using GitLab Operator
 
 To upgrade a GitLab instance after upgrading GitLab Operator:
 
