@@ -16,16 +16,16 @@ You can use GitLab Operator to upgrade GitLab instances that were installed with
 
 ## Prerequisites
 
-Before you upgrade:
+Before you upgrade with GitLab Operator:
 
 1. Consult [information you need before you upgrade](https://docs.gitlab.com/update/plan_your_upgrade/).
 1. Identify the version of GitLab Operator required for the version of GitLab you want. For mappings between
    GitLab versions, GitLab Helm chart versions, and GitLab Operator versions, see the GitLab Operator
    [releases](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
 
-## Upgrade GitLab
+## Upgrade GitLab with GitLab Operator
 
-To upgrade GitLab:
+To upgrade GitLab with GitLab Operator:
 
 1. Consider [turning on maintenance mode](https://docs.gitlab.com/administration/maintenance_mode/) during the upgrade
    to restrict users from write operations to help not disturb any workflows.
