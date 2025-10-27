@@ -18,7 +18,15 @@ Much of the process is automated by [release-tools](https://gitlab.com/gitlab-or
 
 Use the [publish.sh](scripts/tools/publish.sh) script to release to the OLM catalogs:
 
-`scripts/tools/publish.sh VERSION [TARGETS]`
+```script
+# Use skip mode if new release adds support for a new OCP minor.
+export OLM_SKIP_VERSION="X.Y.Z"
+
+# Use replaced mode for releases with unchand OCP support.
+export PREVIOUS_OPERATOR_VERSION="X.Y.Z" 
+
+scripts/tools/publish.sh VERSION [TARGETS]
+```
 
 This scripts checks the requirements and submits the Operator to all three targets.
 You can limit the scope of the release by passing one or more targets. Use:
