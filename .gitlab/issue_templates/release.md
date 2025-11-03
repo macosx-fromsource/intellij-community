@@ -22,7 +22,7 @@ Use the [publish.sh](scripts/tools/publish.sh) script to release to the OLM cata
 # Use skip mode if new release adds support for a new OCP minor.
 export OLM_SKIP_VERSION="X.Y.Z"
 
-# Use replaced mode for releases with unchand OCP support.
+# Use replaced mode for releases with unchanged OCP support.
 export PREVIOUS_OPERATOR_VERSION="X.Y.Z" 
 
 scripts/tools/publish.sh VERSION [TARGETS]
