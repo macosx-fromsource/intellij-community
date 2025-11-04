@@ -58,7 +58,7 @@ The GitLab Operator supports the following Kubernetes versions:
 
 | Kubernetes release | Status      | Minimum Operator version | Architectures |
 |--------------------|-------------|--------------------------|---------------|
-| 1.34               | Supported   | 2.6.0                    | x86-64        |
+| 1.34               | Supported   | 2.5.0                    | x86-64        |
 | 1.33               | Supported   | 2.1.0                    | x86-64        |
 | 1.32               | Supported   | 2.0.0                    | x86-64        |
 | 1.31               | Deprecated  | 1.9.0                    | x86-64        |
@@ -72,11 +72,11 @@ The GitLab Operator supports the following OpenShift versions:
 
 | OpenShift release | Status      | Minimum Operator version | Architectures |
 |-------------------|-------------|--------------------------|---------------|
+| 4.20              | Supported   | 2.6.0                    | x86-64        |
 | 4.19              | Supported   | 2.2.0                    | x86-64        |
 | 4.18              | Supported   | 1.9.0                    | x86-64        |
 | 4.17              | Supported   | 1.6.0                    | x86-64        |
-| 4.16              | Supported   | 1.3.0                    | x86-64        |
-| 4.15              | Unsupported | 0.31.0                   | x86-64        |
+| 4.16              | Unsupported | 1.3.0                    | x86-64        |
 
 {{< /tab >}}
 
