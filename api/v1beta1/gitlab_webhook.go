@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Masterminds/semver/v3"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -81,6 +82,11 @@ func (r *GitLabCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newO
 		return
 	}
 
+	if validateErr := r.validateUpgradePath(gitlab); validateErr != nil {
+		err = newError(gitlab.GetName(), validateErr)
+		return
+	}
+
 	return
 }
 
@@ -107,6 +113,34 @@ func (r *GitLabCustomValidator) validateChartVersion(obj *GitLab) *field.Error {
 
 	if _, err := helm.ChartVersionSupported(obj.Spec.Chart.Version); err != nil {
 		return field.Invalid(key, value, err.Error())
+	}
+
+	return nil
+}
+
+func (r *GitLabCustomValidator) validateUpgradePath(obj *GitLab) *field.Error {
+	currentVer := obj.Status.Version
+	currentSemver, err := semver.NewVersion(currentVer)
+
+	if err != nil {
+		return nil
+	}
+
+	key := field.NewPath("spec").Child("chart").Child("version")
+	targetVer := obj.Spec.Chart.Version
+	targetSemver, err := semver.NewVersion(targetVer)
+
+	if err != nil {
+		return field.Invalid(key, targetVer, err.Error())
+	}
+
+	if targetSemver.LessThan(currentSemver) {
+		return nil
+	}
+
+	if !isZeroDowntimePath(currentSemver, targetSemver) {
+		return field.Invalid(key, targetVer,
+			fmt.Sprintf("Upgrading from %s to %s is an invalid zero downtime upgrade path. The version must be updated one minor release at a time.", currentVer, targetVer))
 	}
 
 	return nil

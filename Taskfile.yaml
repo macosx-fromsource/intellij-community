@@ -377,7 +377,7 @@ tasks:
       SKIP_ENVTEST: '{{ default "yes" .SKIP_ENVTEST }}'
       SKIP_OPERATION_TESTS: '{{ default "no" .SKIP_OPERATION_TESTS }}'
       # if skip operation test, skip the operation_test.go file
-      EXTRA_FLAGS: '{{ if eq .SKIP_OPERATION_TESTS "yes" }}--skip-file=operation_test{{ end }}'
+      EXTRA_FLAGS: '{{ if eq .SKIP_OPERATION_TESTS "yes" }}--skip-file=operation_test --skip-file=gitlab_webhook_test{{ end }}'
     cmds:
       - >-
         CHART_VERSION=$CHART_VERSION
