@@ -56,7 +56,7 @@ var _ = Describe("Webhook", func() {
 					obj = createGitLab(versions[0], versions[1])
 				})
 
-				It("The validation fails", func() {
+				It("The validation passes", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(warnings).To(BeEmpty())
 				})
