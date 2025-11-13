@@ -19,6 +19,7 @@ The GitLab Operator has [known limitations](_index.md#known-issues) and is only 
 {{< /alert >}}
 
 <!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
+
 {{< alert type="warning" >}}
 
 The default values of the GitLab custom resource are **not intended for production use**.
@@ -33,6 +34,7 @@ This document describes how to deploy the GitLab Operator by using manifests in 
 
 <!--This warning block is duplicated in ../config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml.
 Changes should be reflected in both locations.-->
+
 If using OpenShift, installation is typically handled by the Operator Lifecycle Manager (OLM).
 **Installation using OLM is considered experimental**. GitLab does not support any issues related to instances deployed using OLM.
 For more information on potential issues with OLM, see [issue 241](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/241).
