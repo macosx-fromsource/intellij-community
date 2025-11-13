@@ -17,6 +17,7 @@ import (
 	gitlabv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/status"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
 
@@ -104,6 +105,37 @@ var _ = Describe("GitLab controller", func() {
 					}
 				}
 				return fmt.Errorf("None of the Jobs had the expected annotations")
+			}, PollTimeout, PollInterval).Should(Succeed())
+
+			By("Deleting the created GitLab resource")
+			Eventually(deleteObjectPromise(releaseName, &gitlabv1beta1.GitLab{}),
+				PollTimeout, PollInterval).Should(Succeed())
+		})
+
+		It("Should fail the reconcile loop when invalid Chart values are provided", func() {
+			releaseName := "cr-spec-invalid-chart-values"
+			chartValues := support.Values{}
+
+			_ = chartValues.SetValue("gitlab.gitlab-shell.extraVolumes", "some_invalid_k8s_spec: foobar")
+
+			createGitLabResource(releaseName, chartValues)
+
+			By("Checking the reconcile loop fails and records the error in the GitLab CR status")
+			Eventually(func() error {
+				gitlab := &gitlabv1beta1.GitLab{}
+				if err := getObject(releaseName, gitlab); err != nil {
+					return err
+				}
+
+				for _, condition := range gitlab.Status.Conditions {
+					if condition.Type == status.ConditionInitialized.Name() &&
+						condition.Status == metav1.ConditionFalse &&
+						strings.Contains(condition.Message, "configuration error") {
+						return nil
+					}
+				}
+
+				return fmt.Errorf("Expected Initialized condition with False status and configuration error message not found, got: %v", gitlab.Status.Conditions)
 			}, PollTimeout, PollInterval).Should(Succeed())
 
 			By("Deleting the created GitLab resource")

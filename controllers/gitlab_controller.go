@@ -147,6 +147,10 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 		log.Error(err, "configuration error detected, check GitLab custom resource events")
 
+		if err := r.setStatusCondition(ctx, adapter, status.ConditionInitialized, false, "There is a configuration error, check GitLab custom resource values"); err != nil {
+			return requeue(err)
+		}
+
 		return doNotRequeue()
 	}
 

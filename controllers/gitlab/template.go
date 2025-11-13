@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"errors"
 	"sync"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -27,8 +28,15 @@ func GetTemplate(adapter gitlab.Adapter) (helm.Template, error) {
 	if hash != "" {
 		template := store.lookup(hash)
 		if template != nil {
-			logger.V(2).Info("Using the cached template")
-			return template, nil
+			logger.V(2).Info("Using the cached template. Check the warnings (if any).",
+				"warnings", len(template.Warnings()))
+
+			for _, w := range template.Warnings() {
+				logger.V(1).Info("Warning: An issue occurred while rendering the Helm template",
+					"issue", w)
+			}
+
+			return template, errors.Join(template.Warnings()...)
 		}
 	}
 
@@ -58,19 +66,17 @@ func GetTemplate(adapter gitlab.Adapter) (helm.Template, error) {
 	logger.V(1).Info("The template is rendered. Check the warnings (if any).",
 		"warnings", len(template.Warnings()))
 
-	if logger.V(1).Enabled() {
-		for _, w := range template.Warnings() {
-			logger.V(1).Info("Warning: An issue occurred while rendering the Helm template",
-				"issue", w)
-		}
+	for _, w := range template.Warnings() {
+		logger.V(1).Info("Warning: An issue occurred while rendering the Helm template",
+			"issue", w)
 	}
 
 	logger.V(1).Info("Caching the template.")
 
 	if hash != "" {
-		return store.update(adapter.Hash(), template), nil
+		return store.update(adapter.Hash(), template), errors.Join(template.Warnings()...)
 	} else {
-		return template, nil
+		return template, errors.Join(template.Warnings()...)
 	}
 }
 
