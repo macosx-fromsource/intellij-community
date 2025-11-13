@@ -2,7 +2,7 @@ module gitlab.com/gitlab-org/cloud-native/gitlab-operator
 
 go 1.25.0
 
-toolchain go1.25.3
+toolchain go1.25.4
 
 require (
 	dario.cat/mergo v1.0.2
