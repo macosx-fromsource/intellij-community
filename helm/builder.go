@@ -2,6 +2,7 @@ package helm
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 
@@ -174,6 +175,11 @@ func (b *defaultBuilder) Render(values support.Values) (Template, error) {
 	template := newMutableTemplate(b.releaseName, b.namespace)
 
 	for _, yaml := range manifests {
+		// Skip empty YAML documents (can occur when feature flags disable certain components)
+		if isEmptyYAML(yaml) {
+			continue
+		}
+
 		obj, _, err := decode([]byte(yaml), nil, nil)
 		if err != nil {
 			template.warnings = append(template.warnings, err)
@@ -183,4 +189,24 @@ func (b *defaultBuilder) Render(values support.Values) (Template, error) {
 	}
 
 	return template, nil
+}
+
+// isEmptyYAML checks if a YAML string is empty or contains only whitespace and comments.
+// This is used to skip empty manifests that occur when feature flags disable certain components.
+func isEmptyYAML(yaml string) bool {
+	trimmed := strings.TrimSpace(yaml)
+	if trimmed == "" {
+		return true
+	}
+
+	// Check if the YAML only contains comments and whitespace
+	lines := strings.Split(trimmed, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") && line != "---" {
+			return false
+		}
+	}
+
+	return true
 }
