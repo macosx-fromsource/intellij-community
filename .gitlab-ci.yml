@@ -277,6 +277,26 @@ docs-i18n-lint markdown:
     - !reference [.if_commit_branch_or_mr_branch]
     - allow_failure: true # Tell us what's breaking, but allow the failure
 
+docs-i18n-lint links:
+  stage: test
+  image: $DOCS_LINT_IMAGE
+  cache: {}
+  needs:
+    - job: danger-review
+      optional: true
+  before_script: []
+  dependencies: []
+  when: manual
+  allow_failure: true
+  script:
+    # Check Markdown links
+    - lychee --offline --include-fragments doc-locale
+  rules:
+    - !reference [.skip_if_dev_mirror]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.if_commit_branch_or_mr_branch]
+
 # Verify localized documentation files have corresponding English versions
 docs-i18n-lint paths:
   image: $DOCS_LINT_IMAGE
