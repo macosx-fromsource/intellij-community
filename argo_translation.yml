@@ -12,3 +12,14 @@ components:
     ignored_paths:
       - 'doc/.*/**'
       - 'doc/developer/**'
+    # Redirects: See Redirects component for more info
+      - 'doc/operator_upgrades.md'
+
+  # Redirects list generated 2025-10-31
+  # This list contains all Redirects files. It is auto generated through the monthly maintenance tasks.
+  # See https://gitlab.com/gitlab-com/localization/docs-site-localization/-/blob/main/.gitlab/issue_templates/monthly-maintenance-tasks.md
+  - name: Redirects
+    create_request: false
+    paths:
+      - source: 'doc/operator_upgrades.md'
+        target: 'doc-locale/{{language}}/operator_upgrades.md'
