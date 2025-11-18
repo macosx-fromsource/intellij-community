@@ -1,0 +1,56 @@
+---
+stage: GitLab Delivery
+group: Operate
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+title: RedHat認定イメージ
+---
+
+{{< details >}}
+
+- プラン: Free、Premium、Ultimate
+- 提供形態: GitLab Self-Managed
+
+{{< /details >}}
+
+次のチャートは、GitLab Operatorがデプロイするイメージをリストしたものです。このチャートには、これらのイメージをGitLabチームのメンバーが管理できるRedHat Technology Portalプロジェクト一覧へのリンクが含まれています。
+
+GitLab Operatorのイメージタグは、[GitLab Operatorのリリースバージョン](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases)に沿ったものです。
+
+NGINX Ingressコントローラーのイメージタグは、GitLabが管理する[プロジェクトフォーク](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx)の[`TAG`ファイル](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/-/blob/main/TAG)の内容に沿ったものです。
+
+その他のイメージタグは、`v<GitLab version>-ubi8`形式（例: `v15.4.0-ubi8`）に従います。タグのサフィックスは、[RedHat Universal Base Image（UBI）](https://catalog.redhat.com/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview)上にビルドされたイメージを示します。これはRedHatによる認定の要件です。GitLab Operatorのイメージ自体には1つのバリアントしかなく、すでにUBI上にビルドされています。
+
+これらのイメージを使用するためのHelm値の例など、詳細については、[UBIイメージに関するチャートドキュメント](https://docs.gitlab.com/charts/advanced/ubi/)を参照してください。
+
+| コンポーネント                                                                                             | レジストリパス |
+|-------------------------------------------------------------------------------------------------------|---------------|
+| [`gitlab-operator`](https://connect.redhat.com/component/629f9d952cb3e76438a9d40e/overview)           | `registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPERATOR_VERSION` |
+| [`gitlab-operator-bundle`](https://connect.redhat.com/component/5f6cbaa04fcb1bc3f0425fbf/overview)    | `registry.connect.redhat.com/gitlab/gitlab-operator-bundle` |
+| [`alpine-certificates`](https://connect.redhat.com/component/5fb615212977e7063dba93d0/overview)       | `registry.gitlab.com/gitlab-org/build/cng/alpine-certificates:$GITLAB_VERSION-ubi` |
+| [`cfssl-self-sign`](https://connect.redhat.com/component/63474d9a673c3c4e34995d26/overview)           | `registry.gitlab.com/gitlab-org/build/cng/cfssl-self-sign:$GITLAB_VERSION-ubi` |
+| [`kubectl`](https://connect.redhat.com/component/5fb611335e09a3c40183e67f/overview)                   | `registry.gitlab.com/gitlab-org/build/cng/kubectl:$GITLAB_VERSION-ubi` |
+| [`gitaly`](https://connect.redhat.com/component/5fb60ec6c65ee7c76a2ad0d8/overview)                    | `registry.gitlab.com/gitlab-org/build/cng/gitaly:$GITLAB_VERSION-ubi` |
+| [`gitlab-container-registry`](https://connect.redhat.com/component/5fb611e7935e0609ade7b2cb/overview) | `registry.gitlab.com/gitlab-org/build/cng/gitlab-container-registry:$GITLAB_VERSION-ubi` |
+| [`gitlab-exporter`](https://connect.redhat.com/component/5fb60d575e09a3c40183e67c/overview)           | `registry.gitlab.com/gitlab-org/build/cng/gitlab-exporter:$GITLAB_VERSION-ubi` |
+| [`gitlab-geo-logcursor`](https://connect.redhat.com/component/630683e0290892d1ec194033/overview)      | `registry.gitlab.com/gitlab-org/build/cng/gitlab-geo-logcursor:$GITLAB_VERSION-ubi` |
+| [`gitlab-kas`](https://connect.redhat.com/component/6306824c0d53878b3b4cc60d/overview)                | `registry.gitlab.com/gitlab-org/build/cng/gitlab-kas:$GITLAB_VERSION-ubi` |
+| [`gitlab-mailroom`](https://connect.redhat.com/component/5fb60e0a5e09a3c40183e67d/overview)           | `registry.gitlab.com/gitlab-org/build/cng/gitlab-mailroom:$GITLAB_VERSION-ubi` |
+| [`gitlab-pages`](https://connect.redhat.com/component/630683acb2ab2de150584661/overview)              | `registry.gitlab.com/gitlab-org/build/cng/gitlab-pages:$GITLAB_VERSION-ubi` |
+| [`gitlab-shell`](https://connect.redhat.com/component/5fb57b5d3379deb31cba93e5/overview)              | `registry.gitlab.com/gitlab-org/build/cng/gitlab-shell:$GITLAB_VERSION-ubi` |
+| [`gitlab-sidekiq-ee`](https://connect.redhat.com/component/5fb60b4a2977e7063dba93cb/overview)         | `registry.gitlab.com/gitlab-org/build/cng/gitlab-sidekiq-ee:$GITLAB_VERSION-ubi` |
+| [`gitlab-toolbox-ee`](https://connect.redhat.com/component/60fb728cc3450afa1bb969e2/overview)         | `registry.gitlab.com/gitlab-org/build/cng/gitlab-toolbox-ee:$GITLAB_VERSION-ubi` |
+| [`gitlab-webservice-ee`](https://connect.redhat.com/component/5fb607e4c65ee7c76a2ad0d4/overview)      | `registry.gitlab.com/gitlab-org/build/cng/gitlab-webservice-ee:$GITLAB_VERSION-ubi` |
+| [`gitlab-workhorse-ee`](https://connect.redhat.com/component/5fb60c7b5e09a3c40183e67b/overview)       | `registry.gitlab.com/gitlab-org/build/cng/gitlab-workhorse-ee:$GITLAB_VERSION-ubi` |
+| [`gitlab-ingress-nginx`](https://connect.redhat.com/component/5fb60d575e09a3c40183e67c/overview)      | `registry.gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/controller:$NGINX_VERSION-ubi` |
+
+## イメージの署名 {#image-signatures}
+
+Operatorイメージは、cosignで検証できます:
+
+```script
+cosign verify "registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPERATOR_VERSION" \
+  --certificate-identity "https://gitlab.com/gitlab-org/cloud-native/gitlab-operator//.gitlab-ci.yml@refs/heads/$OPERATOR_VERSION" \
+  --certificate-oidc-issuer "https://gitlab.com"
+```
+
+CNGイメージの署名を検証する方法については、[Helmチャートのドキュメント](https://docs.gitlab.com/charts/installation/verify_cng_images/)を参照してください。
