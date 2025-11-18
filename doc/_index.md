@@ -83,7 +83,7 @@ to deploy images that have been certified by RedHat.
 ## Developer Tooling
 
 - [Developer guide](developer/guide.md): Outlines the project structure and how to contribute.
-- [Versioning and Release Info](developer/releases.md): Records notes concerning versioning and releasing the operator.
+- [Versioning and Release information](developer/releases.md): Records notes concerning versioning and releasing the operator.
 - [Design decisions](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr): This projects makes use of Architecture Decision Records, detailing the structure, functionality, and feature implementation of this Operator.
 
 ## Merge request reviews
