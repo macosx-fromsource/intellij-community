@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	appsv1 "k8s.io/api/apps/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
@@ -8,18 +9,52 @@ import (
 )
 
 // ZoektStatefulSet returns the StatefulSet for the Zoekt component.
+// Zoekt chart currently sets labels differently than GitLab Charts,
+// so we need to manually adjust the selector and template labels here.
 func ZoektStatefulSet(template helm.Template) client.Object {
-	return template.Query().ObjectByKindAndComponent(StatefulSetKind, ZoektComponentName)
+	obj := template.Query().ObjectByKindAndComponent(StatefulSetKind, ZoektComponentName)
+
+	if obj == nil {
+		return nil
+	}
+
+	sts := obj.(*appsv1.StatefulSet)
+	name := sts.Spec.Selector.MatchLabels["app.kubernetes.io/name"]
+	sts.Labels["app"] = name
+	sts.Spec.Selector.MatchLabels = map[string]string{
+		"app":     name,
+		"release": sts.Labels["release"],
+	}
+	sts.Spec.Template.Labels["app"] = name
+	sts.Spec.Template.Labels["release"] = sts.Labels["release"]
+	sts.Spec.Template.Labels["app.kubernetes.io/name"] = name
+
+	return sts
 }
 
 // ZoektDeployment returns the Deployment for the Zoekt component.
+// Zeokt chart currently sets labels differently than GitLab Charts,
+// so we need to manually adjust the selector and template labels here.
 func ZoektDeployment(template helm.Template, adapter gitlab.Adapter) client.Object {
-	deployment := template.Query().ObjectByKindAndComponent(DeploymentKind, ZoektComponentName)
+	obj := template.Query().ObjectByKindAndComponent(DeploymentKind, ZoektComponentName)
+
+	if obj == nil {
+		return nil
+	}
 
 	// Zoekt chart currently sets no explicit namespace.
-	if deployment != nil {
-		deployment.SetNamespace(adapter.Name().Namespace)
+	obj.SetNamespace(adapter.Name().Namespace)
+
+	deployment := obj.(*appsv1.Deployment)
+	name := deployment.Spec.Selector.MatchLabels["app.kubernetes.io/name"]
+	deployment.Labels["app"] = name
+	deployment.Spec.Selector.MatchLabels = map[string]string{
+		"app":     name,
+		"release": deployment.Labels["release"],
 	}
+	deployment.Spec.Template.Labels["app"] = name
+	deployment.Spec.Template.Labels["release"] = deployment.Labels["release"]
+	deployment.Spec.Template.Labels["app.kubernetes.io/name"] = name
 
 	return deployment
 }
