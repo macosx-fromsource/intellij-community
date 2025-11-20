@@ -1,3 +1,24 @@
+## 2.6.0 (2025-11-20)
+
+### fixed (2 changes)
+
+- [Override zoekt labels to fix reconcile error on label mismatch](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a86d54997e443d73a62dcb841acdcea4b6a08cdf) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1316))
+- [Abort reconcile if the template contains invalid k8s spec](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ec5348ffbc01da9c333b5ea050067d45577a2c7b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1310))
+
+### changed (11 changes)
+
+- [Update ubi9-micro to e14a8cb](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/57b21fc5a0fb7421f20bf42cc08df99a481145e8) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1321))
+- [Update golang.org/x/mod to v0.30.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9ceb64179ed3bda48905d3b5bb2d9c5ad465ab6e) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1317))
+- [Update helm.sh/helm/v3 to v3.19.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ef9bfebdd5cc6ac1526785b25c5940f2fa99793c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1315))
+- [Update ubi9-micro to v9.7](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f7a612a871c1fe60280fff6bb6c4559007ef096a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1318))
+- [Update prom-op-api/monitoring to v0.86.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/bdcbcc06f6c964688887b77405240edb0ae216ee) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1311))
+- [Update golang to v1.25.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/854f10159290b6c03e70f66ea99deaa6f897e3fd) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1309))
+- [Update ubi9-micro to 9900020](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/6aa3468105df1b665f0df1a248ae1faa9910cd09) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1306))
+- [Update github.com/cert-manager/cert-manager to v1.19.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/bf3e6dfbac7be5de7b931c9d8b9f916188571d48) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1286))
+- [Update prom-op-api/monitoring to v0.86.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e209f2325286db1a10689e0bae0c2ef02c0f1bea) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1294))
+- [Update ubi9-micro to aff8109](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/391c2f9d7404f8550b36e988559648ca6d8e46bb) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1293))
+- [Update golang to v1.25.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4418e188cd2ef16926ab17947d9f4cb9693f9d4d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1291))
+
 ## 2.5.2 (2025-11-12)
 
 No changes.
