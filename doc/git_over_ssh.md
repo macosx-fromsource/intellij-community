@@ -33,7 +33,7 @@ Below is a list of Ingress providers along with relevant notes and platform-spec
 
 ### NGINX-Ingress Helm Chart
 
-GitLab maintains a [forked `NGINX-ingress` chart](https://docs.gitlab.com/charts/charts/nginx/fork/) that can be used to deploy NGINX resources that have been modified to support Git over SSH "out of the box".
+GitLab maintains a [forked `NGINX-ingress` chart](https://docs.gitlab.com/charts/charts/nginx/#adjustments-to-the-nginx-fork) that can be used to deploy NGINX resources that have been modified to support Git over SSH "out of the box".
 
 This is the default configuration when using the GitLab Operator, and is controlled by `nginx-ingress.enabled={true,false}` in the GitLab CR. When set to `false`, you can use an [external NGINX instance](https://docs.gitlab.com/charts/advanced/external-nginx/).
 
