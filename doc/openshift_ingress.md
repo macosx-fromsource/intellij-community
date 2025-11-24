@@ -68,7 +68,7 @@ For troubleshooting SCC-related issues blocking creation of NGINX-Ingress Contro
 ### Configuration
 
 By default, the GitLab Operator deploys the GitLab
-[fork of the NGINX Ingress Controller chart](https://docs.gitlab.com/charts/charts/nginx/fork/).
+[fork of the NGINX Ingress Controller chart](https://docs.gitlab.com/charts/charts/nginx/#adjustments-to-the-nginx-fork).
 
 To use the NGINX Ingress Controller for Ingress, complete the following:
 
