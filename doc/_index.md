@@ -67,9 +67,8 @@ when using OpenShift.
 
 ## Upgrading
 
-[Operator upgrades](operator_upgrades.md) documentation demonstrates how to upgrade the GitLab Operator.
-
-[GitLab upgrades](gitlab_upgrades.md) documentation demonstrates how to upgrade a GitLab instance, managed by the GitLab Operator.
+For how to upgrade the GitLab Operator or a GitLab instance managed by the GitLab Operator,
+see [upgrade GitLab instances with the GitLab Operator](gitlab_upgrades.md).
 
 ## Backup and restore
 
