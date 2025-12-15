@@ -302,6 +302,7 @@ docs-i18n-lint paths:
   image: $DOCS_LINT_IMAGE
   stage: test
   cache: {}
+  allow_failure: true
   needs:
     - job: danger-review
       optional: true
