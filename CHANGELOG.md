@@ -1,3 +1,18 @@
+## 2.7.0 (2025-12-18)
+
+### changed (10 changes)
+
+- [Update helm.sh/helm/v3 to v3.19.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2e77de11346f7e70e26d52221396888dedd55e5b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1346))
+- [Update helm.sh/helm/v3 to v3.19.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/011f21247e968a9ab59237591abbaf5f0901b898) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1344))
+- [Update prom-op-api/monitoring to v0.87.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/8863bdbffe63fdced3a03a6d629184d4127f4046) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1343))
+- [Update k8s.io dependencies to v0.34.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/832cfc299c6b49e480474194d99912b2f695cc2f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1342))
+- [Update github.com/cert-manager/cert-manager to v1.19.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e8117d4058b845894738cc9f06258f74502d7ca2) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1340))
+- [Update golang.org/x/mod to v0.31.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0050f23e30d0c09cf88de15a36ea0fffc4f7ff9b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1339))
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.15.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/fb61f20eb2466388eee80fc10c457d4b362cd3f8) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1334))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/bedde6fb7acb7a79de82e8ff4af6b1cbdf953658) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1270))
+- [Update testing dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/6f7ae06d8857eada8537f0f1fe60509642973e6b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1261))
+- [Update prom-op-api/monitoring to v0.87.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f9c783522024de6baf2cf3ca199ac96349e8cd49) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1329))
+
 ## 2.6.2 (2025-12-10)
 
 No changes.
