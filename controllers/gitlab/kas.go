@@ -1,9 +1,12 @@
 package gitlab
 
 import (
+	"fmt"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab"
 )
 
 func KasConfigMap(template helm.Template) client.Object {
@@ -14,8 +17,12 @@ func KasDeployment(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(DeploymentKind, KasComponentName)
 }
 
-func KasIngress(template helm.Template) client.Object {
-	return template.Query().ObjectByKindAndComponent(IngressKind, KasComponentName)
+func KasIngress(adapter gitlab.Adapter, template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndName(IngressKind, fmt.Sprintf("%s-%s", adapter.ReleaseName(), KasComponentName))
+}
+
+func KasGRPCIngress(adapter gitlab.Adapter, template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndName(IngressKind, fmt.Sprintf("%s-%s-grpc", adapter.ReleaseName(), KasComponentName))
 }
 
 func KasService(template helm.Template) client.Object {
