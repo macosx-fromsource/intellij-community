@@ -61,7 +61,11 @@ func (r *GitLabReconciler) reconcileKasService(ctx context.Context, adapter gitl
 }
 
 func (r *GitLabReconciler) reconcileKasIngress(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	if err := r.reconcileIngress(ctx, gitlabctl.KasIngress(template), adapter); err != nil {
+	if err := r.reconcileIngress(ctx, gitlabctl.KasIngress(adapter, template), adapter); err != nil {
+		return err
+	}
+
+	if err := r.reconcileIngress(ctx, gitlabctl.KasGRPCIngress(adapter, template), adapter); err != nil {
 		return err
 	}
 
