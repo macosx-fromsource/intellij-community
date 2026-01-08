@@ -58,13 +58,13 @@ To create a traditional Kubernetes cluster, consider using [official tooling](ht
 
 The GitLab Operator supports the following Kubernetes versions:
 
-| Kubernetes release | Status      | Minimum Operator version | Architectures |
-|--------------------|-------------|--------------------------|---------------|
-| 1.34               | Supported   | 2.5.0                    | x86-64        |
-| 1.33               | Supported   | 2.1.0                    | x86-64        |
-| 1.32               | Supported   | 2.0.0                    | x86-64        |
-| 1.31               | Deprecated  | 1.9.0                    | x86-64        |
-| 1.30               | Unsupported | 1.6.0                    | x86-64        |
+| Kubernetes release | Status      | Minimum Operator version |
+|--------------------|-------------|--------------------------|
+| 1.34               | Supported   | 2.5.0                    |
+| 1.33               | Supported   | 2.1.0                    |
+| 1.32               | Supported   | 2.0.0                    |
+| 1.31               | Deprecated  | 1.9.0                    |
+| 1.30               | Unsupported | 1.6.0                    |
 
 {{< /tab >}}
 
@@ -72,13 +72,13 @@ The GitLab Operator supports the following Kubernetes versions:
 
 The GitLab Operator supports the following OpenShift versions:
 
-| OpenShift release | Status      | Minimum Operator version | Architectures |
-|-------------------|-------------|--------------------------|---------------|
-| 4.20              | Supported   | 2.6.0                    | x86-64        |
-| 4.19              | Supported   | 2.2.0                    | x86-64        |
-| 4.18              | Supported   | 1.9.0                    | x86-64        |
-| 4.17              | Supported   | 1.6.0                    | x86-64        |
-| 4.16              | Unsupported | 1.3.0                    | x86-64        |
+| OpenShift release | Status      | Minimum Operator version |
+|-------------------|-------------|--------------------------|
+| 4.20              | Supported   | 2.6.0                    |
+| 4.19              | Supported   | 2.2.0                    |
+| 4.18              | Supported   | 1.9.0                    |
+| 4.17              | Supported   | 1.6.0                    |
+| 4.16              | Unsupported | 1.3.0                    |
 
 {{< /tab >}}
 
@@ -98,29 +98,7 @@ We welcome any compatibility issues with releases newer than those listed above 
 
 Some GitLab features might not work on deprecated versions and versions older than the versions listed above.
 
-Starting with 16.7, the Operator is built for x86-64 and arm64.
-The arm64 images are not tested in CI and are not recommended for production use.
-
-If you are on a multi-arch cluster you may want to add a [node selector](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector)
-for the [`kubernetes.io/arch` label](https://kubernetes.io/docs/reference/node/node-labels/#preset-labels) to the Operator Deployment.
-
-Patch the Deployment to be scheduled on x86-64/amd64 nodes only:
-
-```shell
-kubectl patch deployments gitlab-controller-manager \
-  -p '{"spec": {"template": {"spec": {"nodeSelector": {"kubernetes.io/arch": "amd64"}}}}}'
-```
-
-If you are using the Operator Helm chart you can add the node selector to your `values.yaml` instead:
-
-```yaml
-nodeSelector:
-  kubernetes.io/arch: amd64
-```
-
-This ensures that the Operator runs on `amd64` nodes using the platform that we test.
-
-See [epic 10928](https://gitlab.com/groups/gitlab-org/-/epics/10938) for more information on the arm64 support for CNG images.
+The Operator supports x86-64 and ARM64. While ARM64 builds have been available since 16.7, full support and testing coverage is available starting with 18.8.
 
 ### Ingress controller
 
