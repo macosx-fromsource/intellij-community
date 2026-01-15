@@ -1,3 +1,14 @@
+## 2.8.0 (2026-01-15)
+
+### changed (2 changes)
+
+- [Update golang.org/x/mod to v0.32.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1341d2dd81fe26d3156b3491edc82a14710c9fb3) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1353))
+- [Update prom-op-api/monitoring to v0.88.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/8dd60449326dceeef7966a9cfa9f4e9f04130e69) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1352))
+
+### added (1 change)
+
+- [Enable gRPC ingress for KAS](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5c44e9c779d36e51af6467ede07b888d064f77dd) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1337))
+
 ## 2.7.1 (2026-01-07)
 
 No changes.
