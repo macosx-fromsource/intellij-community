@@ -1,3 +1,9 @@
+## 2.8.1 (2026-01-19)
+
+### changed (1 change)
+
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.16.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f43b50912fcb539e02b6c4c2330919ad4f657718) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1357))
+
 ## 2.8.0 (2026-01-15)
 
 ### changed (2 changes)
