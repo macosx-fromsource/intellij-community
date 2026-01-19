@@ -1,54 +1,54 @@
-build_review_vcluster134:
+build_review_vcluster135:
   extends: .build_review_template
   variables:
-    DOMAIN: ${DOMAIN_VCLUSTER134}
+    DOMAIN: ${DOMAIN_VCLUSTER135}
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.build_review_template, rules]
 
-create_review_vcluster134:
+create_review_vcluster135:
   extends: .create_review_template
-  environment: &environment_vc134
-    name: &env_vc_name134 ${VCLUSTER_ENVIRONMENT_PREFIX}review_vcluster134/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
-    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_VCLUSTER134
-    on_stop: stop_review_vcluster134
+  environment: &environment_vc135
+    name: &env_vc_name135 ${VCLUSTER_ENVIRONMENT_PREFIX}review_vcluster135/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_VCLUSTER135
+    on_stop: stop_review_vcluster135
     auto_stop_in: 1 hour
   needs:
-    - build_review_vcluster134
+    - build_review_vcluster135
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.create_review_template, rules]
 
-review_vcluster134:
+review_vcluster135:
   extends:
     - .review_vcluster_template
   variables:
-    DOMAIN: ${DOMAIN_VCLUSTER134}
+    DOMAIN: ${DOMAIN_VCLUSTER135}
     AGENT_NAME: ${VCLUSTER_AGENT_NAME}
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
-    VCLUSTER_K8S_VERSION: "v1.34.0"
-  environment: *environment_vc134
-  resource_group: *env_vc_name134
+    VCLUSTER_K8S_VERSION: "v1.35.0"
+  environment: *environment_vc135
+  resource_group: *env_vc_name135
   needs:
-    - create_review_vcluster134
+    - create_review_vcluster135
     # we need build_* dependency to receive appropriate artifacts
-    - build_review_vcluster134
+    - build_review_vcluster135
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.review_template, rules]
 
-stop_review_vcluster134:
+stop_review_vcluster135:
   extends: .stop_review_vcluster_template
   variables:
-    DOMAIN: ${DOMAIN_VCLUSTER134}
+    DOMAIN: ${DOMAIN_VCLUSTER135}
     AGENT_NAME: ${VCLUSTER_AGENT_NAME}
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
-    VCLUSTER_K8S_VERSION: "v1.34.0"
+    VCLUSTER_K8S_VERSION: "v1.35.0"
   environment:
-    name: *env_vc_name134
+    name: *env_vc_name135
     action: stop
   needs:
-    - build_review_vcluster134
+    - build_review_vcluster135
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.stop_review_template, rules]
