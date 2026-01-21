@@ -1,6 +1,5 @@
 # Taskfile to be used with `task` binary.
 # Usage:
-# - Install with `asdf`: `asdf plugin add task`
 # - List available tasks with: `task --list`
 # - Run task with: `task build_chart`
 # Documentation: https://taskfile.dev

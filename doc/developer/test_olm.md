@@ -7,19 +7,12 @@ title: Test OLM Bundles
 
 ## Pre-requisites
 
-Versions listed are the ones known to work, lower versions may work but were not tested
+Project dependencies include:
 
-- `task-3.17.0` (`asdf`)
-- `operator-sdk-1.32.0` (`asdf`)
-- `kubectl-1.25.3` (`asdf`)
-- `helm-3.10.1` (`asdf`)
-- `kustomize-4.5.7` (`asdf`)
-- `yq-4.29.2` (`asdf`)
-- `opm-1.26.2` (is auto-downloaded by script, or can be installed via `asdf` using [asdf-opm](https://gitlab.com/dmakovey/asdf-opm) plugin)
-- `kind-0.17.0` (`asdf`)
-- `docker` (could be replaced by `podman` via `DOCKER="podman"`)
-- `podman` (some of the OperatorSDK toolchain use podman)
-- `k9s-0.26.7` (`asdf` **OPTIONAL**)
+- Tools declared in `mise.toml`.
+- `kubectl` (installed through `mise`).
+- `docker` (could be replaced by `podman` via `DOCKER="podman"`).
+- `podman` (some of the OperatorSDK toolchain use podman).
 
 ## Set up environment
 
