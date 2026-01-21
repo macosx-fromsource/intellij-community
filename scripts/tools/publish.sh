@@ -4,7 +4,7 @@
 # A helper script to publish GitLab Operator to OperatorHub, RedHat Marketplace,
 # and RedHat Community Operators.
 #
-# Note: Use asdf to install dependencies.
+# Note: Use mise to install dependencies.
 # Note: Use GNU sed. The script is not portable to MacOS sed.
 # Note: The script uses global Git config such as `user.name` and `user.email`.
 #

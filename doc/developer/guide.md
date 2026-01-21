@@ -18,21 +18,24 @@ To set up your system for development of the operator, follow the steps below:
    cd gitlab-operator
    ```
 
-1. Install [`asdf`](https://asdf-vm.com) to manage runtime dependencies.
-
-1. Install runtime dependencies.
+1. Install [`mise`](https://mise.jdx.dev) to manage runtime dependencies.
+1. Install runtime dependencies:
 
    ```shell
-   cut -d' ' -f1 .tool-versions | xargs -i asdf plugin add {}
-   asdf plugin add opm https://gitlab.com/dmakovey/asdf-opm.git
-   asdf install
+   mise trust
+   mise install
    ```
 
 1. Run `task` from the root of the repository to see available commands.
 
-   We use [`task` from taskfile.dev](https://taskfile.dev/) in place of `make` for this project. [Here is why](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/developer/adr/0016-replace-makefile-with-taskfile.md).
+   We use [`task` from taskfile.dev](https://taskfile.dev/) in place of `make` for this project.
+   [Here is why](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/developer/adr/0016-replace-makefile-with-taskfile.md).
 
-   Do not install `task` with `brew install task`. You will end up with [Taskwarrior](https://taskwarrior.org/docs/), which is a different package. Either use the `asdf` plugin from above, or follow [installation instructions from taskfile.dev](https://taskfile.dev/docs/installation).
+   Do not install `task` with `brew install task`. You will end up with [Taskwarrior](https://taskwarrior.org/docs/),
+   which is a different package. Either:
+
+   - Use the `mise` plugin from above.
+   - Follow [installation instructions from taskfile.dev](https://taskfile.dev/docs/installation).
 
    See
    [`Taskfile.yaml`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/Taskfile.yaml?ref_type=heads)
