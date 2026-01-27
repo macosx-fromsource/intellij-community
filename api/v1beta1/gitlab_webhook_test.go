@@ -7,7 +7,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
@@ -18,7 +17,7 @@ var _ = Describe("Webhook", func() {
 		var warnings admission.Warnings
 		var err error
 
-		var obj runtime.Object
+		var obj *GitLab
 
 		JustBeforeEach(func() {
 			warnings, err = (&GitLabCustomValidator{}).ValidateUpdate(context.Background(), obj, obj)

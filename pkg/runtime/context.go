@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -13,7 +14,7 @@ import (
 type ContextConfig struct {
 	Client   client.Client
 	Logger   logr.Logger
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 }
 
 // ContextOption represents an individual option of NewContext. The available

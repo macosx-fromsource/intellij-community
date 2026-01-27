@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"github.com/go-logr/logr"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -29,7 +29,7 @@ func WithClient(client client.Client) ContextOption {
 // Context.
 //
 // You can obtain an EventRecorder from the controller-runtime Manager.
-func WithEventRecorder(recorder record.EventRecorder) ContextOption {
+func WithEventRecorder(recorder events.EventRecorder) ContextOption {
 	return func(cfg *ContextConfig) {
 		cfg.Recorder = recorder
 	}

@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
@@ -37,8 +36,7 @@ var gitlablog = logf.Log.WithName("gitlab-resource")
 
 // SetupWebhookWithManager adds webhook to the controller runtime Manager.
 func SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&GitLab{}).
+	return ctrl.NewWebhookManagedBy(mgr, &GitLab{}).
 		WithValidator(&GitLabCustomValidator{}).
 		Complete()
 }
@@ -47,16 +45,10 @@ func SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 type GitLabCustomValidator struct{}
 
-var _ webhook.CustomValidator = &GitLabCustomValidator{}
+var _ admission.Validator[*GitLab] = &GitLabCustomValidator{}
 
 // ValidateUpdate validates create request for GitLab resources.
-func (r *GitLabCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
-	gitlab, ok := obj.(*GitLab)
-
-	if !ok {
-		return nil, r.wrongTypeError(obj)
-	}
-
+func (r *GitLabCustomValidator) ValidateCreate(ctx context.Context, gitlab *GitLab) (warnings admission.Warnings, err error) {
 	gitlablog.Info("validate create", "name", gitlab.GetName())
 
 	if validateErr := r.validateChartVersion(gitlab); validateErr != nil {
@@ -68,13 +60,7 @@ func (r *GitLabCustomValidator) ValidateCreate(ctx context.Context, obj runtime.
 }
 
 // ValidateUpdate validates update request for GitLab resources.
-func (r *GitLabCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
-	gitlab, ok := newObj.(*GitLab)
-
-	if !ok {
-		return nil, r.wrongTypeError(newObj)
-	}
-
+func (r *GitLabCustomValidator) ValidateUpdate(ctx context.Context, _, gitlab *GitLab) (warnings admission.Warnings, err error) {
 	gitlablog.Info("validate update", "name", gitlab.GetName())
 
 	if validateErr := r.validateChartVersion(gitlab); validateErr != nil {
@@ -91,13 +77,7 @@ func (r *GitLabCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newO
 }
 
 // ValidateDelete validates delete request for GitLab resources.
-func (r *GitLabCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
-	gitlab, ok := obj.(*GitLab)
-
-	if !ok {
-		return nil, r.wrongTypeError(obj)
-	}
-
+func (r *GitLabCustomValidator) ValidateDelete(ctx context.Context, gitlab *GitLab) (warnings admission.Warnings, err error) {
 	gitlablog.Info("validate delete", "name", gitlab.GetName())
 
 	return

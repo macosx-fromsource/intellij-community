@@ -108,7 +108,6 @@ rules:
   resources:
   - configmaps
   - endpoints
-  - events
   - namespaces
   - persistentvolumeclaims
   - secrets
@@ -122,6 +121,14 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
 - apiGroups:
   - monitoring.coreos.com
   resources:

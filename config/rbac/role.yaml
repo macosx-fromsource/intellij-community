@@ -8,7 +8,6 @@ rules:
   - ""
   resources:
   - configmaps
-  - events
   - persistentvolumeclaims
   - secrets
   - services
@@ -106,6 +105,14 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
 - apiGroups:
   - monitoring.coreos.com
   resources:
