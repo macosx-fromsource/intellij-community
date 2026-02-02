@@ -167,6 +167,7 @@ To use OpenShift Routes for Ingress, complete the following:
    ```
 
    The domain to use in the next step is the portion _after_ `console-openshift-console`.
+
 1. In the step where the GitLab CR manifest is created, also set:
 
    ```yaml
