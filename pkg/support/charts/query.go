@@ -1,7 +1,7 @@
 package charts
 
 import (
-	"helm.sh/helm/v3/pkg/chart"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 // Criterion is a single criterion for querying Chart catalog. If a Chart

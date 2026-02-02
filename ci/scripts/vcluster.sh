@@ -28,7 +28,6 @@ function vcluster_create() {
     --upgrade \
     --namespace="${VCLUSTER_NAME}" \
     --connect=false \
-    --update-current=false \
     --set controlPlane.distro.k8s.version="${VCLUSTER_K8S_VERSION}"
   kubectl label --overwrite namespace "${VCLUSTER_NAME}" release="${TESTS_NAMESPACE}"
 }

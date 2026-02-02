@@ -7,8 +7,8 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/chartutil"
-	"helm.sh/helm/v3/pkg/strvals"
+	chartutil "helm.sh/helm/v4/pkg/chart/common/util"
+	"helm.sh/helm/v4/pkg/strvals"
 	"sigs.k8s.io/yaml"
 )
 
