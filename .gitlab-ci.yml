@@ -1,4 +1,4 @@
-image: "registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-${GO_MINOR}"
+image: "registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-${GO_MINOR}-helm-4"
 
 variables:
   DOCKER_VERSION: "28.0.1"

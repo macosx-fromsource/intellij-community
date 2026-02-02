@@ -5,8 +5,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v4/pkg/action"
+	"helm.sh/helm/v4/pkg/chart/common"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
@@ -115,7 +115,7 @@ func IsGroupVersionResourceSupported(groupVersion, resource string) bool {
 	return false
 }
 
-func GetKubeCapabilities(actionCfg *action.Configuration) (*chartutil.Capabilities, error) {
+func GetKubeCapabilities(actionCfg *action.Configuration) (*common.Capabilities, error) {
 	dc, err := actionCfg.RESTClientGetter.ToDiscoveryClient()
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get Kubernetes discovery client")
@@ -133,9 +133,9 @@ func GetKubeCapabilities(actionCfg *action.Configuration) (*chartutil.Capabiliti
 		return nil, errors.Wrap(err, "could not get apiVersions from Kubernetes")
 	}
 
-	return &chartutil.Capabilities{
+	return &common.Capabilities{
 		APIVersions: apiVersions,
-		KubeVersion: chartutil.KubeVersion{
+		KubeVersion: common.KubeVersion{
 			Version: kubeVersion.GitVersion,
 			Major:   kubeVersion.Major,
 			Minor:   kubeVersion.Minor,

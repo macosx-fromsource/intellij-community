@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/go-logr/logr"
-	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v4/pkg/chart/loader"
+	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 // PopulateConfig is the configuration used for populating available Helm
@@ -116,12 +117,18 @@ func (c *PopulateConfig) tryEntryAsChart(path string, isDir bool) error {
 		"path", path,
 		"isDirectory", isDir)
 
-	chart, err := loader.Load(path)
+	gitlabLoader, err := loader.Loader(path)
 	if err != nil {
-		c.Logger.V(2).Info("entry does not contain a chart",
+		c.Logger.V(2).Info("could not create chart loader",
 			"path", path,
 			"isDirectory", isDir,
 			"error", err)
+	}
+
+	if charter, err := gitlabLoader.Load(); err != nil {
+		c.Logger.V(2).Info("could not load chart", "error", err)
+	} else if chart, ok := charter.(*chartv2.Chart); !ok {
+		c.Logger.V(2).Info("chart is not a v2 chart")
 	} else {
 		c.Logger.V(2).Info("entry contains a chart",
 			"path", path,

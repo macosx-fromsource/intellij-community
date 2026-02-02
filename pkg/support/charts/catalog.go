@@ -7,7 +7,7 @@ import (
 
 	"github.com/mitchellh/copystructure"
 	"golang.org/x/mod/semver"
-	"helm.sh/helm/v3/pkg/chart"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 // Catalog is a list of available Helm Charts. Use different criteria with Query

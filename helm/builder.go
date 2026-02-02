@@ -2,14 +2,16 @@ package helm
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/pkg/errors"
 
-	"helm.sh/helm/v3/pkg/action"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/cli"
-	"helm.sh/helm/v3/pkg/releaseutil"
+	"helm.sh/helm/v4/pkg/action"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/cli"
+	releasev1 "helm.sh/helm/v4/pkg/release/v1"
+	releaseutil "helm.sh/helm/v4/pkg/release/v1/util"
 
 	"k8s.io/kubectl/pkg/scheme"
 
@@ -56,12 +58,11 @@ type Builder interface {
 // NewBuilder creates a new builder interface for Helm template.
 func NewBuilder(charts charts.Catalog) (Builder, error) {
 	envSettings := cli.New()
-	actionConfig := new(action.Configuration)
+	actionConfig := action.NewConfiguration(
+		action.ConfigurationSetLogger(slog.DiscardHandler),
+	)
 
-	actionConfig, err := actionConfig, actionConfig.Init(
-		envSettings.RESTClientGetter(), envSettings.Namespace(),
-		memoryStorageDriver, noopLogger)
-	if err != nil {
+	if err := actionConfig.Init(envSettings.RESTClientGetter(), envSettings.Namespace(), memoryStorageDriver); err != nil {
 		return nil, err
 	}
 
@@ -74,9 +75,8 @@ func NewBuilder(charts charts.Catalog) (Builder, error) {
 	}
 
 	client := action.NewInstall(actionConfig)
-	client.DryRun = true
+	client.DryRunStrategy = action.DryRunClient
 	client.Replace = true
-	client.ClientOnly = true
 	client.KubeVersion = kubeVersion
 	client.APIVersions = kubeAPIVersions
 
@@ -97,10 +97,6 @@ func NewBuilder(charts charts.Catalog) (Builder, error) {
 const (
 	defaultReleaseName  = "ephemeral"
 	memoryStorageDriver = "memory"
-)
-
-var (
-	noopLogger = func(_ string, _ ...interface{}) {}
 )
 
 type defaultBuilder struct {
@@ -156,9 +152,14 @@ func (b *defaultBuilder) Render(values support.Values) (Template, error) {
 	b.client.Namespace = b.namespace
 	b.client.ReleaseName = b.releaseName
 
-	release, err := b.client.Run(b.chart, values)
+	releaser, err := b.client.Run(b.chart, values)
 	if err != nil {
 		return nil, err
+	}
+
+	release, ok := releaser.(*releasev1.Release)
+	if !ok {
+		return nil, errors.New("failed to assert type of helm release")
 	}
 
 	manifests := releaseutil.SplitManifests(release.Manifest)

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v4/pkg/chart/common"
 )
 
 var (
@@ -54,8 +54,8 @@ var (
 	HealthzCheck = func(_ *http.Request) error { return ErrAliveStatus }
 	ReadyzCheck  = func(_ *http.Request) error { return ErrReadyStatus }
 
-	DefaultKubeVersion     *chartutil.KubeVersion = nil
-	DefaultKubeAPIVersions chartutil.VersionSet   = chartutil.VersionSet{}
+	DefaultKubeVersion     *common.KubeVersion = nil
+	DefaultKubeAPIVersions common.VersionSet   = common.VersionSet{}
 )
 
 const (
@@ -97,7 +97,7 @@ func Load() {
 
 	kubeVersionStr := os.Getenv(envKubeVersion)
 	if kubeVersionStr != "" {
-		DefaultKubeVersion, _ = chartutil.ParseKubeVersion(kubeVersionStr)
+		DefaultKubeVersion, _ = common.ParseKubeVersion(kubeVersionStr)
 	}
 
 	kubeAPIVersionsStr := os.Getenv(envKubeAPIVersions)

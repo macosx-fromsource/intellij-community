@@ -9,7 +9,7 @@ import (
 
 	"github.com/mitchellh/copystructure"
 	"github.com/pkg/errors"
-	"helm.sh/helm/v3/pkg/chartutil"
+	chartutil "helm.sh/helm/v4/pkg/chart/common/util"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/settings"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
