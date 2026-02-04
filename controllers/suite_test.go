@@ -108,6 +108,7 @@ var _ = AfterSuite(func() {
 	cancel()
 	settings.UnsetEnvTestConfig()
 	By("Tearing down the test environment")
-	err := testEnv.Stop()
-	Expect(err).ToNot(HaveOccurred())
+	Eventually(func() error {
+		return testEnv.Stop()
+	}, time.Minute, time.Second).Should(Succeed())
 })
