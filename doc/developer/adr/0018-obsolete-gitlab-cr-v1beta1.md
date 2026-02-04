@@ -11,10 +11,10 @@ Status: Accepted
 
 ## Context
 
-GitLab resource version `v1beta1` is heavily based on GitLab Chart configuration
+GitLab resource version `v1beta1` is heavily based on GitLab chart configuration
 model. But the new version of GitLab resource introduces a new configuration
 style and uses a [structured specification](0017-structured-spec-for-gitlab-cr.md).
-It is part of the attempt to decouple GitLab Operator from GitLab Chart.
+It is part of the attempt to decouple GitLab Operator from GitLab chart.
 
 ## Decision
 

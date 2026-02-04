@@ -24,7 +24,7 @@ Parameters are passed via environment variables:
 | `GITLAB_CHART_REPO`        | no            | `https://gitlab.com/gitlab-org/charts/gitlab`                         | GitLab Helm Chart repository HTTP URI. Mainly used to fetch default KinD configs. |
 | `IMG`                      | no            | `registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator`         | Operator Container Image Name |
 | `TAG`                      | no            | `master`                                                              | Operator Container Image Tag. Needs an override in most cases |
-| `GITLAB_CHART_DIR`         | yes           |                                                                       | path to a clone of GitLab Chart repo |
+| `GITLAB_CHART_DIR`         | yes           |                                                                       | path to a clone of GitLab chart repo |
 | `GITLAB_OPERATOR_DIR`      | no            | `.`                                                                   | path to a clone of GitLab Operator repo |
 | `GITLAB_OPERATOR_MANIFEST` | no            |                                                                       | Optional reference to manifest for Operator deployment, if empty - auto-generated from `${GITLAB_OPERATOR_DIR}`. To note: to reference proper image and tag set up `IMG` and `TAG` environment variables |
 | `GITLAB_CR_DEPLOY_MODE`    | no            | `selfsigned`                                                          | Select mode of deployment: `selfsigned` or `certmanager` |

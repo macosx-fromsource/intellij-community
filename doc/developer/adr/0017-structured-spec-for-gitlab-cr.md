@@ -11,9 +11,9 @@ Status: Proposed
 
 ## Context
 
-The specification of version `v1beta1` of GitLab resource accepts GitLab Chart
+The specification of version `v1beta1` of GitLab resource accepts GitLab chart
 version and a free-format set of values. This is because GitLab Operator uses
-GitLab Chart and adopts its configuration model.
+GitLab chart and adopts its configuration model.
 
 ### A working definition for _structured specification_
 
@@ -24,7 +24,7 @@ where possible to improve user experience by utilizing well-known types.
 
 ## Decision
 
-We will abandon the GitLab Chart configuration model and Helm-style values.
+We will abandon the GitLab chart configuration model and Helm-style values.
 Instead we adopt a structured specification for GitLab custom resource and
 provide a new version for GitLab resource. This will be done as a new CRD.
 

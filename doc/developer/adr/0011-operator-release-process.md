@@ -63,11 +63,11 @@ operator
    `CHART_VERSIONS` file.
 1. As the next iteration, we will hand over the tasks to `release-tools` -
    [#224](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/224)
-1. Because any [version of operator is expected to support latest three minor versions of GitLab Chart](0006-gitlab-application-versions-supported.md),
+1. Because any [version of operator is expected to support latest three minor versions of GitLab chart](0006-gitlab-application-versions-supported.md),
    to avoid redundant operator versions, `ONLY THE RELEASE OF LATEST STABLE
    VERSION OF GITLAB CHARTS WILL CAUSE A NEW OPERATOR VERSION TO BE RELEASED
    AUTOMATICALLY`.
-   - For example, if a patch release for GitLab Charts 5.4.x, 5.3.x, and 5.2.x
+   - For example, if a patch release for GitLab chart 5.4.x, 5.3.x, and 5.2.x
      is being done, only 5.4.x will cause a new operator release.
 
 ## Consequences

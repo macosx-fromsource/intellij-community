@@ -19,6 +19,7 @@ GitLabオペレーターには[既知の制限事項](_index.md#known-issues)が
 {{< /alert >}}
 
 <!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
+
 {{< alert type="warning" >}}
 
 GitLabカスタムリソースのデフォルト値は、**本番環境での使用を意図していません**。これらの値を使用すると、GitLabオペレーターは、永続データを含むすべてのサービスがKubernetesクラスターにデプロイされるGitLabインスタンスを作成しますが、これは**本番環境のワークロードに適していません**。本番環境へのデプロイでは、[クラウドネイティブハイブリッドリファレンスアーキテクチャ](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid)に従う**必要があります**。GitLabは、Kubernetesクラスター内にデプロイされたPostgreSQL、Redis、Gitaly、Praefect、またはMinIOに関連するイシューをサポートしません。

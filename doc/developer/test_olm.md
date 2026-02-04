@@ -63,7 +63,7 @@ Ensure `user.name` and `user.email` are configured in Git.
 | `GITLAB_CHART_VERSION`         | no       | first line in `${GITLAB_OPERATOR_DIR}/CHART_VERSIONS}`               | Chart Version to upgrade to |
 | `GITLAB_CHART_REPO`            | no       | `https://gitlab.com/gitlab-org/charts/gitlab`                        | GitLab Helm Chart repository HTTP URI. Mainly used to fetch default KinD configs. |
 | `K8S_VERSION`                  | no       | `1.25.9`                                                             | K8s version to use for cluster setup |
-| `KIND_CONFIG`                  | no       | `examples/kind/kind-ssl.yaml` from GitLab Chart's default branch     | KinD configuration file to prepare KinD cluster for GitLab deployment |
+| `KIND_CONFIG`                  | no       | `examples/kind/kind-ssl.yaml` from GitLab chart default branch       | KinD configuration file to prepare KinD cluster for GitLab deployment |
 
 For additional variables look at [Provision and deploy](provision_and_deploy.md) and [OperatorHub publishing](operatorhub_publishing.md)
 

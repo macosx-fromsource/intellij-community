@@ -2,14 +2,14 @@
 stage: GitLab Delivery
 group: Operate
 info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
-title: Dependency on GitLab Charts
+title: Dependency on GitLab chart
 ---
 
 The GitLab Operator (also just known as "Operator") depends on the [GitLab Helm Charts](https://gitlab.com/gitlab-org/charts/gitlab) (also just known as "Chart").
 as described in
 [ADR 0004](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/developer/adr/0004-integration-of-the-gitlab-chart.md).
 
-## Understanding impact from changes to GitLab Chart
+## Understanding impact from changes to GitLab chart
 
 When Operator ingests new versions of Chart,
 it also ingests the changes within Chart. Sometimes adjustments
@@ -27,7 +27,7 @@ should have been opened and marked as dependent on the Chart merge request. This
 approach ensures that changes to Chart are considered in the context of Operator,
 which helps the team ensure that the two components work together as seamlessly as possible.
 
-## Evaluating impact from changes to GitLab Chart
+## Evaluating impact from changes to GitLab chart
 
 The impact to Operator must be considered when submitting a change to Chart. This
 is included as an item in the approval checklist of Chart merge request

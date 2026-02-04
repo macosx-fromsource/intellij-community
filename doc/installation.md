@@ -92,7 +92,7 @@ Kubernetes and OpenShift within three months of their initial availability.
 For more details [refer to our Kubernetes support policy](https://handbook.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/k8s-release-support-policy/).
 
 Note: For some components, like the [agent for Kubernetes](https://docs.gitlab.com/user/clusters/agent/)
-and [GitLab Charts](https://docs.gitlab.com/charts/installation/cloud/), GitLab might support different cluster versions.
+and [GitLab chart](https://docs.gitlab.com/charts/installation/cloud/), GitLab might support different cluster versions.
 
 We welcome any compatibility issues with releases newer than those listed above in our [issue tracker](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues).
 
