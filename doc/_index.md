@@ -51,8 +51,8 @@ GitLab Operator does not support:
   must be updated one minor release at a time. Support for upgrading multiple versions at a time is being
   tracked in [GitLab Operator issue 1952](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1952).
 
-GitLab Operator has any other limitation of GitLab Chart. GitLab Operator relies on GitLab Chart to provision Kubernetes resources. Therefore, any limitation
-in GitLab Chart impacts GitLab Operator. Removing the GitLab Chart dependency from GitLab Operator is proposed in
+GitLab Operator has any other limitation of GitLab chart. GitLab Operator relies on GitLab chart to provision Kubernetes resources. Therefore, any limitation
+in GitLab chart impacts GitLab Operator. Removing the GitLab chart dependency from GitLab Operator is proposed in
 [Cloud Native epic 64](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/64).
 
 ## Installation
