@@ -15,7 +15,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.89.0
 	golang.org/x/mod v0.33.0
-	helm.sh/helm/v4 v4.1.0
+	helm.sh/helm/v4 v4.1.1
 	k8s.io/api v0.35.0
 	k8s.io/apimachinery v0.35.0
 	k8s.io/client-go v0.35.0
