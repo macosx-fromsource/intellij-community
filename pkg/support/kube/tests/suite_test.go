@@ -80,6 +80,7 @@ var _ = BeforeSuite(func() {
 
 	go func() {
 		defer GinkgoRecover()
+
 		Expect(
 			Manager.Start(ctx),
 		).ToNot(HaveOccurred())

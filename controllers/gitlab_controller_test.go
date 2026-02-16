@@ -83,9 +83,11 @@ var _ = Describe("GitLab controller", func() {
 				if err := getObject(cfgMapName, cfgMap); err != nil {
 					return err
 				}
+
 				if !strings.Contains(cfgMap.Data["generate-secrets"], "env=test") {
 					return fmt.Errorf("`generate-secrets` does not contain the changes")
 				}
+
 				return nil
 			}, PollTimeout, PollInterval).Should(Succeed())
 
@@ -95,15 +97,18 @@ var _ = Describe("GitLab controller", func() {
 				if err := listObjects(sharedSecretQuery, jobs); err != nil {
 					return err
 				}
+
 				if len(jobs.Items) == 0 {
 					return fmt.Errorf("Job list is emptry [%s]", sharedSecretQuery)
 				}
+
 				for _, job := range jobs.Items {
 					if job.Spec.Template.ObjectMeta.Annotations["foo"] == "FOO" &&
 						job.Spec.Template.ObjectMeta.Annotations["bar"] == "BAR" {
 						return nil
 					}
 				}
+
 				return fmt.Errorf("None of the Jobs had the expected annotations")
 			}, PollTimeout, PollInterval).Should(Succeed())
 

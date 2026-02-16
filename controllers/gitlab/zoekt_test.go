@@ -14,10 +14,12 @@ import (
 const zoektEnabled = "gitlab-zoekt.install"
 
 var _ = Describe("Zoekt resources", func() {
-	var values support.Values
-	var wantsZoekt bool
-	var statefulSet, ingress, certificate, deployment client.Object
-	var services, configMaps []client.Object
+	var (
+		values                                        support.Values
+		wantsZoekt                                    bool
+		statefulSet, ingress, certificate, deployment client.Object
+		services, configMaps                          []client.Object
+	)
 
 	JustBeforeEach(func() {
 		mockGitLab := CreateMockGitLab(releaseName, namespace, values)

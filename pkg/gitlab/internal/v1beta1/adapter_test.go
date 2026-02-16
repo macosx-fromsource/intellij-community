@@ -70,7 +70,6 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 		Expect(h2).NotTo(BeEmpty())
 		Expect(h2).NotTo(Equal(h1))
 		Expect(h2).To(Equal("abcdef-2"))
-
 	})
 
 	It("uses default values when user-defined values are empty", func() {

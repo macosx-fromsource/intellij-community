@@ -6,8 +6,10 @@ import (
 )
 
 var _ = Describe("CharacterSet", func() {
-	var cs CharacterSet
-	var err error
+	var (
+		cs  CharacterSet
+		err error
+	)
 
 	Describe("String", func() {
 		BeforeEach(func() {

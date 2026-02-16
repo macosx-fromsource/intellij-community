@@ -44,7 +44,6 @@ var _ = Describe("CustomResourceAdapter", func() {
 				Expect(deployment).NotTo(BeNil())
 				Expect(configMap).NotTo(BeNil())
 			})
-
 		})
 
 		When("Mailroom is disabled", func() {
@@ -69,7 +68,6 @@ var _ = Describe("CustomResourceAdapter", func() {
 				Expect(deployment).To(BeNil())
 				Expect(configMap).To(BeNil())
 			})
-
 		})
 	})
 })

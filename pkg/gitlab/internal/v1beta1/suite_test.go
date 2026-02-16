@@ -13,6 +13,7 @@ import (
 
 func TestGitLabV1Beta1(t *testing.T) {
 	settings.Load()
+
 	_ = charts.PopulateGlobalCatalog(
 		populate.WithSearchPath(settings.HelmChartsDirectory))
 

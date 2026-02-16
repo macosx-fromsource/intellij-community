@@ -16,9 +16,11 @@ const (
 )
 
 var _ = Describe("Geo Logcursor", func() {
-	var chartValues support.Values
-	var configMap, deployment client.Object
-	var logCursorEnabled bool
+	var (
+		chartValues           support.Values
+		configMap, deployment client.Object
+		logCursorEnabled      bool
+	)
 
 	JustBeforeEach(func() {
 		// Geo needs to a use a external PostgreSQL. Set the values to satisfy the

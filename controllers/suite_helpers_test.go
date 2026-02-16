@@ -209,6 +209,7 @@ func updateGitLabResource(releaseName string, chartValues support.Values) {
 			func(obj client.Object) error {
 				gitlab := obj.(*gitlabv1beta1.GitLab)
 				gitlab.Spec.Chart.Values.Object = chartValues
+
 				return nil
 			})).Should(Succeed())
 }

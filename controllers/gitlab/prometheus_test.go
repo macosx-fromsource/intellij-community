@@ -22,10 +22,12 @@ const (
 )
 
 var _ = Describe("Prometheus", func() {
-	var enablePrometheus, enableAlertmanager, enableNodeExporter, enablePushgateway bool
-	var chartValues support.Values
-	var wantPrometheus bool
-	var configMaps, services, deployments, daemonSets, statefulSets, ingresses, pvcs []client.Object
+	var (
+		enablePrometheus, enableAlertmanager, enableNodeExporter, enablePushgateway  bool
+		chartValues                                                                  support.Values
+		wantPrometheus                                                               bool
+		configMaps, services, deployments, daemonSets, statefulSets, ingresses, pvcs []client.Object
+	)
 
 	JustBeforeEach(func() {
 		_ = chartValues.SetValue("prometheus.install", enablePrometheus)

@@ -20,7 +20,6 @@ var _ = Describe("Template", func() {
 	 * All tests are packed together here to avoid rendering GitLab Chart repeatedly.
 	 * This is done to speed up the test.
 	 */
-
 	It("must render the template only when the CR has changed", func() {
 		mockGitLab1 := CreateMockGitLab(releaseName, namespace, support.Values{})
 		mockGitLab1.UID = "a"

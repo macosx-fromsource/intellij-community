@@ -8,8 +8,10 @@ import (
 )
 
 var _ = Describe("Size", func() {
-	var size Size
-	var err error
+	var (
+		size Size
+		err  error
+	)
 
 	Describe("String", func() {
 		BeforeEach(func() {

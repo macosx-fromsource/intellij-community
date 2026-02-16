@@ -6,19 +6,24 @@ import (
 )
 
 var _ = Describe("SequenceGenerator", func() {
-	var generator Generator
-	var err error
+	var (
+		generator Generator
+		err       error
+	)
 
 	Describe("Generate", func() {
-		var characterSets []string
-		var content Content
-		var result string
+		var (
+			characterSets []string
+			content       Content
+			result        string
+		)
 
 		JustBeforeEach(func() {
 			generator, err = NewSequenceGenerator("1000", characterSets)
 			Expect(err).NotTo(HaveOccurred())
 			content, err = generator.Generate("key")
 			Expect(err).NotTo(HaveOccurred())
+
 			result = content.GetString("key")
 		})
 

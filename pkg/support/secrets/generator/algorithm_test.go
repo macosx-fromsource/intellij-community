@@ -6,8 +6,10 @@ import (
 )
 
 var _ = Describe("Algorithm", func() {
-	var a Algorithm
-	var err error
+	var (
+		a   Algorithm
+		err error
+	)
 
 	Describe("String", func() {
 		BeforeEach(func() {
