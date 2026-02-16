@@ -10,7 +10,7 @@ env:
 
   # Binaries
   HELM: helm
-  KUSTOMIZE: kustomize
+  KUSTOMIZE: kubectl kustomize
   KUBECTL: kubectl
   CONTAINER_CLI: podman
 
@@ -86,11 +86,10 @@ tasks:
         }
         download controller-tools/cmd/controller-gen@v0.16.5
         download controller-runtime/tools/setup-envtest@latest
-        download kustomize/kustomize/v5@v5.6.0
     status:
       - test -f ./controller-gen
-      - test -f ./kustomize
       - test -f ./setup-envtest
+      - ${KUSTOMIZE} --help > /dev/null
 
   kubectl_template:
     desc: Template for `kubectl` commands.
@@ -299,9 +298,9 @@ tasks:
       - "$TEST_CR_FILES"
     cmds:
       - echo $CHART_VERSION
-      - (cd $TEST_CR_FILES_DIR && $KUSTOMIZE edit set namespace $NAMESPACE)
+      - (cd $TEST_CR_FILES_DIR && yq -i eval ".namespace = \"$NAMESPACE\"" kustomization.yaml)
       - >-
-        $KUSTOMIZE build $TEST_CR_FILES_DIR
+        $KUSTOMIZE $TEST_CR_FILES_DIR
         | sed "s/CHART_VERSION/$CHART_VERSION/g"
         | sed "s/DOMAIN/$DOMAIN/g"
         | sed "s/HOSTSUFFIX/$HOSTSUFFIX/g"

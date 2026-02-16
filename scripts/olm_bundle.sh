@@ -3,14 +3,14 @@
 # Requirements:
 #  * operator SDK
 #  * docker
-#  * kustomize
+#  * kubectl (with built-in kustomize)
 #  * podman
 #  * opm
 #  * yq-go : https://github.com/mikefarah/yq
 
 # Make sure those are accurate and match your system/setup:
 ## Tools
-set -e
+set -eo pipefail
 
 OPERATOR_SDK=${OPERATOR_SDK:-"operator-sdk"}
 OPERATOR_HOME_DIR=${OPERATOR_HOME_DIR:-"."}
@@ -55,7 +55,7 @@ OPERATOR_HOME_DIR=$(realpath ${OPERATOR_HOME_DIR})
 build_manifests(){
   TAG=${OPERATOR_TAG} task -f build_operator_openshift
   task -f build_test_cr
-  ( cd config/scorecard; kustomize build ) > ${BUILD_DIR}/scorecard.yaml
+  ( cd config/scorecard; kubectl kustomize . ) > ${BUILD_DIR}/scorecard.yaml
   mkdir -p ${OSDK_BASE_DIR}
   ( cd ${OSDK_BASE_DIR}; ln -sf ${OPERATOR_HOME_DIR}/config )
 }
