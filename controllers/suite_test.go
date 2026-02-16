@@ -45,6 +45,7 @@ func TestAPIs(t *testing.T) {
 	}
 
 	settings.Load()
+
 	_ = charts.PopulateGlobalCatalog(
 		populate.WithSearchPath(settings.HelmChartsDirectory))
 
@@ -59,6 +60,7 @@ var _ = BeforeSuite(func() {
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("Bootstrapping test environment")
+
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "config", "crd", "bases"),
@@ -67,6 +69,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	var err error
+
 	cfg, err = testEnv.Start()
 	Expect(err).ToNot(HaveOccurred())
 	Expect(cfg).ToNot(BeNil())
@@ -96,6 +99,7 @@ var _ = BeforeSuite(func() {
 
 	go func() {
 		defer GinkgoRecover()
+
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
 	}()

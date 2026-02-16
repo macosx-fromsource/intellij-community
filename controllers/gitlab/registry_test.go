@@ -9,8 +9,10 @@ import (
 )
 
 var _ = Describe("Registry", func() {
-	var values support.Values
-	var migrationsJob client.Object
+	var (
+		values        support.Values
+		migrationsJob client.Object
+	)
 
 	JustBeforeEach(func() {
 		mockGitLab := CreateMockGitLab(releaseName, namespace, values)

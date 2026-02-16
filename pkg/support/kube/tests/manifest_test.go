@@ -28,6 +28,7 @@ var _ = Describe("DiscoverManagedObjects", func() {
 		}
 
 		var err error
+
 		cfg := Manager.GetConfig()
 		discoveryClient, err = discovery.NewDiscoveryClientForConfig(cfg)
 		Expect(err).To(Succeed(), "failed to create discovery client for manager config")
@@ -103,6 +104,7 @@ var _ = Describe("DiscoverManagedObjects", func() {
 				"crontab", "configmap", "ingressclass", "job")
 
 			deployManifestTestFixture(objects, namespace)
+
 			children, err := kube.DiscoverManagedObjects(owner,
 				manifest.WithGroupVersionResourceArgs("ingressclass.v1.networking.k8s.io", "job.v1.batch"),
 				manifest.WithManager(Manager),

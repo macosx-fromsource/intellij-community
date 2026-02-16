@@ -55,7 +55,6 @@ var _ = Describe("Criterion", func() {
 				WithVersion("1"),
 				WithAppVersion("1"),
 			)(newTestChart("", "", ""))).To(BeFalse())
-
 	})
 
 	Describe("None", func() {

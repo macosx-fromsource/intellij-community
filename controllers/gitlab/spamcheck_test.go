@@ -60,5 +60,4 @@ var _ = Describe("Spamcheck", func() {
 			Expect(svc.GetName()).To(Equal("test-spamcheck"))
 		})
 	})
-
 })

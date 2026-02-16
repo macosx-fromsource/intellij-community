@@ -25,12 +25,14 @@ var _ = AfterSuite(func() {
 
 var _ = Describe("TLSGenerator", func() {
 	Describe("Generate", func() {
-		var algorithm string
-		var size string
-		var lifespan string
-		var commonName string
-		var hosts []string
-		var cert *x509.Certificate
+		var (
+			algorithm  string
+			size       string
+			lifespan   string
+			commonName string
+			hosts      []string
+			cert       *x509.Certificate
+		)
 
 		JustBeforeEach(func() {
 			generator, err := NewTLSGenerator(size, algorithm, lifespan, commonName, hosts)
@@ -41,7 +43,9 @@ var _ = Describe("TLSGenerator", func() {
 
 			dir, err := os.MkdirTemp("", "operator")
 			Expect(err).NotTo(HaveOccurred())
+
 			socket := dir + "/test.sock"
+
 			defer func() { _ = os.Remove(dir) }()
 
 			server, _, err := startServer(socket, bytes["tls.crt"], bytes["tls.key"])

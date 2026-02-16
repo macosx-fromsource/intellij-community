@@ -6,9 +6,7 @@ import (
 )
 
 var _ = Describe("Template", func() {
-
 	When("uses a chart", func() {
-
 		It("must render the template and parse objects", func() {
 			template, err := loadTemplate()
 
@@ -16,6 +14,5 @@ var _ = Describe("Template", func() {
 			Expect(template.Warnings()).To(BeEmpty())
 			Expect(template.Objects()).NotTo(BeEmpty())
 		})
-
 	})
 })

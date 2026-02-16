@@ -92,8 +92,10 @@ redis:
 )
 
 var _ = Describe("Monitoring", func() {
-	var chartValues support.Values
-	var serviceMonitors, podMonitors []client.Object
+	var (
+		chartValues                  support.Values
+		serviceMonitors, podMonitors []client.Object
+	)
 
 	JustBeforeEach(func() {
 		mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)

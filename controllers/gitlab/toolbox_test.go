@@ -16,11 +16,13 @@ const (
 )
 
 var _ = Describe("Toolbox", func() {
-	var chartValues support.Values
-	var cronJobEnabled bool
-	var cronJob client.Object
-	var restorePersistenceEnabled, backupPersistenceEnabled bool
-	var restorePVC, backupPVC client.Object
+	var (
+		chartValues                                         support.Values
+		cronJobEnabled                                      bool
+		cronJob                                             client.Object
+		restorePersistenceEnabled, backupPersistenceEnabled bool
+		restorePVC, backupPVC                               client.Object
+	)
 
 	JustBeforeEach(func() {
 		mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)

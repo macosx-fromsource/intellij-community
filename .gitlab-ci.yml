@@ -1,4 +1,4 @@
-image: "registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-${GO_MINOR}-helm-4"
+image: "registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-${GO_MINOR}"
 
 variables:
   DOCKER_VERSION: "28.0.1"
@@ -34,8 +34,8 @@ variables:
   # OCP_RESOURCES_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/openshift-resources-${CI_COMMIT_TAG}.yaml"
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}"
   ISSUE_BOT_LABELS_EXTRA: "group::operate"
-  GO_VERSION: "1.25.7"
-  GO_MINOR: "1.25"
+  GO_VERSION: "1.26.0"
+  GO_MINOR: "1.26"
   QA_FULL_SUITE_OPTIONS: '--tag ~smoke --tag ~skip_live_env --tag ~orchestrated --tag ~transient'
   CI_TOOLS_VERSION: "5.33.0"
   # Buildx cluster connection settings are set at project level:
@@ -63,7 +63,7 @@ variables:
   CURL_IMAGE: ${DOCKERHUB_PREFIX}/curlimages/curl:8.12.1
   ALPINE_IMAGE: ${DOCKERHUB_PREFIX}/alpine:3.21
   RUBY_IMAGE: ${DOCKERHUB_PREFIX}/ruby:3.2-alpine
-  GOLANGCI_LINT_IMAGE: ${DOCKERHUB_PREFIX}/golangci/golangci-lint:v2.4-alpine
+  GOLANGCI_LINT_IMAGE: ${DOCKERHUB_PREFIX}/golangci/golangci-lint:v2.9-alpine
   GO_IMAGE: ${DOCKERHUB_PREFIX}/golang:${GO_VERSION}
   DOCKER_DIND_IMAGE: ${DOCKERHUB_PREFIX}/docker:${DOCKER_VERSION}-dind
 

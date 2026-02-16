@@ -6,7 +6,6 @@ import (
 )
 
 var _ = Describe("Query", func() {
-
 	template, err := loadTemplate()
 
 	labels := map[string]string{
@@ -21,9 +20,11 @@ var _ = Describe("Query", func() {
 		saveCacheSize := len(*cache)
 
 		deployments := template.Query().ObjectsByKindAndLabels("Deployment", labels)
+
 		Expect(len(*cache)).To(Equal(saveCacheSize + 1))
 
 		cachedDeployments := template.Query().ObjectsByKindAndLabels("Deployment", labels)
+
 		Expect(len(*cache)).To(Equal(saveCacheSize + 1))
 
 		Expect(deployments).To(Equal(cachedDeployments))
