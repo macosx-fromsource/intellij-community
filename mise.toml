@@ -2,7 +2,7 @@
 github-cli =  "2.86.0"
 golang =  "1.26.0"
 golangci-lint =  "2.9.0"
-helm =  "4.1.0"
+helm =  "4.1.1"
 kind =  "0.27.0"
 kubebuilder =  "4.11.1"
 operator-sdk =  "1.39.2"
