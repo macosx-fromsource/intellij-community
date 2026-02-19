@@ -1,3 +1,26 @@
+## 2.9.0 (2026-02-19)
+
+### changed (18 changes)
+
+- [Update ubi9-micro to 093a704](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/cfe17ec93ac536c3f42b735122b4ac7052766ae5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1395))
+- [Update k8s.io dependencies to v0.35.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/28591c4e3888a3acea3fa54e1e818aa4c69c7364) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1389))
+- [Update helm.sh/helm/v4 to v4.1.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a7e5408b3b8d1faf37666feebaf443ef480a495b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1386))
+- [Update golang.org/x/mod to v0.33.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/887d5d568747c7439ae2e11eb28ba0aa91e6d628) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1384))
+- [Update prom-op-api/monitoring to v0.89.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e591961d4553977ba85eff0665b6bda350f18ad0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1383))
+- [Update golang to v1.25.7](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ea4f1d8bb82e18cb9fdddb53fe4669cefd345786) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1380))
+- [Update kubebuilder to v4.11.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f2cefb62c75b01e986358f4b08a6289128943057) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1372))
+- [Update github.com/cert-manager/cert-manager to v1.19.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/be3dc1e3b479778a768c78297cadfaa14895841c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1378))
+- [Update yq to v4.52.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7160448d30b53bc7bbf5d26878c825f004cb41bc) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1375))
+- [Update github-cli to v2.86.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/13a9ccd4a7139a337b60979c80b50856373fc6e1) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1369))
+- [Update prom-op-api/monitoring to v0.88.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9c19a378fddb4c18f009e9b32e64d7db66d862aa) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1367))
+- [Update sigs.k8s.io/controller-runtime to v0.23.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f7f6a424429482dadd1bf2d8ee628cc067ebf8d2) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1366))
+- [Update sigs.k8s.io/controller-runtime to v0.23.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3360276efdb80297ee2de6661ac24b2fb1e885c5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1363))
+- [Add support for Kubernetes 1.35](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3dc2d8be8f2f22703fa0d3e6c4827acc8f5c3bf1) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1360))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/6c395c228965703d3c3b07325d278f8131999d10) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1348))
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.16.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/d102162661d5524d3e1bfd8e12a84625987bf171) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1356))
+- [Update helm.sh/helm/v3 to v3.19.5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2503d70ec07c2ad6add3398ea2c6ca15e1db389c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1355))
+- [Update ubi9-micro to e976551](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/56022e64c86aab09d3c42da9704f87271992dfe9) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1349))
+
 ## 2.8.4 (2026-02-10)
 
 No changes.
