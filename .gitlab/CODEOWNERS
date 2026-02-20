@@ -27,18 +27,15 @@
 
 ## Localization files that do not need `*` rule approval,
 ## but still require an approval from a Localization team DRI for each file.
-/doc-locale/** @gitlab-com/localization/maintainers
-/argo_translation.yml @gitlab-com/localization/maintainers
+/doc-locale/ja-jp/** @gitlab-com/localization/maintainers/tech-docs @gitlab-com/localization/maintainers/tech-docs/japanese
+/doc-locale/** @gitlab-com/localization/maintainers/tech-docs
+/argo_translation.yml @gitlab-com/localization/maintainers/tech-docs
 
 # Distribution CI/CD
 /ci/scripts/* @gitlab-org/maintainers/gitlab-operator @balasankarc
 .gitlab-ci*.yml @gitlab-org/maintainers/gitlab-operator @balasankarc
 Dangerfile @gitlab-org/maintainers/gitlab-operator @balasankarc
 /danger/ @gitlab-org/maintainers/gitlab-operator @balasankarc
-
-# Localization
-/doc-locale/ @gitlab-com/localization/maintainers
-/argo_translation.yml @gitlab-com/localization/maintainers
 
 # Go Dependencies
 go.mod @gitlab-org/maintainers/gitlab-operator @gitlab-org/software-delivery/operate
