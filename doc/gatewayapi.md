@@ -20,7 +20,7 @@ for details on the available configuration options and current limitations.
 
 {{< /alert >}}
 
-Starting with Operator 2.9 and GitLab chart 9.7, GitLab can be exposed by using [Gateway API](https://gateway-api.sigs.k8s.io/)
+Starting with Operator 2.10 and GitLab chart 9.7, GitLab can be exposed by using [Gateway API](https://gateway-api.sigs.k8s.io/)
 instead of Ingress. This follows the Kubernetes community recommendation after the
 [NGINX Ingress retirement](https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/).
 
