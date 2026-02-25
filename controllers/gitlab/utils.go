@@ -25,6 +25,17 @@ const (
 	ServiceMonitorKind          = "ServiceMonitor"
 	StatefulSetKind             = "StatefulSet"
 
+	// Kinds related to Gateway API.
+	HttpRouteKind    = "HTTPRoute"
+	TcpRouteKind     = "TCPRoute"
+	GatewayKind      = "Gateway"
+	GatewayClassKind = "GatewayClass"
+	// Kind related to Envoy Gateway.
+	EnvoyProxyKind               = "EnvoyProxy"
+	EnvoyPatchPolicyKind         = "EnvoyPatchPolicy"
+	EnvoyClientTrafficPolicyKind = "ClientTrafficPolicy"
+	EnvoySecurityPolicyKind      = "SecurityPolicy"
+
 	// GitlabComponentName is the com mon name of GitLab.
 	GitLabComponentName = "gitlab"
 
@@ -105,6 +116,7 @@ const (
 
 	ChartVersion7  = "7.0.0"
 	ChartVersion85 = "8.5.0"
+	ChartVersion97 = "9.7.0"
 	ChartVersion98 = "9.8.0"
 )
 

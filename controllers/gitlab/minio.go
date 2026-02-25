@@ -61,6 +61,11 @@ func MinioIngress(adapter gitlab.Adapter, template helm.Template) client.Object 
 	return template.Query().ObjectByKindAndComponent(IngressKind, MinioComponentName)
 }
 
+// MinioRoute returns the HTTPRoute of the Minio component.
+func MinioRoute(adapter gitlab.Adapter, template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(HttpRouteKind, MinioComponentName)
+}
+
 // MinioService returns the Service of the Minio component.
 func MinioService(adapter gitlab.Adapter, template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(ServiceKind, MinioComponentName)

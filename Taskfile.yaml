@@ -18,12 +18,14 @@ env:
 
   ## Cert Manager
   # https://cert-manager.io/docs/installation/#default-static-install
-  CERT_MANAGER: 1.15.0
-  CERT_MANAGER_MANIFEST: https://github.com/cert-manager/cert-manager/releases/download/v{{ .CERT_MANAGER }}/cert-manager.yaml
+  CERTMANAGER_VERSION: 1.19.2
 
   ## Metrics Server
   # https://github.com/kubernetes-sigs/metrics-server#installation
   METRICS_SERVER_MANIFEST: https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+  ## Envoy Gateway
+  ENVOY_GATEWAY_VERSION: 1.6.1
 
   # Directories
   BUILD_DIR: .build
@@ -104,11 +106,21 @@ tasks:
 
   install_certmanager:
     desc: Installs Cert Manager from YAML manifest at given version.
+    vars:
+      CERTMANAGER_HELM_ARGS: ''
     cmds:
-      - task: kubectl_template
+      - >-
+        $HELM upgrade --install cert-manager oci://quay.io/jetstack/charts/cert-manager
+        --version {{ .CERTMANAGER_VERSION }}
+        -n cert-manager --create-namespace
+        --set crds.enabled=true
+        {{ .CERTMANAGER_HELM_ARGS }}
+
+  install_certmanager_envoy:
+    cmds:
+      - task: install_certmanager
         vars:
-          ACTION: 'apply'
-          MANIFEST: $CERT_MANAGER_MANIFEST
+          CERTMANAGER_HELM_ARGS: '--set config.apiVersion="controller.config.cert-manager.io/v1alpha1" --set config.kind="ControllerConfiguration" --set config.enableGatewayAPI=true'
 
   wait_certmanager:
     desc: Waits for the rollout of the certmanager deployments.
@@ -121,10 +133,7 @@ tasks:
   uninstall_certmanager:
     desc: Uninstalls Cert Manager from YAML manifest at given version.
     cmds:
-      - task: kubectl_template
-        vars:
-          ACTION: 'delete'
-          MANIFEST: $CERT_MANAGER_MANIFEST
+      - $HELM uninstall -n cert-manager --ignore-not-found cert-manager
 
   install_metrics_server:
     desc: Installs Kubernetes Metrics Server.
@@ -141,6 +150,21 @@ tasks:
         vars:
           ACTION: 'delete'
           MANIFEST: $METRICS_SERVER_MANIFEST
+
+  install_envoy_gateway:
+    desc: Installs Envoy Gateway
+    cmds:
+      - >-
+        $HELM upgrade --install eg oci://docker.io/envoyproxy/gateway-helm
+        --version {{ .ENVOY_GATEWAY_VERSION }}
+        -n envoy-gateway-system
+        --create-namespace
+        --set config.envoyGateway.extensionsApi.enableEnvoyPatchPolicy=true
+
+  uninstall_envoy_gateway:
+    desc: Uninstalls Envoy Gateway
+    cmds:
+      - $HELM uninstall eg -n envoy-gateway-system --ignore-not-found
 
   generate:
     desc: Generates Kubernetes API extension resources and code with `controller-gen`.

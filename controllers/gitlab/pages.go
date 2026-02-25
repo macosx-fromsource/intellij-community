@@ -37,3 +37,8 @@ func PagesDeployment(template helm.Template) client.Object {
 func PagesIngress(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(IngressKind, PagesComponentName)
 }
+
+// PagesRoute returns the HTTPRoute for the GitLab Pages component.
+func PagesRoute(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(HttpRouteKind, PagesComponentName)
+}

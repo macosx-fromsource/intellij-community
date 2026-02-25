@@ -35,6 +35,11 @@ func RegistryIngress(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(IngressKind, RegistryComponentName)
 }
 
+// RegistryIngress returns the HTTPRoute of the Registry component.
+func RegistryRoute(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(HttpRouteKind, RegistryComponentName)
+}
+
 func RegistryMigrationsJob(template helm.Template) client.Object {
 	if job := template.Query().ObjectByKindAndComponent(JobKind, RegistryMigrationComponentName); job != nil {
 		return job

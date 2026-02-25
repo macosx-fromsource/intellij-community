@@ -166,7 +166,14 @@
     - export VCLUSTER_NAME=$(vcluster_name)
     - vcluster_create
     - vcluster_run kubectl version
-    - vcluster_run task install_certmanager
+    - |
+      if [ "$INSTALL_ENVOY_GATEWAY" = "true" ]
+      then
+        vcluster_run task install_envoy_gateway  
+        vcluster_run task install_certmanager_envoy
+      else
+        vcluster_run task install_certmanager
+      fi
     - vcluster_run task wait_certmanager
     # Run deployment
     - vcluster_run ./scripts/test.sh create_namespace

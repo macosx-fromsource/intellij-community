@@ -53,3 +53,8 @@ func ShellService(template helm.Template) client.Object {
 func ShellServiceMonitor(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(ServiceMonitorKind, GitLabShellComponentName)
 }
+
+// ShellRoute returns the TCPRoute of GitLab Shell component.
+func ShellRoute(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(TcpRouteKind, GitLabShellComponentName)
+}

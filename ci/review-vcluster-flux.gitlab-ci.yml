@@ -1,59 +1,59 @@
-.vcluster_135:
+.vcluster_flux:
   variables:
-    DOMAIN: ${DOMAIN_VCLUSTER135}
+    DOMAIN: ${DOMAIN_VCLUSTER_FLUX}
     AGENT_NAME: ${VCLUSTER_AGENT_NAME}
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
     VCLUSTER_K8S_VERSION: "v1.35.0"
-    VCLUSTER_NAME_PREFIX: v135
+    TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi"
+    INSTALL_ENVOY_GATEWAY: "true"
+    VCLUSTER_NAME_PREFIX: vflux
 
-build_review_vcluster135:
+build_review_vcluster_flux:
   extends:
-    - .vcluster_135
+    - .vcluster_flux
     - .build_review_template
-  variables:
-    DOMAIN: ${DOMAIN_VCLUSTER135}
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.build_review_template, rules]
 
-create_review_vcluster135:
+create_review_vcluster_flux:
   extends:
-    - .vcluster_135
+    - .vcluster_flux
     - .create_review_template
-  environment: &environment_vc135
-    name: &env_vc_name135 ${VCLUSTER_ENVIRONMENT_PREFIX}${VCLUSTER_NAME_PREFIX}/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
-    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_VCLUSTER135
-    on_stop: stop_review_vcluster135
+  environment: &environment_vcflux
+    name: &env_vc_name_flux ${VCLUSTER_ENVIRONMENT_PREFIX}${VCLUSTER_NAME_PREFIX}/$CI_COMMIT_SHORT_SHA-$CI_COMMIT_REF_SLUG
+    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_VCLUSTER_FLUX
+    on_stop: stop_review_vcluster_flux
     auto_stop_in: 1 hour
   needs:
-    - build_review_vcluster135
+    - build_review_vcluster_flux
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.create_review_template, rules]
 
-review_vcluster135:
+review_vcluster_flux:
   extends:
-    - .vcluster_135
+    - .vcluster_flux
     - .review_vcluster_template
-  environment: *environment_vc135
-  resource_group: *env_vc_name135
+  environment: *environment_vcflux
+  resource_group: *env_vc_name_flux
   needs:
-    - create_review_vcluster135
+    - create_review_vcluster_flux
     # we need build_* dependency to receive appropriate artifacts
-    - build_review_vcluster135
+    - build_review_vcluster_flux
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.review_template, rules]
 
-stop_review_vcluster135:
+stop_review_vcluster_flux:
   extends:
-    - .vcluster_135
+    - .vcluster_flux
     - .stop_review_vcluster_template
   environment:
-    name: *env_vc_name135
+    name: *env_vc_name_flux
     action: stop
   needs:
-    - build_review_vcluster135
+    - build_review_vcluster_flux
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.stop_review_template, rules]

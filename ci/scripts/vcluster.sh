@@ -2,16 +2,16 @@
 
 function vcluster_name() {
   local vcluster_name
+  vcluster_name="${VCLUSTER_NAME_PREFIX}-${TESTS_NAMESPACE}"
+  # remove any trailing hyphens
+  shopt -s extglob
+  vcluster_name=${vcluster_name%%+(-)}
   # Trim the vcluster name to 52 characters:
   # 1. Helm release names are limited to 53 characters.
   # 2. The vcluster chart creates a StatefulSet with the release name:
   #    To ensure that the Pod labels do not exceed 63 characters,
   #    the StatefulSet name should not exceed 52 characters.
-  vcluster_name="vc1${VCLUSTER_K8S_MINOR_VERSION}-${TESTS_NAMESPACE:0:46}"
-  # remove any trailing hyphens
-  shopt -s extglob
-  vcluster_name=${vcluster_name%%+(-)}
-  echo ${vcluster_name}
+  echo ${vcluster_name:0:52}
 }
 
 function kas_cluster_connect() {

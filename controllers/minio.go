@@ -43,5 +43,11 @@ func (r *GitLabReconciler) reconcileMinioInstance(ctx context.Context, adapter g
 		return err
 	}
 
+	if route := gitlabctl.MinioRoute(adapter, template); route != nil {
+		if err := r.createOrPatch(ctx, route, adapter); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

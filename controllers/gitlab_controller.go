@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	envoy "github.com/envoyproxy/gateway/api/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
@@ -43,6 +44,9 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gatewayalpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -159,6 +163,10 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	if err := r.setStatusCondition(ctx, adapter, status.ConditionAvailable, false, "GitLab is starting but not yet available"); err != nil {
+		return requeue(err)
+	}
+
+	if err := r.reconcileGatewayApiResources(ctx, adapter, template); err != nil {
 		return requeue(err)
 	}
 
@@ -608,6 +616,28 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			Owns(&certmanagerv1.Certificate{})
 	}
 
+	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1") {
+		r.Log.Info("using gateway.networking.k8s.io/v1")
+		builder.
+			Owns(&gatewayv1.Gateway{}).
+			Owns(&gatewayv1.GatewayClass{}).
+			Owns(&gatewayv1.HTTPRoute{})
+	}
+
+	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1alpha2") {
+		r.Log.Info("using gateway.networking.k8s.io/v1alpha2")
+		builder.Owns(&gatewayalpha2.TCPRoute{})
+	}
+
+	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1alpha1") {
+		r.Log.Info("using gateway.envoyproxy.io/v1alpha1")
+		builder.
+			Owns(&envoy.EnvoyPatchPolicy{}).
+			Owns(&envoy.SecurityPolicy{}).
+			Owns(&envoy.ClientTrafficPolicy{}).
+			Owns(&envoy.EnvoyProxy{})
+	}
+
 	return builder.Complete(r)
 }
 
@@ -683,6 +713,16 @@ func (r *GitLabReconciler) reconcileServiceMonitors(ctx context.Context, adapter
 func (r *GitLabReconciler) reconcilePodMonitors(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	for _, pm := range gitlabctl.WantedPodMonitors(adapter, template) {
 		if err := r.createOrPatch(ctx, pm, adapter); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) reconcileGatewayApiResources(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	for _, o := range gitlabctl.WantedGatewayApiResources(template, adapter) {
+		if err := r.createOrPatch(ctx, o, adapter); err != nil {
 			return err
 		}
 	}
@@ -788,9 +828,19 @@ func (r *GitLabReconciler) reconcileIngress(ctx context.Context, templateObject 
 }
 
 func (r *GitLabReconciler) reconcileCertManagerCertificates(ctx context.Context, adapter gitlab.Adapter) error {
-	return r.createOrPatch(ctx,
-		internal.CertificateIssuer(adapter),
-		adapter)
+	if issuer := internal.CertificateIngressIssuer(adapter); issuer != nil {
+		if err := r.createOrPatch(ctx, issuer, adapter); err != nil {
+			return err
+		}
+	}
+
+	if issuer := internal.CertificateGatewayIssuer(adapter); issuer != nil {
+		if err := r.createOrPatch(ctx, issuer, adapter); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *GitLabReconciler) setupAutoscaling(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
