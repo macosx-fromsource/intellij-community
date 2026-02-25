@@ -122,4 +122,28 @@ var _ = Describe("KAS", func() {
 			Expect(KasGRPCIngress(adapter, template)).To(BeNil())
 		})
 	})
+
+	When("Gateway API is enabled", func() {
+		chartValues := support.Values{}
+		_ = chartValues.SetValue("global.kas.enabled", true)
+		_ = chartValues.SetValue("global.gatewayApi.enabled", true)
+
+		mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
+		adapter := CreateMockAdapter(mockGitLab)
+		template, err := GetTemplate(adapter)
+
+		BeforeEach(func() {
+			if IsChartVersionOlderThan(helm.GetChartVersion(), ChartVersion97) {
+				Skip("Gateway API is not supported in this Chart version")
+			}
+		})
+
+		It("Returns the template", func() {
+			Expect(err).To(BeNil())
+		})
+
+		It("Templates the HTTPRoute", func() {
+			Expect(KasRoutes(template)).To(HaveLen(1))
+		})
+	})
 })

@@ -10,4 +10,5 @@ var (
 	ConfigureCertManager         = v1beta1.ConfigureCertManager
 	ReplaceGitalyWithPraefect    = v1beta1.ReplaceGitalyWithPraefect
 	RestoreDeploymentPersistence = v1beta1.RestoreDeploymentPersistence
+	ConfigureGatewayCertManager  = v1beta1.ConfigureGatewayCertManager
 )

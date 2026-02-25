@@ -25,6 +25,10 @@ func (r *GitLabReconciler) reconcilePages(ctx context.Context, adapter gitlab.Ad
 		return err
 	}
 
+	if err := r.reconcilePagesRoute(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -65,6 +69,16 @@ func (r *GitLabReconciler) reconcilePagesServices(ctx context.Context, adapter g
 func (r *GitLabReconciler) reconcilePagesIngress(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	if err := r.reconcileIngress(ctx, gitlabctl.PagesIngress(template), adapter); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) reconcilePagesRoute(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	if route := gitlabctl.PagesRoute(template); route != nil {
+		if err := r.createOrPatch(ctx, route, adapter); err != nil {
+			return err
+		}
 	}
 
 	return nil

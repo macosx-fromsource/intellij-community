@@ -1,0 +1,24 @@
+---
+apiVersion: apps.gitlab.com/v1beta1
+kind: GitLab
+metadata:
+  name: gitlab
+spec:
+  chart:
+    values:
+      global:
+        gatewayApi:
+          enabled: true
+          installEnvoy: true
+          class:
+            create: true
+          protocol: HTTPS
+        ingress:
+          enabled: false
+        pdb:
+          apiVersion: policy/v1
+        hpa:
+          apiVersion: autoscaling/v2
+        batch:
+          cronJob:
+            apiVersion: batch/v1

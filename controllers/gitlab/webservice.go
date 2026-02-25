@@ -72,6 +72,10 @@ func WebserviceIngresses(template helm.Template) []client.Object {
 	})
 }
 
+func WebserviceRoute(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(HttpRouteKind, WebserviceComponentName)
+}
+
 func isWorkhorse(obj client.Object) bool {
 	return strings.HasSuffix(obj.GetName(), "-workhorse")
 }

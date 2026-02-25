@@ -21,6 +21,10 @@ func (r *GitLabReconciler) reconcileGitLabShell(ctx context.Context, adapter git
 		return err
 	}
 
+	if err := r.reconcileShellRoute(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -52,6 +56,14 @@ func (r *GitLabReconciler) reconcileShellConfigMaps(ctx context.Context, adapter
 
 func (r *GitLabReconciler) reconcileShellService(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	if err := r.createOrPatch(ctx, gitlabctl.ShellService(template), adapter); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) reconcileShellRoute(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	if err := r.createOrPatch(ctx, gitlabctl.ShellRoute(template), adapter); err != nil {
 		return err
 	}
 

@@ -16,7 +16,9 @@ variables:
   DOMAIN_GKE133: "gitlab-operator-v133.k8s-ft.win"
   DOMAIN_GKE134: "gitlab-operator-v134.k8s-ft.win"
   DOMAIN_GKE135: "gitlab-operator-v135.k8s-ft.win"
+  DOMAIN_VCLUSTER134: "gitlab-operator-vc134.k8s-ft.win"
   DOMAIN_VCLUSTER135: "gitlab-operator-vc135.k8s-ft.win"
+  DOMAIN_VCLUSTER_FLUX: "gitlab-operator-vcflux.k8s-ft.win"
 
   # Namespace built into default manifest
   NAMESPACE: "gitlab-system"

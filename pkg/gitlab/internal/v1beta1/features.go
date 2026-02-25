@@ -12,6 +12,7 @@ var (
 	BackupCronJob                = newCheckEnabled("gitlab.toolbox.backups.cron.enabled")
 	BackupCronJobPersistence     = newCheckEnabled("gitlab.toolbox.backups.cron.persistence.enabled")
 	ConfigureCertManager         = newCheckEnabledWithDefault(true, "global.ingress.configureCertmanager")
+	ConfigureGatewayCertManager  = newCheckEnabled("global.gatewayApi.configureCertmanager")
 	ReplaceGitalyWithPraefect    = newCheckEnabled("global.praefect.enabled", "global.praefect.replaceInternalGitaly")
 	RestoreDeploymentPersistence = newCheckEnabled("gitlab.toolbox.persistence.enabled")
 )

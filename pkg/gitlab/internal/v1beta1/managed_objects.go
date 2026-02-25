@@ -105,6 +105,38 @@ var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersion
 		Group:    "monitoring.coreos.com",
 		Version:  "v1",
 		Resource: "prometheuses",
+	}, {
+		Group:    "gateway.networking.k8s.io",
+		Version:  "v1",
+		Resource: "httproutes",
+	}, {
+		Group:    "gateway.networking.k8s.io",
+		Version:  "v1alpha2",
+		Resource: "tcproutes",
+	}, {
+		Group:    "gateway.networking.k8s.io",
+		Version:  "v1",
+		Resource: "gateways",
+	}, {
+		Group:    "gateway.networking.k8s.io",
+		Version:  "v1",
+		Resource: "gatewayclasses",
+	}, {
+		Group:    "gateway.envoyproxy.io",
+		Version:  "v1alpha1",
+		Resource: "envoyproxies",
+	}, {
+		Group:    "gateway.envoyproxy.io",
+		Version:  "v1alpha1",
+		Resource: "envoypatchpolicies",
+	}, {
+		Group:    "gateway.envoyproxy.io",
+		Version:  "v1alpha1",
+		Resource: "clienttrafficpolicies",
+	}, {
+		Group:    "gateway.envoyproxy.io",
+		Version:  "v1alpha1",
+		Resource: "securitypolicies",
 	},
 }
 

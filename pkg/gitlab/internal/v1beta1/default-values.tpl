@@ -4,6 +4,10 @@ global:
 
   ingress:
     apiVersion: networking.k8s.io/v1
+  
+  gatewayApi:
+    class:
+      controllerName: "gateway.envoyproxy.io/gatewayclass-controller"
 
   serviceAccount:
     enabled: true

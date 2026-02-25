@@ -25,6 +25,10 @@ func (r *GitLabReconciler) reconcileKas(ctx context.Context, adapter gitlab.Adap
 		return err
 	}
 
+	if err := r.reconcileKasRoutes(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -67,6 +71,16 @@ func (r *GitLabReconciler) reconcileKasIngress(ctx context.Context, adapter gitl
 
 	if err := r.reconcileIngress(ctx, gitlabctl.KasGRPCIngress(adapter, template), adapter); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) reconcileKasRoutes(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	for _, route := range gitlabctl.KasRoutes(template) {
+		if err := r.createOrPatch(ctx, route, adapter); err != nil {
+			return err
+		}
 	}
 
 	return nil
