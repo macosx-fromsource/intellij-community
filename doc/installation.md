@@ -264,7 +264,7 @@ kubectl -n gitlab-system get deployment gitlab-controller-manager
    gitlab   Ready    5.2.4
    ```
 
-  When the CR is reconciled (the status of the GitLab resource is `Running`), you can access GitLab in your browser at `https://gitlab.example.com`.
+   When the CR is reconciled (the status of the GitLab resource is `Running`), you can access GitLab in your browser at `https://gitlab.example.com`.
 
 To log in you need to retrieve the initial root password for your deployment. See the [Helm Chart documentation](https://docs.gitlab.com/charts/installation/deployment/#initial-login) for further instructions.
 
