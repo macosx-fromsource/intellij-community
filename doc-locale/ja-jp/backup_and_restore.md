@@ -1,7 +1,7 @@
 ---
 stage: GitLab Delivery
 group: Operate
-info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see <https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments>
 title: GitLabのバックアップと復元
 ---
 
@@ -12,10 +12,10 @@ title: GitLabのバックアップと復元
 
 {{< /details >}}
 
-GitLab Operatorは、[Toolboxチャート](https://docs.gitlab.com/charts/charts/gitlab/toolbox/)をデプロイします。Toolboxを使用してインスタンスをバックアップおよび復元するするには、[バックアップおよび復元するGitLab](https://docs.gitlab.com/charts/backup-restore/)を参照してください。
+GitLab Operatorは、[Toolboxチャート](https://docs.gitlab.com/charts/charts/gitlab/toolbox/)をデプロイします。Toolboxを使用してGitLabインスタンスをバックアップおよび復元するには、[バックアップとGitLabの復元](https://docs.gitlab.com/charts/backup-restore/)を参照してください。
 
-## HelmベースのインストールとOperatorベースのインストール間の移行 {#migrate-between-helm-based-and-operator-based-installations}
+## HelmベースのインストールとOperatorベースのインストール間で移行する {#migrate-between-helm-based-and-operator-based-installations}
 
 Operatorベースのインスタンスのバックアップから新しいHelmチャートベースのインスタンスを作成したり、Helmチャートベースのインスタンスのバックアップから新しいOperatorベースのインスタンスを作成したりできます。
 
-PostgreSQLやGitalyなどのステートフルなコンポーネントに外部サービスを利用する環境は、一般的に移行が容易です。
+PostgreSQLやGitalyなどのステートフルコンポーネントに外部サービスを使用する環境は、通常、移行が容易です。

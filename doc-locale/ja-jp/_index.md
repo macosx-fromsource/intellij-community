@@ -1,7 +1,7 @@
 ---
 stage: GitLab Delivery
 group: Operate
-info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see <https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments>
 title: GitLab Operator
 ---
 
@@ -12,13 +12,13 @@ title: GitLab Operator
 
 {{< /details >}}
 
-[GitLab Operator](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator)は、[Kubernetes Operator](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)パターンに従うインストールおよび管理方法です。
+[GitLab Operator](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator)は、[Kubernetes Operatorパターン](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)に従うインストールおよび管理方法です。
 
-[OpenShift](https://docs.gitlab.com/install/openshift_and_gitlab/)または他のKubernetes互換プラットフォームでGitLabを実行するには、GitLab Operatorを使用します。
+GitLab Operatorを使用して、[OpenShift](https://docs.gitlab.com/install/openshift_and_gitlab/)または別のKubernetes互換プラットフォームでGitLabを実行します。
 
 {{< alert type="note" >}}
 
-GitLabオペレーターには[既知の制限事項](#known-issues)があり、本番環境での使用における特定のシナリオにのみ適しています。
+GitLab Operatorには[既知の制限事項](#known-issues)があり、本番環境での使用における特定のシナリオにのみ適しています。
 
 {{< /alert >}}
 
@@ -26,7 +26,7 @@ GitLabオペレーターには[既知の制限事項](#known-issues)があり、
 
 {{< alert type="warning" >}}
 
-GitLabカスタムリソースのデフォルト値は、**本番環境での使用を意図していません**。これらの値を使用すると、GitLabオペレーターは、永続データを含むすべてのサービスがKubernetesクラスターにデプロイされるGitLabインスタンスを作成しますが、これは**本番環境のワークロードに適していません**。本番環境へのデプロイでは、[クラウドネイティブハイブリッドリファレンスアーキテクチャ](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid)に従う**必要があります**。GitLabは、Kubernetesクラスター内にデプロイされたPostgreSQL、Redis、Gitaly、Praefect、またはMinIOに関連するイシューをサポートしていません。
+GitLabカスタムリソースのデフォルト値は、**not intended for production use**。これらの値を使用すると、GitLab Operatorは、永続データを含むすべてのサービスがKubernetesクラスターにデプロイされるGitLabインスタンスを作成します。これは、**not suitable for production workloads**。本番環境へのデプロイでは、[クラウドネイティブハイブリッドリファレンスアーキテクチャ](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid)に従う**必要があります**。GitLabは、Kubernetesクラスター内にデプロイされたPostgreSQL、Redis、Gitaly、Praefect、またはMinIOに関連する問題はサポートしていません。
 
 {{< /alert >}}
 
@@ -34,11 +34,12 @@ GitLabカスタムリソースのデフォルト値は、**本番環境での使
 
 GitLab Operatorは、以下をサポートしていません:
 
-- GitLab Operatorを使用した、既存のHelmチャートベースのインスタンスの管理。改善のサポートは、[GitLab Operator issue 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567)で提案されています。
-- [OpenShift](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html)ルートを使用したSSH経由のGit。詳細については、[OpenShiftルート](openshift_ingress.md#openshift-routes)に関するGitLab Operatorのドキュメントを参照してください。
-- 他のクラウドAPI（オブジェクトストレージなど）へのワークロードを認証するための[GKEワークロードID](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity)および[IAMサービスアカウント](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html)。詳細については、[GitLab Operator](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737)のイシュー1089を参照してください。
+- GitLab Operatorを使用した、既存のHelmチャートベースのインスタンスの管理。改善のサポートは、[GitLab Operatorイシュー1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567)で提案されています。
+- [OpenShiftルート](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html)を使用したSSH経由のGit。詳細については、[OpenShiftルートに関するGitLab Operatorドキュメント](openshift_ingress.md#openshift-routes)を参照してください。
+- 他のクラウドAPI（オブジェクトストレージなど）へのワークロードを認証するための[GKEワークロードID](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity)および[IAMサービスアカウント](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html)。詳細については、[GitLab Operatorイシュー1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737)を参照してください。
+- GitLab Operatorは、ゼロダウンタイム方式を使用してGitLabをアップグレードします。その結果、GitLabとGitLabチャートのバージョンは、一度に1つのマイナーリリースずつ更新する必要があります。一度に複数のバージョンをアップグレードするためのサポートは、[GitLab Operatorイシュー1952](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1952)で追跡されています。
 
-GitLab Operatorには、GitLabチャートの他の制限があります。GitLab Operatorは、KubernetesリソースをプロビジョニングするためにGitLabチャートに依存しています。したがって、GitLabチャートの制限は、GitLab Operatorに影響を与えます。GitLab OperatorからのGitLabチャートの依存関係の削除は、[Cloud Nativeエピック64](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/64)で提案されています。
+GitLab Operatorには、GitLabチャートの他の制限事項があります。GitLab Operatorは、KubernetesリソースをプロビジョニングするためにGitLabチャートに依存しています。したがって、GitLabチャートの制限は、GitLab Operatorに影響を与えます。GitLab OperatorからのGitLabチャートの依存関係を削除することは、[Cloud Nativeエピック64](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/64)で提案されています。
 
 ## インストール {#installation}
 
@@ -46,42 +47,40 @@ GitLab Operatorをインストールする方法については、[インスト�
 
 [セキュリティコンテキスト制約](security_context_constraints.md)の使用方法の詳細は、それぞれのドキュメントに記載されています。
 
-特にOpenShiftを使用する場合は、[SSHアクセスからGit](git_over_ssh.md)への考慮事項も把握しておく必要があります。
+特にOpenShiftを使用する場合は、[SSHアクセスからGitへの考慮事項](git_over_ssh.md)も認識しておく必要があります。
 
 ## アップグレード {#upgrading}
 
-[Operatorのアップグレード](operator_upgrades.md)のドキュメントでは、GitLab Operatorをアップグレードする方法について説明しています。
-
-[GitLabのアップグレード](gitlab_upgrades.md)のドキュメントでは、GitLabインスタンスをアップグレードする方法について説明しています（GitLab Operatorによって管理）。
+GitLab OperatorまたはGitLab Operatorによって管理されるGitLabインスタンスをアップグレードする方法については、[GitLab Operatorを使用したGitLabインスタンスのアップグレード](gitlab_upgrades.md)を参照してください。
 
 ## バックアップと復元 {#backup-and-restore}
 
-[バックアップとリストア](backup_and_restore.md)のドキュメントでは、Operatorによって管理されているGitLabインスタンスをバックアップおよびリストアする方法について説明しています。
+[バックアップと復元する](backup_and_restore.md)のドキュメントでは、Operatorによって管理されるGitLabインスタンスをバックアップおよび復元する方法について説明します。
 
-## RedHat認定イメージ {#using-redhat-certified-images}
+## RedHat認定イメージの使用 {#using-redhat-certified-images}
 
 [RedHat認定イメージ](certified_images.md)のドキュメントでは、RedHatによって認定されたイメージをデプロイするようにGitLab Operatorに指示する方法について説明します。
 
 ## デベロッパーツール {#developer-tooling}
 
-- [開発者ガイド](developer/guide.md): プロジェクトの構成とコントリビュートする方法の概要。
-- [バージョニング](developer/releases.md)とリリース情報: オペレーターのバージョニングとリリースに関する注意事項を記録します。
-- [設計上の判断](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr): このプロジェクトでは、アーキテクチャの決定レコードを利用して、このオペレーターの構造、機能、および機能の実装について詳しく説明します。
+- [デベロッパーガイド](developer/guide.md): プロジェクトの構造とコントリビュートする方法の概要。
+- [バージョニングとリリースの情報](developer/releases.md): Operatorのバージョニングとリリースに関する注意事項を記録します。
+- [設計上の決定](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr): このプロジェクトはアーキテクチャ上の決定記録を利用しており、このOperatorの構造、機能、および機能の実装について詳しく説明しています。
 
 ## マージリクエストのレビュー {#merge-request-reviews}
 
-マージリクエスト（MR）は通常、2人のレビュアーを必要とする標準的な方法に従います。まず、メンテナー以外の担当者がMRをレビューし、作成者にコメントを提供して、提案されている変更の改善/修正を支援します。作成者が必要な更新を行い、レビュアーがMRを承認すると、メンテナーの1人からのレビューをリクエストします。
+マージリクエスト（MR）は通常、2人のレビュアーを必要とする標準的な方法に従います。まず、メンテナー以外の人がMRをレビューし、提案されている変更を改善/修正するために、作成者にコメントを提供します。作成者が必要な更新を行い、レビュアーがMRを承認した後、メンテナーの1人にレビューをリクエストします。
 
-このアプローチは、経験の浅いレビュアーに学習機会を提供するだけでなく、このアプローチは、経験の浅いレビュアーに学習機会を提供します。最初のレビューでは、最終的なレビューの前に、MRのほとんどの問題に対処します。大量のプロジェクトでは、メンテナーの負荷が原因でボトルネックが発生することがよくありますが、この最初のパスは負荷を軽減するのに役立ちます。
+このアプローチは、経験の浅いレビュアーに学習の機会を提供するだけでなく、経験の浅いレビュアーに学習の機会を提供します。最初のレビューでは、最終的なレビューの前に、MRのほとんどの問題に対処します。大量のプロジェクトでは、メンテナーの負荷によりボトルネックが発生することがよくありますが、この最初のパスはそれらの負荷を軽減するのに役立ちます。
 
 ### 1つの承認のみの例外 {#one-approval-only-exceptions}
 
-特定の場合には、1つの承認のみでマージ（MR）をマージできるようにします。
+特定の場合には、1つの承認のみでMRをマージすることを許可しています。
 
-#### Goモジュールのアップデート {#go-modules-updates}
+#### Goモジュールの更新 {#go-modules-updates}
 
-**ノート:** これは、このプロジェクトを所有するグループのGitLabチームメンバーにのみ関連します。
+**注:** これは、このプロジェクトを所有するグループのGitLabチームメンバーのみに関連します。
 
-あなたがこのプロジェクトを所有するチームのチームメンバーである場合、`go.mod`ファイルと`go.sum`ファイルのCODEOWNERS承認権限が付与されました。MRがこれらのファイルのみを変更する場合、メンテナーでなくても、MRを承認してマージできるはずです。これは、Goモジュールのアップデートのリスクが非常に低いとチームが評価したことを考えると、メンテナーからのレビュー負荷を軽減し、依存関係のアップデートの効率性を向上させるために実装されました。そのため、Goに慣れていて、変更が適切に見え、MRに完全にグリーンパイプラインがある場合は、すぐに承認してマージしてください。
+このプロジェクトを所有するチームのチームメンバーである場合は、`go.mod`ファイルと`go.sum`ファイルに対するCODEOWNERSの承認権限が付与されています。MRがこれらのファイルのみを変更している場合、メンテナーでなくても、MRを承認してマージできるはずです。これは、Goモジュールの更新のリスクが非常に低いとチームが評価したため、メンテナーからのレビューの負荷を軽減し、依存関係の更新効率性を向上させるために実装されました。そのため、Goに慣れていて、変更が適切に見え、MRで完全にグリーンパイプラインが表示されている場合は、すぐに承認してマージしてください。
 
-それでも、Goコードに慣れていない場合、またはその他の理由で2回目の意見が必要な場合は、2回目のレビューを実行するために、MRをメンテナーに渡すことをお勧めします。
+それでも、Goコードに慣れていない場合、またはその他の理由で別の意見が必要な場合は、2回目のレビューを実行するために、MRをメンテナーに渡すことをお勧めします。
