@@ -1,7 +1,7 @@
 ---
 stage: GitLab Delivery
 group: Operate
-info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see <https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments>
 title: RedHat認定イメージ
 ---
 
@@ -12,17 +12,17 @@ title: RedHat認定イメージ
 
 {{< /details >}}
 
-次のチャートは、GitLab Operatorがデプロイするイメージをリストしたものです。このチャートには、これらのイメージをGitLabチームのメンバーが管理できるRedHat Technology Portalプロジェクト一覧へのリンクが含まれています。
+以下の表に、GitLab Operatorがデプロイするイメージを示します。この表には、これらのイメージをGitLabチームのメンバーが管理できるRedHat Technology Portalプロジェクトの一覧へのリンクが含まれています。
 
-GitLab Operatorのイメージタグは、[GitLab Operatorのリリースバージョン](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases)に沿ったものです。
+GitLab Operatorイメージのタグは、[GitLab Operatorのリリースバージョン](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases)に対応しています。
 
-NGINX Ingressコントローラーのイメージタグは、GitLabが管理する[プロジェクトフォーク](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx)の[`TAG`ファイル](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/-/blob/main/TAG)の内容に沿ったものです。
+NGINX Ingressコントローラーイメージのタグは、GitLabが管理する[プロジェクトフォーク](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx)内の[`TAG`ファイル](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/-/blob/main/TAG)の内容に対応しています。
 
-その他のイメージタグは、`v<GitLab version>-ubi8`形式（例: `v15.4.0-ubi8`）に従います。タグのサフィックスは、[RedHat Universal Base Image（UBI）](https://catalog.redhat.com/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview)上にビルドされたイメージを示します。これはRedHatによる認定の要件です。GitLab Operatorのイメージ自体には1つのバリアントしかなく、すでにUBI上にビルドされています。
+残りのイメージタグは、`v<GitLab version>-ubi8`形式（例: `v15.4.0-ubi8`）に従います。このタグのサフィックスは、RedHatによる認定の要件である[RedHat Universal Base Image（UBI）](https://catalog.redhat.com/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview)の上に構築されたイメージを示します。GitLab Operatorイメージ自体には1つのバリアントしかなく、すでにUBI上に構築されています。
 
-これらのイメージを使用するためのHelm値の例など、詳細については、[UBIイメージに関するチャートドキュメント](https://docs.gitlab.com/charts/advanced/ubi/)を参照してください。
+これらのイメージを使用するためのHelm値の例など、詳細については、[UBIイメージに関するチャートのドキュメント](https://docs.gitlab.com/charts/advanced/ubi/)を参照してください。
 
-| コンポーネント                                                                                             | レジストリパス |
+| コンポーネント                                                                                             | Registryパス |
 |-------------------------------------------------------------------------------------------------------|---------------|
 | [`gitlab-operator`](https://connect.redhat.com/component/629f9d952cb3e76438a9d40e/overview)           | `registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPERATOR_VERSION` |
 | [`gitlab-operator-bundle`](https://connect.redhat.com/component/5f6cbaa04fcb1bc3f0425fbf/overview)    | `registry.connect.redhat.com/gitlab/gitlab-operator-bundle` |
@@ -43,9 +43,9 @@ NGINX Ingressコントローラーのイメージタグは、GitLabが管理す�
 | [`gitlab-workhorse-ee`](https://connect.redhat.com/component/5fb60c7b5e09a3c40183e67b/overview)       | `registry.gitlab.com/gitlab-org/build/cng/gitlab-workhorse-ee:$GITLAB_VERSION-ubi` |
 | [`gitlab-ingress-nginx`](https://connect.redhat.com/component/5fb60d575e09a3c40183e67c/overview)      | `registry.gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/controller:$NGINX_VERSION-ubi` |
 
-## イメージの署名 {#image-signatures}
+## イメージ署名 {#image-signatures}
 
-Operatorイメージは、cosignで検証できます:
+Operatorイメージはcosignで検証できます:
 
 ```script
 cosign verify "registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPERATOR_VERSION" \
@@ -53,4 +53,4 @@ cosign verify "registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPER
   --certificate-oidc-issuer "https://gitlab.com"
 ```
 
-CNGイメージの署名を検証する方法については、[Helmチャートのドキュメント](https://docs.gitlab.com/charts/installation/verify_cng_images/)を参照してください。
+CNGイメージ署名を検証する方法については、[Helmチャートのドキュメントを参照してください](https://docs.gitlab.com/charts/installation/verify_cng_images/)。

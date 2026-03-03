@@ -1,7 +1,7 @@
 ---
 stage: GitLab Delivery
 group: Operate
-info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see <https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments>
 title: OpenShiftのIngress
 ---
 
@@ -12,14 +12,14 @@ title: OpenShiftのIngress
 
 {{< /details >}}
 
-GitLab OperatorでOpenShiftにIngressを供給するために、2つのサポートされている方法があります:
+OpenShiftでGitLab Operatorを使用してIngressを提供するためにサポートされている方法は2つあります:
 
-- [NGINX Ingress Controller](#nginx-ingress-controller)
+- [NGINX Ingress Controller](#nginx-ingress-controller)（デフォルト）
 - [OpenShift Routes](#openshift-routes)
 
 ## NGINX Ingress Controller {#nginx-ingress-controller}
 
-この構成では、トラフィックは次のように流れます:
+この設定では、トラフィックは次のように流れます:
 
 ```mermaid
 graph TD
@@ -31,11 +31,11 @@ graph TD
     SRV_W -- connects to --> DPL_W[Deployment/gitlab-webservice-default]
 ```
 
-### OpenShift RouterがNGINX Ingress Controllerをオーバーライドする回避策 {#workaround-for-openshift-router-overriding-nginx-ingress-controller}
+### OpenShift RouterがNGINX Ingress Controllerをオーバーライドする場合の回避策 {#workaround-for-openshift-router-overriding-nginx-ingress-controller}
 
-OpenShift環境では、GitLab Ingressは、NGINXサービスの外部IPアドレスではなく、GitLabインスタンスのホスト名を受信する場合があります。これは、`kubectl get ingress -n <namespace>`の出力の`ADDRESS`列に表示されます。
+OpenShift環境では、GitLabのIngressは、NGINXサービスの外部IPアドレスではなく、GitLabインスタンスのホスト名を受信する場合があります。これは、`kubectl get ingress -n <namespace>`の出力の`ADDRESS`列に表示されます。
 
-OpenShift Routerコントローラーは、Ingressクラスが異なるため、Ingressリソースを無視する代わりに、誤って更新します。次のコマンドは、OpenShiftにデプロイされた標準Ingress以外のIngressを適切に無視するようにOpenShift Routerコントローラーに指示します:
+OpenShift Routerコントローラーは、Ingressクラスが異なるため、Ingressリソースを無視する代わりに、誤って更新します。次のコマンドは、OpenShift Routerコントローラーに対し、OpenShiftにデプロイされた標準Ingress以外のIngressを適切に無視するように指示します:
 
 ```shell
   kubectl -n openshift-ingress-operator \
@@ -44,24 +44,24 @@ OpenShift Routerコントローラーは、Ingressクラスが異なるため、
     -p '{"spec":{"namespaceSelector":{"matchLabels":{"openshift.io/cluster-monitoring":"true"}}}}'
 ```
 
-このパッチがIngressの作成後に適用された場合は、手動でIngressを削除してください。GitLab Operatorはそれらを手動で再作成します。これらは、NGINX Ingress Controllerによって適切に所有され、OpenShift Routerによって無視されるはずです。
+このパッチがIngressの作成後に適用された場合は、Ingressを手動で削除してください。GitLab Operatorはそれらを手動で再作成します。それらは、NGINX Ingressコントローラーによって適切に所有され、OpenShift Routerによって無視される必要があります。
 
 {{< alert type="note" >}}
 
-Ingressを手動で削除すると、バグが発生する可能性があります。回避策は、GitLab Operatorコントローラーポッドを手動で削除することです。詳細については、[\#315](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/315)を参照してください。
+Ingressを手動で削除すると、バグが発生する可能性があります。回避策として、GitLab Operatorコントローラーポッドを手動で削除します。詳細については、[\#315](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/315)を参照してください。
 
 {{< /alert >}}
 
-NGINX Ingress Controllerの作成をブロックしているSCC関連のイシューのトラブルシューティングについては、[Operatorトラブルシューティングドキュメント](troubleshooting.md#openshift-specific-problems)の追加ドキュメントを参照してください。
+NGINX Ingressコントローラーの作成をブロックするSCC関連のイシューのトラブルシューティングについては、[Operatorトラブルシューティングドキュメント](troubleshooting.md#openshift-specific-problems)の追加のドキュメントを参照してください。
 
 ### 設定 {#configuration}
 
-デフォルトでは、GitLab OperatorはGitLabの[NGINX Ingress Controllerチャートのフォーク](https://docs.gitlab.com/charts/charts/nginx/fork/)をデプロイします。
+デフォルトでは、GitLab Operatorは、[GitLabのNGINX Ingressコントローラーチャートのフォーク](https://docs.gitlab.com/charts/charts/nginx/#adjustments-to-the-nginx-fork)をデプロイします。
 
-IngressにNGINX Ingress Controllerを使用するには、次の手順を実行します:
+IngressにNGINX Ingressコントローラーを使用するには、以下を完了します:
 
-1. まず、[インストール手順](installation.md)の最初の手順に従って、GitLab Operatorをインストールします。
-1. Webservice用に作成されたルートに関連付けられているドメイン名を見つけます:
+1. GitLab Operatorをインストールするには、[インストール手順](installation.md)の最初の手順に従って開始します。
+1. Webservice用に作成されたRouteに関連付けられているドメイン名を見つけます:
 
    ```plaintext
    $ kubectl get route -n openshift-console console -ojsonpath='{.status.ingress[0].host}'
@@ -69,9 +69,9 @@ IngressにNGINX Ingress Controllerを使用するには、次の手順を実行�
    console-openshift-console.yourdomain.com
    ```
 
-   次の手順で使用するドメインは、`console-openshift-console`の_後_の部分です。
+   次のステップで使用するドメインは、`console-openshift-console` _after_の部分です。
 
-1. GitLab CRマニフェストが作成される手順で、ドメインを次のように設定します:
+1. GitLab CRマニフェストが作成されるステップで、次のようにドメインを設定します:
 
    ```yaml
    spec:
@@ -89,8 +89,8 @@ IngressにNGINX Ingress Controllerを使用するには、次の手順を実行�
 
    {{< /alert >}}
 
-1. 残りのインストール手順に従い、GitLab CRを適用し、CRステータスが最終的に`Ready`であることを確認します。
-1. NGINX Ingress Controllerのサービス（LoadBalancerタイプ）の外部IPアドレスを見つけます:
+1. 残りのインストール手順に従ってGitLab CRを適用し、CRステータスが最終的に`Ready`になることを確認します。
+1. NGINX IngressコントローラーのService（LoadBalancerのタイプ）の外部IPアドレスを見つけます:
 
    ```plaintext
    $ kubectl get svc -n gitlab-system gitlab-nginx-ingress-controller -ojsonpath='{.status.loadBalancer.ingress[].ip}'
@@ -98,27 +98,27 @@ IngressにNGINX Ingress Controllerを使用するには、次の手順を実行�
    11.22.33.444
    ```
 
-1. DNSクラウドプロバイダーでAレコードを作成して、ドメインと前の手順からの外部IPアドレスを接続します:
+1. DNSプロバイダーでAレコードを作成し、ドメインと前の手順からの外部IPアドレスを接続します:
 
    - `gitlab.yourdomain.com` -> `11.22.33.444`
    - `registry.yourdomain.com` -> `11.22.33.444`
    - `minio.yourdomain.com` -> `11.22.33.444`
 
-   ワイルドカードAレコードではなく個別のAレコードを作成すると、既存のルート（OpenShiftダッシュボードのルートなど）が期待どおりに動作し続けるようになります。
+   ワイルドカードAレコードではなく個々のAレコードを作成することで、既存のRoute（OpenShiftダッシュボードのRouteなど）が期待どおりに動作し続けることが保証されます。
 
    {{< alert type="note" >}}
 
-   これらのレコードは、クラウドプロバイダーのネットワーキング設定のパブリックゾーン_と_プライベートゾーン**と**に存在する必要があります。これらのゾーン間の同等性により、適切なクラスター内部ルーティングが保証され、CertManagerが証明書を適切に発行できるようになります。
+   これらのレコードは、クラウドプロバイダーのネットワーク設定のパブリックゾーン_both_**と**プライベートゾーンに存在する必要があります。これらのゾーン間の同等性により、適切なクラスター内部ルーティングが保証され、CertManagerが証明書を適切に発行できるようになります。
 
    {{< /alert >}}
 
-GitLabは`https://gitlab.yourdomain.com`で利用可能になるはずです。
+GitLabは、`https://gitlab.yourdomain.com`で利用できるようになります。
 
 ## OpenShift Routes {#openshift-routes}
 
 デフォルトでは、OpenShiftは[Routes](https://docs.openshift.com/container-platform/4.10/networking/routes/route-configuration.html)を使用してIngressを管理します。
 
-この構成では、トラフィックは次のように流れます:
+この設定では、トラフィックは次のように流れます:
 
 ```mermaid
 graph TD
@@ -132,24 +132,25 @@ graph TD
 
 {{< alert type="note" >}}
 
-NGINX Ingress Controllerの代わりにルートをIngressに使用すると、[SSH](git_over_ssh.md)経由のGitはサポートされません。
+NGINX Ingressコントローラーの代わりにIngressにRoutesを使用するということは、[Git over SSH](git_over_ssh.md)がサポートされていないことを意味します。
 
 {{< /alert >}}
 
 ### セットアップ {#setup}
 
-IngressにOpenShiftルートを使用するには、次の手順を実行します:
+IngressにOpenShift Routesを使用するには、以下を完了します:
 
-1. まず、[インストール手順](installation.md)の最初の手順に従って、GitLab Operatorをインストールします。
-1. Webservice用に作成されたルートに関連付けられているドメイン名を見つけます:
+1. GitLab Operatorをインストールするには、[インストール手順](installation.md)の最初の手順に従って開始します。
+1. Webservice用に作成されたRouteに関連付けられているドメイン名を見つけます:
 
    ```plaintext
    $ kubectl get route -n openshift-console console -ojsonpath='{.status.ingress[0].host}'
    console-openshift-console.yourdomain.com
    ```
 
-   次の手順で使用するドメインは、`console-openshift-console`の_後_の部分です。
-1. GitLab CRマニフェストが作成される手順で、以下も設定します:
+   次のステップで使用するドメインは、`console-openshift-console` _after_の部分です。
+
+1. GitLab CRマニフェストが作成されるステップで、以下も設定します:
 
    ```yaml
    spec:
@@ -175,12 +176,12 @@ IngressにOpenShiftルートを使用するには、次の手順を実行しま�
 
    {{< alert type="note" >}}
 
-   デフォルトでは、CertManagerはGitLab関連のルートのTLS証明書を作成および管理します。その他のオプションについては、[TLSドキュメント](https://docs.gitlab.com/charts/installation/tls/)を参照してください。OpenShiftクラスターがワイルドカード証明書で保護されている場合、[オプション2](https://docs.gitlab.com/charts/installation/tls/#option-2-use-your-own-wildcard-certificate)を使用すると、ワイルドカード証明書でGitLab関連のルートを保護できます。
+   デフォルトでは、CertManagerはGitLab関連のRoutesのTLS証明書を作成および管理します。その他のオプションについては、[TLSドキュメント](https://docs.gitlab.com/charts/installation/tls/)を参照してください。OpenShiftクラスターがワイルドカード証明書で保護されている場合、[オプション2](https://docs.gitlab.com/charts/installation/tls/#option-2-use-your-own-wildcard-certificate)を使用すると、ワイルドカード証明書でGitLab関連のRoutesを保護できます。
 
    {{< /alert >}}
 
-1. 残りのインストール手順に従い、GitLab CRを適用し、CRステータスが最終的に`Ready`であることを確認します。
+1. 残りのインストール手順に従ってGitLab CRを適用し、CRステータスが最終的に`Ready`になることを確認します。
 
-GitLabは`https://gitlab.yourdomain.com`で利用可能になるはずです。
+GitLabは、`https://gitlab.yourdomain.com`で利用できるようになります。
 
-この構成では、OpenShiftルートは、GitLab Operatorによって作成されたIngressを変換することによって作成されます。この変換の詳細については、[ルートドキュメント](https://docs.openshift.com/container-platform/4.10/networking/routes/route-configuration.html#nw-ingress-creating-a-route-via-an-ingress_route-configuration)を参照してください。
+この設定では、OpenShift Routeは、GitLab Operatorによって作成されたIngressを変換することによって作成されます。この変換の詳細については、[Routeドキュメント](https://docs.openshift.com/container-platform/4.10/networking/routes/route-configuration.html#nw-ingress-creating-a-route-via-an-ingress_route-configuration)を参照してください。

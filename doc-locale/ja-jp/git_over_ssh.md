@@ -1,7 +1,7 @@
 ---
 stage: GitLab Delivery
 group: Operate
-info: To determine the technical writer assigned to the Stage/Group associated with this page, see https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see <https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments>
 title: SSH経由でのGitのサポート
 ---
 
@@ -20,7 +20,7 @@ title: SSH経由でのGitのサポート
 
 `gitlab.gitlab-shell.enabled`が`true`に設定されている場合、GitLab Operatorは`gitlab-shell`をデプロイします。これはデフォルト設定です。
 
-ターゲットプラットフォームに基づく要件の概要は次のとおりです:
+ターゲットプラットフォームに基づく要件の概要は次のとおりです。
 
 | SSH経由のGitを必要とするか | Kubernetes                                                                                                    | OpenShift |
 |------------------------------|---------------------------------------------------------------------------------------------------------------|-----------|
@@ -33,7 +33,7 @@ title: SSH経由でのGitのサポート
 
 ### NGINX-Ingress Helmチャート {#nginx-ingress-helm-chart}
 
-GitLabでは、[フォークした`NGINX-ingress`チャート](https://docs.gitlab.com/charts/charts/nginx/fork/)を管理しており、これを使用することで、SSH経由のGitを「すぐに」サポートするように変更されたNGINXリソースをデプロイできます。
+GitLabでは、[フォークした`NGINX-ingress`チャート](https://docs.gitlab.com/charts/charts/nginx/#adjustments-to-the-nginx-fork)を管理しており、これを使用することで、SSH経由のGitを「すぐに」サポートするように変更されたNGINXリソースをデプロイできます。
 
 これはGitLab Operatorを使用する場合のデフォルト設定であり、GitLab CR内の`nginx-ingress.enabled={true,false}`によって制御されます。`false`に設定すると、[外部NGINXインスタンス](https://docs.gitlab.com/charts/advanced/external-nginx/)を使用できます。
 
@@ -45,11 +45,11 @@ NGINX Ingressプロバイダーのインストールオプションの詳細に�
 
 組み込みのフォークしたNGINX-Ingress Helmチャートの代替として、[NGINX Ingress Operator](https://github.com/nginxinc/nginx-ingress-operator)を使用して`gitlab-shell`を公開することもできます。
 
-このオプションにはいくつかの注意事項があります:
+このオプションにはいくつかの注意事項があります。
 
 - NGINX Inc.のTransportServer/GlobalConfigurationカスタムリソース定義は、機能プレビューと見なされており、本番環境での使用には注意が必要です。
 - NGINX Inc.のOperatorはまだ比較的新しく、現在のバージョンは0.3.0に過ぎません。どちらのフレーバーの成熟したHelmチャートと比べても、利用可能な設定オプションはそれほど多く含まれていません。
-- このオプションを使用する場合でも、NGINXサービスで`22`を手動で公開する必要があります（これは、NGINXIngressController CRでは設定できません）。
+- このオプションでは、NGINXサービスのポート`22`を手動で公開する必要があります（これは、NGINXIngressController CRでは設定できません）。
 
 より広範な調査内容は、[\#58](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/58#note_585883916)に記載されています。
 
