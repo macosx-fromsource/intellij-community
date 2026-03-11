@@ -74,8 +74,9 @@ documentation to learn more about its security context constraints.
 
 ### SSL encryption
 
-**Operator** deploys the [**cert-manager-operator** from JetStack](https://cert-manager.io/docs/releases/)
-to manage SSL certificates across the GitLab application. The
-**cert-manager-operator** sets no secure context constraints directly, thus
+GitLab Operator requires [`cert-manager`](https://cert-manager.io/docs/releases/)
+to be installed separately as a prerequisite. GitLab Operator configures `cert-manager`
+Issuers and Certificates to manage TLS across the GitLab application.
+`cert-manager` sets no security context constraints directly, therefore
 OpenShift will apply the **restricted** security context constraint by
 default.
