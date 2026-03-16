@@ -32,7 +32,7 @@ GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefec
 
 This document describes how to deploy the GitLab Operator by using manifests in your Kubernetes or OpenShift cluster.
 
-<!--This warning block is duplicated in ../config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml.
+<!--This warning block is duplicated in `../config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml`.
 Changes should be reflected in both locations.-->
 
 If using OpenShift, installation is typically handled by the Operator Lifecycle Manager (OLM).
@@ -326,4 +326,4 @@ This deletes the Operator's resources, including the running Deployment of the O
 
 ## Troubleshoot the GitLab Operator
 
-Troubleshooting the Operator can be found in [troubleshooting.md](troubleshooting.md).
+For information on troubleshooting the GitLab Operator, see [troubleshooting](troubleshooting.md).
