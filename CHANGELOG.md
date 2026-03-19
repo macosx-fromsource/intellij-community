@@ -1,3 +1,21 @@
+## 2.10.0 (2026-03-19)
+
+### changed (9 changes)
+
+- [Update ubi9-micro to 2173487](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c9e4b78dd45c8453e30a511deae5ece3f7630d93) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1422))
+- [Update sigs.k8s.io/gateway-api to v1.5.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f5638904d0cf68829d11157e089ce0b84bae8ffc) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1421))
+- [Update sigs.k8s.io/gateway-api to v1.5.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/0fbc6e6770b7b3de95255c8d793030ff2cf3ca2a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1419))
+- [Update golang to v1.26.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/40d59a6a695253deb858b4f46d84507ef1af9732) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1409))
+- [Update helm.sh/helm/v4 to v4.1.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a857dff0ed3e095ede77427bd8ebccd9b083d54b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1415))
+- [Update golang.org/x/mod to v0.34.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e2004c4207e634d53144972082191f6ed926df2d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1414))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b9951a99d39ee4f09872bd6f81f5463fa9434bfa) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1406))
+- [Update github.com/cert-manager/cert-manager to v1.20.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/43fa65d767d6f5339764600c804dc5609259235c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1413))
+- [Update github.com/cert-manager/cert-manager to v1.19.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/cbc9b64a31998dece929349347b6b9e1e510880b) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1400))
+
+### added (1 change)
+
+- [Add Beta GatewayAPI support with Envoy Gateway](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4539faf6b16c3ef18d62a8f17ffeb0f343e3bb97) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1354))
+
 ## 2.9.2 (2026-03-11)
 
 No changes.
