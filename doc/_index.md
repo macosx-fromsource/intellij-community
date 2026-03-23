@@ -19,23 +19,17 @@ Use the GitLab Operator to run GitLab in
 [OpenShift](https://docs.gitlab.com/install/openshift_and_gitlab/) or on
 another Kubernetes-compatible platform.
 
-{{< alert type="note" >}}
-
-The GitLab Operator has [known limitations](#known-issues) and is only suitable for specific scenarios in production use.
-
-{{< /alert >}}
+> [!note]
+> The GitLab Operator has [known limitations](#known-issues) and is only suitable for specific scenarios in production use.
 
 <!-- This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
 
-{{< alert type="warning" >}}
-
-The default values of the GitLab custom resource are **not intended for production use**.
-With these values, GitLab Operator creates a GitLab instance where all services, including the persistent data,
-are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
-For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
-GitLab does not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
-
-{{< /alert >}}
+> [!warning]
+> The default values of the GitLab custom resource are **not intended for production use**.
+> With these values, GitLab Operator creates a GitLab instance where all services, including the persistent data,
+> are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
+> For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
+> GitLab does not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
 
 ## Known issues
 
@@ -104,7 +98,8 @@ In certain cases we allow MRs to be merged with only one approval.
 
 #### Go modules updates
 
-**Note:** This is only relevant to GitLab team members of the group which owns this project.
+> [!note]
+> This is only relevant to GitLab team members of the group which owns this project.
 
 If you are a team member of the team owning this project, you were given CODEOWNERS approval rights over the
 `go.mod` and `go.sum` files. If the MR is only changing these files, you should be able to approve the MR

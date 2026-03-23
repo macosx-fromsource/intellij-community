@@ -51,15 +51,12 @@ The security context constraints will be tightened in future releases as the
 full read/write behaviors of the GitLab application are validated within
 the OpenShift security model.
 
-{{< alert type="note" >}}
-
-Administrators coming to Cloud Native GitLab from a Linux package installation should note that
-Linux package installation tasks performed with `sudo` are handled by OpenShift and the
-underlying Kubernetes engine. Pods are individual services which, in a Linux package installation,
-drop privilege to run as an application-specific user. The
-**Operator** will [terminate any pod that is not operating with the expected UID](#security-context-constraints-within-the-gitlab-deployment).
-
-{{< /alert >}}
+> [!note]
+> Administrators coming to Cloud Native GitLab from a Linux package installation should note that
+> Linux package installation tasks performed with `sudo` are handled by OpenShift and the
+> underlying Kubernetes engine. Pods are individual services which, in a Linux package installation,
+> drop privilege to run as an application-specific user. The
+> **Operator** will [terminate any pod that is not operating with the expected UID](#security-context-constraints-within-the-gitlab-deployment).
 
 ### Third party resource definitions
 

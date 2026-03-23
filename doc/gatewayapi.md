@@ -13,12 +13,9 @@ title: Use Gateway API and Envoy Gateway
 
 {{< /details >}}
 
-{{< alert type="warning" >}}
-
-Before enabling Gateway API with the Operator check the GitLab chart [Gateway API documentation](https://docs.gitlab.com/charts/charts/globals/#gateway-api)
-for details on the available configuration options and current limitations.
-
-{{< /alert >}}
+> [!warning]
+> Before enabling Gateway API with the Operator check the GitLab chart [Gateway API documentation](https://docs.gitlab.com/charts/charts/globals/#gateway-api)
+> for details on the available configuration options and current limitations.
 
 Starting with Operator 2.10 and GitLab chart 9.7, GitLab can be exposed by using [Gateway API](https://gateway-api.sigs.k8s.io/)
 instead of Ingress. This follows the Kubernetes community recommendation after the

@@ -91,14 +91,11 @@ If the answer is not provided there, check for an existing issue or open a new i
 
 ### Upgrade GitLab by using GitLab Operator
 
-{{< alert type="warning" >}}
-
-The GitLab Operator upgrades GitLab using the [zero-downtime](https://docs.gitlab.com/update/zero_downtime/) approach.
-As a result, GitLab and the underlying chart version should be updated one minor release at a time.
-
-Operator releases before 2.6.0 and 2.5.1 did not enforce a valid upgrade path.
-
-{{< /alert >}}
+> [!warning]
+> The GitLab Operator upgrades GitLab using the [zero-downtime](https://docs.gitlab.com/update/zero_downtime/) approach.
+> As a result, GitLab and the underlying chart version should be updated one minor release at a time.
+>
+> Operator releases before 2.6.0 and 2.5.1 did not enforce a valid upgrade path.
 
 1. Update the `spec.chart.version` field in the GitLab custom resource to a new version. For example:
 
