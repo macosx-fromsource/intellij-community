@@ -12,23 +12,17 @@ title: Installation
 
 {{< /details >}}
 
-{{< alert type="note" >}}
-
-The GitLab Operator has [known limitations](_index.md#known-issues) and is only suitable for specific scenarios in production use.
-
-{{< /alert >}}
+> [!note]
+> The GitLab Operator has [known limitations](_index.md#known-issues) and is only suitable for specific scenarios in production use.
 
 <!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
 
-{{< alert type="warning" >}}
-
-The default values of the GitLab custom resource are **not intended for production use**.
-With these values, GitLab Operator creates a GitLab instance where all services, including the persistent data,
-are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
-For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
-GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
-
-{{< /alert >}}
+> [!warning]
+> The default values of the GitLab custom resource are **not intended for production use**.
+> With these values, GitLab Operator creates a GitLab instance where all services, including the persistent data,
+> are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
+> For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
+> GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
 
 This document describes how to deploy the GitLab Operator by using manifests in your Kubernetes or OpenShift cluster.
 
@@ -91,8 +85,9 @@ Kubernetes and OpenShift within three months of their initial availability.
 
 For more details [refer to our Kubernetes support policy](https://handbook.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/k8s-release-support-policy/).
 
-Note: For some components, like the [agent for Kubernetes](https://docs.gitlab.com/user/clusters/agent/)
-and [GitLab chart](https://docs.gitlab.com/charts/installation/cloud/), GitLab might support different cluster versions.
+> [!note]
+> For some components, like the [agent for Kubernetes](https://docs.gitlab.com/user/clusters/agent/)
+> and [GitLab chart](https://docs.gitlab.com/charts/installation/cloud/), GitLab might support different cluster versions.
 
 We welcome any compatibility issues with releases newer than those listed above in our [issue tracker](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues).
 
@@ -291,11 +286,8 @@ to pin the Operator's version or to upgrade to a non-latest version.
 - If GitLab Operator and specified GitLab Helm chart version are incompatible, configuration changes to the chart can
   fail with [errors about the GitLab Helm chart version](gitlab_upgrades.md).
 
-{{< alert type="note" >}}
-
-[OLM does not support downgrading Operators](https://github.com/operator-framework/operator-lifecycle-manager/issues/1177).
-
-{{< /alert >}}
+> [!note]
+> [OLM does not support downgrading Operators](https://github.com/operator-framework/operator-lifecycle-manager/issues/1177).
 
 ## Uninstall the GitLab Operator
 

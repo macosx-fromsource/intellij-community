@@ -36,11 +36,8 @@ Please consult the "Prerequisites" section of the [installation](../installation
 
    When working on a forked MR, the branch name might result in a malformed image name, as this pipeline ran in the fork. After you have assessed that the code poses no security risk to our pipelines, trigger a manual pipeline in our project, and use the commit sha as the `TAG`. For example: `TAG=7f954ee1 task deploy_operator`.
 
-   {{< alert type="note" >}}
-
-You must deploy GitLab to the operator namespace. Other namespaces aren't supported.
-
-   {{< /alert >}}
+   > [!note]
+   > You must deploy GitLab to the operator namespace. Other namespaces aren't supported.
 
 1. Create a GitLab custom resource (CR).
 

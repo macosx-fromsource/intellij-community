@@ -123,7 +123,8 @@ scripts/provision_and_deploy.sh kind_deploy
 
 That's it! You should now be able to navigate to `https://gitlab.(your IP).nip.io` and log in with the root password.
 
-**NOTE**: Use of `cert-manager` for generating certificates for Ingresses in KinD is not possible unless your KinD instance is publicly accessible.
+> [!note]
+> Use of `cert-manager` for generating certificates for Ingresses in KinD is not possible unless your KinD instance is publicly accessible.
 
 ## Runner deployment
 
