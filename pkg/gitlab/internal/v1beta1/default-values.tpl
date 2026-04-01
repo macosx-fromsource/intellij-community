@@ -4,10 +4,12 @@ global:
 
   ingress:
     apiVersion: networking.k8s.io/v1
-  
+
+  {{- if .UseGatewayLegacyConfig }}
   gatewayApi:
     class:
       controllerName: "gateway.envoyproxy.io/gatewayclass-controller"
+  {{- end }}
 
   serviceAccount:
     enabled: true
@@ -63,6 +65,10 @@ gitlab-zoekt:
   serviceAccount:
     create: false
     name: {{ .Settings.AppNonRootServiceAccount }}
+
+gatewayApiResources:
+  class:
+    controllerName: "gateway.envoyproxy.io/gatewayclass-controller"
 
 nginx-ingress:
   labels:

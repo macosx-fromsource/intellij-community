@@ -9,6 +9,7 @@ import (
 
 	"github.com/mitchellh/copystructure"
 	"github.com/pkg/errors"
+	"golang.org/x/mod/semver"
 	chartutil "helm.sh/helm/v4/pkg/chart/common/util"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/settings"
@@ -77,9 +78,16 @@ func (w *Adapter) loadValuesFromTemplate(template *template.Template, templatePa
 }
 
 func (w *Adapter) templateParameters() map[string]interface{} {
+	// Lots of Gateway API configuration moved in 9.11 away from global.
+	// Depending on that version we need to customize our default values.
+	// This check can be dropped once Operator only supports chart 9.11 and newer.
+	chartVer := w.source.Spec.Chart.Version
+	useGatewayLegacyConfig := chartVer != "" && semver.Compare("v"+chartVer, "v9.11.0") < 0
+
 	return map[string]interface{}{
-		"ReleaseName": w.ReleaseName(),
-		"Settings":    appSettings,
+		"ReleaseName":            w.ReleaseName(),
+		"Settings":               appSettings,
+		"UseGatewayLegacyConfig": useGatewayLegacyConfig,
 	}
 }
 

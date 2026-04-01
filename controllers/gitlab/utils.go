@@ -118,6 +118,7 @@ const (
 	ChartVersion85 = "8.5.0"
 	ChartVersion97 = "9.7.0"
 	ChartVersion98 = "9.8.0"
+	ChartVersion99 = "9.9.0"
 )
 
 // RedisSubqueues is the array of possible Redis subqueues.
