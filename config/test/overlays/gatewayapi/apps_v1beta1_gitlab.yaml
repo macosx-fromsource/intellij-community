@@ -10,8 +10,6 @@ spec:
         gatewayApi:
           enabled: true
           installEnvoy: true
-          class:
-            create: true
           protocol: HTTPS
         ingress:
           enabled: false

@@ -29,20 +29,33 @@ fi
 
 echo "Fetching chart using ref ${CHARTS_REF}"
 
-version=$(fetch_short_id "${CHARTS_REF}")
+short_id=$(fetch_short_id "${CHARTS_REF}")
 
-echo "Fetching chart version ${CHARTS_REF}@${version}"
+echo "Fetching chart version ${CHARTS_REF}@${short_id}"
 
-source="/tmp/chart-${version}"
+source="/tmp/chart-${short_id}"
 rm -rf "${source}" && mkdir "${source}"
 
 curl -fsSL \
-    "${API_CHARTS_PROJECT_URL}/repository/archive.tar.gz?sha=${version}" | \
+    "${API_CHARTS_PROJECT_URL}/repository/archive.tar.gz?sha=${short_id}" | \
 tar -xzf - -C "${source}" --strip-component 1
 
 pushd "${source}"
 helm dependency update
-semver="$(yq eval '.version' Chart.yaml)-${version}"
+chart_ver="$(yq eval '.version' Chart.yaml)"
+
+# The chart version on master is only bumped during the release.
+# We already bump the chart version here to to allow the Operator to test/apply logic specific to the upcoming release.
+if [[ "${CHARTS_REF}" == "master" ]]; then
+  IFS='.' read -r major minor patch <<< "$chart_ver"
+  if (( minor == 11 )); then
+    chart_ver="$((major + 1)).0.0"
+  else
+    chart_ver="$major.$((minor + 1)).0"
+  fi
+fi
+
+semver="${chart_ver}+${short_id}"
 helm package --version="${semver}" .
 popd
 
@@ -50,4 +63,4 @@ mkdir -p charts
 mv ${source}/gitlab-*.tgz ./charts/ && rm -rf "${source}"
 
 echo "${semver}" >> CHART_NIGHTLY_VERSION
-echo "${CHARTS_REF}@${charts_short_id}" >> CHART_NIGHTLY_VERSION 
+echo "${CHARTS_REF}@${short_id}" >> CHART_NIGHTLY_VERSION
