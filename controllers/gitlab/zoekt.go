@@ -5,7 +5,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
-	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab"
 )
 
 // ZoektStatefulSet returns the StatefulSet for the Zoekt component.
@@ -19,6 +18,8 @@ func ZoektStatefulSet(template helm.Template) client.Object {
 	}
 
 	sts := obj.(*appsv1.StatefulSet)
+	sts = sts.DeepCopy()
+
 	name := sts.Spec.Selector.MatchLabels["app.kubernetes.io/name"]
 	sts.Labels["app"] = name
 	sts.Spec.Selector.MatchLabels = map[string]string{
@@ -35,17 +36,16 @@ func ZoektStatefulSet(template helm.Template) client.Object {
 // ZoektDeployment returns the Deployment for the Zoekt component.
 // Zeokt chart currently sets labels differently than GitLab Charts,
 // so we need to manually adjust the selector and template labels here.
-func ZoektDeployment(template helm.Template, adapter gitlab.Adapter) client.Object {
+func ZoektDeployment(template helm.Template) client.Object {
 	obj := template.Query().ObjectByKindAndComponent(DeploymentKind, ZoektComponentName)
 
 	if obj == nil {
 		return nil
 	}
 
-	// Zoekt chart currently sets no explicit namespace.
-	obj.SetNamespace(adapter.Name().Namespace)
-
 	deployment := obj.(*appsv1.Deployment)
+	deployment = deployment.DeepCopy()
+
 	name := deployment.Spec.Selector.MatchLabels["app.kubernetes.io/name"]
 	deployment.Labels["app"] = name
 	deployment.Spec.Selector.MatchLabels = map[string]string{
