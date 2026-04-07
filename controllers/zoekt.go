@@ -81,5 +81,5 @@ func (r *GitLabReconciler) reconcileZoektCertificate(ctx context.Context, adapte
 }
 
 func (r *GitLabReconciler) reconcileZoektDeployment(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
-	return r.createOrPatch(ctx, gitlabctl.ZoektDeployment(template, adapter), adapter)
+	return r.createOrPatch(ctx, gitlabctl.ZoektDeployment(template), adapter)
 }
