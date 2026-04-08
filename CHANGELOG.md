@@ -1,3 +1,9 @@
+## 2.10.2 (2026-04-08)
+
+### fixed (1 change)
+
+- [Fix Zoekt compoent empty labels by deep copying objects](https://gitlab.com/gitlab-org/security/cloud-native/gitlab-operator/-/commit/ddfc0cff611e162a33f131e7f635256e4dac265a)
+
 ## 2.10.1 (2026-03-25)
 
 No changes.
