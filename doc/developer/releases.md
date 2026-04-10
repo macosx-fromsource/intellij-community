@@ -12,6 +12,29 @@ The GitLab Operator uses [semver versioning](https://semver.org/). Version tags 
 
 Operator documentation is available in the `doc/` directory.
 
+## OLM releases
+
+The GitLab Operator is published to three [Operator Lifecycle Manager (OLM)](https://olm.operatorframework.io/) catalogs:
+
+1. OperatorHub.io
+1. Red Hat community catalog
+1. Red Hat certified catalog
+
+OLM releases are triggered manually by a maintainer after the regular Operator manifest and chart release is complete.
+The full runbook is in the [release issue template](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/.gitlab/issue_templates/release.md).
+
+### Upgrade paths for Red Hat catalogs
+
+OLM requires each bundle to declare an explicit [upgrade path](https://olm.operatorframework.io/docs/concepts/olm-architecture/operator-catalog/creating-an-update-graph/)
+so that OLM knows which installed versions can be upgraded to the new release. The GitLab Operator uses two strategies:
+
+- **`replaces`** — the standard strategy. The new bundle replaces a specific previous version, forming a linear upgrade chain.
+  Used for ordinary patch and minor releases within an existing [channel](https://olm.operatorframework.io/docs/best-practices/channel-naming/).
+- **`skips`** — used when support for a new OpenShift version is added, which requires creating a new OLM channel.
+  Because `replaces` requires the target version to already exist in the channel, `skips` is used instead to declare
+  compatibility without requiring a direct predecessor in that channel. The skipped version(s) gets prunes from the
+  upgrade path.
+
 ## Red Hat Certification
 
 The release pipeline will contain a `certification_upload` job when the

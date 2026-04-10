@@ -123,11 +123,11 @@ check_requirements() {
     local stable_branch="${VERSION%*.*}"
     stable_branch="${stable_branch/./-}-stable"
 
-    printf '[requirement check] PREVIOUS_OPERATOR_VERSION is defined: '
-    run_check test -n "${PREVIOUS_OPERATOR_VERSION:-}"
+    printf '[requirement check] Upgrade path is defined: '
+    run_check test -n "${PREVIOUS_OPERATOR_VERSION:-}${OLM_SKIP_VERSION:-}"
 
     if [ -n "${OLM_SKIP_VERSION:-}" ]; then
-        printf '[requirement check] Upgrade mode: replaces %s skips %s' "${PREVIOUS_OPERATOR_VERSION}" "${OLM_SKIP_VERSION}"
+        printf '[requirement check] Upgrade mode: skips %s' "${OLM_SKIP_VERSION}"
     else
         printf '[requirement check] Upgrade mode: replaces %s' "${PREVIOUS_OPERATOR_VERSION}"
     fi
