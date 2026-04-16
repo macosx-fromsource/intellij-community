@@ -1,3 +1,17 @@
+## 2.11.0 (2026-04-16)
+
+### fixed (1 change)
+
+- [Fix Zoekt compoent empty labels by deep copying objects](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2d7b9bfd92cd82971f52d96e42e25fa87a44b7d5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1435))
+
+### changed (5 changes)
+
+- [Update github.com/cert-manager/cert-manager to v1.20.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/520fb3acb2e1fc7bd17729a01613d2ea8bf12be2) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1434))
+- [Update prom-op-api/monitoring to v0.90.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7aaa4c3d28394c578d4794291c3e5b558ae5e98f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1433))
+- [Update k8s.io dependencies to v0.35.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/02ce0a16190f1af6a0a843b1bbd202c8bce573e0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1423))
+- [Update prom-op-api/monitoring to v0.90.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f3c73d84d4014b222d2dab4a4302618dda779ba1) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1424))
+- [Update github.com/envoyproxy/gateway to v1.7.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/113ebf5672d2960ec16995c122f9458de9f3d4f6) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1416))
+
 ## 2.10.2 (2026-04-08)
 
 ### fixed (1 change)
