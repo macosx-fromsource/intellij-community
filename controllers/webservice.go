@@ -3,6 +3,8 @@ package controllers
 import (
 	"context"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/internal"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
@@ -59,19 +61,21 @@ func (r *GitLabReconciler) reconcileWebserviceDeployments(ctx context.Context, a
 	}
 
 	for _, webservice := range webservices {
-		if err := r.setDeploymentReplica(ctx, webservice); err != nil {
+		ws := webservice.DeepCopyObject().(client.Object)
+
+		if err := r.setDeploymentReplica(ctx, ws); err != nil {
 			return err
 		}
 
-		if err := r.annotateSecretsChecksum(ctx, adapter, webservice); err != nil {
+		if err := r.annotateSecretsChecksum(ctx, adapter, ws); err != nil {
 			return err
 		}
 
-		if err := internal.ToggleDeploymentPause(webservice, pause); err != nil {
+		if err := internal.ToggleDeploymentPause(ws, pause); err != nil {
 			return err
 		}
 
-		if err := r.createOrPatch(ctx, webservice, adapter); err != nil {
+		if err := r.createOrPatch(ctx, ws, adapter); err != nil {
 			return err
 		}
 	}

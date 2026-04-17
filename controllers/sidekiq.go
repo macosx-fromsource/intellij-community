@@ -3,6 +3,8 @@ package controllers
 import (
 	"context"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/internal"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
@@ -23,19 +25,21 @@ func (r *GitLabReconciler) reconcileSidekiqDeployments(ctx context.Context, adap
 	sidekiqs := gitlabctl.SidekiqDeployments(template)
 
 	for _, sidekiq := range sidekiqs {
-		if err := r.setDeploymentReplica(ctx, sidekiq); err != nil {
+		sq := sidekiq.DeepCopyObject().(client.Object)
+
+		if err := r.setDeploymentReplica(ctx, sq); err != nil {
 			return err
 		}
 
-		if err := r.annotateSecretsChecksum(ctx, adapter, sidekiq); err != nil {
+		if err := r.annotateSecretsChecksum(ctx, adapter, sq); err != nil {
 			return err
 		}
 
-		if err := internal.ToggleDeploymentPause(sidekiq, pause); err != nil {
+		if err := internal.ToggleDeploymentPause(sq, pause); err != nil {
 			return err
 		}
 
-		if err := r.createOrPatch(ctx, sidekiq, adapter); err != nil {
+		if err := r.createOrPatch(ctx, sq, adapter); err != nil {
 			return err
 		}
 	}

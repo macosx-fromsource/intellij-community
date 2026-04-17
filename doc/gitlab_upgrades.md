@@ -92,10 +92,12 @@ If the answer is not provided there, check for an existing issue or open a new i
 ### Upgrade GitLab by using GitLab Operator
 
 > [!warning]
-> The GitLab Operator upgrades GitLab using the [zero-downtime](https://docs.gitlab.com/update/zero_downtime/) approach.
+> By default, the GitLab Operator upgrades GitLab using the [zero-downtime](https://docs.gitlab.com/update/zero_downtime/) approach.
 > As a result, GitLab and the underlying chart version should be updated one minor release at a time.
 >
 > Operator releases before 2.6.0 and 2.5.1 did not enforce a valid upgrade path.
+>
+> To skip minor versions during an upgrade, you must [upgrade with downtime](#upgrade-with-downtime).
 
 1. Update the `spec.chart.version` field in the GitLab custom resource to a new version. For example:
 
@@ -152,6 +154,91 @@ gitlab   Running     5.2.4
 ```
 
 Status conditions on the GitLab object itself present more detailed information about the application.
+
+### Upgrade with downtime
+
+By default, the GitLab Operator enforces a [zero-downtime upgrade](https://docs.gitlab.com/update/zero_downtime/) path,
+which requires updating one minor version at a time. If you prefer to skip minor versions (for example, upgrading from
+GitLab 18.0 to 18.2), you can disable zero-downtime upgrades by adding the
+`gitlab.io/disable-zero-downtime-upgrade` annotation to the GitLab custom resource.
+
+> [!warning]
+> During an upgrade with downtime, the GitLab instance is unavailable while database migrations run.
+> Before proceeding, ensure you have planned a maintenance window and have communicated the expected downtime to your users.
+>
+> You must still follow the required [upgrade stops](https://docs.gitlab.com/update/upgrade_paths/) when skipping
+> minor versions. Plan your upgrade path accordingly to ensure you stop at each required version before proceeding
+> to your target version.
+
+To perform an upgrade with downtime:
+
+1. Consider [turning on maintenance mode](https://docs.gitlab.com/administration/maintenance_mode/).
+1. Perform a [backup](https://docs.gitlab.com/charts/backup-restore/).
+1. Upgrade GitLab Operator to a version that supports the target GitLab version.
+1. Add the `gitlab.io/disable-zero-downtime-upgrade` annotation and update `spec.chart.version` in the
+   GitLab custom resource:
+
+   ```diff
+   apiVersion: apps.gitlab.com/v1beta1
+   kind: GitLab
+   metadata:
+     name: gitlab
+   + annotations:
+   +   gitlab.io/disable-zero-downtime-upgrade: "true"
+   spec:
+     chart:
+   -   version: "9.0.0"
+   +   version: "9.2.0"
+       values:
+         ...
+   ```
+
+1. Apply the modified GitLab custom resource:
+
+   ```shell
+   kubectl -n gitlab-system apply -f mygitlab.yaml
+   ```
+
+   The operator automatically:
+
+   1. Scales down Webservice and Sidekiq deployments to zero replicas.
+   1. Waits for all pods to terminate.
+   1. Runs database migrations.
+   1. Reconciles Webservice and Sidekiq with the new chart version.
+   1. Restores Webservice and Sidekiq replica counts from the chart values.
+
+1. Monitor the upgrade progress:
+
+   ```shell
+   kubectl -n gitlab-system logs deployment/gitlab-controller-manager -c manager -f
+   ```
+
+1. Wait for the upgrade to complete:
+
+   ```shell
+   $ kubectl -n gitlab-system get gitlab
+   NAME     STATUS      VERSION
+   gitlab   Running     9.3.0
+   ```
+
+1. After the upgrade completes, remove the annotation to restore the default zero-downtime upgrade behavior
+   for future upgrades:
+
+   ```diff
+   apiVersion: apps.gitlab.com/v1beta1
+   kind: GitLab
+   metadata:
+     name: gitlab
+   - annotations:
+   -   gitlab.io/disable-zero-downtime-upgrade: "true"
+   spec:
+     chart:
+       version: "9.3.0"
+       values:
+         ...
+   ```
+
+1. If enabled, [turn off maintenance mode](https://docs.gitlab.com/administration/maintenance_mode/#disable-maintenance-mode).
 
 ## How GitLab Operator upgrades GitLab
 

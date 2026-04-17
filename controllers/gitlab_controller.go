@@ -131,10 +131,17 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return requeue(err)
 	}
 
-	isUpgrade := adapter.IsUpgrade()
+	zduDisabled := apiv1beta1.IsZeroDowntimeUpgradeDisabled(gitlab)
+
+	if zduDisabled && adapter.IsUpgrade() {
+		log.Info("zero downtime upgrade is disabled via annotation",
+			"annotation", apiv1beta1.DisableZDUAnnotationKey)
+	}
+
+	isZeroDowntimeUpgrade := adapter.IsUpgrade() && !zduDisabled
 	operation := "install"
 
-	if isUpgrade {
+	if adapter.IsUpgrade() {
 		operation = "upgrade"
 	}
 
@@ -338,104 +345,25 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
-	if isUpgrade {
+	if isZeroDowntimeUpgrade {
 		if err := r.setStatusCondition(ctx, adapter, status.ConditionUpgrading, true, fmt.Sprintf("GitLab is upgrading from %s to %s", adapter.CurrentVersion(), adapter.DesiredVersion())); err != nil {
 			return requeue(err)
 		}
 
-		if adapter.WantsComponent(component.Migrations) {
-			if adapter.WantsComponent(component.Webservice) || adapter.WantsComponent(component.Sidekiq) {
-				// If upgrading with Migrations enabled and Webservice and/or Sidekiq enabled,
-				// then follow the traditional upgrade logic.
-				log.Info("ensuring pre-migrations Job has finished")
+		result, err := r.reconcileZeroDowntimeUpgrade(ctx, adapter, template, log)
+		if !result.IsZero() {
+			return result, err
+		}
+	} else if adapter.IsUpgrade() {
+		if err := r.setStatusCondition(ctx, adapter, status.ConditionUpgrading, true, fmt.Sprintf("GitLab is upgrading from %s to %s (with downtime)", adapter.CurrentVersion(), adapter.DesiredVersion())); err != nil {
+			return requeue(err)
+		}
 
-				job, err := gitlabctl.PreMigrationsJob(adapter, template)
-				if err != nil {
-					return requeue(err)
-				}
-
-				exists, err := r.jobExists(ctx, job)
-				if err != nil {
-					return requeue(err)
-				}
-
-				// Scale Webservice and Sidekiq down before running pre migrations.
-				// Only scale them down before once, to avoid pause -> unpause loop.
-				if !exists {
-					log.Info("pre-migrations Job does not exist")
-
-					log.Info("ensuring Webservice and/or Sidekiq are reconciled")
-
-					if err := r.reconcileWebserviceAndSidekiqIfEnabled(ctx, adapter, template, true); err != nil {
-						return requeue(err)
-					}
-				}
-
-				finished, err := r.runPreMigrations(ctx, adapter, job)
-				if err != nil {
-					return requeue(err)
-				}
-
-				if !finished {
-					log.Info("pre-migrations Job not yet finished")
-					return requeueWithDefaultDelay()
-				}
-
-				log.Info("ensuring Webservice and/or Sidekiq are unpaused")
-
-				if err := r.unpauseWebserviceAndSidekiqIfEnabled(ctx, adapter, template); err != nil {
-					return requeue(err)
-				}
-
-				log.Info("ensuring Webservice and/or Sidekiq are running")
-
-				if err := r.webserviceAndSidekiqRunningIfEnabled(ctx, adapter, template); err != nil {
-					log.Info("Webservice and/or Sidekiq not yet running", "error", err)
-					return requeueWithDefaultDelay()
-				}
-
-				log.Info("ensuring post-migrations Job has finished")
-
-				finished, err = r.runAllMigrations(ctx, adapter, template)
-				if err != nil {
-					return requeue(err)
-				}
-
-				if !finished {
-					log.Info("migrations Job not yet finished")
-					return requeueWithDefaultDelay()
-				}
-
-				log.Info("ensuring rolling update of Webservice and/or Sidekiq")
-
-				if err := r.rollingUpdateWebserviceAndSidekiqIfEnabled(ctx, adapter, template); err != nil {
-					return requeue(err)
-				}
-			} else {
-				// If upgrading with Migrations enabled but neither Webservice nor Sidekiq are enabled,
-				// then just run all migrations.
-				log.Info("ensuring migrations Job has finished")
-
-				finished, err := r.runAllMigrations(ctx, adapter, template)
-				if err != nil {
-					return requeue(err)
-				}
-
-				if !finished {
-					log.Info("migrations Job not yet finished")
-					return requeueWithDefaultDelay()
-				}
-			}
-		} else {
-			// If upgrading with Migrations disabled, then just reconcile enabled Deployments.
-			log.Info("ensuring Webservice and/or Sidekiq are reconciled if enabled")
-
-			if err := r.reconcileWebserviceAndSidekiqIfEnabled(ctx, adapter, template, false); err != nil {
-				return requeue(err)
-			}
+		result, err := r.reconcileNonZeroDowntimeUpgrade(ctx, adapter, template, log)
+		if !result.IsZero() {
+			return result, err
 		}
 	} else {
-		// If not upgrading, then run all migrations (if enabled) and reconcile enabled Deployments.
 		if err := r.setStatusCondition(ctx, adapter, status.ConditionUpgrading, false, "GitLab is not currently upgrading"); err != nil {
 			return requeue(err)
 		}

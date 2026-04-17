@@ -118,6 +118,12 @@ func (r *GitLabCustomValidator) validateUpgradePath(obj *GitLab) *field.Error {
 		return nil
 	}
 
+	if IsZeroDowntimeUpgradeDisabled(obj) {
+		gitlablog.Info("zero downtime upgrade is disabled, skipping upgrade path validation", "name", obj.GetName())
+
+		return nil
+	}
+
 	if !isZeroDowntimePath(currentSemver, targetSemver) {
 		return field.Invalid(key, targetVer,
 			fmt.Sprintf("Upgrading from %s to %s is an invalid zero downtime upgrade path. The version must be updated one minor release at a time.", currentVer, targetVer))

@@ -74,19 +74,52 @@ var _ = Describe("Webhook", func() {
 					Expect(warnings).To(BeEmpty())
 				})
 			})
+
+			When("Updated by two catalog versions with zero downtime upgrade disabled", func() {
+				BeforeEach(func() {
+					versions := helm.AvailableChartVersions()
+					obj = createGitLabWithAnnotations(versions[0], versions[2],
+						map[string]string{DisableZDUAnnotationKey: "true"})
+				})
+
+				It("The validation passes", func() {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(warnings).To(BeEmpty())
+				})
+			})
+
+			When("Updated by two catalog versions with zero downtime upgrade enabled", func() {
+				BeforeEach(func() {
+					versions := helm.AvailableChartVersions()
+					obj = createGitLabWithAnnotations(versions[0], versions[2],
+						map[string]string{DisableZDUAnnotationKey: "false"})
+				})
+
+				It("The validation fails", func() {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("spec.chart.version"))
+					Expect(err.Error()).To(ContainSubstring("invalid zero downtime"))
+					Expect(warnings).To(BeEmpty())
+				})
+			})
 		})
 	})
 })
 
 func createGitLab(chartVersion, statusVersion string) *GitLab {
+	return createGitLabWithAnnotations(chartVersion, statusVersion, nil)
+}
+
+func createGitLabWithAnnotations(chartVersion, statusVersion string, annotations map[string]string) *GitLab {
 	return &GitLab{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "apps.gitlab.com/v1beta1",
 			Kind:       "GitLab",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gitlab",
-			Namespace: "test",
+			Name:        "gitlab",
+			Namespace:   "test",
+			Annotations: annotations,
 		},
 		Spec: GitLabSpec{
 			Chart: GitLabChartSpec{
