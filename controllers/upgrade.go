@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/internal"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/component"
@@ -224,4 +225,157 @@ func removeInitContainerEnvVar(deployment *appsv1.Deployment, initContainerName,
 func addInitContainerEnvVar(deployment *appsv1.Deployment, initContainerName, envVarName, envVarValue string) {
 	_ = applyToContainer(deployment.Spec.Template.Spec.InitContainers,
 		initContainerName, addEnvVar(envVarName, envVarValue))
+}
+
+func (r *GitLabReconciler) scaleDownDeployments(ctx context.Context, adapter gitlab.Adapter, deployments []client.Object) error {
+	zero := int32(0)
+
+	for _, d := range deployments {
+		deployment, err := r.getDeployment(ctx, adapter, d.GetName())
+		if err != nil {
+			return err
+		}
+
+		if deployment.Spec.Replicas != nil && *deployment.Spec.Replicas == 0 {
+			continue
+		}
+
+		deployment.Spec.Replicas = &zero
+
+		if err := r.Update(ctx, deployment); err != nil {
+			return fmt.Errorf("unable to scale down deployment %s: %w", deployment.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) scaleDownWebserviceAndSidekiqIfEnabled(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	if adapter.WantsComponent(component.Webservice) {
+		if err := r.scaleDownDeployments(ctx, adapter, gitlabctl.WebserviceDeployments(template)); err != nil {
+			return err
+		}
+	}
+
+	if adapter.WantsComponent(component.Sidekiq) {
+		if err := r.scaleDownDeployments(ctx, adapter, gitlabctl.SidekiqDeployments(template)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) deploymentsScaledDown(ctx context.Context, adapter gitlab.Adapter, deployments []client.Object) bool {
+	for _, d := range deployments {
+		deployment, err := r.getDeployment(ctx, adapter, d.GetName())
+		if err != nil {
+			r.Log.V(1).Info("unable to check if deployment is scaled down",
+				"deployment", d.GetName(), "error", err)
+
+			return false
+		}
+
+		if deployment.Status.Replicas != 0 || deployment.Status.ReadyReplicas != 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (r *GitLabReconciler) webserviceAndSidekiqScaledDownIfEnabled(ctx context.Context, adapter gitlab.Adapter, template helm.Template) bool {
+	if adapter.WantsComponent(component.Webservice) {
+		if !r.deploymentsScaledDown(ctx, adapter, gitlabctl.WebserviceDeployments(template)) {
+			return false
+		}
+	}
+
+	if adapter.WantsComponent(component.Sidekiq) {
+		if !r.deploymentsScaledDown(ctx, adapter, gitlabctl.SidekiqDeployments(template)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (r *GitLabReconciler) deploymentsHaveReadyReplica(ctx context.Context, adapter gitlab.Adapter, deployments []client.Object) bool {
+	for _, d := range deployments {
+		deployment, err := r.getDeployment(ctx, adapter, d.GetName())
+		if err != nil {
+			r.Log.V(1).Info("unable to check if deployment has a ready replica",
+				"deployment", d.GetName(), "error", err)
+
+			return false
+		}
+
+		if deployment.Status.ReadyReplicas == 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (r *GitLabReconciler) webserviceAndSidekiqHaveReadyReplicaIfEnabled(ctx context.Context, adapter gitlab.Adapter, template helm.Template) bool {
+	if adapter.WantsComponent(component.Webservice) {
+		if !r.deploymentsHaveReadyReplica(ctx, adapter, gitlabctl.WebserviceDeployments(template)) {
+			return false
+		}
+	}
+
+	if adapter.WantsComponent(component.Sidekiq) {
+		if !r.deploymentsHaveReadyReplica(ctx, adapter, gitlabctl.SidekiqDeployments(template)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (r *GitLabReconciler) restoreDeploymentReplicas(ctx context.Context, adapter gitlab.Adapter, deployments []client.Object) error {
+	for _, d := range deployments {
+		templateDeployment, err := internal.AsDeployment(d)
+		if err != nil {
+			return err
+		}
+
+		if templateDeployment.Spec.Replicas != nil && *templateDeployment.Spec.Replicas == 0 {
+			continue
+		}
+
+		deployment, err := r.getDeployment(ctx, adapter, d.GetName())
+		if err != nil {
+			return err
+		}
+
+		if err := adapter.PopulateManagedObjects(deployment); err != nil {
+			return err
+		}
+
+		deployment.Spec.Replicas = templateDeployment.Spec.Replicas
+
+		if err := r.Update(ctx, deployment); err != nil {
+			return fmt.Errorf("unable to restore replicas for deployment %s: %s", deployment.Name, err.Error())
+		}
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) restoreWebserviceAndSidekiqReplicasIfEnabled(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	if adapter.WantsComponent(component.Webservice) {
+		if err := r.restoreDeploymentReplicas(ctx, adapter, gitlabctl.WebserviceDeployments(template)); err != nil {
+			return err
+		}
+	}
+
+	if adapter.WantsComponent(component.Sidekiq) {
+		if err := r.restoreDeploymentReplicas(ctx, adapter, gitlabctl.SidekiqDeployments(template)); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

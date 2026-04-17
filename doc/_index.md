@@ -41,9 +41,10 @@ GitLab Operator does not support:
   For more information, see [GitLab Operator documentation on OpenShift Routes](openshift_ingress.md#openshift-routes).
 - [GKE workload identity](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) and [IAM service accounts](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html) to authenticate workloads to other cloud APIs (such as object storage).
   For more information, see [GitLab Operator issue 1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737).
-- The Operator upgrades GitLab using the zero downtime method. As a result, the GitLab and GitLab chart version
-  must be updated one minor release at a time. Support for upgrading multiple versions at a time is being
-  tracked in [GitLab Operator issue 1952](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1952).
+- By default, the Operator upgrades GitLab using the zero downtime method. As a result, the GitLab and GitLab chart
+  version must be updated one minor release at a time. To skip minor versions, you can
+  [disable zero-downtime upgrades](gitlab_upgrades.md#upgrade-with-downtime), which causes downtime during
+  the upgrade.
 
 GitLab Operator has any other limitation of GitLab chart. GitLab Operator relies on GitLab chart to provision Kubernetes resources. Therefore, any limitation
 in GitLab chart impacts GitLab Operator. Removing the GitLab chart dependency from GitLab Operator is proposed in
