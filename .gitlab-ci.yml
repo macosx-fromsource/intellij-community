@@ -51,7 +51,7 @@ variables:
   BUILDX_K8S_AUTO_STOP_IN: '2 hours'
   # Architectures to build via buildx
   BUILDX_ARCHS: amd64 # amd64,arm64 in project settings
-  PREFLIGHT_VERSION: "1.16.0"
+  PREFLIGHT_VERSION: "1.17.1"
 
   # We need GITLAB_CHART_VERSION and ENVIRONMENT_SUFFIX to be fully unset for pipeline logic to work correctly
   # Empty stings can be used to override seetings and lead to unexpected outcomes
