@@ -78,7 +78,6 @@ var _ = Describe("Gateway API", func() {
 			Expect(gatewayKinds).To(ContainElement(GatewayKind))
 			Expect(gatewayKinds).To(ContainElement(GatewayClassKind))
 			Expect(gatewayKinds).To(ContainElement(EnvoyProxyKind))
-			Expect(gatewayKinds).To(ContainElement(EnvoyPatchPolicyKind))
 		})
 	})
 })

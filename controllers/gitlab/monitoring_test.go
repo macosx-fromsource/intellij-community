@@ -83,11 +83,6 @@ nginx-ingress-geo:
       enabled: true
       serviceMonitor:
         enabled: true
-
-redis:
-  metrics:
-    serviceMonitor:
-      enabled: true
 `
 )
 

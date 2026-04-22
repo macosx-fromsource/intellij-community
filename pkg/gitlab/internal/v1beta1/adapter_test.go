@@ -156,8 +156,7 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 
 		checkEnabledComponents(a,
 			component.Gitaly, component.GitLabExporter, component.GitLabShell,
-			component.Migrations, component.MinIO, component.NginxIngress,
-			component.PostgreSQL, component.Redis, component.Registry,
+			component.Migrations, component.NginxIngress, component.Registry,
 			component.Sidekiq, component.Toolbox, component.Webservice)
 		checkDisabledComponents(a,
 			component.GitLabPages, component.Mailroom,
@@ -173,17 +172,14 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 		_ = values.SetValue("global.gitaly.enabled", false)
 		_ = values.SetValue("global.praefect.enabled", true)
 
-		/* Disable CertManager, PostgreSQL, Redis */
+		/* Disable CertManager */
 		_ = values.SetValue("global.ingress.configureCertmanager", false)
-		_ = values.SetValue("postgresql.install", false)
-		_ = values.SetValue("redis.install", false)
 
 		/*
-		 * Enable GitLab Pages, MinIO, Mailroom, and Spamcheck
+		 * Enable GitLab Pages, Mailroom, and Spamcheck
 		 * Mailroom requires more conditions and will not be enabled.
 		 */
 		_ = values.SetValue("global.pages.enabled", true)
-		_ = values.SetValue("global.minio.enabled", true)
 		_ = values.SetValue("gitlab.mailroom.enabled", true)
 		_ = values.SetValue("global.spamcheck.enabled", true)
 
@@ -195,12 +191,11 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 
 		checkEnabledComponents(a,
 			component.GitLabExporter, component.GitLabPages, component.GitLabShell,
-			component.Migrations, component.MinIO, component.NginxIngress,
-			component.Praefect, component.Registry, component.Sidekiq,
-			component.Spamcheck, component.Toolbox, component.Webservice)
+			component.Migrations, component.NginxIngress, component.Praefect,
+			component.Registry, component.Sidekiq, component.Spamcheck,
+			component.Toolbox, component.Webservice)
 		checkDisabledComponents(a,
-			component.Gitaly, component.Mailroom,
-			component.PostgreSQL, component.Redis)
+			component.Gitaly, component.Mailroom)
 		checkEnabledFeatures(a, ReplaceGitalyWithPraefect)
 		checkDisabledFeatures(a, ConfigureCertManager)
 
@@ -250,8 +245,6 @@ func addChartDefaultExamples(examples support.Values) {
 	examples["global.pages.enabled"] = false
 	examples["global.spamcheck.enabled"] = false
 	examples["nginx-ingress.enabled"] = true
-	examples["postgresql.install"] = true
-	examples["redis.install"] = true
 	examples["registry.enabled"] = true
 	examples["gitlab.gitaly.securityContext.runAsUser"] = 1000.0
 	examples["gitlab.gitlab-exporter.securityContext.fsGroup"] = 1000.0
