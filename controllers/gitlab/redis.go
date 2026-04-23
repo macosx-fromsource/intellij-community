@@ -16,11 +16,6 @@ func RedisConfigMaps(adapter gitlab.Adapter, template helm.Template) []client.Ob
 	componentLabel := gitlabComponentLabel
 	componentName := DefaultRedisComponentName
 
-	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
-		componentLabel = appLabel
-		componentName = nameOverride
-	}
-
 	result := template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{
 		componentLabel: componentName,
 	})
@@ -34,15 +29,8 @@ func RedisConfigMaps(adapter gitlab.Adapter, template helm.Template) []client.Ob
 
 // RedisServices returns the Services of the Redis component.
 func RedisServices(adapter gitlab.Adapter, template helm.Template) []client.Object {
-	nameOverride := RedisComponentName(adapter)
-
 	componentLabel := gitlabComponentLabel
 	componentName := DefaultRedisComponentName
-
-	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
-		componentLabel = appLabel
-		componentName = nameOverride
-	}
 
 	results := template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
 		componentLabel: componentName,
@@ -83,15 +71,8 @@ func RedisServiceMonitor(template helm.Template) client.Object {
 
 // RedisStatefulSet returns the Statefulset of the Redis component.
 func RedisStatefulSet(adapter gitlab.Adapter, template helm.Template) client.Object {
-	nameOverride := RedisComponentName(adapter)
-
 	componentLabel := gitlabComponentLabel
 	componentName := DefaultRedisComponentName
-
-	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
-		componentLabel = appLabel
-		componentName = nameOverride
-	}
 
 	results := template.Query().ObjectsByKindAndLabels(StatefulSetKind, map[string]string{
 		componentLabel: componentName,

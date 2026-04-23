@@ -403,7 +403,7 @@ review-docs-cleanup:
     paths:
       - charts/
   variables:
-    CHARTS_REF: cb-drop-minio
+    CHARTS_REF: master
   before_script:
     - task retrieve-charts-custom-ref # pull the charts from the specified branch before running tests to get the version
     - mkdir coverage

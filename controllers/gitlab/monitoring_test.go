@@ -5,7 +5,6 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
 
@@ -118,14 +117,8 @@ var _ = Describe("Monitoring", func() {
 			})
 
 			It("Should contain all Monitoring resources", func() {
-				// KAS PodMonitor is not supported prior to Chart version 8.5.0
-				if IsChartVersionOlderThan(helm.GetChartVersion(), ChartVersion85) {
-					Expect(serviceMonitors).To(HaveLen(len(serviceMonitorComponentMap) - 1))
-					Expect(podMonitors).To(HaveLen(len(podMonitorComponentMap) - 1))
-				} else {
-					Expect(serviceMonitors).To(HaveLen(len(serviceMonitorComponentMap) - 1))
-					Expect(podMonitors).To(HaveLen(len(podMonitorComponentMap)))
-				}
+				Expect(serviceMonitors).To(HaveLen(len(serviceMonitorComponentMap) - 1))
+				Expect(podMonitors).To(HaveLen(len(podMonitorComponentMap)))
 			})
 		})
 
