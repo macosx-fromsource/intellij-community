@@ -23,6 +23,7 @@ review_4_19:
     TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
     AGENT_NAME: ocp419-ci-cluster
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
+    OPENSHIFT_DEPLOYMENT: true
   before_script:
     - kubectl config get-contexts
     - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
