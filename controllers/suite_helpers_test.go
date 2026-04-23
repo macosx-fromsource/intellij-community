@@ -26,7 +26,11 @@ var (
 	emptyValues = support.Values{}
 )
 
-func CreateMockGitLab(releaseName, namespace string, values support.Values) *gitlabv1beta1.GitLab {
+func CreateMockGitLab(releaseName, namespace string, customValues support.Values) *gitlabv1beta1.GitLab {
+	values := support.Values{}
+	_ = values.AddFromYAML(minimalValues())
+	_ = values.Merge(customValues)
+
 	return &gitlabv1beta1.GitLab{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "apps.gitlab.com/v1beta1",
@@ -53,9 +57,53 @@ func CreateMockAdapter(mockGitLab *gitlabv1beta1.GitLab) gitlab.Adapter {
 	return adapter
 }
 
-func createObject(obj client.Object, ignoreAlreadyExists bool) error {
+func minimalValues() string {
+	return `
+gitlab:
+  toolbox:
+    backups:
+      cron:
+        enabled: true
+      objectStorage:
+        config:
+          secret: backup-storage-secret
+          key: config
+registry:
+  storage:
+    secret: registry-storage-secret
+    key: config
+global:
+  redis:
+    host: redis.example.com
+  psql:
+    host: psql.example.com
+    password:
+      secret: psql-password
+      key: password
+  appConfig:
+    object_store:
+      enabled: true
+      connection:
+        secret: object-storage-secret
+        key: connection
+`
+}
+
+func createMinimalSecrets() {
+	secrets := []*corev1.Secret{
+		newSecret("backup-storage-secret", "config", ""),
+		newSecret("registry-storage-secret", "config", ""),
+		newSecret("psql-password", "password", ""),
+		newSecret("object-storage-secret", "connection", ""),
+	}
+	for _, s := range secrets {
+		Expect(createObject(s)).Should(Succeed())
+	}
+}
+
+func createObject(obj client.Object) error {
 	err := k8sClient.Create(ctx, obj)
-	if errors.IsAlreadyExists(err) && ignoreAlreadyExists {
+	if errors.IsAlreadyExists(err) {
 		err = nil
 	}
 
@@ -194,21 +242,25 @@ func appLabels(releaseName, appName string) string {
 
 func createGitLabResource(releaseName string, chartValues support.Values) {
 	By("Creating a new GitLab resource")
-	Expect(createObject(CreateMockGitLab(releaseName, Namespace, chartValues), true)).Should(Succeed())
+	Expect(createObject(CreateMockGitLab(releaseName, Namespace, chartValues))).Should(Succeed())
 
 	By("Checking GitLab resource is created")
 	Eventually(getObjectPromise(releaseName, &gitlabv1beta1.GitLab{}),
 		PollTimeout, PollInterval).Should(Succeed())
 }
 
-func updateGitLabResource(releaseName string, chartValues support.Values) {
+func updateGitLabResource(releaseName string, customValues support.Values) {
 	By("Update the existing GitLab resource")
 	Expect(
 		updateObject(
 			CreateMockGitLab(releaseName, Namespace, support.Values{}),
 			func(obj client.Object) error {
+				values := support.Values{}
+				_ = values.AddFromYAML(minimalValues())
+				_ = values.Merge(customValues)
+
 				gitlab := obj.(*gitlabv1beta1.GitLab)
-				gitlab.Spec.Chart.Values.Object = chartValues
+				gitlab.Spec.Chart.Values.Object = values
 
 				return nil
 			})).Should(Succeed())

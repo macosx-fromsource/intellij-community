@@ -27,7 +27,6 @@ var (
 			return NGINXServiceMonitor(template, true)
 		}},
 		{component.Praefect, PraefectServiceMonitor},
-		{component.Redis, RedisServiceMonitor},
 		{component.Registry, RegistryServiceMonitor},
 		{component.Webservice, WebserviceServiceMonitor},
 		{component.Webservice, WebserviceWorkhorseServiceMonitor},

@@ -34,7 +34,11 @@ var (
 	namespace   = os.Getenv("HELM_NAMESPACE")
 )
 
-func CreateMockGitLab(releaseName, namespace string, values support.Values) *gitlabv1beta1.GitLab {
+func CreateMockGitLab(releaseName, namespace string, customValues support.Values) *gitlabv1beta1.GitLab {
+	values := support.Values{}
+	_ = values.AddFromYAML(minimalValues())
+	_ = values.Merge(customValues)
+
 	return &gitlabv1beta1.GitLab{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "apps.gitlab.com/v1beta1",
@@ -94,4 +98,36 @@ func setEnvOrPanic(key, value string) {
 	if err := os.Setenv(key, value); err != nil {
 		panic(err)
 	}
+}
+
+func minimalValues() string {
+	return `
+gitlab:
+  toolbox:
+    backups:
+      cron:
+        enabled: true
+      objectStorage:
+        config:
+          secret: backup-storage-secret
+          key: config
+registry:
+  storage:
+    secret: registry-storage-secret
+    key: config
+global:
+  redis:
+    host: redis.example.com
+  psql:
+    host: psql.example.com
+    password:
+      secret: psql-password
+      key: password
+  appConfig:
+    object_store:
+      enabled: true
+      connection:
+        secret: object-storage-secret
+        key: connection
+`
 }

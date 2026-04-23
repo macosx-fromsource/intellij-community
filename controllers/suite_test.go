@@ -106,6 +106,9 @@ var _ = BeforeSuite(func() {
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
+
+	By("Creating secrets referenced by minimal values")
+	createMinimalSecrets()
 })
 
 var _ = AfterSuite(func() {

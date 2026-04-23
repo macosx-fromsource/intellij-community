@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -11,12 +10,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	gitlabv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
-	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/status"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
@@ -25,13 +22,15 @@ var _ = Describe("GitLab controller", func() {
 	Context("GitLab CRD", func() {
 		It("Should create a CR with the specified Chart values", func() {
 			releaseName := "crd-testing"
+			domain := "example.com"
+			certMail := "webmaster@example.com"
 
 			chartValues := support.Values{}
-			_ = chartValues.SetValue("global.hosts.domain", "mydomain.com")
-			_ = chartValues.SetValue("certmanager-issuer.email", "me@mydomain.com")
+			_ = chartValues.SetValue("global.hosts.domain", domain)
+			_ = chartValues.SetValue("certmanager-issuer.email", certMail)
 
 			By("Creating a new GitLab resource")
-			Expect(createObject(CreateMockGitLab(releaseName, Namespace, chartValues), true)).Should(Succeed())
+			Expect(createObject(CreateMockGitLab(releaseName, Namespace, chartValues))).Should(Succeed())
 
 			By("Checking the created GitLab resource")
 			Eventually(func() error {
@@ -40,11 +39,13 @@ var _ = Describe("GitLab controller", func() {
 					return err
 				}
 
-				/* A workaround to stop reflect.DeepEqual naively reject the comparison */
-				var expected map[string]interface{} = chartValues
-				if !reflect.DeepEqual(gitlab.Spec.Chart.Values.Object, expected) {
-					return fmt.Errorf("The Chart values of CR are not equal to the expected values. Observed: %s",
-						gitlab.Spec.Chart.Values.Object)
+				values := support.Values(gitlab.Spec.Chart.Values.Object)
+				if v := values.GetString("global.hosts.domain"); v != domain {
+					return fmt.Errorf("expected domain %q, got %q", domain, v)
+				}
+
+				if v := values.GetString("certmanager-issuer.email"); v != certMail {
+					return fmt.Errorf("expected certmanager mail %q, got %q", certMail, v)
 				}
 
 				return nil
@@ -163,7 +164,6 @@ var _ = Describe("GitLab controller", func() {
 			It("Should create resources for Jobs and continue the reconcile loop", func() {
 				cfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
 				sharedSecretQuery := appLabels(releaseName, gitlabctl.GitLabComponentName)
-				postgresQuery := fmt.Sprintf("app.kubernetes.io/instance=%s-%s", releaseName, gitlabctl.DefaultPostgresComponentName)
 
 				By("Checking Shared secrets Job and its ConfigMap are created")
 				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
@@ -182,10 +182,6 @@ var _ = Describe("GitLab controller", func() {
 				By("Manipulating the Self signed certificates Job to succeed")
 				Eventually(updateJobStatusPromise(sharedSecretQuery, true),
 					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(listConfigMapsPromise(postgresQuery),
-					PollTimeout, PollInterval).ShouldNot(BeEmpty())
 			})
 		})
 
@@ -300,530 +296,6 @@ global:
 					PollTimeout, PollInterval).ShouldNot(Succeed())
 
 				By("Checking Gitaly ConfigMap does not exist")
-				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-	})
-
-	Context("PostgreSQL", func() {
-		When("Bundled PostgreSQL is disabled", func() {
-			releaseName := "postgresql-disabled"
-			pgName := gitlabctl.DefaultPostgresComponentName
-			cfgMapName := fmt.Sprintf("%s-%s-init-db", releaseName, pgName)
-			metricsServiceName := fmt.Sprintf("%s-%s-metrics", releaseName, pgName)
-			headlessServiceName := fmt.Sprintf("%s-%s-headless", releaseName, pgName)
-			serviceName := fmt.Sprintf("%s-%s", releaseName, pgName)
-			statefulSetName := fmt.Sprintf("%s-%s", releaseName, pgName)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
-
-			chartValues := support.Values{}
-			_ = chartValues.SetValue("postgresql.install", false)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should not create PostgreSQL resources and continue the reconcile loop", func() {
-				By("Checking PostgreSQL Metrics Service does not exist")
-				Eventually(getObjectPromise(metricsServiceName, &corev1.Service{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking PostgreSQL Headless Service does not exist")
-				Eventually(getObjectPromise(headlessServiceName, &corev1.Service{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking PostgreSQL Service does not exist")
-				Eventually(getObjectPromise(serviceName, &corev1.Service{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking PostgreSQL StatefulSet does not exist")
-				Eventually(getObjectPromise(statefulSetName, &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking PostgreSQL ConfigMap does not exist")
-				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-
-		When("Bundled PostgreSQL is enabled", func() {
-			releaseName := "postgresql-enabled"
-			pgName := gitlabctl.DefaultPostgresComponentName
-			cfgMapName := fmt.Sprintf("%s-%s-init-db", releaseName, pgName)
-			metricsServiceName := fmt.Sprintf("%s-%s-metrics", releaseName, pgName)
-			headlessServiceName := fmt.Sprintf("%s-%s-hl", releaseName, pgName)
-			serviceName := fmt.Sprintf("%s-%s", releaseName, pgName)
-			statefulSetName := fmt.Sprintf("%s-postgresql", releaseName)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
-
-			if gitlabctl.IsChartVersionOlderThan(helm.GetChartVersion(), gitlabctl.ChartVersion7) {
-				headlessServiceName = fmt.Sprintf("%s-%s-headless", releaseName, pgName)
-				statefulSetName = fmt.Sprintf("%s-%s", releaseName, pgName)
-			}
-
-			chartValues := support.Values{}
-			_ = chartValues.SetValue("postgresql.install", true)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should create PostgreSQL resources and continue the reconcile loop", func() {
-				By("Checking PostgreSQL Metrics Service exists")
-				Eventually(getObjectPromise(metricsServiceName, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking PostgreSQL Headless Service exists")
-				Eventually(getObjectPromise(headlessServiceName, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking PostgreSQL Service exists")
-				Eventually(getObjectPromise(serviceName, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking PostgreSQL StatefulSet exists")
-				Eventually(getObjectPromise(statefulSetName, &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking PostgreSQL ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-
-		When("Bundled PostgreSQL has a overridden name", func() {
-			releaseName := "postgresql-name-override"
-			pgComponent := gitlabctl.DefaultPostgresComponentName
-
-			cfgMapName := fmt.Sprintf("%s-%s-init-db", releaseName, pgComponent)
-			metricsServiceName := fmt.Sprintf("%s-%s-metrics", releaseName, pgComponent)
-			headlessServiceName := fmt.Sprintf("%s-%s-hl", releaseName, pgComponent)
-			serviceName := fmt.Sprintf("%s-%s", releaseName, pgComponent)
-
-			nameOverride := "foobar"
-			statefulSetName := fmt.Sprintf("%s-postgresql", releaseName)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
-
-			if gitlabctl.IsChartVersionOlderThan(helm.GetChartVersion(), gitlabctl.ChartVersion7) {
-				headlessServiceName = fmt.Sprintf("%s-%s-headless", releaseName, pgComponent)
-				statefulSetName = fmt.Sprintf("%s-%s", releaseName, nameOverride)
-			}
-
-			chartValues := support.Values{}
-			_ = chartValues.SetValue("postgresql.install", true)
-			_ = chartValues.SetValue("postgresql.nameOverride", nameOverride)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should create PostgreSQL resources with specified name and continue the reconcile loop", func() {
-				By("Checking PostgreSQL Metrics Service exists")
-				Eventually(getObjectPromise(metricsServiceName, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking PostgreSQL Headless Service exists")
-				Eventually(getObjectPromise(headlessServiceName, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking PostgreSQL Service exists")
-				Eventually(getObjectPromise(serviceName, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking PostgreSQL StatefulSet exists")
-				Eventually(getObjectPromise(statefulSetName, &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking PostgreSQL ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-	})
-
-	Context("Redis", func() {
-		When("Bundled Redis is disabled", func() {
-			releaseName := "redis-disabled"
-			cfgMapNameScripts := fmt.Sprintf("%s-scripts", releaseName)
-			cfgMapNameHealth := fmt.Sprintf("%s-health", releaseName)
-			cfgMapName := releaseName
-			serviceNameHeadless := fmt.Sprintf("%s-headless", releaseName)
-			serviceNameMetrics := fmt.Sprintf("%s-metrics", releaseName)
-			serviceNameMaster := fmt.Sprintf("%s-master", releaseName)
-			statefulSetName := fmt.Sprintf("%s-master", releaseName)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.GitalyComponentName)
-
-			chartValues := support.Values{}
-
-			_ = chartValues.SetValue("redis.install", false)
-			_ = chartValues.SetValue("global.redis.host", "redis.example.com")
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should not create Redis resources and continue the reconcile loop", func() {
-				By("Checking Redis Scripts ConfigMap does not exist")
-				Eventually(getObjectPromise(cfgMapNameScripts, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking Redis Health ConfigMap does not exist")
-				Eventually(getObjectPromise(cfgMapNameHealth, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking Redis ConfigMap does not exist")
-				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking PostgreSQL Headless Service does not exist")
-				Eventually(getObjectPromise(serviceNameHeadless, &corev1.Service{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking Redis Metrics Service does not exist")
-				Eventually(getObjectPromise(serviceNameMetrics, &corev1.Service{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking Redis Master Service does not exist")
-				Eventually(getObjectPromise(serviceNameMaster, &corev1.Service{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking Redis StatefulSet does not exist")
-				Eventually(getObjectPromise(statefulSetName, &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-
-		When("Bundled Redis is enabled", func() {
-			releaseName := "redis-enabled"
-			cfgMapNameScripts := fmt.Sprintf("%s-scripts", releaseName)
-			cfgMapNameHealth := fmt.Sprintf("%s-health", releaseName)
-			cfgMapName := fmt.Sprintf("%s-configuration", releaseName)
-			serviceNameHeadless := fmt.Sprintf("%s-headless", releaseName)
-			serviceNameMetrics := fmt.Sprintf("%s-metrics", releaseName)
-			serviceNameMaster := fmt.Sprintf("%s-master", releaseName)
-			statefulSetName := fmt.Sprintf("%s-master", releaseName)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
-
-			if gitlabctl.IsChartVersionOlderThan(helm.GetChartVersion(), gitlabctl.ChartVersion7) {
-				cfgMapName = releaseName
-			}
-
-			chartValues := support.Values{}
-			_ = chartValues.SetValue("redis.install", true)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should create Redis resources and continue the reconcile loop", func() {
-				By("Checking Redis Scripts ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapNameScripts, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis Health ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapNameHealth, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis Headless Service exists")
-				Eventually(getObjectPromise(serviceNameHeadless, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis Metrics Service exists")
-				Eventually(getObjectPromise(serviceNameMetrics, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis Master Service exists")
-				Eventually(getObjectPromise(serviceNameMaster, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis StatefulSet exists")
-				Eventually(getObjectPromise(statefulSetName, &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-
-		When("Bundled Redis has a overridden name", func() {
-			releaseName := "redis-name-override"
-			nameOverride := "foobar"
-
-			cfgMapNameScripts := fmt.Sprintf("%s-%s-scripts", releaseName, nameOverride)
-			cfgMapNameHealth := fmt.Sprintf("%s-%s-health", releaseName, nameOverride)
-			cfgMapName := fmt.Sprintf("%s-%s-configuration", releaseName, nameOverride)
-			serviceNameHeadless := fmt.Sprintf("%s-%s-headless", releaseName, nameOverride)
-			serviceNameMetrics := fmt.Sprintf("%s-%s-metrics", releaseName, nameOverride)
-			serviceNameMaster := fmt.Sprintf("%s-%s-master", releaseName, nameOverride)
-			statefulSetName := fmt.Sprintf("%s-%s-master", releaseName, nameOverride)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
-
-			if gitlabctl.IsChartVersionOlderThan(helm.GetChartVersion(), gitlabctl.ChartVersion7) {
-				cfgMapName = fmt.Sprintf("%s-%s", releaseName, nameOverride)
-			}
-
-			chartValues := support.Values{}
-			_ = chartValues.SetValue("redis.install", true)
-			_ = chartValues.SetValue("redis.nameOverride", nameOverride)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should create Redis resources with the overridden names and continue the reconcile loop", func() {
-				By("Checking Redis Scripts ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapNameScripts, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis Health ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapNameHealth, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis Headless Service exists")
-				Eventually(getObjectPromise(serviceNameHeadless, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis Metrics Service exists")
-				Eventually(getObjectPromise(serviceNameMetrics, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis Master Service exists")
-				Eventually(getObjectPromise(serviceNameMaster, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking Redis StatefulSet exists")
-				Eventually(getObjectPromise(statefulSetName, &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-
-		When("External Redis has subqueue with no Secret created", func() {
-			releaseName := "redis-subqueues-no-secret"
-			chartValues := support.Values{}
-			values := `
-redis:
-  install: false
-global:
-  redis:
-    host: redis.example
-    port: 9001
-    auth:
-      enabled: true
-      secret: custom-redis-secret
-      key: redis-password
-    cache:
-      host: cache.redis.example
-      auth:
-        enabled: true
-        secret: custom-cache-secret
-        key: cache-password
-`
-			_ = chartValues.AddFromYAML(values)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should stop when Secret does not exist", func() {
-				By("Confirming no StatefulSets are created due to missing secrets")
-				Consistently(getObjectPromise(fmt.Sprintf("%s-%s", releaseName, gitlabctl.DefaultPostgresComponentName), &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-			})
-		})
-
-		When("External Redis has subqueue with Secret created", func() {
-			releaseName := "redis-subqueues-with-secret"
-
-			chartValues := support.Values{}
-			values := `
-redis:
-  install: false
-global:
-  redis:
-    host: redis.example
-    port: 9001
-    auth:
-      enabled: true
-      secret: custom-redis-secret
-      key: redis-password
-    cache:
-      host: cache.redis.example
-      auth:
-        enabled: true
-        secret: custom-cache-secret
-        key: cache-password
-`
-			_ = chartValues.AddFromYAML(values)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should proceed when Secret does exist", func() {
-				cacheSecret := newSecret("custom-cache-secret", Namespace, "cache-password", "foo")
-				redisSecret := newSecret("custom-redis-secret", Namespace, "redis-password", "foo")
-
-				By("Creating global Redis Secret")
-				Expect(createObject(redisSecret, false)).Should(Succeed())
-
-				By("Creating Cache Redis Secret")
-				Expect(createObject(cacheSecret, false)).Should(Succeed())
-
-				By("Confirming that StatefulSet is created")
-				Eventually(getObjectPromise(fmt.Sprintf("%s-%s", releaseName, gitlabctl.DefaultPostgresComponentName), &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-	})
-
-	Context("MinIO", func() {
-		When("Bundled MinIO is enabled", func() {
-			releaseName := "minio-enabled"
-			cfgMapName := fmt.Sprintf("%s-minio-config-cm", releaseName)
-			serviceName := fmt.Sprintf("%s-minio-svc", releaseName)
-			ingressName := fmt.Sprintf("%s-minio", releaseName)
-			pvcName := fmt.Sprintf("%s-minio", releaseName)
-			deploymentName := fmt.Sprintf("%s-minio", releaseName)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
-
-			chartValues := support.Values{}
-			_ = chartValues.SetValue("global.minio.enabled", true)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-				processMinioBucketsJob(releaseName)
-			})
-
-			It("Should create MinIO resources and continue the reconcile loop", func() {
-				By("Checking MinIO Service exists")
-				Eventually(getObjectPromise(serviceName, &corev1.Service{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking MinIO Job exists")
-				Eventually(listObjectsPromise("app=minio", &batchv1.JobList{}, 1),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking MinIO Ingress exists")
-				Eventually(getObjectPromise(ingressName, &networkingv1.Ingress{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking MinIO PersristenVolumeClaim exists")
-				Eventually(getObjectPromise(pvcName, &corev1.PersistentVolumeClaim{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking MinIO Deployment exists")
-				Eventually(getObjectPromise(deploymentName, &appsv1.Deployment{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking MinIO ConfigMap exists")
-				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking next resources in the reconcile loop, e.g. ConfigMaps")
-				Eventually(getObjectPromise(nextCfgMapName, &corev1.ConfigMap{}),
-					PollTimeout, PollInterval).Should(Succeed())
-			})
-		})
-
-		When("Bundled MinIO is disabled", func() {
-			releaseName := "minio-disabled"
-			cfgMapName := fmt.Sprintf("%s-minio-config-cm", releaseName)
-			ingressName := fmt.Sprintf("%s-minio", releaseName)
-			pvcName := fmt.Sprintf("%s-minio", releaseName)
-			serviceName := fmt.Sprintf("%s-minio-svc", releaseName)
-			deploymentName := fmt.Sprintf("%s-minio", releaseName)
-			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
-
-			chartValues := support.Values{}
-			values := `
-global:
-  minio:
-    enabled: false
-  appConfig:
-    object_store:
-      enabled: true
-      connection:
-        secret: global-object-storage-secret
-        key: value
-gitlab:
-  toolbox:
-		backups:
-			objectStorage:
-			  config:
-			    secret: backup-secret
-`
-			_ = chartValues.AddFromYAML(values)
-
-			BeforeEach(func() {
-				createGitLabResource(releaseName, chartValues)
-				processSharedSecretsJob(releaseName)
-			})
-
-			It("Should not create MinIO resources and continue the reconcile loop", func() {
-				By("Checking MinIO Service does not exist")
-				Eventually(getObjectPromise(serviceName, &corev1.Service{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking MinIO Job does not exist")
-				Eventually(listObjectsPromise("app=minio", &batchv1.JobList{}, 0),
-					PollTimeout, PollInterval).Should(Succeed())
-
-				By("Checking MinIO Ingress does not exist")
-				Eventually(getObjectPromise(ingressName, &networkingv1.Ingress{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking MinIO PersristenVolumeClaim does not exist")
-				Eventually(getObjectPromise(pvcName, &corev1.PersistentVolumeClaim{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking MinIO Deployment does not exist")
-				Eventually(getObjectPromise(deploymentName, &appsv1.StatefulSet{}),
-					PollTimeout, PollInterval).ShouldNot(Succeed())
-
-				By("Checking MinIO ConfigMap does not exist")
 				Eventually(getObjectPromise(cfgMapName, &corev1.ConfigMap{}),
 					PollTimeout, PollInterval).ShouldNot(Succeed())
 
@@ -967,7 +439,7 @@ postgresql:
 `)
 
 				BeforeEach(func() {
-					Expect(createObject(newSecret("psql-secret", Namespace, "psql-key", "foo"), true)).Should(Succeed())
+					Expect(createObject(newSecret("psql-secret", "psql-key", "foo"))).Should(Succeed())
 					createGitLabResource(releaseName, chartValues)
 					processSharedSecretsJob(releaseName)
 				})
@@ -989,19 +461,11 @@ func processSharedSecretsJob(releaseName string) {
 		PollTimeout, PollInterval).Should(Succeed())
 }
 
-func processMinioBucketsJob(releaseName string) {
-	minioQuery := appLabels(releaseName, gitlabctl.MinioComponentName)
-
-	By("Manipulating the MinIO buckets Job to succeed")
-	Eventually(updateJobStatusPromise(minioQuery, true),
-		PollTimeout, PollInterval).Should(Succeed())
-}
-
-func newSecret(name, namespace, key, value string) *corev1.Secret {
+func newSecret(name, key, value string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: Namespace,
 		},
 		Data: map[string][]byte{
 			key: []byte(value),
