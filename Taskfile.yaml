@@ -42,7 +42,7 @@ env:
   NAMESPACE: gitlab-system
   DOMAIN: example.com
   HOSTSUFFIX: ""
-  TLSSECRETNAME: ""
+  TLS_SECRET: ""
   HELM_CHARTS: "{{ .ROOT_DIR }}/charts"
   CHART_VERSION: { sh: if test -z "$GITLAB_CHART_VERSION" ; then head -n1 CHART_VERSIONS; else echo $GITLAB_CHART_VERSION; fi }
   VERSION: 0.2.0
@@ -328,7 +328,7 @@ tasks:
         | sed "s/CHART_VERSION/$CHART_VERSION/g"
         | sed "s/DOMAIN/$DOMAIN/g"
         | sed "s/HOSTSUFFIX/$HOSTSUFFIX/g"
-        | sed "s/TLSSECRETNAME/$TLSSECRETNAME/g" > $BUILD_DIR/test_cr.yaml
+        | sed "s/TLS_SECRET/$TLS_SECRET/g" > $BUILD_DIR/test_cr.yaml
 
   deploy_test_cr:
     desc: Applies the test Custom Resource using `$KUBECTL apply`.

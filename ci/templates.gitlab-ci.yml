@@ -169,7 +169,7 @@
     - |
       if [ "$INSTALL_ENVOY_GATEWAY" = "true" ]
       then
-        vcluster_run task install_envoy_gateway  
+        vcluster_run task install_envoy_gateway
         vcluster_run task install_certmanager_envoy
       else
         vcluster_run task install_certmanager

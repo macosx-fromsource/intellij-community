@@ -24,7 +24,7 @@ variables:
   NAMESPACE: "gitlab-system"
   TAG: ${CI_COMMIT_SHORT_SHA}
   HOSTSUFFIX: "${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_SLUG}"
-  TLSSECRETNAME: "gitlab-ci-tls"
+  TLS_SECRET: "gitlab-ci-tls"
   # docker configuration
   DOCKER_DRIVER: overlay2
   DOCKER_HOST: tcp://docker:2375
@@ -55,9 +55,16 @@ variables:
 
   # We need GITLAB_CHART_VERSION and ENVIRONMENT_SUFFIX to be fully unset for pipeline logic to work correctly
   # Empty stings can be used to override seetings and lead to unexpected outcomes
-  # GITLAB_CHART_VERSION: 
-  # ENVIRONMENT_SUFFIX: 
-  PIPELINE_TYPE: default # default, chart_version 
+  # GITLAB_CHART_VERSION:
+  # ENVIRONMENT_SUFFIX:
+  PIPELINE_TYPE: default # default, chart_version
+
+  # External service provisioning (sourced from the GitLab chart CI lib scripts)
+  # PostgreSQL image tag used by CloudNativePG for the test cluster.
+  CNPG_POSTGRESQL_TAG: "17"
+  # Git ref of the GitLab chart repository to source CI lib scripts from.
+  # Used to provision Valkey, PostgreSQL, and Garage in CI.
+  CHART_CI_LIB_REF: "fe8c5c9e152032200ed6b788ede3430b4b627d5c"
 
   # Pull DockerHub images through dependency proxy to not hit rate limits.
   DOCKERHUB_PREFIX: "docker.io"

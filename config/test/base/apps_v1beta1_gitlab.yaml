@@ -15,11 +15,50 @@ spec:
         ingress:
           configureCertmanager: false
           tls:
-            secretName: TLSSECRETNAME
+            secretName: TLS_SECRET
+        minio:
+          enabled: false
+        psql:
+          host: PSQL_HOST
+          password: 
+            secret: PSQL_SECRET
+            key: password
+        redis:
+          host: REDIS_HOST
+          auth:
+            secret: REDIS_SECRET
+            key: password
+        appConfig:
+          object_store:
+            enabled: true
+            proxy_download: true
+            connection:
+              secret: OBJECT_STORE_SECRET
+              key: config
+          artifacts:
+            bucket: gitlab-artifacts
+          lfs:
+            bucket: git-lfs
+          uploads:
+            bucket: gitlab-uploads
+          packages:
+            bucket: gitlab-packages
+          externalDiffs:
+            enabled: true
+            bucket: gitlab-mr-diffs
+          terraformState:
+            enabled: true
+            bucket: gitlab-terraform-state
+          ciSecureFiles:
+            enabled: true
+            bucket: gitlab-ci-secure-files
+          dependencyProxy:
+            enabled: true
+            bucket: gitlab-dependency-proxy
+      redis:
+        install: false
       postgresql:
-        primary:
-          extendedConfiguration: |-
-            max_connections = 200
+        install: false
       gitlab:
         webservice:
           minReplicas: 1
@@ -38,15 +77,19 @@ spec:
         gitlab-shell:
           minReplicas: 1
           maxReplicas: 2
+        toolbox:
+          backups:
+            objectStorage:
+              config:
+                secret: OBJECT_STORE_SECRET_S3CMD
+                key: config
       nginx-ingress:
         controller:
           electionID: ingress-controller-leader
           replicaCount: 1
-      redis:
-        resources:
-          requests:
-            cpu: 100m
-      minio:
-        resources:
-          requests:
-            cpu: 100m
+      registry:
+        storage:
+          secret: OBJECT_STORE_SECRET_REGISTRY
+          key: config
+          redirect:
+            disable: true
