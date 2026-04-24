@@ -1,6 +1,6 @@
 module gitlab.com/gitlab-org/cloud-native/gitlab-operator
 
-go 1.25.8
+go 1.25.9
 
 toolchain go1.26.2
 
@@ -8,7 +8,7 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/cert-manager/cert-manager v1.20.2
-	github.com/envoyproxy/gateway v1.7.1
+	github.com/envoyproxy/gateway v1.7.2
 	github.com/go-logr/logr v1.4.3
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/onsi/ginkgo/v2 v2.28.1
