@@ -76,6 +76,13 @@ func WebserviceRoute(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(HttpRouteKind, WebserviceComponentName)
 }
 
+// WebserviceClientTrafficPolicies returns the Envoy ClientTrafficPolicies for the Webservice component.
+func WebserviceClientTrafficPolicies(template helm.Template) []client.Object {
+	return template.Query().ObjectsByKindAndLabels(EnvoyClientTrafficPolicyKind, map[string]string{
+		"app": WebserviceComponentName,
+	})
+}
+
 func isWorkhorse(obj client.Object) bool {
 	return strings.HasSuffix(obj.GetName(), "-workhorse")
 }
