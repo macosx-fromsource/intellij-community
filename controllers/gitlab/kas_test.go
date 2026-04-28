@@ -4,7 +4,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/component"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
@@ -78,12 +77,6 @@ var _ = Describe("KAS", func() {
 		adapter := CreateMockAdapter(mockGitLab)
 		template, err := GetTemplate(adapter)
 
-		BeforeEach(func() {
-			if IsChartVersionOlderThan(helm.GetChartVersion(), ChartVersion98) {
-				Skip("KAS gRPC Ingress not supported in this Chart version")
-			}
-		})
-
 		It("Returns the template", func() {
 			Expect(err).To(BeNil())
 		})
@@ -107,12 +100,6 @@ var _ = Describe("KAS", func() {
 		adapter := CreateMockAdapter(mockGitLab)
 		template, err := GetTemplate(adapter)
 
-		BeforeEach(func() {
-			if IsChartVersionOlderThan(helm.GetChartVersion(), ChartVersion98) {
-				Skip("KAS gRPC Ingress not supported in this Chart version")
-			}
-		})
-
 		It("Returns the template", func() {
 			Expect(err).To(BeNil())
 		})
@@ -131,12 +118,6 @@ var _ = Describe("KAS", func() {
 		mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
 		adapter := CreateMockAdapter(mockGitLab)
 		template, err := GetTemplate(adapter)
-
-		BeforeEach(func() {
-			if IsChartVersionOlderThan(helm.GetChartVersion(), ChartVersion97) {
-				Skip("Gateway API is not supported in this Chart version")
-			}
-		})
 
 		It("Returns the template", func() {
 			Expect(err).To(BeNil())

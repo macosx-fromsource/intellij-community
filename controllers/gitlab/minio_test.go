@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/component"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
@@ -15,6 +16,12 @@ const (
 )
 
 var _ = Describe("Enabling or disabling internal MinIO", func() {
+	BeforeEach(func() {
+		if !IsChartVersionOlderThan(helm.GetChartVersion(), ChartVersion100) {
+			Skip("Chart does not support MinIO anymore")
+		}
+	})
+
 	chartValuesDefault := support.Values{}
 
 	chartValuesEnabled := support.Values{}

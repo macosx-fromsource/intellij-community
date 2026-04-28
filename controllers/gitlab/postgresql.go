@@ -17,11 +17,6 @@ func PostgresServices(adapter gitlab.Adapter, template helm.Template) []client.O
 	componentLabel := gitlabComponentLabel
 	componentName := DefaultPostgresComponentName
 
-	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
-		componentLabel = appLabel
-		componentName = nameOverride
-	}
-
 	results := template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
 		componentLabel: componentName,
 	})
@@ -43,11 +38,6 @@ func PostgresStatefulSet(adapter gitlab.Adapter, template helm.Template) client.
 
 	componentLabel := gitlabComponentLabel
 	componentName := DefaultPostgresComponentName
-
-	if IsChartVersionOlderThan(adapter.DesiredVersion(), ChartVersion7) {
-		componentLabel = appLabel
-		componentName = nameOverride
-	}
 
 	objects := template.Query().ObjectsByKindAndLabels(StatefulSetKind, map[string]string{
 		componentLabel: componentName,
