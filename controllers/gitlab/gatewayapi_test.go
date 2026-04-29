@@ -28,9 +28,9 @@ var _ = Describe("Gateway API", func() {
 		}
 	})
 
-	When("Gateway API is disabled (default)", func() {
+	When("Gateway API is disabled (ingress mode)", func() {
 		BeforeEach(func() {
-			chartValues = support.Values{}
+			chartValues = IngressModeValues()
 		})
 
 		It("Templates no Gateway API resources", func() {
@@ -42,6 +42,9 @@ var _ = Describe("Gateway API", func() {
 		BeforeEach(func() {
 			chartValues = support.Values{}
 			_ = chartValues.SetValue("global.gatewayApi.enabled", true)
+			_ = chartValues.SetValue("global.gatewayApi.installEnvoy", false)
+			_ = chartValues.SetValue("global.ingress.enabled", false)
+			_ = chartValues.SetValue("nginx-ingress.enabled", false)
 		})
 
 		It("Templates the non-vendor specific Gateway API resources only", func() {
@@ -52,9 +55,7 @@ var _ = Describe("Gateway API", func() {
 
 	When("Gateway API and Envoy resources are enabled", func() {
 		BeforeEach(func() {
-			chartValues = support.Values{}
-			_ = chartValues.SetValue("global.gatewayApi.enabled", true)
-			_ = chartValues.SetValue("global.gatewayApi.installEnvoy", true)
+			chartValues = GatewayAPIModeValues()
 		})
 
 		It("Templates the default and Envoy-specific Gateway API resources", func() {

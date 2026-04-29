@@ -11,6 +11,9 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gitlabv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
@@ -156,6 +159,7 @@ var _ = Describe("GitLab controller", func() {
 
 			chartValues := support.Values{}
 			_ = chartValues.SetValue("global.ingress.configureCertmanager", false)
+			_ = chartValues.SetValue("global.ingress.tls.enabled", true)
 
 			BeforeEach(func() {
 				createGitLabResource(releaseName, chartValues)
@@ -238,6 +242,7 @@ var _ = Describe("GitLab controller", func() {
 
 			chartValues := support.Values{}
 			_ = chartValues.SetValue("global.gitaly.enabled", true)
+			_ = chartValues.SetValue("global.ingress.configureCertmanager", true)
 
 			BeforeEach(func() {
 				createGitLabResource(releaseName, chartValues)
@@ -271,6 +276,7 @@ var _ = Describe("GitLab controller", func() {
 			nextCfgMapName := fmt.Sprintf("%s-%s", releaseName, gitlabctl.SharedSecretsComponentName)
 
 			chartValues := support.Values{}
+			_ = chartValues.SetValue("global.ingress.configureCertmanager", true)
 			values := `
 global:
   gitaly:
@@ -415,6 +421,9 @@ registry:
     migrations:
       enabled: true
 global:
+  ingress:
+    tls:
+      secretName: mock
   redis:
     host: redis.example.com
   psql:
@@ -436,18 +445,53 @@ redis:
   install: false
 postgresql:
   install: false
+shared-secrets:
+  enabled: false
 `)
 
 				BeforeEach(func() {
 					Expect(createObject(newSecret("psql-secret", "psql-key", "foo"))).Should(Succeed())
 					createGitLabResource(releaseName, chartValues)
-					processSharedSecretsJob(releaseName)
 				})
 
 				It("Should create the registry migrations job", func() {
 					Eventually(listObjectsPromise("app in ( registry, registry-migrations )", &batchv1.JobList{}, 1),
 						PollTimeout, PollInterval).Should(Succeed())
 				})
+			})
+		})
+	})
+
+	Context("Gateway API", func() {
+		When("Gateway API is enabled", func() {
+			releaseName := "gateway-api-enabled"
+
+			chartValues := GatewayAPIModeValues()
+			// Only standard Gateway API resources are loaded into the Cluster.
+			// Envoy Gateway extensions are not available.
+			_ = chartValues.SetValue("global.gatewayApi.installEnvoy", false)
+
+			BeforeEach(func() {
+				createGitLabResource(releaseName, chartValues)
+				processSharedSecretsJob(releaseName)
+			})
+
+			It("Should reconcile HTTPRoute resources", func() {
+				httpRoutes := &unstructured.UnstructuredList{}
+				httpRoutes.SetGroupVersionKind(schema.GroupVersionKind{
+					Group:   "gateway.networking.k8s.io",
+					Version: "v1",
+					Kind:    "HTTPRouteList",
+				})
+
+				By("Checking at least one HTTPRoute is created")
+				Eventually(func() (int, error) {
+					if err := k8sClient.List(ctx, httpRoutes, &client.ListOptions{Namespace: Namespace}); err != nil {
+						return 0, err
+					}
+
+					return len(httpRoutes.Items), nil
+				}, PollTimeout, PollInterval).Should(BeNumerically(">", 0))
 			})
 		})
 	})
