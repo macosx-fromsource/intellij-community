@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	kubectlscheme "k8s.io/kubectl/pkg/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -64,7 +65,7 @@ var _ = BeforeSuite(func() {
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "config", "crd", "bases"),
-			filepath.Join(".", "testdata", "crds"),
+			filepath.Join("..", "config", "crd", "test", "gateway-api"),
 		},
 	}
 
@@ -77,6 +78,9 @@ var _ = BeforeSuite(func() {
 	settings.SetEnvTestConfig(cfg)
 
 	err = gitlabv1beta1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = gitlabv1beta1.AddToScheme(kubectlscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{

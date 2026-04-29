@@ -29,7 +29,7 @@ var (
 func CreateMockGitLab(releaseName, namespace string, customValues support.Values) *gitlabv1beta1.GitLab {
 	values := support.Values{}
 	_ = values.AddFromYAML(minimalValues())
-	_ = values.Merge(customValues)
+	_ = values.Merge(WithOverrides(IngressModeValues(), customValues))
 
 	return &gitlabv1beta1.GitLab{
 		TypeMeta: metav1.TypeMeta{
@@ -218,7 +218,6 @@ func updateJobStatusPromise(query string, success bool) func() error {
 		}
 
 		for _, j := range createdJobs.Items {
-			j := j
 			if success {
 				j.Status.Succeeded = 1
 				j.Status.Failed = 0
@@ -241,8 +240,10 @@ func appLabels(releaseName, appName string) string {
 }
 
 func createGitLabResource(releaseName string, chartValues support.Values) {
+	merged := WithOverrides(IngressModeValues(), chartValues)
+
 	By("Creating a new GitLab resource")
-	Expect(createObject(CreateMockGitLab(releaseName, Namespace, chartValues))).Should(Succeed())
+	Expect(createObject(CreateMockGitLab(releaseName, Namespace, merged))).Should(Succeed())
 
 	By("Checking GitLab resource is created")
 	Eventually(getObjectPromise(releaseName, &gitlabv1beta1.GitLab{}),
@@ -257,7 +258,7 @@ func updateGitLabResource(releaseName string, customValues support.Values) {
 			func(obj client.Object) error {
 				values := support.Values{}
 				_ = values.AddFromYAML(minimalValues())
-				_ = values.Merge(customValues)
+				_ = values.Merge(WithOverrides(IngressModeValues(), customValues))
 
 				gitlab := obj.(*gitlabv1beta1.GitLab)
 				gitlab.Spec.Chart.Values.Object = values

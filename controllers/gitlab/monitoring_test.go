@@ -11,6 +11,8 @@ import (
 const (
 	valuesMonitoringEnabled = `
 global:
+  monitoring:
+    enabled: true
   pages:
     enabled: true
   praefect:
@@ -105,7 +107,7 @@ var _ = Describe("Monitoring", func() {
 
 	When("All Monitoring components are enabled", func() {
 		BeforeEach(func() {
-			chartValues = support.Values{}
+			chartValues = IngressModeValues()
 			err := chartValues.AddFromYAML(valuesMonitoringEnabled)
 			Expect(err).To(BeNil())
 		})

@@ -156,12 +156,11 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 
 		checkEnabledComponents(a,
 			component.Gitaly, component.GitLabExporter, component.GitLabShell,
-			component.Migrations, component.NginxIngress, component.Registry,
-			component.Sidekiq, component.Toolbox, component.Webservice)
+			component.Migrations, component.Registry, component.Sidekiq,
+			component.Toolbox, component.Webservice)
 		checkDisabledComponents(a,
 			component.GitLabPages, component.Mailroom,
 			component.Praefect, component.Spamcheck)
-		checkEnabledFeatures(a, ConfigureCertManager)
 		checkDisabledFeatures(a, ReplaceGitalyWithPraefect)
 	})
 
@@ -191,9 +190,9 @@ var _ = Describe("GitLab Adapter [v1beta1]", func() {
 
 		checkEnabledComponents(a,
 			component.GitLabExporter, component.GitLabPages, component.GitLabShell,
-			component.Migrations, component.NginxIngress, component.Praefect,
-			component.Registry, component.Sidekiq, component.Spamcheck,
-			component.Toolbox, component.Webservice)
+			component.Migrations, component.Praefect, component.Registry,
+			component.Sidekiq, component.Spamcheck, component.Toolbox,
+			component.Webservice)
 		checkDisabledComponents(a,
 			component.Gitaly, component.Mailroom)
 		checkEnabledFeatures(a, ReplaceGitalyWithPraefect)
@@ -240,11 +239,9 @@ func addChartDefaultExamples(examples support.Values) {
 	examples["gitlab.webservice.enabled"] = true
 	examples["global.gitaly.enabled"] = true
 	examples["global.hosts.domain"] = "example.com"
-	examples["global.ingress.configureCertmanager"] = true
 	examples["global.ingress.provider"] = "nginx"
 	examples["global.pages.enabled"] = false
 	examples["global.spamcheck.enabled"] = false
-	examples["nginx-ingress.enabled"] = true
 	examples["registry.enabled"] = true
 	examples["gitlab.gitaly.securityContext.runAsUser"] = 1000.0
 	examples["gitlab.gitlab-exporter.securityContext.fsGroup"] = 1000.0

@@ -35,7 +35,7 @@ var _ = Describe("KAS", func() {
 	})
 
 	When("KAS is enabled", func() {
-		chartValues := support.Values{}
+		chartValues := IngressModeValues()
 		_ = chartValues.SetValue("global.kas.enabled", true)
 		_ = chartValues.SetValue("global.kas.service.apiExternalPort", 8153)
 
@@ -69,7 +69,7 @@ var _ = Describe("KAS", func() {
 	})
 
 	When("KAS GRPC Ingress is enabled", func() {
-		chartValues := support.Values{}
+		chartValues := IngressModeValues()
 		_ = chartValues.SetValue("global.kas.enabled", true)
 		_ = chartValues.SetValue("gitlab.kas.ingress.grpc.enabled", true)
 
@@ -91,7 +91,7 @@ var _ = Describe("KAS", func() {
 	})
 
 	When("KAS GRPC Ingress is enabled and relativeUrlRoot is set", func() {
-		chartValues := support.Values{}
+		chartValues := IngressModeValues()
 		_ = chartValues.SetValue("global.kas.enabled", true)
 		_ = chartValues.SetValue("gitlab.kas.ingress.grpc.enabled", true)
 		_ = chartValues.SetValue("global.appConfig.relativeUrlRoot", "/gitlab")
@@ -110,10 +110,9 @@ var _ = Describe("KAS", func() {
 		})
 	})
 
-	When("Gateway API is enabled", func() {
-		chartValues := support.Values{}
+	When("KAS is enabled with Gateway API", func() {
+		chartValues := GatewayAPIModeValues()
 		_ = chartValues.SetValue("global.kas.enabled", true)
-		_ = chartValues.SetValue("global.gatewayApi.enabled", true)
 
 		mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
 		adapter := CreateMockAdapter(mockGitLab)
@@ -123,8 +122,11 @@ var _ = Describe("KAS", func() {
 			Expect(err).To(BeNil())
 		})
 
-		It("Templates the HTTPRoute", func() {
+		It("Templates HTTPRoute instead of Ingress", func() {
+			Expect(adapter.WantsComponent(component.GitLabKAS)).To(BeTrue())
 			Expect(KasRoutes(template)).To(HaveLen(1))
+			Expect(KasIngress(adapter, template)).To(BeNil())
+			Expect(KasGRPCIngress(adapter, template)).To(BeNil())
 		})
 	})
 })
