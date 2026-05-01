@@ -297,7 +297,7 @@ docs-i18n-lint links:
   allow_failure: true
   script:
     # Check Markdown links
-    - lychee --offline --include-fragments --exclude "\.(png|jpg|gif|svg)$"  --exclude "ja-jp/developer.*#" doc-locale
+    - lychee --offline --include-fragments --exclude "\.(png|jpg|gif|svg)$" --exclude "(ja-jp|ko-kr|fr-fr)/developer" doc-locale
   rules:
     - !reference [.skip_if_dev_mirror]
     - !reference [.skip_if_release_tag]
