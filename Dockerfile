@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build 
 
 # Use ubi micro as base image to package the manager binary
 # Refer to https://www.redhat.com/en/blog/introduction-ubi-micro for more details
-FROM registry.access.redhat.com/ubi9-micro:9.7@sha256:2173487b3b72b1a7b11edc908e9bbf1726f9df46a4f78fd6d19a2bab0a701f38
+FROM registry.access.redhat.com/ubi9-micro:9.7@sha256:e0b6e93fe3800bf75a3e95aaf63bdfd020ea6dc30a92ca4bfa0021fa28cd671a
 
 LABEL name=gitlab-operator \
       vendor='GitLab, Inc.' \
