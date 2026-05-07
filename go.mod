@@ -6,7 +6,7 @@ toolchain go1.26.2
 
 require (
 	dario.cat/mergo v1.0.2
-	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/cert-manager/cert-manager v1.20.2
 	github.com/envoyproxy/gateway v1.7.2
 	github.com/go-logr/logr v1.4.3
