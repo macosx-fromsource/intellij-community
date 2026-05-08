@@ -117,3 +117,7 @@ gl-code-quality-report.json
 
 # Output from retrieve_gitlab_charts_custom_ref.sh
 CHART_NIGHTLY_VERSION
+
+# Generated files from scripts/dev_dependencies.sh
+external-deps.yaml
+mygitlab.yaml
