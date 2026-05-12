@@ -4,11 +4,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/component"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
 
 var _ = Describe("Spamcheck", func() {
+	BeforeEach(func() {
+		if !IsChartVersionOlderThan(helm.GetChartVersion(), ChartVersion100) {
+			Skip("Chart does not support spamcheck anymore")
+		}
+	})
+
 	When("Spamcheck is disabled", func() {
 		chartValues := support.Values{}
 		_ = chartValues.SetValue("global.spamcheck.enabled", false)
