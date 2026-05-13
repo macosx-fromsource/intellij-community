@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	gatewayalpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	gitlabv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
@@ -467,6 +468,16 @@ shared-secrets:
 			releaseName := "gateway-api-enabled"
 
 			chartValues := GatewayAPIModeValues()
+
+			// Do not reoncile/wait for Gitaly which is not required for Gateway API testing.
+			_ = chartValues.AddFromYAML(`
+global:
+  gitaly:
+    enabled: false
+    external:
+    - name: default
+      hostname: gitaly.example.com
+`)
 			// Only standard Gateway API resources are loaded into the Cluster.
 			// Envoy Gateway extensions are not available.
 			_ = chartValues.SetValue("global.gatewayApi.installEnvoy", false)
@@ -474,6 +485,11 @@ shared-secrets:
 			BeforeEach(func() {
 				createGitLabResource(releaseName, chartValues)
 				processSharedSecretsJob(releaseName)
+			})
+
+			It("Should reconcile TCPRoute resource", func() {
+				Eventually(listObjectsPromise("app=shell", &gatewayalpha2.TCPRouteList{}, 1),
+					PollTimeout, PollInterval).Should(Succeed())
 			})
 
 			It("Should reconcile HTTPRoute resources", func() {

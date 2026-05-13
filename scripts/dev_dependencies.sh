@@ -79,6 +79,11 @@ spec:
           password:
             secret: $(cnpg_cluster_secret)
             key: password
+        pages:
+          objectStore:
+            connection:
+              secret: $(garage_release_name)-gitlab-object-storage
+              key: config
         appConfig:
           object_store:
             connection:

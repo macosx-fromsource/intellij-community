@@ -191,12 +191,13 @@ type EndpointTLS struct {
 func RequiresCertManagerCertificate(adapter gitlab.Adapter) EndpointTLS {
 	// This implies that Operator can only consume wildcard certificate and individual certificate
 	// per service will be ignored.
+	usesIngress := adapter.Values().GetBool("global.ingress.enabled")
 	usesExternalIngressCert := adapter.Values().GetString("global.ingress.tls.secretName") == ""
 	enabledGatewayCertmanagerCerts := adapter.WantsFeature(feature.ConfigureGatewayCertManager)
 
 	return EndpointTLS{
-		gitlab:   usesExternalIngressCert || enabledGatewayCertmanagerCerts,
-		registry: usesExternalIngressCert || enabledGatewayCertmanagerCerts,
+		gitlab:   (usesIngress && usesExternalIngressCert) || enabledGatewayCertmanagerCerts,
+		registry: (usesIngress && usesExternalIngressCert) || enabledGatewayCertmanagerCerts,
 	}
 }
 
