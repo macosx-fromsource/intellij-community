@@ -123,6 +123,11 @@ global:
     password:
       secret: psql-password
       key: password
+  pages:
+    objectStore:
+      connection:
+        secret: object-storage-secret
+        key: connection
   appConfig:
     object_store:
       enabled: true

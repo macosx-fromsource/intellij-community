@@ -28,6 +28,11 @@ spec:
           auth:
             secret: REDIS_SECRET
             key: password
+        pages:
+          objectStore:
+            connection:
+              secret: OBJECT_STORE_SECRET
+              key: config
         appConfig:
           object_store:
             enabled: true

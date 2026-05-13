@@ -204,6 +204,7 @@ build_gitlab_custom_resource() {
   
   ${YQ} -i eval ".spec.chart.values.global.appConfig.object_store.connection.secret = \"$(garage_release_name)-gitlab-object-storage\"" "${cr_file}"
   ${YQ} -i eval ".spec.chart.values.gitlab.toolbox.backups.objectStorage.config.secret = \"$(garage_release_name)-gitlab-object-storage-s3cmd\"" "${cr_file}"
+  ${YQ} -i eval ".spec.chart.values.global.pages.objectStore.connection.secret = \"$(garage_release_name)-gitlab-object-storage\"" "${cr_file}"
   ${YQ} -i eval ".spec.chart.values.registry.storage.secret = \"$(garage_release_name)-gitlab-registry-storage\"" "${cr_file}"
   set +x
 }
