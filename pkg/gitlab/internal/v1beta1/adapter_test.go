@@ -7,6 +7,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"golang.org/x/mod/semver"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -241,11 +242,14 @@ func addChartDefaultExamples(examples support.Values) {
 	examples["global.hosts.domain"] = "example.com"
 	examples["global.ingress.provider"] = "nginx"
 	examples["global.pages.enabled"] = false
-	examples["global.spamcheck.enabled"] = false
 	examples["registry.enabled"] = true
 	examples["gitlab.gitaly.securityContext.runAsUser"] = 1000.0
 	examples["gitlab.gitlab-exporter.securityContext.fsGroup"] = 1000.0
 	examples["gitlab.sidekiq.securityContext.runAsUser"] = 1000.0
+
+	if semver.Compare("v"+getChartVersion(), "v10.0.0") < 0 {
+		examples["global.spamcheck.enabled"] = false
+	}
 }
 
 func addOperatorDefaultExamples(examples support.Values) {
