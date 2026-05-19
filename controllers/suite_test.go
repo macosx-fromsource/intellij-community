@@ -33,9 +33,10 @@ var (
 )
 
 const (
-	Namespace    = "default"
-	PollTimeout  = 30 * time.Second
-	PollInterval = PollTimeout / 100
+	Namespace      = "default"
+	PollTimeout    = 30 * time.Second
+	PollInterval   = PollTimeout / 100
+	envAPIVersions = "GITLAB_OPERATOR_KUBERNETES_API_VERSIONS"
 )
 
 func TestAPIs(t *testing.T) {
@@ -44,6 +45,16 @@ func TestAPIs(t *testing.T) {
 
 		Skip("skipping cluster-related tests")
 	}
+
+	// helm/builder.go initializes against the user's default kubeconfig (not
+	// envtest's), so capabilities discovery falls back to defaults. Seed the
+	// API versions that chart templates check via Capabilities.APIVersions.Has:
+	//   - monitoring.coreos.com/v1: enables ServiceMonitor/PrometheusRule rendering.
+	//   - autoscaling/v2/HorizontalPodAutoscaler: makes gitlab.hpa.apiVersion
+	//     resolve to autoscaling/v2 instead of falling through to v2beta1, which
+	//     k8s.io/client-go no longer registers since v0.36.
+	resetEnv := setAPIVersionsEnv("monitoring.coreos.com/v1,autoscaling/v2/HorizontalPodAutoscaler")
+	defer resetEnv()
 
 	settings.Load()
 
@@ -123,3 +134,19 @@ var _ = AfterSuite(func() {
 		return testEnv.Stop()
 	}, time.Minute, time.Second).Should(Succeed())
 })
+
+func setAPIVersionsEnv(value string) func() {
+	beforeVal := os.Getenv(envAPIVersions)
+
+	setEnvOrPanic(envAPIVersions, value)
+
+	return func() {
+		setEnvOrPanic(envAPIVersions, beforeVal)
+	}
+}
+
+func setEnvOrPanic(key, value string) {
+	if err := os.Setenv(key, value); err != nil {
+		panic(err)
+	}
+}

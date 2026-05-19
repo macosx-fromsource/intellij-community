@@ -66,10 +66,13 @@ func CreateMockAdapter(mockGitLab *gitlabv1beta1.GitLab) gitlab.Adapter {
 }
 
 func TestGitLab(t *testing.T) {
-	// The tests do not have access to a live cluster, so we manually add the
-	// Monitoring API version via an environment variable defined in the
-	// 'settings' package.
-	resetEnv := setAPIVersionsEnv("monitoring.coreos.com/v1")
+	// The tests do not have access to a live cluster, so we manually add API
+	// versions that the chart templates inspect via Capabilities.APIVersions.Has:
+	//   - monitoring.coreos.com/v1: enables ServiceMonitor/PrometheusRule rendering.
+	//   - autoscaling/v2/HorizontalPodAutoscaler: makes gitlab.hpa.apiVersion
+	//     resolve to autoscaling/v2 instead of falling through to v2beta1, which
+	//     k8s.io/client-go no longer registers since v0.36.
+	resetEnv := setAPIVersionsEnv("monitoring.coreos.com/v1,autoscaling/v2/HorizontalPodAutoscaler")
 	defer resetEnv()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.WriteTo(GinkgoWriter)))
