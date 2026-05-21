@@ -7,28 +7,20 @@ title: Images certifiées RedHat
 
 {{< details >}}
 
-- Tier: Free, Premium, Ultimate
-- Offering: GitLab Self-Managed
+- Édition :  version gratuite, GitLab Premium, GitLab Ultimate
+- Offre :  GitLab Self-Managed
 
 {{< /details >}}
 
-Le tableau suivant répertorie les images déployées par l'opérateur GitLab. Il inclut des liens vers les fiches de projet du portail technologique RedHat, où ces images peuvent être gérées par les membres de l'équipe GitLab.
+Le tableau suivant répertorie les images que l'opérateur GitLab déploie. Le tableau inclut des liens vers les listes de projets du portail technologique RedHat où ces images peuvent être gérées par les membres de l'équipe GitLab.
 
-Les tags d'image de l'opérateur GitLab sont alignés sur les
-[versions de release de l'opérateur GitLab](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
+Les tags d'images de l'opérateur GitLab sont alignés avec les [versions de release de l'opérateur GitLab](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
 
-Les tags d'image du contrôleur NGINX Ingress sont alignés sur le contenu du
-[fichier `TAG`](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/-/blob/main/TAG) dans le
-[fork du projet](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx) géré par GitLab.
+Les tags d'images du contrôleur NGINX Ingress sont alignés avec le contenu du [fichier `TAG`](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/-/blob/main/TAG) dans la [bifurcation du projet](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx) gérée par GitLab.
 
-Les autres tags d'image suivent le format `v<version GitLab>-ubi8`, par exemple `v15.4.0-ubi8`. Le suffixe du tag indique
-que les images ont été construites sur la base de la
-[RedHat Universal Base Image (UBI)](https://catalog.redhat.com/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview),
-une exigence pour la certification par RedHat. L'image de l'opérateur GitLab elle-même ne possède qu'une seule variante, déjà
-construite sur la base d'UBI.
+Les autres tags d'images suivent le format `v<GitLab version>-ubi8`, par exemple `v15.4.0-ubi8`. Le suffixe du tag désigne les images qui ont été construites sur la base de l'[image de base universelle RedHat (UBI)](https://catalog.redhat.com/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview), une exigence pour la certification par RedHat. L'image de l'opérateur GitLab elle-même ne possède qu'une seule variante, qui est déjà construite sur la base d'UBI.
 
-Consultez la [documentation Charts sur les images UBI](https://docs.gitlab.com/charts/advanced/ubi/)
-pour plus d'informations, notamment des exemples de valeurs Helm permettant d'utiliser ces images.
+Consultez la [documentation du chart GitLab sur les images UBI](https://docs.gitlab.com/charts/advanced/ubi/) pour plus d'informations, notamment des exemples de valeurs Helm pour utiliser ces images.
 
 | Composant                                                                                             | Chemin du registre |
 |-------------------------------------------------------------------------------------------------------|---------------|
@@ -51,7 +43,7 @@ pour plus d'informations, notamment des exemples de valeurs Helm permettant d'ut
 | [`gitlab-workhorse-ee`](https://connect.redhat.com/component/5fb60c7b5e09a3c40183e67b/overview)       | `registry.gitlab.com/gitlab-org/build/cng/gitlab-workhorse-ee:$GITLAB_VERSION-ubi` |
 | [`gitlab-ingress-nginx`](https://connect.redhat.com/component/5fb60d575e09a3c40183e67c/overview)      | `registry.gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/controller:$NGINX_VERSION-ubi` |
 
-## Signatures des images {#image-signatures}
+## Signatures d'images {#image-signatures}
 
 L'image de l'opérateur peut être vérifiée avec cosign :
 
@@ -61,4 +53,4 @@ cosign verify "registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPER
   --certificate-oidc-issuer "https://gitlab.com"
 ```
 
-Des informations sur la vérification de la signature des images CNG sont disponibles [dans la documentation du chart Helm](https://docs.gitlab.com/charts/installation/verify_cng_images/).
+Des informations sur la façon de vérifier la signature de l'image CNG sont disponibles [dans la documentation du chart Helm](https://docs.gitlab.com/charts/installation/verify_cng_images/).
