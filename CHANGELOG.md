@@ -1,3 +1,26 @@
+## 3.0.0 (2026-05-21)
+
+### changed (14 changes)
+
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/30e9b1fab73b56b1d268bdf569cca7bd82365979) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1449))
+- [Update golang.org/x/mod to v0.36.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/629424635fd7ebe1e029c7e9b521d2332092c100) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1474))
+- [Update golang to v1.26.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/78b8d4caf5857f1e42de7db388d3bd3035f99ab7) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1469))
+- [Update prom-op-api/monitoring to v0.91.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b6ef1f187222e0e82d2d1ca820236bf69ec192f5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1467))
+- [Update ubi9-micro to 1ef916d](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/f6b5e585e03e1ed6054505011d89123215cf0bfa) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1465))
+- [Update github.com/Masterminds/semver/v3 to v3.5.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/68ea6af0ac1060cfead9acbbe67919e031d595c6) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1463))
+- [Update ubi9-micro to e0b6e93](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e3fcfa9e05615c6ed140869dbf180985874d1801) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1460))
+- [Update testing dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/08ff57271e85e123ae028e357f5b37384202424c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1459))
+- [Update github.com/onsi/ginkgo/v2 to v2.28.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a8dac5077978e6473a0d0f485097e85c5cc74a0a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1458))
+- [Update github.com/envoyproxy/gateway to v1.7.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c5dbb85493c19ef05d494fa1592567f80294400c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1453))
+- [Update github.com/cert-manager/cert-manager to v1.20.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2abe92596641860723088862345811c5d6b21dc4) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1445))
+- [Update helm.sh/helm/v4 to v4.1.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/37dd6d0296fe03a1652f3cfabe89f7b976045dcc) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1440))
+- [Update golang.org/x/mod to v0.35.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b40a095c14858b880174681619bb42ce7c190bc5) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1441))
+- [Update golang to v1.26.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2017976786dc3191148130ffe03122a82565e7bc) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1439))
+
+### added (1 change)
+
+- [Add non-ZDU upgrade strategy via annotation](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ea3167af5e37783ed25727c9ca1ac998818f70a3) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1428))
+
 ## 2.11.3 (2026-05-13)
 
 No changes.
