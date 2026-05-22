@@ -89,12 +89,6 @@ spec:
             connection:
               secret: $(garage_release_name)-gitlab-object-storage
               key: config
-        minio:
-          install: false
-      postgresql:
-        install: false
-      redis:
-        install: false
       gitlab:
         toolbox:
           backups:
