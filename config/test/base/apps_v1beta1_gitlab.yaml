@@ -13,11 +13,14 @@ spec:
           domain: DOMAIN
           hostSuffix: HOSTSUFFIX
         ingress:
+          enabled: true
           configureCertmanager: false
           tls:
             secretName: TLS_SECRET
-        minio:
+        gatewayApi:
           enabled: false
+          installEnvoy: false
+          configureCertmanager: false
         psql:
           host: PSQL_HOST
           password: 
@@ -60,10 +63,6 @@ spec:
           dependencyProxy:
             enabled: true
             bucket: gitlab-dependency-proxy
-      redis:
-        install: false
-      postgresql:
-        install: false
       gitlab:
         webservice:
           minReplicas: 1
@@ -89,6 +88,7 @@ spec:
                 secret: OBJECT_STORE_SECRET_S3CMD
                 key: config
       nginx-ingress:
+        enabled: true
         controller:
           electionID: ingress-controller-leader
           replicaCount: 1
