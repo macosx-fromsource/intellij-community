@@ -7,28 +7,22 @@ title: RedHat 인증 이미지
 
 {{< details >}}
 
-- Tier: Free, Premium, Ultimate
-- Offering: GitLab Self-Managed
+- 계층:  Free, Premium, Ultimate
+- 제공:  GitLab Self-Managed
 
 {{< /details >}}
 
-다음 테이블에는 GitLab Operator가 배포하는 이미지 목록이 있습니다. GitLab 팀 멤버가 관리할 수 있는 이미지의 RedHat Technology Portal 프로젝트 목록 링크도 포함되어 있습니다.
+다음 표는 GitLab Operator가 배포하는 이미지를 나열합니다. 이 표에는 GitLab 팀 멤버가 이러한 이미지를 관리할 수 있는 RedHat Technology Portal 프로젝트 목록에 대한 링크가 포함되어 있습니다.
 
-GitLab Operator 이미지 태그는
-[GitLab Operator 릴리즈 버전](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases)과 일치합니다.
+GitLab Operator 이미지 태그는 [GitLab Operator 릴리스 버전](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases)과 일치합니다.
 
-NGINX Ingress Controller 이미지 태그는 GitLab이 관리하는
-[프로젝트 포크](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx)의
-[`TAG` 파일](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/-/blob/main/TAG) 내용과 일치합니다.
+NGINX Ingress Controller 이미지 태그는 GitLab에서 관리하는 [프로젝트 포크](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx) 의 [`TAG` 파일](https://gitlab.com/gitlab-org/cloud-native/charts/gitlab-ingress-nginx/-/blob/main/TAG) 내용과 일치합니다.
 
-나머지 이미지 태그는 `v<GitLab version>-ubi8` 형식을 따릅니다(예: `v15.4.0-ubi8`). 태그 접미사는 RedHat 인증 요구 사항인
-[RedHat Universal Base Image (UBI)](https://catalog.redhat.com/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview)
-위에 빌드된 이미지를 나타냅니다. GitLab Operator 이미지 자체는 이미 UBI 위에 빌드된 단일 변형만 있습니다.
+나머지 이미지 태그는 `v<GitLab version>-ubi8` 형식을 따르며, 예를 들어 `v15.4.0-ubi8` 입니다. 태그 접미사는 [RedHat Universal Base Image (UBI)](https://catalog.redhat.com/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview) 위에 구축된 이미지를 나타내며, 이는 RedHat의 인증을 위한 요구사항입니다. GitLab Operator 이미지 자체는 하나의 변형만 가지고 있으며, 이미 UBI 위에 구축되어 있습니다.
 
-이러한 이미지에 사용할 Helm 값 예시를 포함한 자세한 내용은
-[UBI 이미지에 관한 Charts 문서](https://docs.gitlab.com/charts/advanced/ubi/)를 참조하세요.
+[UBI 이미지에 대한 Charts 설명서](https://docs.gitlab.com/charts/advanced/ubi/)를 참조하여 이러한 이미지를 사용할 예시 Helm 값을 포함한 자세한 내용을 확인하세요.
 
-| 컴포넌트                                                                                             | 레지스트리 경로 |
+| 구성 요소                                                                                             | 레지스트리 경로 |
 |-------------------------------------------------------------------------------------------------------|---------------|
 | [`gitlab-operator`](https://connect.redhat.com/component/629f9d952cb3e76438a9d40e/overview)           | `registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPERATOR_VERSION` |
 | [`gitlab-operator-bundle`](https://connect.redhat.com/component/5f6cbaa04fcb1bc3f0425fbf/overview)    | `registry.connect.redhat.com/gitlab/gitlab-operator-bundle` |
@@ -51,7 +45,7 @@ NGINX Ingress Controller 이미지 태그는 GitLab이 관리하는
 
 ## 이미지 서명 {#image-signatures}
 
-Operator 이미지는 cosign으로 검증할 수 있습니다.
+Operator 이미지는 cosign으로 확인할 수 있습니다:
 
 ```script
 cosign verify "registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPERATOR_VERSION" \
@@ -59,4 +53,4 @@ cosign verify "registry.gitlab.com/gitlab-org/cloud-native/gitlab-operator:$OPER
   --certificate-oidc-issuer "https://gitlab.com"
 ```
 
-CNG 이미지 서명 검증 방법은 [Helm 차트 문서](https://docs.gitlab.com/charts/installation/verify_cng_images/)에서 확인할 수 있습니다.
+CNG 이미지 서명을 확인하는 방법에 대한 정보는 [Helm 차트 설명서](https://docs.gitlab.com/charts/installation/verify_cng_images/)에서 찾을 수 있습니다.
