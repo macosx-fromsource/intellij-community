@@ -7,7 +7,8 @@
 
 set -eo pipefail
 
-CHARTS_REF=${CHARTS_REF:-master} 
+CHARTS_REF=${CHARTS_REF:-master}
+CHARTS_BRANCH=${CHARTS_BRANCH:-}
 CHARTS_PROJECT_ID=3828396
 API_CHARTS_PROJECT_URL="https://gitlab.com/api/v4/projects/${CHARTS_PROJECT_ID}"
 
@@ -46,7 +47,7 @@ chart_ver="$(yq eval '.version' Chart.yaml)"
 
 # The chart version on master is only bumped during the release.
 # We already bump the chart version here to to allow the Operator to test/apply logic specific to the upcoming release.
-if [[ "${CHARTS_REF}" == "master" ]]; then
+if [[ "${CHARTS_REF}" == "master" || "${CHARTS_BRANCH}" == "master" ]]; then
   IFS='.' read -r major minor patch <<< "$chart_ver"
   if (( minor == 11 )); then
     chart_ver="$((major + 1)).0.0"
