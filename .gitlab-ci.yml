@@ -10,7 +10,7 @@ variables:
   BUILD_DIR: ".build"
   INSTALL_DIR: ".install"
   DOMAIN_OPENSHIFT_4_18: "apps.ocp-ci-418.k8s-ft.win"
-  DOMAIN_OPENSHIFT_4_19: "apps.ocp-ci-419.k8s-ft.win"
+  DOMAIN_OPENSHIFT_4_19: "ocp-ci-419.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_20: "ocp-ci-420.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_21: "ocp-ci-421.k8s-ft.win"
   DOMAIN_GKE133: "gitlab-operator-v133.k8s-ft.win"
