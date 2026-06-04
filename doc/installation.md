@@ -151,7 +151,22 @@ Start by selecting an installation method.
 
 First, retrieve a release manifest from the
 [Operator releases page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases).
-Select the manifest that matches your target platform: Kubernetes or OpenShift.
+Each release publishes four manifests; pick the one that matches your target
+platform and the RBAC scope you need:
+
+| Manifest                                       | Platform   | RBAC scope                                                                                            |
+|------------------------------------------------|------------|-------------------------------------------------------------------------------------------------------|
+| `gitlab-operator-kubernetes.yaml`              | Kubernetes | Cluster-wide: `ClusterRole`/`ClusterRoleBinding`; the operator watches GitLab CRs in all namespaces.  |
+| `gitlab-operator-kubernetes-namespaced.yaml`   | Kubernetes | Namespaced: `Role`/`RoleBinding` scoped to the install namespace; the operator only watches that namespace. A small `ClusterRole` is still required for the cluster-scoped resources the operator manages. |
+| `gitlab-operator-openshift.yaml`               | OpenShift  | Cluster-wide (as above).                                                                              |
+| `gitlab-operator-openshift-namespaced.yaml`    | OpenShift  | Namespaced (as above).                                                                                |
+
+Use the cluster-wide variant when a single operator should manage GitLab
+instances across multiple namespaces. Use the namespaced variant when the
+operator must be confined to a single namespace, for example because granting
+cluster-wide RBAC is not permitted in the target cluster. With the namespaced
+variant the GitLab custom resource must be created in the same namespace as
+the operator.
 
 Next, create the namespace where the operator will be installed.
 In the manifest, the namespace is set to `gitlab-system` by default.
@@ -209,6 +224,29 @@ Confirm the installation by checking the status of the Operator Deployment:
 ```shell
 kubectl -n gitlab-system get deployment gitlab-controller-manager
 ```
+
+### Bundled NGINX Ingress and Prometheus in namespaced mode
+
+The namespaced manifest variants (and Helm installs with
+`watchCluster=false`) omit the `ClusterRole` and `ClusterRoleBinding` for
+the chart's bundled NGINX Ingress controller and Prometheus server. These
+two components are designed to operate cluster-wide:
+
+- NGINX Ingress watches `Ingresses` across all namespaces and reads
+  cluster-scoped resources such as `nodes` and `ingressclasses`.
+- The Prometheus server discovers and scrapes targets across the cluster
+  and needs access to `nodes`, `nodes/proxy`, `nodes/metrics`, and the
+  `/metrics` non-resource URL.
+
+If you install the operator in namespaced mode and intend to use these
+bundled components, you must provide the cluster-scoped permissions
+yourself (typically by binding the chart's `gitlab-nginx-ingress` /
+`gitlab-prometheus-server` `ServiceAccount` to an externally managed
+`ClusterRole`, and for NGINX Ingress also passing `--watch-namespace` to
+the controller).
+
+The recommended approach in namespaced mode is to use externally
+managed monitoring and Ingress/Gateway API solutions.
 
 ## Installing GitLab
 

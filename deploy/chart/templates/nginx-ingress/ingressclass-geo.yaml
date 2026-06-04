@@ -1,3 +1,4 @@
+{{- if (index .Values "nginx-ingress").create -}}
 {{- if (index .Values "nginx-ingress").geo.ingressClass.enabled }}
 # We don't support namespaced ingressClass yet
 # So a ClusterRole and a ClusterRoleBinding is required
@@ -10,4 +11,5 @@ spec:
   # configurable via:
   #   nginx-ingress-geo.controller.ingressClassResource.controllerValue
   controller: k8s.io/ingress-nginx-geo
+{{- end }}
 {{- end }}

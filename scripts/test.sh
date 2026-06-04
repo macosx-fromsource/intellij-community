@@ -206,6 +206,11 @@ build_gitlab_custom_resource() {
   ${YQ} -i eval ".spec.chart.values.gitlab.toolbox.backups.objectStorage.config.secret = \"$(garage_release_name)-gitlab-object-storage-s3cmd\"" "${cr_file}"
   ${YQ} -i eval ".spec.chart.values.global.pages.objectStore.connection.secret = \"$(garage_release_name)-gitlab-object-storage\"" "${cr_file}"
   ${YQ} -i eval ".spec.chart.values.registry.storage.secret = \"$(garage_release_name)-gitlab-registry-storage\"" "${cr_file}"
+
+  # Annotate the Envoy Service backing the Gateway so external-dns provisions
+  # DNS records for the review app endpoints.
+  ${YQ} -i eval ".spec.chart.values.gatewayApiResources.gateway.infrastructure.annotations.\"external-dns.alpha.kubernetes.io/ttl\" = \"10\"" "${cr_file}"
+  ${YQ} -i eval ".spec.chart.values.gatewayApiResources.gateway.infrastructure.annotations.\"external-dns.alpha.kubernetes.io/hostname\" = \"kas-${HOSTSUFFIX}.${DOMAIN},registry-${HOSTSUFFIX}.${DOMAIN},gitlab-${HOSTSUFFIX}.${DOMAIN}\"" "${cr_file}"
   set +x
 }
 
