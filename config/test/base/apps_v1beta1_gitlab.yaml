@@ -98,3 +98,18 @@ spec:
           key: config
           redirect:
             disable: true
+      gatewayApiResources:
+        gateway:
+          listeners:
+            gitlab-web:
+              tls:
+                certificateRefs:
+                - name: TLS_SECRET
+            registry-web:
+              tls:
+                certificateRefs:
+                - name: TLS_SECRET
+            kas-web:
+              tls:
+                certificateRefs:
+                - name: TLS_SECRET

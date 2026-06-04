@@ -1,4 +1,4 @@
-watchCluster: false
+watchCluster: true
 
 image:
   registry: registry.gitlab.com
@@ -81,6 +81,7 @@ app:
     # name:
 
 nginx-ingress:
+  create: true
   geo:
     ingressClass:
       enabled: false

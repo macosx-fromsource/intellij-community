@@ -32,7 +32,9 @@ variables:
   RELEASE_VERSION: "${CI_COMMIT_TAG}"
   HELM_PACKAGE_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"
   K8S_MANIFEST_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/gitlab-operator-kubernetes-${CI_COMMIT_TAG}.yaml"
+  K8S_NAMESPACED_MANIFEST_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/gitlab-operator-kubernetes-namespaced-${CI_COMMIT_TAG}.yaml"
   OCP_MANIFEST_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/gitlab-operator-openshift-${CI_COMMIT_TAG}.yaml"
+  OCP_NAMESPACED_MANIFEST_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/gitlab-operator-openshift-namespaced-${CI_COMMIT_TAG}.yaml"
   # OCP_RESOURCES_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}/openshift-resources-${CI_COMMIT_TAG}.yaml"
   PACKAGE_REGISTRY_URL: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-operator/${CI_COMMIT_TAG}"
   ISSUE_BOT_LABELS_EXTRA: "group::operate"
@@ -679,14 +681,20 @@ build_manifest:
   stage: build
   script:
     - export TAG=${CI_COMMIT_TAG:-${TAG}}
+    # Default (cluster-wide RBAC) Kubernetes and OpenShift manifests.
     - task build_operator
     - task build_operator_openshift
+    # Namespaced (Role/RoleBinding) Kubernetes and OpenShift manifests.
+    - task build_operator_namespaced
+    - task build_operator_openshift_namespaced
   artifacts:
     untracked: false
     expire_in: 30 days
     paths:
       - ${BUILD_DIR}/operator.yaml
+      - ${BUILD_DIR}/operator-namespaced.yaml
       - ${BUILD_DIR}/operator-openshift.yaml
+      - ${BUILD_DIR}/operator-openshift-namespaced.yaml
   rules:
     - !reference [.skip_if_docs_branch]
     - !reference [.if_release_tag]
@@ -707,8 +715,16 @@ upload_manifest:
         ${K8S_MANIFEST_URL}?status=default
     - |
       curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        --upload-file ${BUILD_DIR}/operator-namespaced.yaml \
+        ${K8S_NAMESPACED_MANIFEST_URL}?status=default
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         --upload-file ${BUILD_DIR}/operator-openshift.yaml \
         ${OCP_MANIFEST_URL}?status=default
+    - |
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        --upload-file ${BUILD_DIR}/operator-openshift-namespaced.yaml \
+        ${OCP_NAMESPACED_MANIFEST_URL}?status=default
 
 build_release_description:
   stage: build
@@ -732,7 +748,7 @@ publish_release:
     - upload_manifest
   rules:
     - !reference [.if_release_tag]
-  script: echo "Releasing $CI_COMMIT_TAG from ${K8S_MANIFEST_URL} and ${OCP_MANIFEST_URL}"
+  script: echo "Releasing $CI_COMMIT_TAG from ${K8S_MANIFEST_URL}, ${K8S_NAMESPACED_MANIFEST_URL}, ${OCP_MANIFEST_URL} and ${OCP_NAMESPACED_MANIFEST_URL}"
   release:
     name: "Release $CI_COMMIT_TAG"
     tag_name: "$CI_COMMIT_TAG"
@@ -741,8 +757,12 @@ publish_release:
       links:
         - name: "gitlab-operator-kubernetes.yaml"
           url: "${K8S_MANIFEST_URL}"
+        - name: "gitlab-operator-kubernetes-namespaced.yaml"
+          url: "${K8S_NAMESPACED_MANIFEST_URL}"
         - name: "gitlab-operator-openshift.yaml"
           url: "${OCP_MANIFEST_URL}"
+        - name: "gitlab-operator-openshift-namespaced.yaml"
+          url: "${OCP_NAMESPACED_MANIFEST_URL}"
 #         - name: "openshift-resources.yaml"
 #           url: "${OCP_RESOURCES_URL}"
 

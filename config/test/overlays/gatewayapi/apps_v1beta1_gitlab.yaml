@@ -10,7 +10,6 @@ spec:
         gatewayApi:
           enabled: true
           installEnvoy: true
-          protocol: HTTPS
         ingress:
           enabled: false
         pdb:
@@ -20,3 +19,5 @@ spec:
         batch:
           cronJob:
             apiVersion: batch/v1
+      nginx-ingress:
+        enabled: false

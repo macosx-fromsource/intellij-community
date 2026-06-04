@@ -40,6 +40,8 @@ env:
   # Build and deploy configuration
   NAME_OVERRIDE: gitlab
   NAMESPACE: gitlab-system
+  # CLUSTER_MODE controls the operator's watch scope and the scope and RBAC permissions.
+  CLUSTER_MODE: "true"
   DOMAIN: example.com
   HOSTSUFFIX: ""
   TLS_SECRET: ""
@@ -239,31 +241,49 @@ tasks:
       - deploy/chart/Chart.lock
 
   build_operator:
-    desc: Build the Operator manifest using `$HELM template`.
-    deps:
-      - build_dir
-      - build_chart
-    sources:
-      - deploy/chart/**/*
+    desc: Build the cluster-wide Kubernetes Operator manifest. Honors $CLUSTER_MODE.
     cmds:
-      - >-
-        $HELM template deploy/chart
-        --include-crds
-        --namespace $NAMESPACE
-        --set nameOverride=$NAME_OVERRIDE
-        --set image.registry=$IMG_REGISTRY
-        --set image.repository=$IMG_REPOSITORY
-        --set image.name=$IMG_NAME
-        --set image.tag=$TAG
-        > $BUILD_DIR/operator.yaml
+      - task: _build_operator
+        vars:
+          OUTPUT: operator.yaml
+          CLUSTER_MODE: "$CLUSTER_MODE"
+
+  build_operator_namespaced:
+    desc: Build the Kubernetes Operator manifest in namespaced (Role/RoleBinding) mode.
+    cmds:
+      - task: _build_operator
+        vars:
+          OUTPUT: operator-namespaced.yaml
+          CLUSTER_MODE: "false"
 
   build_operator_openshift:
-    desc: Build the Operator manifest for OpenShift using `$HELM template`.
+    desc: Build the cluster-wide OpenShift Operator manifest. Honors $CLUSTER_MODE.
+    cmds:
+      - task: _build_operator
+        vars:
+          OUTPUT: operator-openshift.yaml
+          CLUSTER_MODE: "$CLUSTER_MODE"
+          SCC_API_VERSION: security.openshift.io/v1
+
+  build_operator_openshift_namespaced:
+    desc: Build the OpenShift Operator manifest in namespaced (Role/RoleBinding) mode.
+    cmds:
+      - task: _build_operator
+        vars:
+          OUTPUT: operator-openshift-namespaced.yaml
+          CLUSTER_MODE: "false"
+          SCC_API_VERSION: security.openshift.io/v1
+
+  _build_operator:
+    internal: true
+    label: "build_operator:{{ .OUTPUT }}"
     deps:
       - build_dir
       - build_chart
     sources:
       - deploy/chart/**/*
+    generates:
+      - "{{ .BUILD_DIR }}/{{ .OUTPUT }}"
     cmds:
       - >-
         $HELM template deploy/chart
@@ -274,8 +294,11 @@ tasks:
         --set image.repository=$IMG_REPOSITORY
         --set image.name=$IMG_NAME
         --set image.tag=$TAG
-        --set scc.apiVersion="security.openshift.io/v1"
-        > $BUILD_DIR/operator-openshift.yaml
+        --set watchCluster={{ .CLUSTER_MODE }}
+        --set nginx-ingress.create={{ .CLUSTER_MODE }}
+        --set prometheus.serviceAccount.server.create={{ .CLUSTER_MODE }}
+        {{ if .SCC_API_VERSION }}--set scc.apiVersion="{{ .SCC_API_VERSION }}"{{ end }}
+        > $BUILD_DIR/{{ .OUTPUT }}
 
   deploy_operator:
     desc: Deploy controller in the configured cluster using `$HELM upgrade`.
@@ -295,6 +318,9 @@ tasks:
         --set image.repository=$IMG_REPOSITORY
         --set image.name=$IMG_NAME
         --set image.tag=$TAG
+        --set watchCluster=$CLUSTER_MODE
+        --set nginx-ingress.create=$CLUSTER_MODE
+        --set prometheus.serviceAccount.server.create=$CLUSTER_MODE
         $ARGS
       - "$HELM -n $NAMESPACE get all gitlab-operator > $INSTALL_DIR/operator.yaml"
 

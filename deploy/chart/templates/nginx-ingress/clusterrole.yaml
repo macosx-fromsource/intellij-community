@@ -1,3 +1,4 @@
+{{- if (index .Values "nginx-ingress").create -}}
 # Source: gitlab/charts/nginx-ingress/templates/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -73,3 +74,4 @@ rules:
       - get
       - list
       - watch
+{{- end }}
