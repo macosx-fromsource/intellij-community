@@ -1,3 +1,9 @@
+## 3.0.2 (2026-06-10)
+
+### changed (1 change)
+
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.19.0](https://gitlab.com/gitlab-org/security/cloud-native/gitlab-operator/-/commit/3468cf88bf445c1f4fef07134bc893beb19c46f3)
+
 ## 3.0.1 (2026-05-27)
 
 No changes.
