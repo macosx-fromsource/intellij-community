@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -44,6 +45,7 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayalpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
@@ -544,29 +546,63 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			Owns(&certmanagerv1.Certificate{})
 	}
 
+	// Create a single client to be reused across all the RBAC checks.
+	authClient, err := settings.KubernetesConfig().NewKubernetesClient()
+	if err != nil {
+		r.Log.Error(err, "unable to create Kubernetes client for RBAC checks; Gateway API resources will not be watched")
+
+		return builder.Complete(r)
+	}
+
 	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1") {
 		r.Log.Info("using gateway.networking.k8s.io/v1")
-		builder.
-			Owns(&gatewayv1.Gateway{}).
-			Owns(&gatewayv1.GatewayClass{}).
-			Owns(&gatewayv1.HTTPRoute{})
+		// GatewayClass is a cluster-scoped resource, so it is always checked at
+		// cluster scope regardless of the Operator's watch namespace.
+		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "gatewayclasses", true, &gatewayv1.GatewayClass{})
+		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "gateways", false, &gatewayv1.Gateway{})
+		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "httproutes", false, &gatewayv1.HTTPRoute{})
 	}
 
 	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1alpha2") {
 		r.Log.Info("using gateway.networking.k8s.io/v1alpha2")
-		builder.Owns(&gatewayalpha2.TCPRoute{})
+		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "tcproutes", false, &gatewayalpha2.TCPRoute{})
 	}
 
 	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1alpha1") {
 		r.Log.Info("using gateway.envoyproxy.io/v1alpha1")
-		builder.
-			Owns(&envoy.EnvoyPatchPolicy{}).
-			Owns(&envoy.SecurityPolicy{}).
-			Owns(&envoy.ClientTrafficPolicy{}).
-			Owns(&envoy.EnvoyProxy{})
+		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoypatchpolicies", false, &envoy.EnvoyPatchPolicy{})
+		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "securitypolicies", false, &envoy.SecurityPolicy{})
+		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "clienttrafficpolicies", false, &envoy.ClientTrafficPolicy{})
+		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoyproxies", false, &envoy.EnvoyProxy{})
 	}
 
 	return builder.Complete(r)
+}
+
+// ownIfPermitted registers an owned-resource watch on the builder, but only when
+// the Operator's ServiceAccount has the RBAC permissions to manage the given
+// resource. Otherwise the watch is skipped and the reason is logged.
+//
+// Namespaced resources are checked against the Operator's watch namespace, while
+// cluster-scoped resources (clusterScoped == true) are always checked at cluster
+// scope.
+func (r *GitLabReconciler) ownIfPermitted(builder *ctrlbuilder.Builder, authClient kubernetes.Interface, group, resource string, clusterScoped bool, obj client.Object) {
+	namespace := settings.WatchNamespace
+	if clusterScoped {
+		namespace = ""
+	}
+
+	if settings.CanManageResource(authClient, group, resource, namespace) {
+		r.Log.Info("watching resource", "group", group, "resource", resource)
+		builder.Owns(obj)
+
+		return
+	}
+
+	r.Log.Info("not watching resource: the Operator's ServiceAccount lacks the RBAC permissions to manage it. "+
+		"If a GitLab custom resource is reconciled that requires this resource, the Operator will be unable to "+
+		"create or update it and reconciliation will fail until the missing permissions are granted.",
+		"group", group, "resource", resource)
 }
 
 // jobFinished checks the status of a specified Job.
