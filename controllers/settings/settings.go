@@ -35,6 +35,11 @@ var (
 	// variable to change it.
 	PrometheusServiceAccount = "gitlab-prometheus-server"
 
+	// WatchNamespace is the namespace the Operator is scoped to via the WATCH_NAMESPACE
+	// environment variable. An empty string means the Operator runs with cluster scope,
+	// in which case RBAC checks are performed at cluster scope.
+	WatchNamespace = ""
+
 	// HealthProbeBindAddress returns the address for hosting health probes.
 	HealthProbeBindAddress = ":6060"
 
@@ -66,6 +71,7 @@ const (
 	envPrometheusServiceAccount = "PROMETHEUS_SERVICE_ACCOUNT"
 	envKubeVersion              = "GITLAB_OPERATOR_KUBERNETES_VERSION"
 	envKubeAPIVersions          = "GITLAB_OPERATOR_KUBERNETES_API_VERSIONS"
+	envWatchNamespace           = "WATCH_NAMESPACE"
 )
 
 // Load reads Operator settings from environment variables.
@@ -104,4 +110,6 @@ func Load() {
 	if kubeAPIVersionsStr != "" {
 		DefaultKubeAPIVersions = strings.Split(kubeAPIVersionsStr, ",")
 	}
+
+	WatchNamespace = os.Getenv(envWatchNamespace)
 }

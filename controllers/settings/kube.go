@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -8,13 +9,23 @@ import (
 	"helm.sh/helm/v4/pkg/action"
 	"helm.sh/helm/v4/pkg/chart/common"
 
+	authorizationv1 "k8s.io/api/authorization/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
+
+var settingslog = ctrl.Log.WithName("settings")
+
+// managementVerbs are the verbs the Operator's ServiceAccount must be allowed to
+// perform on a resource for the Operator to be able to fully manage (watch and
+// modify) it.
+var managementVerbs = []string{"get", "list", "watch", "create", "update", "patch", "delete"}
 
 var (
 	cfgEnvTest *rest.Config
@@ -93,6 +104,48 @@ func IsGroupVersionKindSupported(groupVersion, kind string) bool {
 	}
 
 	return false
+}
+
+// CanManageResource reports whether the Operator's ServiceAccount is authorized to
+// manage the given resource in the given API group. It performs a
+// SelfSubjectAccessReview for each of the managementVerbs and only returns true
+// when all of them are allowed.
+// The checks are cluster wide if the namespace is empty.
+func CanManageResource(client kubernetes.Interface, group, resource, namespace string) bool {
+	return canManageResource(context.Background(), client, group, resource, namespace)
+}
+
+func canManageResource(ctx context.Context, client kubernetes.Interface, group, resource, namespace string) bool {
+	for _, verb := range managementVerbs {
+		review := &authorizationv1.SelfSubjectAccessReview{
+			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+				ResourceAttributes: &authorizationv1.ResourceAttributes{
+					Namespace: namespace,
+					Group:     group,
+					Resource:  resource,
+					Verb:      verb,
+				},
+			},
+		}
+
+		result, err := client.AuthorizationV1().SelfSubjectAccessReviews().
+			Create(ctx, review, metav1.CreateOptions{})
+		if err != nil {
+			settingslog.Error(err, "unable to perform SelfSubjectAccessReview",
+				"verb", verb, "group", group, "resource", resource)
+
+			return false
+		}
+
+		if !result.Status.Allowed {
+			settingslog.Info("SelfSubjectAccessReview denied",
+				"verb", verb, "group", group, "resource", resource)
+
+			return false
+		}
+	}
+
+	return true
 }
 
 func IsGroupVersionResourceSupported(groupVersion, resource string) bool {
