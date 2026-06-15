@@ -24,12 +24,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 
-	envoy "github.com/envoyproxy/gateway/api/v1alpha1"
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/api"
+	envoy "github.com/envoyproxy/gateway/api/v1alpha1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	applicationv1beta1 "sigs.k8s.io/application/api/v1beta1"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayalpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	
+
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 )
 
@@ -50,6 +51,7 @@ var (
 			envoy.AddToScheme,
 			gatewayalpha2.AddToScheme,
 			gatewayv1.AddToScheme,
+			applicationv1beta1.AddToScheme,
 		},
 	}
 
