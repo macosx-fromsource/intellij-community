@@ -1,0 +1,10 @@
+{{- if .Values.application.create -}}
+apiVersion: app.k8s.io/v1beta1
+kind: Application
+metadata:
+  name: {{ include "test.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  descriptor:
+    type: "test"
+{{- end }}

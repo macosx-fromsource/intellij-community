@@ -52,6 +52,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	applicationv1beta1 "sigs.k8s.io/application/api/v1beta1"
 
 	apiv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
@@ -103,6 +104,7 @@ type GitLabReconciler struct {
 // +kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch;update
+// +kubebuilder:rbac:groups=app.k8s.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile triggers when an event occurs on the watched resource.
 //
@@ -418,6 +420,12 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
+	if settings.IsGroupVersionKindSupported("app.k8s.io/v1beta1", "Application") {
+		if err := r.reconcileApplicationResources(ctx, adapter, template); err != nil {
+			return requeue(err)
+		}
+	}
+
 	currentManagedObjects, err := adapter.CurrentObjects(rtCtx)
 	if err != nil {
 		log.Error(err, "unable to discover the managed resources for GitLab instance")
@@ -564,6 +572,11 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "tcproutes", false, &gatewayalpha2.TCPRoute{})
 	}
 
+	if settings.IsGroupVersionSupported("app.k8s.io", "v1beta1") {
+		r.Log.Info("using app.k8s.io/v1beta1")
+		r.ownIfPermitted(builder, authClient, "app.k8s.io", "applications", false, &applicationv1beta1.Application{})
+	}
+
 	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1alpha1") {
 		r.Log.Info("using gateway.envoyproxy.io/v1alpha1")
 		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoypatchpolicies", false, &envoy.EnvoyPatchPolicy{})
@@ -658,6 +671,16 @@ func (r *GitLabReconciler) jobExists(ctx context.Context, job client.Object) (bo
 	}
 
 	return false, err
+}
+
+func (r *GitLabReconciler) reconcileApplicationResources(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	for _, obj := range gitlabctl.WantedApplicationResources(template) {
+		if err := r.createOrPatch(ctx, obj, adapter); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *GitLabReconciler) reconcileServiceMonitors(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {

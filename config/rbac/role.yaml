@@ -168,3 +168,15 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - app.k8s.io
+  resources:
+  - applications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch

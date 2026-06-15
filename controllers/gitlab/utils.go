@@ -25,6 +25,9 @@ const (
 	ServiceMonitorKind          = "ServiceMonitor"
 	StatefulSetKind             = "StatefulSet"
 
+	// Kind related to the app.k8s.io Application CRD (optional).
+	ApplicationKind = "Application"
+
 	// Kinds related to Gateway API.
 	HttpRouteKind    = "HTTPRoute"
 	TcpRouteKind     = "TCPRoute"

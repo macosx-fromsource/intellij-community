@@ -327,6 +327,18 @@ Manager RBAC rules for namespaced resources. Always granted.
   - patch
   - update
   - watch
+- apiGroups:
+  - app.k8s.io
+  resources:
+  - applications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 {{- end -}}
 
 {{/*
