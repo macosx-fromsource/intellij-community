@@ -99,7 +99,6 @@ type GitLabReconciler struct {
 // +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
@@ -524,34 +523,31 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		builder.Owns(&batchv1beta1.CronJob{})
 	}
 
+	// Create client to check service account permissions on optional resources.
+	// Permissions on such resources can be omitted intentionally, if it is known that
+	// no GitLab resource exists that results in the resource to be rendered/applied at
+	// runtime.
+	authClient, err := settings.KubernetesConfig().NewKubernetesClient()
+	if err != nil {
+		r.Log.Error(err, "unable to create Kubernetes client for RBAC checks; optional resources will not be watched")
+
+		return builder.Complete(r)
+	}
+
 	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "ServiceMonitor") {
 		r.Log.Info("using monitoring.coreos.com/v1 for ServiceMonitor")
-		builder.Owns(&monitoringv1.ServiceMonitor{})
+		r.ownIfPermitted(builder, authClient, "monitoring.coreos.com", "servicemonitors", false, &monitoringv1.ServiceMonitor{})
 	}
 
 	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "PodMonitor") {
 		r.Log.Info("using monitoring.coreos.com/v1 for PodMonitor")
-		builder.Owns(&monitoringv1.PodMonitor{})
-	}
-
-	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "Prometheus") {
-		r.Log.Info("using monitoring.coreos.com/v1/Prometheus")
-		builder.Owns(&monitoringv1.Prometheus{})
+		r.ownIfPermitted(builder, authClient, "monitoring.coreos.com", "podmonitors", false, &monitoringv1.PodMonitor{})
 	}
 
 	if settings.IsGroupVersionSupported("cert-manager.io", "v1") {
 		r.Log.Info("using cert-manager.io/v1")
-		builder.
-			Owns(&certmanagerv1.Issuer{}).
-			Owns(&certmanagerv1.Certificate{})
-	}
-
-	// Create a single client to be reused across all the RBAC checks.
-	authClient, err := settings.KubernetesConfig().NewKubernetesClient()
-	if err != nil {
-		r.Log.Error(err, "unable to create Kubernetes client for RBAC checks; Gateway API resources will not be watched")
-
-		return builder.Complete(r)
+		r.ownIfPermitted(builder, authClient, "cert-manager.io", "issuers", false, &certmanagerv1.Issuer{})
+		r.ownIfPermitted(builder, authClient, "cert-manager.io", "certificates", false, &certmanagerv1.Certificate{})
 	}
 
 	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1") {

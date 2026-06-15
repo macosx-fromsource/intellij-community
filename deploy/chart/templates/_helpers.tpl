@@ -268,7 +268,6 @@ Manager RBAC rules for namespaced resources. Always granted.
 - apiGroups:
   - monitoring.coreos.com
   resources:
-  - prometheuses
   - podmonitors
   - servicemonitors
   verbs:
