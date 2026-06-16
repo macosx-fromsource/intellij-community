@@ -24,7 +24,7 @@ The NGINX Ingress Controller image tags align with the contents of the
 
 The rest of the image tags follow `v<GitLab version>-ubi8` format, for example `v15.4.0-ubi8`. The tag suffix denotes
 the images that have been built on top of the
-[RedHat Universal Base Image (UBI)](https://catalog.redhat.com/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview),
+[RedHat Universal Base Image (UBI)](https://catalog.redhat.com/en/software/containers/ubi8/ubi/5c359854d70cc534b3a3784e?container-tabs=overview),
 a requirement for certification by RedHat. The GitLab Operator image itself only has one variant, which is already
 built on top of UBI.
 

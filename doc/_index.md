@@ -39,7 +39,7 @@ GitLab Operator does not support:
   [GitLab Operator issue 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567).
 - Git over SSH with [OpenShift routes](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html).
   For more information, see [GitLab Operator documentation on OpenShift Routes](openshift_ingress.md#openshift-routes).
-- [GKE workload identity](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) and [IAM service accounts](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html) to authenticate workloads to other cloud APIs (such as object storage).
+- [GKE workload identity](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) and [IAM service accounts](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html) to authenticate workloads to other cloud APIs (such as object storage).
   For more information, see [GitLab Operator issue 1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737).
 - By default, the Operator upgrades GitLab using the zero downtime method. As a result, the GitLab and GitLab chart
   version must be updated one minor release at a time. To skip minor versions, you can
@@ -78,7 +78,7 @@ to deploy images that have been certified by RedHat.
 
 - [Developer guide](developer/guide.md): Outlines the project structure and how to contribute.
 - [Versioning and Release information](developer/releases.md): Records notes concerning versioning and releasing the operator.
-- [Design decisions](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr): This projects makes use of Architecture Decision Records, detailing the structure, functionality, and feature implementation of this Operator.
+- [Design decisions](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/tree/master/doc/developer/adr): This projects makes use of Architecture Decision Records, detailing the structure, functionality, and feature implementation of this Operator.
 
 ## Merge request reviews
 
