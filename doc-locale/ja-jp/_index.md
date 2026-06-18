@@ -16,11 +16,20 @@ title: GitLab Operator
 
 [OpenShift](https://docs.gitlab.com/install/openshift_and_gitlab/)または別のKubernetes互換プラットフォームでGitLabを実行するには、GitLab Operatorを使用してください。
 
-> [!note] GitLab Operatorには[既知の制限事項](#known-issues)があり、本番環境での特定のシナリオにのみ適しています。
+> [!note]
+> GitLab Operatorには[既知の制限事項](#known-issues)があり、本番環境での特定のシナリオにのみ適しています。
 
-<!-- This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
+<!-- This content block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
 
-> [!warning] GitLabカスタムリソースのデフォルト値は、**not intended for production use**です。これらの値を使用すると、GitLab Operatorは、永続データを含むすべてのサービスがKubernetesクラスターにデプロイされるGitLabインスタンスを作成しますが、これは**本番環境のワークロードには適していません**。本番環境へのデプロイでは、[クラウドネイティブハイブリッドリファレンスアーキテクチャ](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid)に従う**必要があります**。GitLabは、Kubernetesクラスター内にデプロイされたPostgreSQL、Redis、Gitaly、Praefect、またはMinIOに関連する問題は一切サポートしません。
+GitLab Operatorには、以下の外部インスタンスが必要です:
+
+- [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
+- [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
+- [オブジェクトストレージ](https://docs.gitlab.com/charts/advanced/external-object-storage/)
+
+本番環境へのデプロイでは、[クラウドネイティブリファレンスアーキテクチャ](https://docs.gitlab.com/administration/reference_architectures)に従ってください。
+
+<!-- End content block -->
 
 ## 既知の問題 {#known-issues}
 
@@ -28,8 +37,8 @@ GitLab Operatorは、以下をサポートしていません:
 
 - GitLab Operatorで既存のHelmチャートベースのインスタンスを管理すること。この改善に関するサポートは、[GitLab Operatorのイシュー1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567)で提案されています。
 - [OpenShift Routes](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html)を使用したSSH経由のGit。詳細については、[OpenShift Routesに関するGitLab Operatorドキュメント](openshift_ingress.md#openshift-routes)を参照してください。
-- ワークロードを他のクラウドAPI（オブジェクトストレージなど）に対して認証するための[GKEワークロードID](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity)および[IAMサービスアカウント](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html)。詳細については、[GitLab Operatorのイシュー1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737)を参照してください。
-- Operatorはゼロダウンタイム方式でGitLabをアップグレードします。そのため、GitLabとGitLabチャートのバージョンは、マイナーリリースを1つずつ順に更新する必要があります。一度に複数のバージョンをアップグレードする機能のサポートは、[GitLab Operatorのイシュー1952](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1952)で追跡されています。
+- ワークロードを他のクラウドAPI（オブジェクトストレージなど）に対して認証するための[GKEワークロードID](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/workload-identity)および[IAMサービスアカウント](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html)。詳細については、[GitLab Operatorのイシュー1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737)を参照してください。
+- デフォルトでは、OperatorはゼロダウンタイムでGitLabをアップグレードします。そのため、GitLabとGitLabチャートのバージョンは、マイナーリリースを1つずつ順に更新する必要があります。マイナーバージョンをスキップするには、[ゼロダウンタイムアップグレードを無効化](gitlab_upgrades.md#upgrade-with-downtime)できますが、アップグレード中にダウンタイムが発生します。
 
 GitLab Operatorには、GitLabチャートのその他の制限事項が適用されます。GitLab Operatorは、KubernetesリソースをプロビジョニングするためにGitLabチャートに依存しています。したがって、GitLabチャートにおける制限はGitLab Operatorに影響を与えます。GitLab OperatorからGitLabチャートへの依存を解消することは、[クラウドネイティブのエピック64](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/64)で提案されています。
 
@@ -57,13 +66,13 @@ GitLab Operator、またはGitLab Operatorによって管理されるGitLabイ�
 
 - [デベロッパーガイド](developer/guide.md): プロジェクトの構造とコントリビュートの方法の概要を説明しています。
 - [バージョニングとリリースの情報](developer/releases.md): Operatorのバージョニングとリリースに関する注意事項を記録しています。
-- [設計上の判断](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr): このプロジェクトではアーキテクチャ決定レコードを使用しており、このOperatorの構造、機能、および機能の実装の詳細を記述しています。
+- [設計上の判断](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/tree/master/doc/developer/adr): このプロジェクトではアーキテクチャ決定レコードを使用しており、このOperatorの構造、機能、および機能の実装の詳細を記述しています。
 
 ## マージリクエストのレビュー {#merge-request-reviews}
 
 マージリクエスト（MR）は通常、2人のレビュアーを必要とする標準的な運用に従います。まずメンテナー以外のメンバーがMRをレビューし、提案されている変更の改善/修正を支援するために作成者にコメントを提供します。作成者が必要な更新を行い、レビュアーがMRを承認した後、メンテナーの1人にレビューをリクエストします。
 
-このアプローチは、経験の浅いレビュアーに学習の機会を提供するだけではありません。最終的なレビューの前に、最初のレビューでMRに関するほとんどの問題を解決します。変更の多いプロジェクトでは、メンテナーの負荷によりボトルネックが発生しがちですが、この最初のパスはそれらの負荷を軽減するのに役立ちます。
+このアプローチは、経験の浅いレビュアーに学習の機会を提供します。最初のレビューでMRに関するほとんどの問題を最終レビューの前に解決します。変更の多いプロジェクトでは、メンテナーの負荷によりボトルネックが発生しがちですが、この最初のパスはそれらの負荷を軽減するのに役立ちます。
 
 ### 1回の承認のみの例外 {#one-approval-only-exceptions}
 
@@ -71,7 +80,8 @@ GitLab Operator、またはGitLab Operatorによって管理されるGitLabイ�
 
 #### Goモジュールの更新 {#go-modules-updates}
 
-> [!note]これは、このプロジェクトを所有するグループのGitLabチームメンバーにのみ関連します。
+> [!note]
+> これは、このプロジェクトを所有するグループのGitLabチームメンバーにのみ関連します。
 
 このプロジェクトを所有するチームのメンバーである場合、`go.mod`ファイルと`go.sum`ファイルに対するCODEOWNERS承認権限が付与されています。MRがこれらのファイルのみを変更している場合、メンテナーでなくてもMRを承認してマージできるはずです。これは、Goモジュールの更新は非常にリスクが低いとチームが評価したことを踏まえ、メンテナーによるレビューの負荷を軽減し、依存関係更新の効率性を向上させる目的で実装されました。そのため、Goに精通しており変更内容に問題がなく、MRのパイプラインがすべてグリーンであれば、すぐにそのまま承認してマージしてください。
 

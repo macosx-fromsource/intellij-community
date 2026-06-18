@@ -16,13 +16,20 @@ L'[opérateur GitLab](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator
 
 Utilisez l'opérateur GitLab pour exécuter GitLab dans [OpenShift](https://docs.gitlab.com/install/openshift_and_gitlab/) ou sur une autre plateforme compatible Kubernetes.
 
-> [!note] 
+> [!note]
 > L'opérateur GitLab présente des [limitations connues](#known-issues) et n'est adapté qu'à des scénarios spécifiques en production.
 
-<!-- This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
+<!-- This content block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
 
-> [!warning] 
-> Les valeurs par défaut de la ressource personnalisée GitLab **ne sont pas destinées à une utilisation en production**. Avec ces valeurs, l'opérateur GitLab crée une instance GitLab dans laquelle tous les services, y compris les données persistantes, sont déployés dans un cluster Kubernetes, ce qui **ne convient pas aux charges de travail en production**. Pour les déploiements en production, vous **devez** suivre les [architectures de référence cloud-native hybrides](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid). GitLab ne prend en charge aucun problème lié à PostgreSQL, Redis, Gitaly, Praefect ou MinIO déployés dans un cluster Kubernetes.
+L'opérateur GitLab nécessite des instances externes de :
+
+- [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
+- [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
+- [Stockage d'objets](https://docs.gitlab.com/charts/advanced/external-object-storage/)
+
+Pour les déploiements en production, suivez les [architectures de référence cloud-native](https://docs.gitlab.com/administration/reference_architectures).
+
+<!-- End content block -->
 
 ## Problèmes connus {#known-issues}
 
@@ -30,7 +37,7 @@ L'opérateur GitLab ne prend pas en charge :
 
 - La gestion des instances existantes basées sur des charts Helm avec l'opérateur GitLab. La prise en charge des améliorations est proposée dans le [ticket de l'opérateur GitLab 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567).
 - Git via SSH avec les [routes OpenShift](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html). Pour plus d'informations, consultez la [documentation de l'opérateur GitLab sur les routes OpenShift](openshift_ingress.md#openshift-routes).
-- [Identité de charge de travail GKE](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) et les [comptes de service IAM](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html) pour authentifier les charges de travail auprès d'autres API cloud (telles que le stockage d'objets). Pour plus d'informations, consultez le [ticket de l'opérateur GitLab 1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737).
+- [Identité de charge de travail GKE](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) et les [comptes de service IAM](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html) pour authentifier les charges de travail auprès d'autres API cloud (telles que le stockage d'objets). Pour plus d'informations, consultez le [ticket de l'opérateur GitLab 1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737).
 - Par défaut, l'opérateur GitLab met à niveau GitLab en utilisant la méthode zéro temps d'arrêt. Par conséquent, la version de GitLab et du chart GitLab doit être mise à jour une release mineure à la fois. Pour ignorer les versions mineures, vous pouvez [désactiver les mises à niveau sans interruption](gitlab_upgrades.md#upgrade-with-downtime), ce qui entraîne un temps d'arrêt lors de la mise à niveau.
 
 L'opérateur GitLab présente toutes les autres limitations du chart GitLab. Il s'appuie sur le chart GitLab pour provisionner les ressources Kubernetes. Par conséquent, toute limitation dans le chart GitLab impacte l'opérateur GitLab. La suppression de la dépendance au chart GitLab de l'opérateur GitLab est proposée dans l'[epic 64 Cloud Native](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/64).
@@ -59,13 +66,13 @@ La documentation sur les [images certifiées RedHat](certified_images.md) expliq
 
 - [Guide des équipes de développement](developer/guide.md) :  décrit la structure du projet et la façon de contribuer.
 - [Informations sur les versions et les releases](developer/releases.md) :  enregistre les notes concernant la gestion des versions et la publication de l'opérateur.
-- [Décisions de conception](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr) :  ce projet utilise des enregistrements de décisions d'architecture qui détaillent la structure, les fonctionnalités et l'implémentation des fonctionnalités de l'opérateur GitLab.
+- [Décisions de conception](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/tree/master/doc/developer/adr) :  ce projet utilise des enregistrements de décisions d'architecture qui détaillent la structure, les fonctionnalités et l'implémentation des fonctionnalités de l'opérateur GitLab.
 
 ## Revues de merge request {#merge-request-reviews}
 
 Les merge requests suivent généralement notre pratique standard qui exige 2 relecteurs. Dans un premier temps, un utilisateur qui n'est pas un chargé de maintenance examine la merge request et fournit des commentaires à l'auteur pour l'aider à améliorer/corriger le changement proposé. Une fois que l'auteur a effectué les mises à jour nécessaires et que le relecteur approuve la merge request, nous demandons une revue à l'un des chargés de maintenance.
 
-Cette approche offre non seulement des opportunités d'apprentissage pour les relecteurs moins expérimentés. La première revue traite la plupart des problèmes d'une merge request avant la revue finale. Les projets à fort volume connaissent souvent des goulots d'étranglement dus au nombre de tâches attribuées aux chargés de maintenance, et ce premier passage permet de réduire ce nombre.
+Cette approche offre des opportunités d'apprentissage pour les relecteurs moins expérimentés. La première revue traite la plupart des problèmes d'une merge request avant la revue finale. Les projets à fort volume connaissent souvent des goulots d'étranglement dus au nombre de tâches attribuées aux chargés de maintenance, et ce premier passage permet de réduire ce nombre.
 
 ### Exceptions pour une seule approbation {#one-approval-only-exceptions}
 
@@ -73,7 +80,7 @@ Dans certains cas, nous autorisons la fusion des merge requests avec une seule a
 
 #### Mises à jour des modules Go {#go-modules-updates}
 
-> [!note] 
+> [!note]
 > Cela n'est pertinent que pour les membres de l'équipe GitLab du groupe propriétaire de ce projet.
 
 Si vous êtes membre de l'équipe propriétaire de ce projet, vous avez reçu des droits d'approbation CODEOWNERS sur les fichiers `go.mod` et `go.sum`. Si la merge request ne modifie que ces fichiers, vous devriez être en mesure d'approuver la merge request et de la fusionner, même si vous n'êtes pas chargé de maintenance. Cette approche a été mise en place pour réduire le travail lié aux revues des chargés de maintenance et améliorer l'efficacité des mises à jour de dépendances, étant donné que l'équipe a évalué que les mises à jour des modules Go présentaient un risque très faible. Ainsi, si vous êtes à l'aise avec Go, que le changement vous semble correct et que vous disposez d'un pipeline entièrement vert sur la merge request, n'hésitez pas à l'approuver et à la fusionner immédiatement.
