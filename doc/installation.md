@@ -18,11 +18,8 @@ title: Installation
 <!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
 
 > [!warning]
-> The default values of the GitLab custom resource are **not intended for production use**.
-> With these values, GitLab Operator creates a GitLab instance where all services, including the persistent data,
-> are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
-> For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
-> GitLab will not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
+> The GitLab Operator requires external [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/), [Redis](https://docs.gitlab.com/charts/advanced/external-redis/), and [object storage](https://docs.gitlab.com/charts/advanced/external-object-storage/).
+> For production, follow the [Cloud Native reference architectures](https://docs.gitlab.com/administration/reference_architectures).
 
 This document describes how to deploy the GitLab Operator by using manifests in your Kubernetes or OpenShift cluster.
 
@@ -36,8 +33,8 @@ For more information on potential issues with OLM, see [issue 241](https://gitla
 ## Prerequisites
 
 1. [Create or use an existing Kubernetes or OpenShift cluster](#cluster)
-1. Install pre-requisite services and software
-   - [Ingress controller](#ingress-controller)
+1. Install prerequisite services and software
+   - [Ingress/Gateway API controller](#external-traffic-routing)
    - [cert-manager](#tls-certificates)
    - [Metrics server](#metrics)
 1. [Configure Domain Name Services](#configure-domain-name-services)
@@ -95,14 +92,16 @@ Some GitLab features might not work on deprecated versions and versions older th
 
 The Operator supports x86-64 and ARM64. While ARM64 builds have been available since 16.7, full support and testing coverage is available starting with 18.8.
 
-### Ingress controller
+### External traffic routing
 
-An Ingress controller is required to provide external access to the application and secure communication between components.
+External traffic routing is required to provide access to the application.
+[Gateway API](https://gateway-api.sigs.k8s.io/) with [Envoy Gateway](https://gateway.envoyproxy.io/)
+is the recommended approach for new deployments. For configuration details and alternative
+providers, see the [Gateway API documentation](gatewayapi.md).
 
-The GitLab Operator deploys our [forked NGINX chart from the GitLab Helm Chart](https://docs.gitlab.com/charts/charts/nginx/) by default.
-
-If you prefer to use an external Ingress controller, use [NGINX Ingress](https://kubernetes.github.io/ingress-nginx/deploy/) by the Kubernetes community to deploy an Ingress Controller. Follow the relevant instructions in the link based on your platform and preferred tooling. Take note of the Ingress class value for later (it typically defaults to `nginx`).
-When configuring the GitLab CR, be sure to set `nginx-ingress.enabled=false` to disable the NGINX objects from the GitLab Helm Chart.
+The bundled NGINX Ingress controller is deprecated as of GitLab chart 19.0 and will be removed in
+GitLab 20.0. An [external NGINX Ingress controller](https://docs.gitlab.com/charts/advanced/external-ingress/)
+can be used as an alternative.
 
 ### TLS certificates
 

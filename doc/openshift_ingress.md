@@ -12,12 +12,23 @@ title: Ingress in OpenShift
 
 {{< /details >}}
 
-Two supported methods exist for providing Ingress in OpenShift with the GitLab Operator:
+The following methods exist for providing traffic routing in OpenShift with the GitLab Operator:
 
-- [NGINX Ingress Controller](#nginx-ingress-controller) (Default)
+- [Gateway API with Envoy Gateway](#gateway-api-with-envoy-gateway) (Recommended)
+- [NGINX Ingress Controller](#nginx-ingress-controller) (Deprecated, will be removed in GitLab 20.0)
 - [OpenShift Routes](#openshift-routes)
 
+## Gateway API with Envoy Gateway
+
+[Gateway API](https://gateway-api.sigs.k8s.io/) is the recommended approach for traffic routing on OpenShift. It is platform-agnostic and supports all GitLab features including Git over SSH.
+
+For detailed configuration instructions and prerequisites, see the [Gateway API and Envoy Gateway documentation](gatewayapi.md).
+
 ## NGINX Ingress Controller
+
+> [!warning]
+> NGINX Ingress is deprecated as of GitLab chart 19.0 and will be removed in GitLab 20.0.
+> Use [Gateway API with Envoy Gateway](#gateway-api-with-envoy-gateway) for new deployments.
 
 In this configuration, traffic flows as follows:
 

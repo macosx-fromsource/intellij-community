@@ -18,7 +18,16 @@ are the same as for the [GitLab chart](https://docs.gitlab.com/charts/advanced/g
 To deploy Geo sites with the Operator, apply the Helm chart values to
 the GitLab custom resource by setting the `spec.chart.values`.
 
+## Gateway API
+
+When using [Gateway API with Envoy Gateway](gatewayapi.md), no additional work is needed beyond following the chart documentation. The operator will apply the `global.geo.gatewayApi.additionalHostname` configuration to enable internal site-to-site communication.
+
 ## Ingress class
+
+> [!warning]
+> NGINX Ingress is deprecated as of GitLab chart 19.0 and will be removed in GitLab 20.0.
+> Use [Gateway API with Envoy Gateway](gatewayapi.md) for new Geo deployments.
+> Existing Geo deployments should migrate as soon as possible.
 
 The GitLab Operator does not come with an IngressClass of the secondary
 [NGINX Ingress](https://docs.gitlab.com/charts/charts/nginx/#gitlab-geo).
