@@ -22,14 +22,11 @@ another Kubernetes-compatible platform.
 > [!note]
 > The GitLab Operator has [known limitations](#known-issues) and is only suitable for specific scenarios in production use.
 
-<!-- This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
+The GitLab Operator requires external [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/),
+[Redis](https://docs.gitlab.com/charts/advanced/external-redis/),
+and [object storage](https://docs.gitlab.com/charts/advanced/external-object-storage/).
 
-> [!warning]
-> The default values of the GitLab custom resource are **not intended for production use**.
-> With these values, GitLab Operator creates a GitLab instance where all services, including the persistent data,
-> are deployed in a Kubernetes cluster, which is **not suitable for production workloads**.
-> For production deployments, you **must** follow the [Cloud Native Hybrid reference architectures](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid).
-> GitLab does not support any issues related to PostgreSQL, Redis, Gitaly, Praefect, or MinIO deployed inside of a Kubernetes Cluster.
+For production deployments, follow the [Cloud Native reference architectures](https://docs.gitlab.com/administration/reference_architectures).
 
 ## Known issues
 
