@@ -22,11 +22,18 @@ another Kubernetes-compatible platform.
 > [!note]
 > The GitLab Operator has [known limitations](#known-issues) and is only suitable for specific scenarios in production use.
 
-The GitLab Operator requires external [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/),
-[Redis](https://docs.gitlab.com/charts/advanced/external-redis/),
-and [object storage](https://docs.gitlab.com/charts/advanced/external-object-storage/).
+<!-- This content block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
 
-For production deployments, follow the [Cloud Native reference architectures](https://docs.gitlab.com/administration/reference_architectures).
+The GitLab Operator requires external instances of:
+
+- [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
+- [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
+- [Object storage](https://docs.gitlab.com/charts/advanced/external-object-storage/)
+
+For production deployments, follow the
+[Cloud Native reference architectures](https://docs.gitlab.com/administration/reference_architectures).
+
+<!-- End content block -->
 
 ## Known issues
 
