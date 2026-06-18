@@ -1,3 +1,18 @@
+## 3.1.0 (2026-06-18)
+
+### changed (10 changes)
+
+- [Update golang.org/x/mod to v0.37.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9a47432c5e29f647e63cd9bbb3eddbfd9f8c107c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1502))
+- [Update github.com/envoyproxy/gateway to v1.8.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/8dc61e1943ced11953a5d8599fd32d9921683199) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1496))
+- [Update github.com/envoyproxy/gateway to v1.8.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1f0ba5431781f369bfefbd3507e98eeea4a5bc67) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1478))
+- [Update golang to v1.26.4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7c92943a72db7c9d0654940a8138c8aa3f848e89) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1494))
+- [Update helm.sh/helm/v4 to v4.2.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c811206be657abedbccdc8815e1b011dcc31bbd7) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1470))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e45f6e97a0c9f5989545ba8b7b246c6126fd0d09) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1476))
+- [Update ubi9-micro to v9.8](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e96ed329eadfdfb7ee81c654c280699989d482a3) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1477))
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.19.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1667b5762a134b192b2623e1f766313008803bb1) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1487))
+- [Update ubi9-micro to 03b6788](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7146221dc2ea041bfe45977ac4103b3d60c0153d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1484))
+- [Update testing dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/626062166bf14c0078a60b6bb9b622f13f5b3768) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1483))
+
 ## 3.0.2 (2026-06-10)
 
 ### changed (1 change)
