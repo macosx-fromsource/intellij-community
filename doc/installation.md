@@ -15,16 +15,20 @@ title: Installation
 > [!note]
 > The GitLab Operator has [known limitations](_index.md#known-issues) and is only suitable for specific scenarios in production use.
 
-<!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
+<!-- This content block is duplicated in doc/_index.md. Changes should be reflected in both locations. -->
 
-> [!warning]
-> The GitLab Operator requires external [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/), [Redis](https://docs.gitlab.com/charts/advanced/external-redis/), and [object storage](https://docs.gitlab.com/charts/advanced/external-object-storage/).
-> For production, follow the [Cloud Native reference architectures](https://docs.gitlab.com/administration/reference_architectures).
+The GitLab Operator requires external instances of:
+
+- [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
+- [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
+- [Object storage](https://docs.gitlab.com/charts/advanced/external-object-storage/)
+
+For production deployments, follow the
+[Cloud Native reference architectures](https://docs.gitlab.com/administration/reference_architectures).
+
+<!-- End content block -->
 
 This document describes how to deploy the GitLab Operator by using manifests in your Kubernetes or OpenShift cluster.
-
-<!--This warning block is duplicated in `../config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml`.
-Changes should be reflected in both locations.-->
 
 If using OpenShift, installation is typically handled by the Operator Lifecycle Manager (OLM).
 **Installation using OLM is considered experimental**. GitLab does not support any issues related to instances deployed using OLM.
