@@ -7,8 +7,8 @@ title: GitLab Operator
 
 {{< details >}}
 
-- Tier:  Free, Premium, Ultimate
-- Offering:  GitLab Self-Managed
+- Tier: Free, Premium, Ultimate
+- Offering: GitLab Self-Managed
 
 {{< /details >}}
 
@@ -19,10 +19,17 @@ GitLab Operator를 사용하여 [OpenShift](https://docs.gitlab.com/install/open
 > [!note]
 > GitLab Operator에는 [알려진 제한 사항](#known-issues)이 있으며 프로덕션 환경에서 특정 시나리오에만 적합합니다.
 
-<!-- This warning block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
+<!-- This content block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
 
-> [!warning]
-> GitLab 사용자 정의 리소스의 기본값은 **not intended for production use**. 이러한 값을 사용하면 GitLab Operator는 모든 서비스(지속적인 데이터 포함)가 Kubernetes 클러스터에 배포되는 GitLab 인스턴스를 생성하는데, 이는 **not suitable for production workloads**. 프로덕션 배포의 경우 **must** [Cloud Native Hybrid 참조 아키텍처](https://docs.gitlab.com/administration/reference_architectures/#cloud-native-hybrid)를 따라야 합니다. GitLab은 Kubernetes Cluster 내에 배포된 PostgreSQL, Redis, Gitaly, Praefect 또는 MinIO와 관련된 문제를 지원하지 않습니다.
+GitLab Operator를 사용하려면 다음의 외부 인스턴스가 필요합니다:
+
+- [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
+- [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
+- [오브젝트 스토리지](https://docs.gitlab.com/charts/advanced/external-object-storage/)
+
+프로덕션 배포의 경우 [Cloud Native 참조 아키텍처](https://docs.gitlab.com/administration/reference_architectures)를 따르세요.
+
+<!-- End content block -->
 
 ## 알려진 문제 {#known-issues}
 
@@ -30,7 +37,7 @@ GitLab Operator는 다음을 지원하지 않습니다:
 
 - GitLab Operator로 기존 Helm 차트 기반 인스턴스를 관리합니다. 개선 사항을 위한 지원이 [GitLab Operator issue 1567](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1567)에서 제안됩니다.
 - [OpenShift 경로](https://docs.openshift.com/container-platform/4.14/networking/routes/route-configuration.html)를 사용한 SSH를 통한 Git입니다. 자세한 내용은 [GitLab Operator documentation on OpenShift Routes](openshift_ingress.md#openshift-routes)를 참조하세요.
-- [GKE workload identity](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) 및 [IAM service accounts](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html)를 사용하여 다른 클라우드 API(예: 객체 스토리지)에 워크로드를 인증합니다. 자세한 내용은 [GitLab Operator issue 1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737)를 참조하세요.
+- [GKE workload identity](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) 및 [IAM service accounts](https://docs.aws.amazon.com/eks/latest/userguide/associate-service-account-role.html)를 사용하여 다른 클라우드 API(예: 객체 스토리지)에 워크로드를 인증합니다. 자세한 내용은 [GitLab Operator issue 1089](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/1737)를 참조하세요.
 - 기본적으로 Operator는 zero downtime 방법을 사용하여 GitLab을 업그레이드합니다. 그 결과 GitLab 및 GitLab 차트 버전은 한 번에 한 마이너 릴리스씩 업데이트되어야 합니다. 마이너 버전을 건너뛰려면 [zero-downtime 업그레이드를 비활성화](gitlab_upgrades.md#upgrade-with-downtime)할 수 있으며, 이는 업그레이드 중에 다운타임을 발생시킵니다.
 
 GitLab Operator는 GitLab 차트의 다른 제한 사항이 있습니다. GitLab Operator는 Kubernetes 리소스를 프로비전하기 위해 GitLab 차트에 의존합니다. 따라서 GitLab 차트의 모든 제한 사항은 GitLab Operator에 영향을 미칩니다. GitLab Operator에서 GitLab 차트 종속성을 제거하는 것이 [Cloud Native epic 64](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/64)에서 제안됩니다.
@@ -57,15 +64,15 @@ GitLab Operator를 업그레이드하거나 GitLab Operator로 관리하는 GitL
 
 ## Developer Tooling {#developer-tooling}
 
-- [개발자 가이드](developer/guide.md):  프로젝트 구조와 기여하는 방법을 설명합니다.
-- [버전 관리 및 릴리스 정보](developer/releases.md):  연산자의 버전 관리 및 릴리스와 관련된 노트를 기록합니다.
-- [설계 결정](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/doc/adr):  이 프로젝트는 Architecture Decision Records를 사용하여 이 Operator의 구조, 기능 및 기능 구현을 세부적으로 설명합니다.
+- [개발자 가이드](developer/guide.md): 프로젝트 구조와 기여하는 방법을 설명합니다.
+- [버전 관리 및 릴리스 정보](developer/releases.md): 연산자의 버전 관리 및 릴리스와 관련된 노트를 기록합니다.
+- [설계 결정](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/tree/master/doc/developer/adr): 이 프로젝트는 Architecture Decision Records를 사용하여 이 Operator의 구조, 기능 및 기능 구현을 세부적으로 설명합니다.
 
 ## 머지 리퀘스트 검토 {#merge-request-reviews}
 
 머지 리퀘스트(MR)는 일반적으로 2명의 검토자를 요구하는 표준 관행을 따릅니다. 먼저 유지보수자가 아닌 사용자가 머지 리퀘스트를 검토하고 제안된 변경 사항을 개선/수정하는 데 도움이 되는 의견을 작성자에게 제공합니다. 작성자가 필요한 업데이트를 수행하고 검토자가 머지 리퀘스트를 승인한 후, 유지보수자 중 한 명에게 검토를 요청합니다.
 
-이 방식은 경험이 적은 검토자에게 학습 기회를 제공할 뿐만 아니라 학습 기회를 제공합니다. 첫 번째 검토는 최종 검토 이전에 머지 리퀘스트의 대부분의 문제를 해결합니다. 높은 볼륨의 프로젝트는 유지보수자 부하로 인한 병목 현상을 자주 겪으며 이 첫 번째 검토는 부하를 줄이는 데 도움이 됩니다.
+이 방식은 경험이 적은 검토자에게 학습 기회를 제공합니다. 첫 번째 검토는 최종 검토 이전에 머지 리퀘스트의 대부분의 문제를 해결합니다. 높은 볼륨의 프로젝트는 유지보수자 부하로 인한 병목 현상을 자주 겪으며 이 첫 번째 검토는 부하를 줄이는 데 도움이 됩니다.
 
 ### 승인만 필요한 예외 {#one-approval-only-exceptions}
 
