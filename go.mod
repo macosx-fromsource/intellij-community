@@ -11,8 +11,8 @@ require (
 	github.com/envoyproxy/gateway v1.8.0
 	github.com/go-logr/logr v1.4.3
 	github.com/mitchellh/copystructure v1.2.0
-	github.com/onsi/ginkgo/v2 v2.30.0
-	github.com/onsi/gomega v1.41.0
+	github.com/onsi/ginkgo/v2 v2.31.0
+	github.com/onsi/gomega v1.42.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.91.0
 	golang.org/x/mod v0.37.0
