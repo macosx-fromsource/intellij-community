@@ -157,9 +157,13 @@ Status conditions on the GitLab object itself present more detailed information 
 
 ### Upgrade with downtime
 
+Prerequisites:
+
+- GitLab Operator 3.0.0 and later (GitLab 19.0 and later).
+
 By default, the GitLab Operator enforces a [zero-downtime upgrade](https://docs.gitlab.com/update/zero_downtime/) path,
 which requires updating one minor version at a time. If you prefer to skip minor versions (for example, upgrading from
-GitLab 18.0 to 18.2), you can disable zero-downtime upgrades by adding the
+GitLab 19.0 to 19.2), you can disable zero-downtime upgrades by adding the
 `gitlab.io/disable-zero-downtime-upgrade` annotation to the GitLab custom resource.
 
 > [!warning]
@@ -187,11 +191,13 @@ To perform an upgrade with downtime:
    +   gitlab.io/disable-zero-downtime-upgrade: "true"
    spec:
      chart:
-   -   version: "9.0.0"
-   +   version: "9.2.0"
+   -   version: "10.0.0"
+   +   version: "10.2.0"
        values:
          ...
    ```
+
+   In this example, the upgrade skips GitLab 19.1 and upgrades directly from GitLab 19.0 to 19.2.
 
 1. Apply the modified GitLab custom resource:
 
@@ -218,7 +224,7 @@ To perform an upgrade with downtime:
    ```shell
    $ kubectl -n gitlab-system get gitlab
    NAME     STATUS      VERSION
-   gitlab   Running     9.3.0
+   gitlab   Running     10.2.0
    ```
 
 1. After the upgrade completes, remove the annotation to restore the default zero-downtime upgrade behavior
@@ -233,7 +239,7 @@ To perform an upgrade with downtime:
    -   gitlab.io/disable-zero-downtime-upgrade: "true"
    spec:
      chart:
-       version: "9.3.0"
+       version: "10.2.0"
        values:
          ...
    ```
