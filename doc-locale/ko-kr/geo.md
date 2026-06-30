@@ -16,7 +16,16 @@ Operator의 요구 사항, 제한 사항 및 Geo 구성은 [GitLab chart](https:
 
 Operator를 사용하여 Geo 사이트를 배포하려면 Helm chart 값을 GitLab 사용자 정의 리소스에 적용하고 `spec.chart.values`를 설정하세요.
 
+## Gateway API {#gateway-api}
+
+[Envoy Gateway와 함께 Gateway API](gatewayapi.md)를 사용하는 경우, chart 문서를 따르는 것 외에 추가 작업이 필요하지 않습니다. Operator는 `global.geo.gatewayApi.additionalHostname` 구성을 적용하여 사이트 간 내부 통신을 활성화합니다.
+
 ## 수신 클래스 {#ingress-class}
+
+> [!warning]
+> NGINX Ingress는 GitLab chart 19.0부터 더 이상 사용되지 않으며 GitLab 20.0에서 제거될 예정입니다.
+> 새로운 Geo 배포에는 [Envoy Gateway와 함께 Gateway API](gatewayapi.md)를 사용하세요.
+> 기존 Geo 배포는 가능한 한 빨리 마이그레이션해야 합니다.
 
 GitLab Operator는 보조 [NGINX Ingress](https://docs.gitlab.com/charts/charts/nginx/#gitlab-geo)의 IngressClass와 함께 제공되지 않습니다.
 

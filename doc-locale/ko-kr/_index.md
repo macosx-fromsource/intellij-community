@@ -19,17 +19,9 @@ GitLab Operator를 사용하여 [OpenShift](https://docs.gitlab.com/install/open
 > [!note]
 > GitLab Operator에는 [알려진 제한 사항](#known-issues)이 있으며 프로덕션 환경에서 특정 시나리오에만 적합합니다.
 
-<!-- This content block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
-
-GitLab Operator를 사용하려면 다음의 외부 인스턴스가 필요합니다:
-
-- [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
-- [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
-- [오브젝트 스토리지](https://docs.gitlab.com/charts/advanced/external-object-storage/)
+GitLab Operator에는 외부 [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/), [Redis](https://docs.gitlab.com/charts/advanced/external-redis/), 및 [오브젝트 스토리지](https://docs.gitlab.com/charts/advanced/external-object-storage/)가 필요합니다.
 
 프로덕션 배포의 경우 [Cloud Native 참조 아키텍처](https://docs.gitlab.com/administration/reference_architectures)를 따르세요.
-
-<!-- End content block -->
 
 ## 알려진 문제 {#known-issues}
 

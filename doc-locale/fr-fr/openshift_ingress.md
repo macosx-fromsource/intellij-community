@@ -7,17 +7,28 @@ title: Ingress dans OpenShift
 
 {{< details >}}
 
-- Édition :  version gratuite, GitLab Premium, GitLab Ultimate
-- Offre :  GitLab Self-Managed
+- Édition : version gratuite, GitLab Premium, GitLab Ultimate
+- Offre : GitLab Self-Managed
 
 {{< /details >}}
 
-Deux méthodes prises en charge existent pour fournir Ingress dans OpenShift avec l'opérateur GitLab :
+Les méthodes suivantes permettent de gérer le routage du trafic dans OpenShift avec l'opérateur GitLab :
 
-- [Contrôleur NGINX Ingress](#nginx-ingress-controller) (par défaut)
-- [routes OpenShift](#openshift-routes)
+- [Gateway API avec Envoy Gateway](#gateway-api-with-envoy-gateway) (recommandé)
+- [Contrôleur NGINX Ingress](#nginx-ingress-controller) (déprécié, sera supprimé dans GitLab 20.0)
+- [Routes OpenShift](#openshift-routes)
+
+## Gateway API avec Envoy Gateway {#gateway-api-with-envoy-gateway}
+
+[Gateway API](https://gateway-api.sigs.k8s.io/) est l'approche recommandée pour le routage du trafic sur OpenShift. Elle est indépendante de la plateforme et prend en charge toutes les fonctionnalités de GitLab, y compris Git via SSH.
+
+Pour obtenir des instructions de configuration détaillées et connaître les prérequis, consultez la [documentation Gateway API et Envoy Gateway](gatewayapi.md).
 
 ## Contrôleur NGINX Ingress {#nginx-ingress-controller}
+
+> [!warning]
+> NGINX Ingress est déprécié depuis le chart GitLab 19.0 et sera supprimé dans GitLab 20.0.
+> Utilisez [Gateway API avec Envoy Gateway](#gateway-api-with-envoy-gateway) pour les nouveaux déploiements.
 
 Dans cette configuration, le trafic circule comme suit :
 
@@ -46,7 +57,8 @@ Le contrôleur du routeur OpenShift met à jour de manière incorrecte la ressou
 
 Si ce correctif est appliqué après que des Ingresses ont déjà été créés, supprimez manuellement les Ingresses. L'opérateur GitLab les recrée manuellement. Ils devraient être correctement pris en charge par le contrôleur NGINX Ingress et ignorés par le routeur OpenShift.
 
-> [!note] Un bogue peut survenir lors de la suppression manuelle des Ingresses. La solution de contournement consiste à supprimer manuellement le pod du contrôleur de l'opérateur GitLab. Consultez [le ticket 315](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/315) pour plus d'informations.
+> [!note]
+> Un bogue peut survenir lors de la suppression manuelle des Ingresses. La solution de contournement consiste à supprimer manuellement le pod du contrôleur de l'opérateur GitLab. Consultez [le ticket 315](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/315) pour plus d'informations.
 
 Pour résoudre les problèmes liés aux contraintes de contexte de sécurité (SCC) qui bloquent la création du contrôleur NGINX Ingress, consultez la documentation supplémentaire dans notre [documentation de dépannage de l'opérateur GitLab](troubleshooting.md#openshift-specific-problems).
 
@@ -79,7 +91,7 @@ Pour utiliser le contrôleur NGINX Ingress pour Ingress, procédez comme suit :
              domain: yourdomain.com
    ```
 
-   > [!note] 
+   > [!note]
    > Par défaut, CertManager crée et gère les certificats TLS pour les Ingresses liés à GitLab. Consultez la [documentation TLS](https://docs.gitlab.com/charts/installation/tls/) pour plus d'options.
 
 1. Suivez le reste des instructions d'installation, en appliquant la ressource personnalisée GitLab et en confirmant que le statut de la ressource personnalisée est `Ready`.
@@ -99,7 +111,7 @@ Pour utiliser le contrôleur NGINX Ingress pour Ingress, procédez comme suit :
 
    La création d'enregistrements A individuels plutôt qu'un enregistrement A générique garantit que les routes existantes (comme la route pour le tableau de bord OpenShift) continuent de fonctionner comme prévu.
 
-   > [!note] 
+   > [!note]
    > Ces enregistrements doivent exister dans _les deux_ zones publique **et** privée dans les paramètres réseau de votre fournisseur cloud. La parité entre ces zones garantit un routage interne au cluster approprié et permet à CertManager d'émettre correctement les certificats.
 
 GitLab devrait alors être disponible à l'adresse `https://gitlab.yourdomain.com`.
@@ -120,7 +132,7 @@ graph TD
     SRV_W -- connects to --> DPL_W[Deployment/gitlab-webservice-default]
 ```
 
-> [!note] 
+> [!note]
 > L'utilisation des routes pour Ingress à la place du contrôleur NGINX Ingress signifie que [Git via SSH](git_over_ssh.md) n'est pas pris en charge.
 
 ### Mise en place {#setup}
@@ -161,7 +173,7 @@ Pour utiliser les routes OpenShift pour Ingress, procédez comme suit :
                route.openshift.io/termination: "edge"
    ```
 
-   > [!note] 
+   > [!note]
    > Par défaut, CertManager crée et gère les certificats TLS pour les routes liées à GitLab. Consultez la [documentation TLS](https://docs.gitlab.com/charts/installation/tls/) pour plus d'options. Si le cluster OpenShift est sécurisé avec un certificat générique, l'[option 2](https://docs.gitlab.com/charts/installation/tls/#option-2-use-your-own-wildcard-certificate) permet au certificat générique de sécuriser les routes liées à GitLab.
 
 1. Suivez le reste des instructions d'installation, en appliquant la ressource personnalisée GitLab et en confirmant que le statut de la ressource personnalisée est `Ready`.
