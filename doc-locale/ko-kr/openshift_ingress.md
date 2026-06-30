@@ -12,12 +12,23 @@ title: OpenShift의 Ingress
 
 {{< /details >}}
 
-GitLab Operator로 OpenShift에서 Ingress를 제공하기 위한 두 가지 지원 방법이 있습니다:
+GitLab Operator로 OpenShift에서 트래픽 라우팅을 제공하기 위한 방법은 다음과 같습니다:
 
-- [NGINX Ingress Controller](#nginx-ingress-controller) (기본값)
+- [Gateway API with Envoy Gateway](#gateway-api-with-envoy-gateway) (권장)
+- [NGINX Ingress Controller](#nginx-ingress-controller) (더 이상 사용되지 않으며 GitLab 20.0에서 제거 예정)
 - [OpenShift Routes](#openshift-routes)
 
+## Gateway API with Envoy Gateway {#gateway-api-with-envoy-gateway}
+
+[Gateway API](https://gateway-api.sigs.k8s.io/)는 OpenShift에서 트래픽 라우팅을 위한 권장 방법입니다. 플랫폼에 독립적이며 Git over SSH를 포함한 모든 GitLab 기능을 지원합니다.
+
+자세한 구성 지침 및 사전 요구 사항은 [Gateway API and Envoy Gateway 문서](gatewayapi.md)를 참조하세요.
+
 ## NGINX Ingress Controller {#nginx-ingress-controller}
+
+> [!warning]
+> NGINX Ingress는 GitLab 차트 19.0부터 더 이상 사용되지 않으며 GitLab 20.0에서 제거될 예정입니다.
+> 새 배포에는 [Gateway API with Envoy Gateway](#gateway-api-with-envoy-gateway)를 사용하세요.
 
 이 구성에서 트래픽은 다음과 같이 흐릅니다:
 

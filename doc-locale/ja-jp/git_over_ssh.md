@@ -12,54 +12,53 @@ title: SSH経由でのGitのサポート
 
 {{< /details >}}
 
-このドキュメントでは、さまざまな環境/プラットフォームにおけるSSH経由のGitの設定ガイドラインを提供します。
-
-## 概要 {#overview}
-
 [GitLab Shell Helmチャート](https://docs.gitlab.com/charts/charts/gitlab/gitlab-shell/)は、GitLabへのGit SSHアクセス用に設定されたSSHサーバーを提供します。このコンポーネントは、ポート`22`でクラスターの外部に公開する必要があります。
 
 `gitlab.gitlab-shell.enabled`が`true`に設定されている場合、GitLab Operatorは`gitlab-shell`をデプロイします。これはデフォルト設定です。
 
-ターゲットプラットフォームに基づく要件の概要は次のとおりです。
+以下のいずれかの方法を使用して、SSH経由のGitを公開します。
 
-| SSH経由のGitを必要とするか | Kubernetes                                                                                                    | OpenShift |
-|------------------------------|---------------------------------------------------------------------------------------------------------------|-----------|
-| いいえ                           | 以下のいずれかのNGINX Ingressプロバイダーを使用する必要があります（Kubernetesには組み込みのIngressプロバイダーがありません）。 | 以下のIngressプロバイダーは必要ありません。組み込みのRoutesをIngressプロバイダーとして使用できます。 |
-| はい                          | 以下のいずれかのNGINX Ingressプロバイダーを使用する必要があります（Kubernetesには組み込みのIngressプロバイダーがありません）。 | 以下のいずれかのIngressプロバイダーを使用する必要があります。Routesはポート`22`の公開をサポートしていません。 |
+| 方法 | Kubernetes | OpenShift | 備考 |
+|:-----------------|:-----------|:---------------|:------|
+| Gateway API | サポート対象 | サポート対象 | TCPRouteを使用したKubernetes Gateway API標準に基づく推奨の最新アプローチ。Envoy Gatewayを推奨。[その他のプロバイダー](https://docs.gitlab.com/charts/advanced/gateway-api/#using-an-external-gateway-api-provider)は要件を満たす場合に使用可能。 |
+| NGINX Ingress | 非推奨 | 非推奨 | 従来のアプローチ（ポート22の公開が必要）。バンドルされているものの代わりに[外部NGINXコントローラー](https://docs.gitlab.com/charts/advanced/external-ingress/)を使用可能。 |
+| OpenShift Routes | N/A | SSHサポートなし | RoutesはTCPトラフィック（ポート22）をサポートしていません。 |
 
-## Ingressプロバイダー {#ingress-providers}
+## Envoy GatewayによるGateway API {#gateway-api-with-envoy-gateway}
 
-以下は、Ingressプロバイダーのリストと、関連するノートおよびプラットフォーム固有の詳細です。
+GitLabは、従来のIngressリソースの代わりに[Gateway API](https://gateway-api.sigs.k8s.io/)を使用して公開できます。この方法は、`TCPRoute`リソースを通じてSSH経由のGitのTCPルーティングをネイティブにサポートするため、新規デプロイに推奨されます。
 
-### NGINX-Ingress Helmチャート {#nginx-ingress-helm-chart}
+前提条件:
 
-GitLabでは、[フォークした`NGINX-ingress`チャート](https://docs.gitlab.com/charts/charts/nginx/#adjustments-to-the-nginx-fork)を管理しており、これを使用することで、SSH経由のGitを「すぐに」サポートするように変更されたNGINXリソースをデプロイできます。
+- GitLab Operator 2.10以降。
+- GitLabチャート9.7以降。
 
-これはGitLab Operatorを使用する場合のデフォルト設定であり、GitLab CR内の`nginx-ingress.enabled={true,false}`によって制御されます。`false`に設定すると、[外部NGINXインスタンス](https://docs.gitlab.com/charts/advanced/external-nginx/)を使用できます。
+Gateway APIは、KubernetesとOpenShiftの両方のクラスターで動作します。詳細な設定手順と前提条件については、[Gateway APIとEnvoy Gatewayのドキュメント](gatewayapi.md)を参照してください。
 
-このIngressプロバイダーは、KubernetesとOpenShiftの両方で使用できます。
+`global.gatewayApi.enabled: true`でGateway APIを有効にすると、`gitlab-shell`はポート`22`のTCPトラフィックをGitLab ShellサービスにルーティングするTCPRouteリソースを通じて自動的に公開されます。
 
-NGINX Ingressプロバイダーのインストールオプションの詳細については、[インストールに関するドキュメント](installation.md#ingress-controller)を参照してください。
+## NGINX Ingress {#nginx-ingress}
 
-### NGINX Ingress Operator {#nginx-ingress-operator}
+> [!warning]
+> NGINX IngressはGitLabチャート19.0で非推奨となり、GitLab 20.0で削除される予定です。
+> 新規デプロイには[Envoy GatewayによるGateway API](#gateway-api-with-envoy-gateway)を使用してください。
 
-組み込みのフォークしたNGINX-Ingress Helmチャートの代替として、[NGINX Ingress Operator](https://github.com/nginxinc/nginx-ingress-operator)を使用して`gitlab-shell`を公開することもできます。
+GitLab OperatorはKubernetesとOpenShiftの両方でNGINX Ingressコントローラーをサポートしています。NGINX Ingressを使用する場合、SSH経由のGitを有効にするには、NGINXサービスでポート`22`を公開する必要があります。
 
-このオプションにはいくつかの注意事項があります。
+GitLabは、SSH経由のGitをサポートするように設定されたNGINXリソースをデプロイするために使用できる[フォークした`NGINX-ingress`チャート](https://docs.gitlab.com/charts/charts/nginx/#adjustments-to-the-nginx-fork)を管理しています。このチャートは非推奨でサポートされていませんが、既存のデプロイでは引き続き使用できます。
 
-- NGINX Inc.のTransportServer/GlobalConfigurationカスタムリソース定義は、機能プレビューと見なされており、本番環境での使用には注意が必要です。
-- NGINX Inc.のOperatorはまだ比較的新しく、現在のバージョンは0.3.0に過ぎません。どちらのフレーバーの成熟したHelmチャートと比べても、利用可能な設定オプションはそれほど多く含まれていません。
-- このオプションでは、NGINXサービスのポート`22`を手動で公開する必要があります（これは、NGINXIngressController CRでは設定できません）。
+NGINX Ingressは、GitLab CR内の`nginx-ingress.enabled={true,false}`によって制御されます。`false`に設定すると、[外部NGINXインスタンス](https://docs.gitlab.com/charts/advanced/external-nginx/)を使用できます。
 
-より広範な調査内容は、[\#58](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/58#note_585883916)に記載されています。
+## OpenShift Routes {#openshift-routes}
 
-### OpenShift Routes {#openshift-routes}
+OpenShift [Routes](https://docs.openshift.com/container-platform/4.10/networking/routes/route-configuration.html)は、OpenShiftクラスターに組み込まれているIngressソリューションです。GitLab CRで`nginx-ingress.enabled=false`を設定してNGINX Ingressを無効にすると、OpenShiftはOperatorが作成したIngressオブジェクトを同等のRouteオブジェクトに自動的に変換します。
 
-OpenShift [Routes](https://docs.openshift.com/container-platform/3.4/architecture/core_concepts/routes.html)は、OpenShiftクラスターに組み込まれているコンポーネントです。OpenShiftにおけるRoutesは、[KubernetesにおけるIngress](https://kubernetes.io/docs/concepts/services-networking/ingress/)に相当します。
+OpenShift RoutesはTCPトラフィック（ポート`22`）の公開をサポートしていないため、OpenShift Routesを使用する場合はSSH経由のGitはサポートされません。OpenShiftでSSH経由のGitが必要な場合は、次のいずれかを選択してください。
 
-OpenShiftにデプロイする場合、GitLab CRで`nginx-ingress.enabled=false`を設定することで、外部トラフィックのフローをOpenShift Routesに制御させることができます。GitLab OperatorがIngressオブジェクトを調整すると、OpenShiftは、クラスターのベースドメインにマップする同等のRouteオブジェクトを自動的に作成します。
+- Envoy GatewayによるGateway APIを使用する。GitLab CRで`global.gatewayApi.enabled=true`を設定します。
+- NGINX Ingressコントローラーを使用する。`nginx-ingress.enabled=true`（デフォルト）を設定します。
 
-OpenShift RoutesはTCPトラフィック（ポート`22`のSSH）の公開をサポートしていないため、`gitlab-shell`を使用したSSH経由のGitには使用できません。
+OpenShiftのIngressオプションの詳細については、[OpenShiftにおけるIngress](openshift_ingress.md)を参照してください。
 
 ## 考慮事項 {#considerations}
 

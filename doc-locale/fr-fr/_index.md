@@ -19,17 +19,9 @@ Utilisez l'opérateur GitLab pour exécuter GitLab dans [OpenShift](https://docs
 > [!note]
 > L'opérateur GitLab présente des [limitations connues](#known-issues) et n'est adapté qu'à des scénarios spécifiques en production.
 
-<!-- This content block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
-
-L'opérateur GitLab nécessite des instances externes de :
-
-- [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
-- [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
-- [Stockage d'objets](https://docs.gitlab.com/charts/advanced/external-object-storage/)
+L'opérateur GitLab nécessite un [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/), un [Redis](https://docs.gitlab.com/charts/advanced/external-redis/) et un [stockage d'objets](https://docs.gitlab.com/charts/advanced/external-object-storage/) externes.
 
 Pour les déploiements en production, suivez les [architectures de référence cloud-native](https://docs.gitlab.com/administration/reference_architectures).
-
-<!-- End content block -->
 
 ## Problèmes connus {#known-issues}
 

@@ -13,25 +13,25 @@ title: 설치
 {{< /details >}}
 
 > [!note]
-> GitLab Operator에는 [알려진 제한 사항](_index.md#known-issues)이 있으며, 프로덕션 환경에서는 특정 시나리오에만 적합합니다.
+> GitLab Operator에는 [알려진 제한 사항](_index.md#known-issues)이 있으며, 프로덕션 환경의 특정 시나리오에만 적합합니다.
 
-<!-- This content block is duplicated in doc/_index.md. Changes should be reflected in both locations. -->
+<!--This warning block is duplicated in doc/index.md. Changes should be reflected in both locations.-->
 
-GitLab Operator를 사용하려면 다음 외부 인스턴스가 필요합니다.
+GitLab Operator를 사용하려면 다음의 외부 인스턴스가 필요합니다.
 
 - [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
 - [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
 - [오브젝트 스토리지](https://docs.gitlab.com/charts/advanced/external-object-storage/)
 
-프로덕션 배포의 경우
-[클라우드 네이티브 참조 아키텍처](https://docs.gitlab.com/administration/reference_architectures)를 따르세요.
-
-<!-- End content block -->
+프로덕션 배포의 경우 [클라우드 네이티브 참조 아키텍처](https://docs.gitlab.com/administration/reference_architectures)를 따르세요.
 
 이 문서에서는 Kubernetes 또는 OpenShift 클러스터에서 매니페스트를 사용하여 GitLab Operator를 배포하는 방법을 설명합니다.
 
+<!--This warning block is duplicated in `../config/manifests/bases/gitlab-operator-kubernetes.clusterserviceversion.yaml`.
+Changes should be reflected in both locations.-->
+
 OpenShift를 사용하는 경우, 설치는 일반적으로 OLM(Operator Lifecycle Manager)에 의해 처리됩니다.
-**OLM을 사용한 설치는 실험적인 것으로 간주됩니다**. GitLab은 OLM을 사용하여 배포된 인스턴스와 관련된 문제를 지원하지 않습니다.
+**OLM을 사용한 설치는 실험적인 기능으로 간주됩니다**. GitLab은 OLM을 사용하여 배포된 인스턴스와 관련된 문제를 지원하지 않습니다.
 OLM의 잠재적인 문제에 대한 자세한 내용은 [이슈 241](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/241)을 참조하세요.
 
 ## 사전 요구 사항 {#prerequisites}
@@ -41,7 +41,7 @@ OLM의 잠재적인 문제에 대한 자세한 내용은 [이슈 241](https://gi
    - [Ingress/Gateway API 컨트롤러](#external-traffic-routing)
    - [cert-manager](#tls-certificates)
    - [메트릭 서버](#metrics)
-1. [도메인 이름 서비스 구성](#configure-domain-name-services)
+1. [도메인 네임 서비스 구성](#configure-domain-name-services)
 
 ### 클러스터 {#cluster}
 
@@ -79,17 +79,16 @@ GitLab Operator는 다음 OpenShift 버전을 지원합니다.
 
 {{< /tabs >}}
 
-Kubernetes의 최근 3개 마이너 버전과 OpenShift의 최근 4개 마이너 릴리스와의 호환성을 동시에 목표로 합니다. 새 버전에 대한 지원이 추가되면 가장 오래된 지원 버전에 대한 테스트는 중단됩니다. Kubernetes 및 OpenShift의 새 마이너 릴리스에 대해 최초 출시 후 3개월 이내에 Operator 지원을 제공하는 것이 목표입니다.
+저희는 Kubernetes의 최근 3개 마이너 버전과 OpenShift의 최근 4개 마이너 릴리스와의 호환성을 동시에 목표로 합니다. 새 버전에 대한 지원이 추가되면 가장 오래된 지원 버전에 대한 테스트는 중단됩니다. 저희의 목표는 Kubernetes 및 OpenShift의 새 마이너 릴리스가 처음 출시된 후 3개월 이내에 Operator 지원을 제공하는 것입니다.
 
 자세한 내용은 [Kubernetes 지원 정책](https://handbook.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/k8s-release-support-policy/)을 참조하세요.
 
 > [!note]
-> [Kubernetes용 에이전트](https://docs.gitlab.com/user/clusters/agent/) 및
-> [GitLab 차트](https://docs.gitlab.com/charts/installation/cloud/)와 같은 일부 구성 요소의 경우, GitLab은 다른 클러스터 버전을 지원할 수 있습니다.
+> [Kubernetes용 에이전트](https://docs.gitlab.com/user/clusters/agent/) 및 [GitLab 차트](https://docs.gitlab.com/charts/installation/cloud/)와 같은 일부 구성 요소의 경우, GitLab은 다른 클러스터 버전을 지원할 수 있습니다.
 
 위에 나열된 것보다 최신 릴리스와의 호환성 문제는 [이슈 트래커](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues)에서 환영합니다.
 
-일부 GitLab 기능은 더 이상 사용되지 않는 버전 및 위에 나열된 버전보다 오래된 버전에서는 작동하지 않을 수 있습니다.
+더 이상 사용되지 않는 버전 및 위에 나열된 버전보다 오래된 버전에서는 일부 GitLab 기능이 작동하지 않을 수 있습니다.
 
 Operator는 x86-64 및 ARM64를 지원합니다. ARM64 빌드는 16.7부터 제공되었지만, 전체 지원 및 테스트 커버리지는 18.8부터 제공됩니다.
 
@@ -97,7 +96,7 @@ Operator는 x86-64 및 ARM64를 지원합니다. ARM64 빌드는 16.7부터 제�
 
 애플리케이션에 대한 액세스를 제공하려면 외부 트래픽 라우팅이 필요합니다.
 [Envoy Gateway](https://gateway.envoyproxy.io/)를 사용하는 [Gateway API](https://gateway-api.sigs.k8s.io/)는
-새 배포에 권장되는 방법입니다. 구성 세부 정보 및 대체 공급자에 대해서는 [Gateway API 문서](gatewayapi.md)를 참조하세요.
+새 배포에 권장되는 방식입니다. 구성 세부 정보 및 대체 공급자에 대해서는 [Gateway API 문서](gatewayapi.md)를 참조하세요.
 
 번들 NGINX Ingress 컨트롤러는 GitLab 차트 19.0부터 더 이상 사용되지 않으며 GitLab 20.0에서 제거될 예정입니다. 대안으로 [외부 NGINX Ingress 컨트롤러](https://docs.gitlab.com/charts/advanced/external-ingress/)를 사용할 수 있습니다.
 
@@ -105,7 +104,7 @@ Operator는 x86-64 및 ARM64를 지원합니다. ARM64 빌드는 16.7부터 제�
 
 Operator의 Kubernetes 웹훅에 대한 인증서를 생성하기 위해 [cert-manager](https://cert-manager.io)가 사용됩니다. GitLab 인증서에도 [cert-manager](https://cert-manager.io)를 사용하는 것이 좋습니다.
 
-Operator는 Kubernetes 웹훅에 대한 인증서가 필요하므로 GitLab 차트와 함께 번들된 cert-manager를 사용할 수 없습니다. 대신 Operator를 설치하기 전에 cert-manager를 설치하세요.
+Operator에는 Kubernetes 웹훅에 대한 인증서가 필요하므로 GitLab 차트에 번들된 cert-manager를 사용할 수 없습니다. 대신 Operator를 설치하기 전에 cert-manager를 설치하세요.
 
 플랫폼 및 도구에 맞는 [지원되는 cert-manager 릴리스](https://cert-manager.io/docs/releases/)를 설치하려면 [설치 문서](https://cert-manager.io/docs/installation/)를 따르세요.
 
@@ -127,13 +126,13 @@ OpenShift는 기본적으로 [Prometheus Adapter](https://docs.openshift.com/con
 
 {{< /tabs >}}
 
-### 도메인 이름 서비스 구성 {#configure-domain-name-services}
+### 도메인 네임 서비스 구성 {#configure-domain-name-services}
 
 DNS 레코드를 추가할 수 있는 인터넷 접근 가능한 도메인이 필요합니다.
 
 도메인을 GitLab 구성 요소에 연결하는 방법에 대한 자세한 내용은 [네트워킹 및 DNS 문서](https://docs.gitlab.com/charts/installation/tools/#networking-and-dns)를 참조하세요. 이 섹션에서 언급된 구성은 GitLab 커스텀 리소스(CR)를 정의할 때 사용합니다.
 
-OpenShift의 Ingress는 추가적인 고려가 필요합니다. 자세한 내용은 [OpenShift Ingress에 대한 참고 사항](openshift_ingress.md)을 참조하세요.
+OpenShift의 Ingress에는 추가적인 고려 사항이 필요합니다. 자세한 내용은 [OpenShift Ingress 관련 참고 사항](openshift_ingress.md)을 참조하세요.
 
 ## GitLab Operator 설치 {#installing-the-gitlab-operator}
 
@@ -144,20 +143,20 @@ OpenShift의 Ingress는 추가적인 고려가 필요합니다. 자세한 내용
 {{< tab title="Manifest" >}}
 
 먼저 [Operator 릴리스 페이지](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/releases)에서 릴리스 매니페스트를 가져오세요.
-각 릴리스는 4개의 매니페스트를 게시합니다. 대상 플랫폼과 필요한 RBAC 범위에 맞는 것을 선택하세요.
+각 릴리스에는 4개의 매니페스트가 게시됩니다. 대상 플랫폼과 필요한 RBAC 범위에 맞는 것을 선택하세요.
 
 | 매니페스트 | 플랫폼 | RBAC 범위 |
 |------------------------------------------------|------------|-------------------------------------------------------------------------------------------------------|
-| `gitlab-operator-kubernetes.yaml`              | Kubernetes | 클러스터 전체: `ClusterRole`/`ClusterRoleBinding`; Operator는 모든 네임스페이스의 GitLab CR을 감시합니다.  |
+| `gitlab-operator-kubernetes.yaml`              | Kubernetes | 클러스터 전체: `ClusterRole`/`ClusterRoleBinding`; Operator가 모든 네임스페이스의 GitLab CR을 감시합니다.  |
 | `gitlab-operator-kubernetes-namespaced.yaml`   | Kubernetes | 네임스페이스 범위: 설치 네임스페이스로 범위가 지정된 `Role`/`RoleBinding`; Operator는 해당 네임스페이스만 감시합니다. Operator가 관리하는 클러스터 범위 리소스에는 소규모 `ClusterRole`이 여전히 필요합니다. |
 | `gitlab-operator-openshift.yaml`               | OpenShift  | 클러스터 전체(위와 동일).                                                                              |
 | `gitlab-operator-openshift-namespaced.yaml`    | OpenShift  | 네임스페이스 범위(위와 동일).                                                                                |
 
-단일 Operator가 여러 네임스페이스에서 GitLab 인스턴스를 관리해야 하는 경우 클러스터 전체 변형을 사용하세요. Operator를 단일 네임스페이스로 제한해야 하는 경우(예: 대상 클러스터에서 클러스터 전체 RBAC 부여가 허용되지 않는 경우) 네임스페이스 변형을 사용하세요. 네임스페이스 변형을 사용하면 GitLab 커스텀 리소스는 Operator와 동일한 네임스페이스에 생성되어야 합니다.
+여러 네임스페이스에 걸쳐 GitLab 인스턴스를 관리해야 하는 경우 클러스터 전체 변형을 사용하세요. 대상 클러스터에서 클러스터 전체 RBAC 부여가 허용되지 않는 등의 이유로 Operator를 단일 네임스페이스로 제한해야 하는 경우 네임스페이스 변형을 사용하세요. 네임스페이스 변형을 사용하는 경우 GitLab 커스텀 리소스는 Operator와 동일한 네임스페이스에 생성해야 합니다.
 
 다음으로 Operator가 설치될 네임스페이스를 생성하세요.
 매니페스트에서 네임스페이스는 기본적으로 `gitlab-system`으로 설정됩니다.
-네임스페이스를 변경하려면 매니페스트를 수동으로 업데이트하거나, 이 키와 다른 키를 쉽게 구성할 수 있는 Helm 차트 사용을 고려하세요.
+네임스페이스를 변경하려면 매니페스트를 수동으로 업데이트하거나, 이 키 및 기타 키를 쉽게 구성할 수 있는 Helm 차트 사용을 고려하세요.
 
 ```shell
 kubectl create namespace gitlab-system
@@ -210,16 +209,16 @@ Operator 배포 상태를 확인하여 설치를 확인하세요.
 kubectl -n gitlab-system get deployment gitlab-controller-manager
 ```
 
-### 네임스페이스 모드에서 번들 NGINX Ingress 및 Prometheus {#bundled-nginx-ingress-and-prometheus-in-namespaced-mode}
+### 네임스페이스 모드에서의 번들 NGINX Ingress 및 Prometheus {#bundled-nginx-ingress-and-prometheus-in-namespaced-mode}
 
-네임스페이스 매니페스트 변형(및 `watchCluster=false`로 Helm 설치)은 차트의 번들 NGINX Ingress 컨트롤러 및 Prometheus 서버에 대한 `ClusterRole` 및 `ClusterRoleBinding`을 생략합니다. 이 두 구성 요소는 클러스터 전체에서 작동하도록 설계되었습니다.
+네임스페이스 매니페스트 변형(및 `watchCluster=false`로 설치된 Helm)은 차트의 번들 NGINX Ingress 컨트롤러 및 Prometheus 서버에 대한 `ClusterRole` 및 `ClusterRoleBinding`을 생략합니다. 이 두 구성 요소는 클러스터 전체에서 작동하도록 설계되었습니다.
 
 - NGINX Ingress는 모든 네임스페이스에서 `Ingresses`를 감시하고 `nodes` 및 `ingressclasses`와 같은 클러스터 범위 리소스를 읽습니다.
 - Prometheus 서버는 클러스터 전체에서 대상을 검색하고 스크랩하며 `nodes`, `nodes/proxy`, `nodes/metrics` 및 `/metrics` 비리소스 URL에 대한 액세스가 필요합니다.
 
 네임스페이스 모드에서 Operator를 설치하고 이러한 번들 구성 요소를 사용하려는 경우, 클러스터 범위 권한을 직접 제공해야 합니다(일반적으로 차트의 `gitlab-nginx-ingress` / `gitlab-prometheus-server` `ServiceAccount`를 외부에서 관리되는 `ClusterRole`에 바인딩하고, NGINX Ingress의 경우 컨트롤러에 `--watch-namespace`를 전달하는 방식으로).
 
-네임스페이스 모드에서 권장되는 방법은 외부에서 관리되는 모니터링 및 Ingress/Gateway API 솔루션을 사용하는 것입니다.
+네임스페이스 모드에서 권장되는 방식은 외부에서 관리되는 모니터링 및 Ingress/Gateway API 솔루션을 사용하는 것입니다.
 
 ## GitLab 설치 {#installing-gitlab}
 
@@ -269,24 +268,24 @@ kubectl -n gitlab-system get deployment gitlab-controller-manager
    gitlab   Ready    5.2.4
    ```
 
-   CR이 조정되면(GitLab 리소스의 상태가 `Running`인 경우) 브라우저에서 `https://gitlab.example.com`으로 GitLab에 액세스할 수 있습니다.
+   CR이 조정되면(GitLab 리소스의 상태가 `Running`이 되면) 브라우저에서 `https://gitlab.example.com`으로 GitLab에 액세스할 수 있습니다.
 
 로그인하려면 배포의 초기 루트 비밀번호를 검색해야 합니다. 자세한 지침은 [Helm 차트 문서](https://docs.gitlab.com/charts/installation/deployment/#initial-login)를 참조하세요.
 
 ## 권장 다음 단계 {#recommended-next-steps}
 
-설치를 완료한 후 인증 옵션 및 가입 제한을 포함한 [권장 다음 단계](https://docs.gitlab.com/install/next_steps/)를 고려하세요.
+설치를 완료한 후 인증 옵션 및 가입 제한을 포함한 [권장 다음 단계](https://docs.gitlab.com/install/next_steps/)를 수행하는 것을 고려하세요.
 
 ### OpenShift {#openshift}
 
 OpenShift를 실행하는 경우, GitLab Operator의 승인 전략을 자동(기본값)에서 수동으로 변경하세요. 이렇게 하면 [승인이 부여될](https://docs.openshift.com/container-platform/4.13/operators/admin/olm-upgrading-operators.html#olm-approving-pending-upgrade_olm-upgrading-operators) 때까지 OpenShift가 새 Operator 버전을 설치하지 않습니다.
 
-사용자 지정 [`startingCSV`](https://docs.openshift.com/container-platform/4.10/operators/admin/olm-adding-operators-to-cluster.html#olm-installing-specific-version-cli_olm-adding-operators-to-a-cluster)를 설정하여 Operator 버전을 고정하거나 최신이 아닌 버전으로 업그레이드할 수도 있습니다.
+사용자 지정 [`startingCSV`](https://docs.openshift.com/container-platform/4.10/operators/admin/olm-adding-operators-to-cluster.html#olm-installing-specific-version-cli_olm-adding-operators-to-a-cluster)를 설정하여 Operator 버전을 고정하거나 최신 버전이 아닌 버전으로 업그레이드할 수도 있습니다.
 
 - 승인 전략은 [OpenShift 웹 콘솔](https://access.redhat.com/documentation/en-us/red_hat_openshift_data_foundation/4.13/html/updating_openshift_data_foundation/changing-the-update-approval-strategy_rhodf)에서 변경하거나 [Subscription을 편집](https://docs.openshift.com/container-platform/4.13/operators/understanding/olm/olm-understanding-olm.html#olm-installplan_olm-understanding-olm)하여 변경할 수 있습니다.
 - `InstallPlan`의 `.spec.approved`를 `true`로 설정하여 수동 업그레이드를 승인하세요.
-- 각 GitLab Operator는 정의된 GitLab 차트 버전의 하위 집합을 지원합니다. GitLab Operator로의 업그레이드는 GitLab 커스텀 리소스의 차트 버전 업데이트도 포함해야 합니다.
-- GitLab Operator와 지정된 GitLab Helm 차트 버전이 호환되지 않는 경우, 차트에 대한 구성 변경이 [GitLab Helm 차트 버전에 대한 오류](gitlab_upgrades.md)와 함께 실패할 수 있습니다.
+- 각 GitLab Operator는 정의된 GitLab 차트 버전의 하위 집합을 지원합니다. GitLab Operator 업그레이드 시 GitLab 커스텀 리소스의 차트 버전도 함께 업데이트해야 합니다.
+- GitLab Operator와 지정된 GitLab Helm 차트 버전이 호환되지 않는 경우, 차트에 대한 구성 변경이 [GitLab Helm 차트 버전 관련 오류](gitlab_upgrades.md)와 함께 실패할 수 있습니다.
 
 > [!note]
 > [OLM은 Operator 다운그레이드를 지원하지 않습니다](https://github.com/operator-framework/operator-lifecycle-manager/issues/1177).
@@ -316,7 +315,7 @@ PLATFORM=kubernetes # or "openshift"
 kubectl delete -f https://gitlab.com/api/v4/projects/18899486/packages/generic/gitlab-operator/${GL_OPERATOR_VERSION}/gitlab-operator-${PLATFORM}-${GL_OPERATOR_VERSION}.yaml
 ```
 
-이 명령은 Operator의 리소스(실행 중인 Operator 배포 포함)를 삭제합니다. GitLab 인스턴스와 관련된 오브젝트는 **삭제되지 않습니다**.
+이 명령은 실행 중인 Operator 배포를 포함하여 Operator의 리소스를 삭제합니다. GitLab 인스턴스와 관련된 오브젝트는 **삭제되지 않습니다**.
 
 ## GitLab Operator 문제 해결 {#troubleshoot-the-gitlab-operator}
 

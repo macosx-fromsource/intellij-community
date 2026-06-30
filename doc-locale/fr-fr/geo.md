@@ -7,8 +7,8 @@ title: "Configurer l'opérateur GitLab avec GitLab Geo"
 
 {{< details >}}
 
-- Édition :  version gratuite, GitLab Premium, GitLab Ultimate
-- Offre :  GitLab Self-Managed
+- Édition : version gratuite, GitLab Premium, GitLab Ultimate
+- Offre : GitLab Self-Managed
 
 {{< /details >}}
 
@@ -16,7 +16,16 @@ Les exigences, les limitations et la configuration de GitLab Geo de l'opérateur
 
 Pour déployer des sites GitLab Geo avec l'opérateur GitLab, appliquez les valeurs du chart Helm à la ressource personnalisée GitLab en définissant `spec.chart.values`.
 
+## Gateway API {#gateway-api}
+
+Lorsque vous utilisez l'[API Gateway avec Envoy Gateway](gatewayapi.md), aucune configuration supplémentaire n'est nécessaire au-delà de la documentation du chart. L'opérateur applique la configuration `global.geo.gatewayApi.additionalHostname` pour activer la communication interne entre les sites.
+
 ## Classe Ingress {#ingress-class}
+
+> [!warning]
+> NGINX Ingress est déprécié depuis le chart GitLab 19.0 et sera supprimé dans GitLab 20.0.
+> Utilisez l'[API Gateway avec Envoy Gateway](gatewayapi.md) pour les nouveaux déploiements Geo.
+> Les déploiements Geo existants doivent migrer dès que possible.
 
 L'opérateur GitLab n'est pas fourni avec une IngressClass de [NGINX Ingress](https://docs.gitlab.com/charts/charts/nginx/#gitlab-geo) secondaire.
 

@@ -19,17 +19,9 @@ title: GitLab Operator
 > [!note]
 > GitLab Operatorには[既知の制限事項](#known-issues)があり、本番環境での特定のシナリオにのみ適しています。
 
-<!-- This content block is duplicated in doc/installation.md. Changes should be reflected in both locations. -->
-
-GitLab Operatorには、以下の外部インスタンスが必要です:
-
-- [PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)
-- [Redis](https://docs.gitlab.com/charts/advanced/external-redis/)
-- [オブジェクトストレージ](https://docs.gitlab.com/charts/advanced/external-object-storage/)
+GitLab Operatorには、外部の[PostgreSQL](https://docs.gitlab.com/charts/advanced/external-db/)、[Redis](https://docs.gitlab.com/charts/advanced/external-redis/)、および[オブジェクトストレージ](https://docs.gitlab.com/charts/advanced/external-object-storage/)が必要です。
 
 本番環境へのデプロイでは、[クラウドネイティブリファレンスアーキテクチャ](https://docs.gitlab.com/administration/reference_architectures)に従ってください。
-
-<!-- End content block -->
 
 ## 既知の問題 {#known-issues}
 
@@ -72,7 +64,7 @@ GitLab Operator、またはGitLab Operatorによって管理されるGitLabイ�
 
 マージリクエスト（MR）は通常、2人のレビュアーを必要とする標準的な運用に従います。まずメンテナー以外のメンバーがMRをレビューし、提案されている変更の改善/修正を支援するために作成者にコメントを提供します。作成者が必要な更新を行い、レビュアーがMRを承認した後、メンテナーの1人にレビューをリクエストします。
 
-このアプローチは、経験の浅いレビュアーに学習の機会を提供します。最初のレビューでMRに関するほとんどの問題を最終レビューの前に解決します。変更の多いプロジェクトでは、メンテナーの負荷によりボトルネックが発生しがちですが、この最初のパスはそれらの負荷を軽減するのに役立ちます。
+このアプローチは、経験の浅いレビュアーに学習の機会を提供します。最初のレビューでは、最終レビューの前にMRに関するほとんどの問題を解決します。変更の多いプロジェクトでは、メンテナーの負荷によりボトルネックが発生しがちですが、この最初のパスはそれらの負荷を軽減するのに役立ちます。
 
 ### 1回の承認のみの例外 {#one-approval-only-exceptions}
 

@@ -7,59 +7,60 @@ title: Prendre en charge Git via SSH
 
 {{< details >}}
 
-- Édition :  version gratuite, GitLab Premium, GitLab Ultimate
-- Offre :  GitLab Self-Managed
+- Édition : version gratuite, GitLab Premium, GitLab Ultimate
+- Offre : GitLab Self-Managed
 
 {{< /details >}}
-
-Ce document fournit des instructions de configuration pour Git via SSH sur différents environnements/plateformes.
-
-## Vue d'ensemble {#overview}
 
 Le [chart Helm GitLab Shell](https://docs.gitlab.com/charts/charts/gitlab/gitlab-shell/) fournit un serveur SSH configuré pour l'accès SSH Git à GitLab. Ce composant doit être exposé en dehors du cluster sur le port `22`.
 
 L'opérateur GitLab déploie `gitlab-shell` lorsque `gitlab.gitlab-shell.enabled` est défini sur `true` (paramètre par défaut).
 
-Pour résumer les exigences en fonction de la plateforme cible :
+Pour exposer Git via SSH, utilisez l'une des méthodes suivantes :
 
-| Avez-vous besoin de Git via SSH ? | Kubernetes                                                                                                    | OpenShift |
-|------------------------------|---------------------------------------------------------------------------------------------------------------|-----------|
-| Non                           | Vous devez utiliser l'un des fournisseurs NGINX Ingress ci-dessous (Kubernetes ne dispose pas d'un fournisseur Ingress intégré). | Vous n'avez pas besoin des fournisseurs Ingress ci-dessous, vous pouvez utiliser les Routes intégrées comme fournisseur Ingress. |
-| Oui                          | Vous devez utiliser l'un des fournisseurs NGINX Ingress ci-dessous (Kubernetes ne dispose pas d'un fournisseur Ingress intégré). | Vous devez utiliser l'un des fournisseurs Ingress ci-dessous, les Routes ne prennent pas en charge l'exposition du port `22`. |
+| Méthode | Kubernetes | OpenShift | Remarques |
+|:-----------------|:-----------|:---------------|:------|
+| Gateway API | Prise en charge | Prise en charge | Approche moderne recommandée utilisant le standard Kubernetes Gateway API avec TCPRoute. Envoy Gateway est recommandé. [D'autres fournisseurs](https://docs.gitlab.com/charts/advanced/gateway-api/#using-an-external-gateway-api-provider) peuvent fonctionner s'ils répondent aux exigences. |
+| NGINX Ingress | Déprécié | Déprécié | Approche traditionnelle (nécessite l'exposition du port 22). Des [contrôleurs NGINX externes](https://docs.gitlab.com/charts/advanced/external-ingress/) peuvent être utilisés à la place du contrôleur intégré. |
+| Routes OpenShift | N/A | Pas de prise en charge SSH | Les Routes ne prennent pas en charge le trafic TCP (port 22). |
 
-## Fournisseurs Ingress {#ingress-providers}
+## Gateway API avec Envoy Gateway {#gateway-api-with-envoy-gateway}
 
-Vous trouverez ci-dessous une liste de fournisseurs Ingress accompagnée de notes pertinentes et de détails spécifiques à chaque plateforme.
+GitLab peut être exposé via [Gateway API](https://gateway-api.sigs.k8s.io/) plutôt qu'avec des ressources Ingress traditionnelles.
+Cette méthode est recommandée pour les nouveaux déploiements, car elle prend en charge nativement le routage TCP pour Git via SSH grâce aux ressources `TCPRoute`.
 
-### Chart Helm NGINX-Ingress {#nginx-ingress-helm-chart}
+Prérequis :
 
-GitLab maintient un [chart `NGINX-ingress` dupliqué](https://docs.gitlab.com/charts/charts/nginx/#adjustments-to-the-nginx-fork) qui peut être utilisé pour déployer des ressources NGINX modifiées pour prendre en charge Git via SSH « prêt à l'emploi ».
+- GitLab Operator 2.10 ou version ultérieure.
+- GitLab chart 9.7 ou version ultérieure.
 
-Il s'agit de la configuration par défaut lors de l'utilisation de l'opérateur GitLab, et elle est contrôlée par `nginx-ingress.enabled={true,false}` dans la ressource personnalisée GitLab. Lorsqu'il est défini sur `false`, vous pouvez utiliser une [instance NGINX externe](https://docs.gitlab.com/charts/advanced/external-nginx/).
+Gateway API fonctionne sur les clusters Kubernetes et OpenShift. Pour des instructions de configuration détaillées et les prérequis,
+consultez la [documentation Gateway API et Envoy Gateway](gatewayapi.md).
 
-Ce fournisseur Ingress peut être utilisé à la fois sur Kubernetes et OpenShift.
+Lorsque Gateway API est activé avec `global.gatewayApi.enabled: true`, `gitlab-shell` est automatiquement exposé via une ressource `TCPRoute` qui achemine le trafic TCP sur le port `22` vers le service GitLab Shell.
 
-De plus amples informations sur les options d'installation du fournisseur NGINX Ingress sont disponibles dans notre [documentation d'installation](installation.md#ingress-controller).
+## NGINX Ingress {#nginx-ingress}
 
-### Opérateur NGINX Ingress {#nginx-ingress-operator}
+> [!warning]
+> NGINX Ingress est déprécié depuis GitLab chart 19.0 et sera supprimé dans GitLab 20.0.
+> Utilisez [Gateway API avec Envoy Gateway](#gateway-api-with-envoy-gateway) pour les nouveaux déploiements.
 
-En tant qu'alternative à la duplication du chart Helm NGINX-Ingress intégré, l'[opérateur NGINX Ingress](https://github.com/nginxinc/nginx-ingress-operator) peut être utilisé pour exposer `gitlab-shell`.
+L'opérateur GitLab prend en charge le contrôleur NGINX Ingress sur Kubernetes et OpenShift. Lors de l'utilisation de NGINX Ingress, le port `22` doit être exposé sur le service NGINX pour activer Git via SSH.
 
-Cette option comporte certaines restrictions :
+GitLab maintient un [chart `NGINX-ingress` dupliqué](https://docs.gitlab.com/charts/charts/nginx/#adjustments-to-the-nginx-fork) qui peut être utilisé pour déployer des ressources NGINX configurées pour prendre en charge Git via SSH. Ce chart est déprécié et non pris en charge, mais reste disponible pour les déploiements existants.
 
-- Les définitions de ressources personnalisées TransportServer/GlobalConfiguration de NGINX Inc. sont considérées comme une fonctionnalité en aperçu, et il est recommandé de faire preuve de prudence pour une utilisation en production.
-- L'opérateur NGINX Inc. est encore relativement récent (version 0.3.0 seulement). Il ne contient pas autant d'options de configuration que les charts Helm plus matures, quelle que soit leur variante.
-- Cette option nécessite toujours d'exposer manuellement le port `22` sur le service NGINX (pas configurable dans le CR NGINXIngressController).
+NGINX Ingress est contrôlé par `nginx-ingress.enabled={true,false}` dans la ressource personnalisée GitLab. Lorsqu'il est défini sur `false`, vous pouvez utiliser une [instance NGINX externe](https://docs.gitlab.com/charts/advanced/external-nginx/).
 
-Des recherches plus approfondies sont consignées dans [\#58](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/58#note_585883916).
+## Routes OpenShift {#openshift-routes}
 
-### Routes OpenShift {#openshift-routes}
+Les [Routes](https://docs.openshift.com/container-platform/4.10/networking/routes/route-configuration.html) OpenShift constituent une solution Ingress intégrée aux clusters OpenShift. Lorsque vous désactivez NGINX Ingress en définissant `nginx-ingress.enabled=false` dans la ressource personnalisée GitLab, OpenShift convertit automatiquement les objets Ingress créés par l'opérateur en objets Route équivalents.
 
-Les [Routes](https://docs.openshift.com/container-platform/3.4/architecture/core_concepts/routes.html) OpenShift sont un composant intégré aux clusters OpenShift. Elles sont l'équivalent OpenShift des [Ingresses Kubernetes](https://kubernetes.io/docs/concepts/services-networking/ingress/).
+Git via SSH n'est pas pris en charge avec les Routes OpenShift, car celles-ci ne permettent pas d'exposer le trafic TCP (port `22`). Si vous avez besoin de Git via SSH sur OpenShift, vous pouvez :
 
-Lors du déploiement sur OpenShift, vous pouvez définir `nginx-ingress.enabled=false` dans la ressource personnalisée GitLab et autoriser les Routes OpenShift à contrôler le flux du trafic externe. Lorsque l'opérateur GitLab réconcilie les objets Ingress, OpenShift crée automatiquement un objet Route équivalent qui correspond au domaine de base du cluster.
+- Utiliser Gateway API avec Envoy Gateway. Définissez `global.gatewayApi.enabled=true` dans votre ressource personnalisée GitLab.
+- Utiliser le contrôleur NGINX Ingress. Définissez `nginx-ingress.enabled=true` (valeur par défaut).
 
-Notez que les Routes OpenShift ne prennent pas en charge l'exposition du trafic TCP (SSH sur le port `22`), et ne peuvent donc pas être utilisées pour Git via SSH via `gitlab-shell`.
+Pour plus d'informations sur les options Ingress dans OpenShift, consultez la page [Ingress dans OpenShift](openshift_ingress.md).
 
 ## Éléments à prendre en compte {#considerations}
 
@@ -69,6 +70,6 @@ Vous trouverez ci-dessous des éléments à prendre en compte lors de l'utilisat
 
 Lors de l'utilisation d'un contrôleur Ingress tiers sur OpenShift, le contrôleur Ingress OpenShift peut entrer en conflit avec le contrôleur Ingress tiers dans certains cas.
 
-Un exemple : le contrôleur NGINX Ingress définira une `ADDRESS` Ingress sur l'adresse IP externe du service NGINX, puis le contrôleur Ingress OpenShift la remplacera par le domaine de base du cluster. Cela peut entrer en conflit avec la configuration DNS, en particulier lors de l'utilisation d'un service comme [external-dns](https://github.com/kubernetes-sigs/external-dns) qui repose sur le fait que l'Ingress dispose d'une adresse IP pour pouvoir créer des enregistrements A afin de mapper l'URL vers ce service NGINX spécifique. C'est le cas dans l'environnement CI de l'opérateur GitLab.
+Un exemple : le contrôleur NGINX Ingress définira une `ADDRESS` Ingress sur l'adresse IP externe du service NGINX, puis le contrôleur Ingress OpenShift la remplacera par le domaine de base du cluster. Cela peut entrer en conflit avec la configuration DNS, en particulier lors de l'utilisation d'un service comme [external-dns](https://github.com/kubernetes-sigs/external-dns) qui repose sur le fait que l'Ingress dispose d'une adresse IP pour pouvoir créer des enregistrements A afin de mapper l'URL vers ce service NGINX spécifique. C'est le cas dans l'environnement CI de l'opérateur GitLab.
 
 Pour contourner ce problème, nous [corrigeons le contrôleur Ingress OpenShift](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/558e2ff9/ci/scripts/install_external_dns.sh#L17-26) pour qu'il gère uniquement les espaces de nommage spécifiques à OpenShift afin de garantir que les Ingresses que nous créons dans les espaces de nommage spécifiques à GitLab ne sont pas modifiés de manière indésirable.
