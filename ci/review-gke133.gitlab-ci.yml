@@ -19,7 +19,6 @@ review_gke133:
   variables:
     DOMAIN: $DOMAIN_GKE133
     AGENT_NAME: operator133-ci-cluster
-    AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
   before_script:
     - kubectl config get-contexts
     - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
@@ -59,7 +58,6 @@ stop_review_gke133:
   variables:
     DOMAIN: $DOMAIN_GKE133
     AGENT_NAME: operator133-ci-cluster
-    AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
   before_script:
     - kubectl config get-contexts
     - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME

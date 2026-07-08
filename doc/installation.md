@@ -65,24 +65,24 @@ The GitLab Operator supports the following Kubernetes versions:
 
 {{< tab title="OpenShift" >}}
 
-The GitLab Operator supports the following OpenShift versions:
+The GitLab Operator supports the OpenShift versions that use a supported Kubernetes version:
 
-| OpenShift release | Status      | Minimum Operator version |
-|-------------------|-------------|--------------------------|
-| 4.21              | Supported   | 2.9.0                    |
-| 4.20              | Supported   | 2.6.0                    |
-| 4.19              | Supported   | 2.2.0                    |
-| 4.18              | Supported   | 1.9.0                    |
-| 4.17              | Unsupported | 1.6.0                    |
+| OpenShift release | Status      | Minimum Operator version | Underlying Kubernetes version |
+|-------------------|-------------|--------------------------|-------------------------------|
+| 4.22              | Supported   | 2.9.0                    | 1.35 |
+| 4.21              | Supported   | 2.5.0                    | 1.34 |
+| 4.20              | Supported   | 2.1.0                    | 1.33 |
+| 4.19              | Deprecated  | 2.0.0                    | 1.32 |
+| 4.18              | Unsupported | 1.9.0                    | 1.31 |
 
 {{< /tab >}}
 
 {{< /tabs >}}
 
-We target compatibility with the three most recent minor versions of Kubernetes and the four most recent
-minor releases of OpenShift simultaneously. When support for a new version is added, testing for the oldest
-supported version is discontinued. Our goal is to provide Operator support for new minor releases of
-Kubernetes and OpenShift within three months of their initial availability.
+We target compatibility with the three most recent minor versions of Kubernetes, and with the OpenShift
+releases whose underlying Kubernetes version is supported. When support for a new version is added, testing
+for the oldest supported version is discontinued. Our goal is to provide Operator support for new minor
+releases of Kubernetes and OpenShift within three months of their initial availability.
 
 For more details [refer to our Kubernetes support policy](https://handbook.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/k8s-release-support-policy/).
 
