@@ -5,7 +5,7 @@ info: To determine the technical writer assigned to the Stage/Group associated w
 title: 22. OpenShift and Kubernetes platform versions in CI
 ---
 
-Date: 2024-04-25
+Date: 2026-07-08
 
 ## Status
 
@@ -19,17 +19,20 @@ Refers [14. Supported OpenShift versions](0014-supported-openshift-versions.md)
 
 ## Context
 
-Typically we support multiple versions (>2) of Kubernetes or OpenShift within each Operator release. From past discussions
-it was deemed feasible to test only against oldest supported version and newest supported versions for each platform to gain
-sufficient confidence that software will run on any platform "in between". There's also a need to cut down on resource utilization
-correspondingly to cut down operational costs.
+GitLab Operator supports multiple versions of Kubernetes and OpenShift within each Operator release.
+At runtime, the Operator has little OpenShift-specific behavior. The main difference is security
+context constraint handling. Because the runtime behavior is nearly identical across OpenShift
+versions, testing against a single OpenShift version is enough to gain confidence in the Operator
+bundle for OpenShift.
 
 ## Decision
 
-We will maintain OpenShift instances covering range of supported versions of platform.
+GitLab Operator end-to-end tests run:
+
+- On every supported Kubernetes version.
+- On a single OpenShift version, to validate the Operator bundle on OpenShift.
 
 ## Consequences
 
-1. At all time we should have at 2 CI clusters that satisfy `min-max` criteria.
-1. Each time we raise mimimal version we may need to provision new cluster
-1. There is a chance that cluster version may need to be provisioned twice - once as a `max` version and second time as `min` version.
+1. We must maintain CI end-to-end testing for every supported Kubernetes version.
+1. Each time a supported version changes, the CI definitions and clusters must be adjusted.

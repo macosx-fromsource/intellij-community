@@ -1,0 +1,73 @@
+build_review_ocp:
+  extends: .build_review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT
+    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
+  dependencies:
+    - image_certification
+
+create_review_ocp:
+  extends: .create_review_template
+  environment: &environment_ocp
+    name: &env_ocp_name openshift/$CI_COMMIT_SHORT_SHA$ENVIRONMENT_SUFFIX-$CI_COMMIT_REF_SLUG
+    url: https://gitlab-$TESTS_NAMESPACE.$DOMAIN_OPENSHIFT
+    on_stop: stop_review_openshift_ocp
+    auto_stop_in: 1 hour
+  needs:
+    - build_review_ocp
+
+review_ocp:
+  extends: .review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT
+    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
+    AGENT_NAME: $AGENT_OPENSHIFT
+    OPENSHIFT_DEPLOYMENT: true
+  before_script:
+    - kubectl config get-contexts
+    - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
+    - kubectl config set-context --current --namespace=$TESTS_NAMESPACE
+  needs:
+    - create_review_ocp
+    # we need build_* dependency to receive appropriate artifacts
+    - build_review_ocp
+  environment: *environment_ocp
+  resource_group: *env_ocp_name
+
+qa_ocp:
+  extends: .qa
+  stage: qa
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT
+  needs:
+    - review_ocp
+
+qa_ocp_full_suite_trigger:
+  extends: .qa_full_suite_trigger
+  script: echo 'The job will trigger Full E2E suite against OpenShift'
+
+qa_ocp_full:
+  extends: .qa
+  stage: qa
+  parallel: 7
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT
+    QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
+  needs:
+    - review_ocp
+    - qa_ocp_full_suite_trigger
+
+stop_review_openshift_ocp:
+  extends: .stop_review_template
+  variables:
+    DOMAIN: $DOMAIN_OPENSHIFT
+    AGENT_NAME: $AGENT_OPENSHIFT
+  before_script:
+    - kubectl config get-contexts
+    - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
+    - kubectl config set-context --current --namespace=$TESTS_NAMESPACE
+  environment:
+    name: *env_ocp_name
+    action: stop
+  needs:
+    - build_review_ocp
