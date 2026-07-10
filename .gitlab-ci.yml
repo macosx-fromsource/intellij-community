@@ -77,6 +77,7 @@ variables:
   GO_IMAGE: ${DOCKERHUB_PREFIX}/golang:${GO_VERSION}
   DOCKER_DIND_IMAGE: ${DOCKERHUB_PREFIX}/docker:${DOCKER_VERSION}-dind
 
+  DOCS_HUGO_IMAGE: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/docs-gitlab-com-builder:hugo-0.154.5
   DOCS_LINT_IMAGE: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.23-vale-3.14.1-markdownlint2-0.22.1-lychee-0.24.2
 
 stages:
@@ -232,7 +233,7 @@ docs-lint links:
 
 docs-test hugo:
   stage: test
-  image: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/docs-gitlab-com-builder:hugo-0.150.1
+  image: $DOCS_HUGO_IMAGE
   before_script:
     - git clone --depth 1 https://gitlab.com/gitlab-org/technical-writing/docs-gitlab-com.git
     - cd docs-gitlab-com
