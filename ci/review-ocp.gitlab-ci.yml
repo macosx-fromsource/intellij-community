@@ -2,7 +2,7 @@ build_review_ocp:
   extends: .build_review_template
   variables:
     DOMAIN: $DOMAIN_OPENSHIFT
-    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
+    TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi-external-ocp"
   dependencies:
     - image_certification
 
@@ -20,8 +20,8 @@ review_ocp:
   extends: .review_template
   variables:
     DOMAIN: $DOMAIN_OPENSHIFT
-    TEST_CR_FILES_DIR: "config/test/overlays/k8s_1_25"
     AGENT_NAME: $AGENT_OPENSHIFT
+    TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi-external-ocp"
     OPENSHIFT_DEPLOYMENT: true
   before_script:
     - kubectl config get-contexts

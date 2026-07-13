@@ -1,0 +1,14 @@
+---
+apiVersion: apps.gitlab.com/v1beta1
+kind: GitLab
+metadata:
+  name: gitlab
+spec:
+  chart:
+    values:
+      global:
+        gatewayApi:
+          installEnvoy: false
+      gitlab:
+        gitlab-shell:
+          enabled: false

@@ -20,7 +20,6 @@ review_gke135:
     DOMAIN: $DOMAIN_GKE135
     AGENT_NAME: operator135-ci-cluster
     CLUSTER_MODE: "false"
-    TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi-external"
   before_script:
     - kubectl config get-contexts
     - kubectl config use-context $AGENT_PROJECT_PATH:$AGENT_NAME
