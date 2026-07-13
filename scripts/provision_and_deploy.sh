@@ -8,14 +8,18 @@ GITLAB_OPERATOR_DIR=${GITLAB_OPERATOR_DIR:-.}
 GITLAB_OPERATOR_MANIFEST=${GITLAB_OPERATOR_MANIFEST:-""}
 GITLAB_CR_DEPLOY_MODE=${GITLAB_CR_DEPLOY_MODE:-"selfsigned"}
 
+# Scratch dir for generated artifacts (certs, keys, kind config, manifests).
+# Kept out of the repo root; already gitignored.
+BUILD_DIR=${BUILD_DIR:-.build}
+
 GITLAB_OPERATOR_DOMAIN="${GITLAB_OPERATOR_DOMAIN:-$USER.cloud-native.win}"
 GITLAB_HOST=${GITLAB_HOST:-"*.${GITLAB_OPERATOR_DOMAIN}"}
-GITLAB_KEY_FILE=${GITLAB_KEY_FILE:-gitlab.key}
+GITLAB_KEY_FILE=${GITLAB_KEY_FILE:-${BUILD_DIR}/gitlab.key}
 GITLAB_TLSCERTNAME=${GITLAB_TLSCERTNAME:-"custom-gitlab-tls"}
-GITLAB_CERT_FILE=${GITLAB_CERT_FILE:-gitlab.crt}
+GITLAB_CERT_FILE=${GITLAB_CERT_FILE:-${BUILD_DIR}/gitlab.crt}
 GITLAB_PAGES_HOST=${GITLAB_PAGES_HOST:-"*.pages.${GITLAB_OPERATOR_DOMAIN}"}
-GITLAB_PAGES_KEY_FILE=${GITLAB_PAGES_KEY_FILE:-pages.key}
-GITLAB_PAGES_CERT_FILE=${GITLAB_PAGES_CERT_FILE:-pages.crt}
+GITLAB_PAGES_KEY_FILE=${GITLAB_PAGES_KEY_FILE:-${BUILD_DIR}/pages.key}
+GITLAB_PAGES_CERT_FILE=${GITLAB_PAGES_CERT_FILE:-${BUILD_DIR}/pages.crt}
 GITLAB_ACME_EMAIL="${GITLAB_ACME_EMAIL:-$(cd "${GITLAB_OPERATOR_DIR}" && git config user.email)}"
 GITLAB_RUNNER_TOKEN=${GITLAB_RUNNER_TOKEN:-""}
 
@@ -112,6 +116,7 @@ install_certmanager(){
 }
 
 create_gitlab_cert(){
+  mkdir -p "$(dirname "${GITLAB_KEY_FILE}")" "$(dirname "${GITLAB_CERT_FILE}")"
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "${GITLAB_KEY_FILE}" -out "${GITLAB_CERT_FILE}" \
     -subj "/CN=${GITLAB_HOST}/O=${GITLAB_HOST}"
@@ -122,6 +127,7 @@ deploy_gitlab_cert(){
 }
 
 create_pages_cert(){
+  mkdir -p "$(dirname "${GITLAB_PAGES_KEY_FILE}")" "$(dirname "${GITLAB_PAGES_CERT_FILE}")"
   openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "${GITLAB_PAGES_KEY_FILE}" -out "${GITLAB_PAGES_CERT_FILE}" \
     -subj "/CN=${GITLAB_PAGES_HOST}/O=${GITLAB_PAGES_HOST}"
