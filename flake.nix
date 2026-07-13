@@ -1,0 +1,303 @@
+{
+  # Nix dev shell + build/test/deploy for the GitLab Operator.
+  #
+  # The flake is split into a PURE half (cacheable, cluster-free, validated by
+  # `nix flake check`) and an IMPURE half (effects against a live cluster, run
+  # as thin shell apps):
+  #
+  #   Pure derivations:
+  #     packages.operator-manifest  operator manifest rendered offline with
+  #                                 `helm template` in the sandbox (no cluster).
+  #     packages.cr-overlay         the static half of the GitLab CR as a Nix
+  #                                 attrset serialised to YAML; the two
+  #                                 host-specific scalars (chart version +
+  #                                 ingress domain) are injected at deploy time.
+  #     packages.manager            operator binary built with buildGoModule.
+  #     packages.image              operator container image (see note below).
+  #
+  #   Impure apps (kind, cert-manager, openssl, kubectl apply): thin
+  #   `writeShellApplication` wrappers that delegate to scripts/. The shell
+  #   scripts are the source of truth for the apply/provision half.
+  #
+  # Dev loop: `nix run .#load-image-dev` streams the locally-built image into kind,
+  # and `nix run .#deploy-dev` deploys it (tag=dev, pullPolicy=Never) so
+  # operator code changes can be tested without pushing to a registry.
+  description = "GitLab Operator — reproducible dev shell + build/test/deploy via Nix";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+
+    # Dev shell tools resolved from the existing mise.toml (single-sourced).
+    # See https://gitlab.com/sbordei/tool2nix
+    tool2nix.url = "gitlab:sbordei/tool2nix";
+    tool2nix.inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      tool2nix,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        lib = pkgs.lib;
+        yaml = (pkgs.formats.yaml { }).generate;
+
+        # --- tools, single-sourced from mise.toml -----------------------------
+        # Resolve the same mise-pinned tools the dev shell uses, so every
+        # build/test/deploy operation matches the dev shell. tool2nix maps mise
+        # names to nixpkgs attrs, so versions track nixpkgs (see nix/README.md).
+        # NOTE: we keep pkgs.yq-go (not mise.yq): tool2nix's heuristic resolves
+        # "yq" to the Python yq, but our scripts need the Go yq.
+        mise = tool2nix.lib.packagesAttrsFrom pkgs ./mise.toml;
+        helm = mise.helm;
+
+        # --- tool groups ------------------------------------------------------
+        goTools = [
+          mise.golang
+          mise.golangci-lint
+          pkgs.kubernetes-controller-tools
+          pkgs.setup-envtest
+        ];
+        helmTools = [
+          helm
+          pkgs.coreutils
+        ];
+        clusterTools = [
+          pkgs.bash
+          mise.kind
+          pkgs.kubectl
+          helm
+          pkgs.openssl
+          pkgs.curl
+          pkgs.jq
+          pkgs.coreutils
+          pkgs.gnused
+          pkgs.gnugrep
+        ];
+
+        mkScript =
+          name: runtimeInputs: text:
+          pkgs.writeShellApplication { inherit name runtimeInputs text; };
+        mkApp = drv: {
+          type = "app";
+          program = lib.getExe drv;
+          meta.description = "GitLab Operator flake app: ${drv.name}";
+        };
+
+        # --- static, single-sourced configuration -----------------------------
+        # Defaults that used to live as `${VAR:-default}` fallbacks scattered
+        # across the bash scripts. Centralised here so the pure manifest render
+        # and the runtime apps read the same values.
+        cfg = {
+          namespace = "gitlab-system";
+          nameOverride = "gitlab";
+          clusterMode = true;
+          # Scratch dir for generated artifacts + default wait timeout. Mirror
+          # the provision-script fallbacks so the standalone script and the flake
+          # agree on the same defaults.
+          buildDir = ".build";
+          k8sTimeout = "300s";
+          image = {
+            registry = "registry.gitlab.com";
+            repository = "gitlab-org/cloud-native";
+            name = "gitlab-operator";
+            tag = "latest";
+          };
+          # Tag used for the locally-built (Nix) operator image in dev flow.
+          devImageTag = "dev";
+          kindClusterName = "gitlab";
+          # kind node k8s must be >= 1.31: chart 10.1.x's Gateway API CRDs use
+          # the CEL isIP() function, which older API servers can't compile.
+          # cert-manager is bumped in lockstep (the script's 1.6.1 default won't
+          # run on >= 1.31). Both override the provision-script defaults and stay
+          # env-overridable (KIND_IMAGE / CERT_MANAGER_VERSION).
+          kindNodeImage = "kindest/node:v1.33.1";
+          certManagerVersion = "1.17.2";
+          # Envoy Gateway is a cluster prerequisite for the Gateway-API path
+          # (the operator manages the Gateway API *resources* but not the
+          # controller). Pinned to the version the bundled chart's gateway-helm
+          # dependency uses, so the CRDs/controller match the operator's CRs.
+          envoyGatewayVersion = "1.8.1";
+          # Namespace the Envoy Gateway controller installs into (gateway-deps).
+          envoyGatewayNamespace = "envoy-gateway-system";
+          # Front-door wiring shared by the CR overlays. The VALUES are owned by
+          # the tracked scripts/.tpl that create and consume them —
+          # scripts/provision_and_deploy.sh (TLS secrets) and
+          # scripts/manifests/gitlab-cr-selfsigned.yaml.tpl + the upstream
+          # kind-ssl host-port map (nodePorts). Single-sourced here for the Nix
+          # overlays only; keep them in step with those files.
+          tlsSecretName = "custom-gitlab-tls";
+          pagesTlsSecretName = "custom-pages-tls";
+          httpsNodePort = 32443;
+          sshPort = 32022;
+        };
+
+        # k8s minor version (e.g. "1.33") parsed from cfg.kindNodeImage, so the
+        # envtest control-plane assets match the kind node the controller tests
+        # run against. Pinned rather than letting `setup-envtest use` resolve
+        # "latest" at runtime (which could drift from the cluster's API server).
+        kindK8sVersion =
+          let
+            tag = lib.last (lib.splitString ":" cfg.kindNodeImage); # v1.33.1
+            parts = lib.splitString "." (lib.removePrefix "v" tag); # [ "1" "33" "1" ]
+          in
+          "${builtins.elemAt parts 0}.${builtins.elemAt parts 1}"; # 1.33
+
+        # --- env-var defaults, single-sourced from cfg ------------------------
+        # THE one place that answers "where does $FOO's default come from?".
+        # Each impure app sources `envDefaults` first, which `export`s every
+        # tunable below. Because these are exported before the app hands off to
+        # scripts/*.sh, a cfg value here OVERRIDES the fallback baked into
+        # scripts/provision_and_deploy.sh — while a user-supplied env var still
+        # wins over both (the `''${VAR:-default}` form). The env-var name is the
+        # exact name the scripts read, so there is one name per concept (no
+        # aliases). The comments show the script's own fallback for reference.
+        #
+        # Runtime-resolved values that have NO static default live in
+        # scripts/deploy.sh, not here: KIND_LOCAL_IP (auto-detected),
+        # GITLAB_OPERATOR_DOMAIN (derived from it), GITLAB_RUNNER_TOKEN
+        # (fetched from the cluster). GITLAB_ACME_EMAIL is git-derived but
+        # resolved in the prelude below (not deploy.sh) because kind-up shells
+        # into provision_and_deploy.sh without going through deploy.sh.
+        envMap = {
+          TARGET_NAMESPACE = cfg.namespace; # script default: gitlab-system
+          KIND_CLUSTER_NAME = cfg.kindClusterName; # script default: gitlab
+          KIND_IMAGE = cfg.kindNodeImage; # script default: kindest/node:v1.30.8
+          CERT_MANAGER_VERSION = cfg.certManagerVersion; # script default: 1.6.1
+          ENVOY_GATEWAY_VERSION = cfg.envoyGatewayVersion; # (Envoy is nix-only; no script default)
+          GITLAB_TLSCERTNAME = cfg.tlsSecretName; # script default: custom-gitlab-tls
+          BUILD_DIR = cfg.buildDir; # script default: .build
+          KUBERNETES_TIMEOUT = cfg.k8sTimeout; # script default: 300s
+        };
+        # Shell prelude every impure/cluster app sources first. Order-safe:
+        # KUBE_CONTEXT is derived after KIND_CLUSTER_NAME has been resolved.
+        envDefaults = ''
+          ${lib.concatStringsSep "\n" (
+            lib.mapAttrsToList (var: default: ''export ${var}="''${${var}:-${default}}"'') envMap
+          )}
+          export KUBE_CONTEXT="''${KUBE_CONTEXT:-kind-''${KIND_CLUSTER_NAME}}"
+          # provision_and_deploy.sh defaults GITLAB_ACME_EMAIL to
+          # `git config user.email` at top level under `set -e`; when git can't
+          # resolve an identity (unset, or "dubious ownership" when the repo
+          # owner UID differs from the process UID — hits nix-develop users on
+          # Debian) that command fails and aborts the whole script before any
+          # step runs. Resolve it here, guarded so it can never abort, and fall
+          # back to a placeholder so the value is always NON-EMPTY (an empty
+          # value re-triggers the fragile `''${VAR:-...}` default downstream).
+          # For the selfsigned local flow the address is cosmetic; set
+          # GITLAB_ACME_EMAIL explicitly for a real ACME (Let's Encrypt) issuer.
+          # `git` is read off the ambient PATH (as the underlying script already
+          # does) — the developer's identity is inherently non-hermetic, and the
+          # guard falls back to the placeholder if git is unavailable.
+          export GITLAB_ACME_EMAIL="''${GITLAB_ACME_EMAIL:-$(git config user.email 2>/dev/null || true)}"
+          export GITLAB_ACME_EMAIL="''${GITLAB_ACME_EMAIL:-dev@localhost}"
+        '';
+
+        # Fully-qualified ref the chart composes from image.{registry,repository,name}.
+        # We build/load the local dev image under this exact name + devImageTag
+        # so the rendered manifest resolves to the image already present in kind.
+        devImageName = "${cfg.image.registry}/${cfg.image.repository}/${cfg.image.name}";
+
+        # --- modules (relative paths threaded so they resolve at flake root) --
+        manifests = import ./nix/manifests.nix {
+          inherit
+            pkgs
+            lib
+            cfg
+            yaml
+            helm
+            ;
+          chartSrc = ./deploy/chart;
+        };
+        imageMod = import ./nix/image.nix {
+          inherit
+            pkgs
+            lib
+            cfg
+            devImageName
+            helm
+            ;
+          repoSrc = ./.;
+          chartVersionsFile = ./CHART_VERSIONS;
+        };
+        appsMod = import ./nix/apps.nix {
+          inherit
+            pkgs
+            lib
+            cfg
+            devImageName
+            envDefaults
+            kindK8sVersion
+            goTools
+            helmTools
+            clusterTools
+            mkScript
+            mkApp
+            ;
+          inherit (manifests)
+            mkOperatorSetFlags
+            operatorManifest
+            operatorManifestDev
+            crOverlay
+            crOverlayGateway
+            ;
+          inherit (imageMod) gitlabCharts image;
+        };
+      in
+      {
+        devShells.default = tool2nix.lib.mkShellWith pkgs ./mise.toml {
+          packages = with pkgs; [
+            gh
+            tektoncd-cli
+            kubernetes-controller-tools # controller-gen
+            setup-envtest
+          ];
+        };
+
+        # Build artifacts you can inspect/cache/diff without a cluster.
+        packages = {
+          chart-deps = manifests.chartDeps; # FOD: fetched subcharts (bootstrap its hash first)
+          gitlab-charts = imageMod.gitlabCharts; # FOD: bundled GitLab charts (bootstrap its hash)
+          operator-manifest = manifests.operatorManifest;
+          operator-manifest-dev = manifests.operatorManifestDev;
+          cr-overlay = manifests.crOverlay;
+          cr-overlay-gateway = manifests.crOverlayGateway; # Gateway-API variant (default front door)
+          manager = imageMod.manager; # the compiled operator binary
+          image = imageMod.image; # streamed operator container image
+          default = imageMod.manager;
+        };
+
+        # `nix flake check` — validates rendering offline, no cluster needed.
+        # CI runs this on any runner; it is identical to running it locally.
+        checks = {
+          # Building this proves the manifest renders; the assertions prove it
+          # is non-empty and structurally sane.
+          operator-manifest =
+            pkgs.runCommand "check-operator-manifest" { nativeBuildInputs = [ pkgs.yq-go ]; }
+              ''
+                test -s ${manifests.operatorManifest}
+                # at least one Deployment must be present
+                yq eval-all -e 'select(.kind == "Deployment") | .metadata.name' \
+                  ${manifests.operatorManifest} >/dev/null
+                touch "$out"
+                # NOTE: to add schema validation, wire kubeconform here with an
+                # offline -schema-location mirror (its default fetch is network-
+                # bound and would break sandbox purity).
+              '';
+          cr-overlay = pkgs.runCommand "check-cr-overlay" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
+            yq eval -e '.spec.chart.values.global.ingress.enabled' \
+              ${manifests.crOverlay} >/dev/null
+            touch "$out"
+          '';
+        };
+
+        apps = appsMod.apps;
+      }
+    );
+}

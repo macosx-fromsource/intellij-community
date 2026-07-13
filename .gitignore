@@ -7,6 +7,9 @@ bin/helm
 # Temporary directory for unpacking cluster binaries
 tmp-cluster/
 
+# Nix build symlinks (nix build .#…)
+result*
+
 .DS_Store
 # Created by https://www.gitignore.io/api/go,vim,emacs,visualstudiocode
 ### Emacs ###
