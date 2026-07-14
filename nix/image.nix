@@ -36,7 +36,7 @@ let
       pname = "gitlab-operator";
       version = "dev";
       src = goSrc;
-      vendorHash = "sha256-5UauE7xNcPe8p0HuoopqgoQkXXHmwidKLXCWt+Z5zQ4=";
+      vendorHash = "sha256-V6I0BPOfFDq9jUu2gLDmsQey8kG2ctCIXXMHgSHCGBQ=";
       subPackages = [ "." ];
       env.CGO_ENABLED = 0;
       # Name the binary `manager` regardless of the module's base name.
@@ -71,7 +71,9 @@ let
   # /charts; main.go exits if empty). charts/ is generated, not committed,
   # so fetch the CHART_VERSIONS in an FOD like chartDeps. Re-bootstrap the
   # hash when CHART_VERSIONS changes — see nix/README.md.
-  chartVersions = lib.filter (s: s != "") (lib.splitString "\n" (builtins.readFile chartVersionsFile));
+  chartVersions = lib.filter (s: s != "") (
+    lib.splitString "\n" (builtins.readFile chartVersionsFile)
+  );
   gitlabCharts = pkgs.stdenvNoCC.mkDerivation {
     name = "gitlab-bundled-charts";
     dontUnpack = true;
@@ -92,7 +94,7 @@ let
     dontInstall = true;
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-cpWsvSZ62b4D+lGyGYFcNjnhCOsnFuWKt798Xz/IDnI=";
+    outputHash = "sha256-bKsV3eWhm128/VCAKTHQfWO4Soe4Kq14E81wCA4KQGY=";
   };
 
   # Image filesystem laid out to match the upstream Dockerfile contract:
