@@ -10,7 +10,7 @@ ARG BUILD_IMAGE=docker.io/golang:1.26
 
 # Build the bridge SPA. It is embedded into the manager binary via go:embed
 # (internal/bridge/static.go), so it must be built before the Go build runs.
-FROM docker.io/node:22-alpine AS webbuilder
+FROM docker.io/node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS webbuilder
 WORKDIR /web
 COPY internal/bridge/web/package.json internal/bridge/web/package-lock.json ./
 RUN npm ci
