@@ -65,21 +65,21 @@ GitLab Operator는 다음 Kubernetes 버전을 지원합니다.
 
 {{< tab title="OpenShift" >}}
 
-GitLab Operator는 다음 OpenShift 버전을 지원합니다.
+GitLab Operator는 지원되는 Kubernetes 버전을 사용하는 OpenShift 버전을 지원합니다.
 
-| OpenShift 릴리스 | 상태 | 최소 Operator 버전 |
-|-------------------|-------------|--------------------------|
-| 4.21              | 지원됨   | 2.9.0                    |
-| 4.20              | 지원됨   | 2.6.0                    |
-| 4.19              | 지원됨   | 2.2.0                    |
-| 4.18              | 지원됨   | 1.9.0                    |
-| 4.17              | 지원되지 않음 | 1.6.0                    |
+| OpenShift 릴리스 | 상태 | 최소 Operator 버전 | 기반 Kubernetes 버전 |
+|-------------------|-------------|--------------------------|-------------------------------|
+| 4.22              | 지원됨   | 2.9.0                    | 1.35 |
+| 4.21              | 지원됨   | 2.5.0                    | 1.34 |
+| 4.20              | 지원됨   | 2.1.0                    | 1.33 |
+| 4.19              | 더 이상 사용되지 않음  | 2.0.0                    | 1.32 |
+| 4.18              | 지원되지 않음 | 1.9.0                    | 1.31 |
 
 {{< /tab >}}
 
 {{< /tabs >}}
 
-저희는 Kubernetes의 최근 3개 마이너 버전과 OpenShift의 최근 4개 마이너 릴리스와의 호환성을 동시에 목표로 합니다. 새 버전에 대한 지원이 추가되면 가장 오래된 지원 버전에 대한 테스트는 중단됩니다. 저희의 목표는 Kubernetes 및 OpenShift의 새 마이너 릴리스가 처음 출시된 후 3개월 이내에 Operator 지원을 제공하는 것입니다.
+저희는 Kubernetes의 최근 3개 마이너 버전과, 기반 Kubernetes 버전이 지원되는 OpenShift 릴리스와의 호환성을 목표로 합니다. 새 버전에 대한 지원이 추가되면 가장 오래된 지원 버전에 대한 테스트는 중단됩니다. 저희의 목표는 Kubernetes 및 OpenShift의 새 마이너 릴리스가 처음 출시된 후 3개월 이내에 Operator 지원을 제공하는 것입니다.
 
 자세한 내용은 [Kubernetes 지원 정책](https://handbook.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/k8s-release-support-policy/)을 참조하세요.
 
