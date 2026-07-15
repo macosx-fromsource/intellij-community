@@ -66,21 +66,21 @@ GitLab Operator prend en charge les versions Kubernetes suivantes :
 
 {{< tab title="OpenShift" >}}
 
-GitLab Operator prend en charge les versions OpenShift suivantes :
+GitLab Operator prend en charge les versions OpenShift qui utilisent une version Kubernetes prise en charge :
 
-| Version OpenShift | Statut       | Version minimale de l'Operator |
-|-------------------|--------------|-------------------------------|
-| 4.21              | Prise en charge | 2.9.0                      |
-| 4.20              | Prise en charge | 2.6.0                      |
-| 4.19              | Prise en charge | 2.2.0                      |
-| 4.18              | Prise en charge | 1.9.0                      |
-| 4.17              | Non prise en charge | 1.6.0                  |
+| Version OpenShift | Statut       | Version minimale de l'Operator | Version Kubernetes sous-jacente |
+|-------------------|--------------|-------------------------------|---------------------------------|
+| 4.22              | Prise en charge | 2.9.0                      | 1.35 |
+| 4.21              | Prise en charge | 2.5.0                      | 1.34 |
+| 4.20              | Prise en charge | 2.1.0                      | 1.33 |
+| 4.19              | Obsolète     | 2.0.0                         | 1.32 |
+| 4.18              | Non prise en charge | 1.9.0                  | 1.31 |
 
 {{< /tab >}}
 
 {{< /tabs >}}
 
-Nous visons la compatibilité avec les trois versions mineures les plus récentes de Kubernetes et les quatre versions mineures les plus récentes d'OpenShift simultanément. Lorsque la prise en charge d'une nouvelle version est ajoutée, les tests de la version prise en charge la plus ancienne sont abandonnés. Notre objectif est de fournir la prise en charge de l'Operator pour les nouvelles versions mineures de Kubernetes et d'OpenShift dans les trois mois suivant leur disponibilité initiale.
+Nous visons la compatibilité avec les trois versions mineures les plus récentes de Kubernetes, ainsi qu'avec les versions OpenShift dont la version Kubernetes sous-jacente est prise en charge. Lorsque la prise en charge d'une nouvelle version est ajoutée, les tests de la version prise en charge la plus ancienne sont abandonnés. Notre objectif est de fournir la prise en charge de l'Operator pour les nouvelles versions mineures de Kubernetes et d'OpenShift dans les trois mois suivant leur disponibilité initiale.
 
 Pour plus de détails, [consultez notre politique de prise en charge de Kubernetes](https://handbook.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/k8s-release-support-policy/).
 
