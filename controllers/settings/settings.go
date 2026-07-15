@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"helm.sh/helm/v4/pkg/chart/common"
@@ -43,6 +44,16 @@ var (
 	// HealthProbeBindAddress returns the address for hosting health probes.
 	HealthProbeBindAddress = ":6060"
 
+	// BridgeBindAddress is the address the bridge (backend-for-frontend) server binds
+	// to. It serves the CRUD API, the OpenAPI document, and the SPA. Use
+	// BRIDGE_BIND_ADDRESS environment variable to change it.
+	BridgeBindAddress = ":8090"
+
+	// EnableBridge controls whether the bridge (backend-for-frontend) server is
+	// started. It is disabled by default. Set the ENABLE_BRIDGE environment
+	// variable to a truthy value ("true", "1") to enable it.
+	EnableBridge = false
+
 	// LivenessEndpointName returns the endpoint name for the liveness probe.
 	LivenessEndpointName = "/liveness"
 
@@ -72,6 +83,8 @@ const (
 	envKubeVersion              = "GITLAB_OPERATOR_KUBERNETES_VERSION"
 	envKubeAPIVersions          = "GITLAB_OPERATOR_KUBERNETES_API_VERSIONS"
 	envWatchNamespace           = "WATCH_NAMESPACE"
+	envBridgeBindAddress        = "BRIDGE_BIND_ADDRESS"
+	envEnableBridge             = "ENABLE_BRIDGE"
 )
 
 // Load reads Operator settings from environment variables.
@@ -112,4 +125,13 @@ func Load() {
 	}
 
 	WatchNamespace = os.Getenv(envWatchNamespace)
+
+	bridgeBindAddress := os.Getenv(envBridgeBindAddress)
+	if bridgeBindAddress != "" {
+		BridgeBindAddress = bridgeBindAddress
+	}
+
+	if enableBridge, err := strconv.ParseBool(os.Getenv(envEnableBridge)); err == nil {
+		EnableBridge = enableBridge
+	}
 }

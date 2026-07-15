@@ -12,6 +12,7 @@ start_buildx:
    - !reference [build_branch_image, rules]
    - !reference [build_tag_image, rules]
    - !reference [build_latest_image, rules]
+   - !reference [build_bridge_image, rules]
 
 stop_buildx:
   stage: cleanup

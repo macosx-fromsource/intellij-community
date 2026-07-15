@@ -1,9 +1,23 @@
+# Bridge-enabled operator image.
+#
+# Identical to the default Dockerfile except it builds the SPA and compiles the
+# manager with the `bridge` Go build tag, so the bridge (backend-for-frontend)
+# server and its embedded SPA are included. The default Dockerfile produces the
+# public image without the bridge.
+
 # Global ARG (must be declared before the first FROM to be usable in later FROMs).
 ARG BUILD_IMAGE=docker.io/golang:1.26
 
-# Build the manager binary. This is the public image: the bridge
-# (backend-for-frontend) feature is gated behind the `bridge` build tag and is
-# NOT compiled in here. See Dockerfile.bridge for the bridge-enabled image.
+# Build the bridge SPA. It is embedded into the manager binary via go:embed
+# (internal/bridge/static.go), so it must be built before the Go build runs.
+FROM docker.io/node:22-alpine AS webbuilder
+WORKDIR /web
+COPY internal/bridge/web/package.json internal/bridge/web/package-lock.json ./
+RUN npm ci
+COPY internal/bridge/web/ ./
+RUN npx --yes openapi-typescript openapi.yaml -o src/lib/api/schema.d.ts && npm run build
+
+# Build the manager binary
 FROM --platform=${BUILDPLATFORM} ${BUILD_IMAGE} AS builder
 WORKDIR /workspace
 
@@ -14,22 +28,23 @@ COPY .go/pkg/mod/ /go/pkg/mod/
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the go source. bridge_stub.go provides the no-op setupBridge for the
-# default (untagged) build; bridge.go (the //go:build bridge variant) is
-# deliberately NOT copied, so the bridge is absent from this image.
+# Copy the go source
 COPY main.go main.go
-COPY bridge_stub.go bridge_stub.go
+COPY bridge.go bridge.go
 COPY api/ api/
 COPY helm/ helm/
 COPY pkg/ pkg/
 COPY controllers/ controllers/
 COPY internal/ internal/
 
-# Build
+# Bring in the built SPA so //go:embed all:web/dist (internal/bridge/static.go) resolves.
+COPY --from=webbuilder /web/dist internal/bridge/web/dist
+
+# Build with the `bridge` tag so the bridge server is wired into the manager.
 ARG TARGETOS
 ARG TARGETARCH
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o manager .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -tags bridge -o manager .
 
 # Use ubi micro as base image to package the manager binary
 # Refer to https://www.redhat.com/en/blog/introduction-ubi-micro for more details
@@ -37,7 +52,7 @@ FROM registry.access.redhat.com/ubi9-micro:9.8@sha256:35de56a9413112f1474e392ebc
 
 LABEL name=gitlab-operator \
       vendor='GitLab, Inc.' \
-      description='Operator to deploy GitLab instances' \
+      description='Operator to deploy GitLab instances (bridge-enabled build)' \
       summary='GitLab is a DevOps lifecycle tool that provides Git repositories' \
       maintainer='GitLab Self-Managed'
 

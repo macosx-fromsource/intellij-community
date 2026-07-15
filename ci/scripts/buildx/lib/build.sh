@@ -27,6 +27,7 @@ docker_build_and_push() {
 
   # shellcheck disable=SC2046
   docker buildx build \
+    -f "${DOCKERFILE:-Dockerfile}" \
     $(printf ' -t %s ' "${images[@]}") \
     --platform "$(platform_arg)" \
     --build-arg BUILD_IMAGE="${GO_IMAGE}" \

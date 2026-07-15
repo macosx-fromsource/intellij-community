@@ -451,6 +451,21 @@ slow_unit_tests_custom_ref:
   extends: .test_job_custom_ref
   script: SKIP_OPERATION_TESTS=yes TEST_UTIL=ginkgo2 task slow-unit-tests
 
+# The bridge is gated behind the `bridge` build tag and is excluded from the
+# ginkgo-based unit_tests jobs (see the `--skip-package=bridge` in the Taskfile).
+# This job compiles the tagged wiring and runs the bridge's own testify tests.
+bridge_unit_tests:
+  extends: .cache
+  stage: test
+  script:
+    - go build -tags bridge ./...
+    - SKIP_ENVTEST=yes task bridge-unit-tests
+  rules:
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.if_commit_branch_or_mr_branch]
+
 .dind:
   variables:
     DOCKER_HOST: tcp://docker:2375
@@ -540,6 +555,30 @@ build_latest_image:
       ${CI_REGISTRY_IMAGE}:latest
   rules:
     - !reference [.if_default_branch]
+
+# Builds the bridge-enabled image (Dockerfile.bridge, `-tags bridge`) with a
+# `-bridge` tag suffix. Runs on branch/MR pipelines and the default branch, never
+# on release tags, so the bridge is never part of a public release. The `-bridge`
+# tags are disjoint from the public images' tags.
+build_bridge_image:
+  extends: .docker_build_job
+  variables:
+    DOCKERFILE: Dockerfile.bridge
+    DOCKER_TAGS: ""
+  rules:
+    - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
+    - if: '$CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH'
+      variables:
+        DOCKER_TAGS: >-
+          ${CI_REGISTRY_IMAGE}:latest-bridge
+          ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}-bridge
+    - if: '$CI_COMMIT_BRANCH || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME'
+      variables:
+        DOCKER_TAGS: >-
+          ${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}-bridge
+          ${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}-bridge
 
 build_bundle_image:
   extends: .podman_build_job

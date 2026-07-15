@@ -1,0 +1,56 @@
+@import './base.css';
+
+#app {
+  font-weight: normal;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-background-soft);
+  color: var(--color-text);
+}
+
+button:hover {
+  border-color: var(--color-border-hover);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+input,
+textarea {
+  font: inherit;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-background);
+  color: var(--color-text);
+  box-sizing: border-box;
+}
+
+input:disabled {
+  opacity: 0.6;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+a {
+  color: hsla(160, 100%, 37%, 1);
+}
