@@ -1,0 +1,171 @@
+---
+stage: GitLab Delivery
+group: Operate
+info: To determine the technical writer assigned to the Stage/Group associated with this page, see <https://handbook.gitlab.com/handbook/product/ux/technical-writing/#assignments>
+title: Bridge UI
+---
+
+The bridge is a backend-for-frontend HTTP server embedded in the operator. It exposes CRUD over the
+GitLab custom resource and serves a single-page application (SPA) to configure GitLab instances. The
+bridge is disabled by default.
+
+This page describes how to enable the bridge, create a service account for a caller, mint a token,
+and reach the UI. For the internal architecture and how to work on the code, see
+[internal/bridge/CLAUDE.md](../../internal/bridge/CLAUDE.md).
+
+## Authentication model
+
+The bridge uses caller-identity delegation, like the old Kubernetes Dashboard. The bridge does not
+use the operator service account for API calls. Instead, every request to `/api` must carry a bearer
+token:
+
+```plaintext
+Authorization: Bearer <token>
+```
+
+The bridge builds a per-request Kubernetes client from that token. It then forwards the call to the
+Kubernetes API server, so the API server handles authentication and authorization. The token's own
+RBAC decides what the caller can do. A caller with no token receives a `401` response. An action the
+caller cannot perform receives a `403` response.
+
+As a result, each caller needs their own RBAC on the GitLab custom resource
+(`gitlabs.apps.gitlab.com`). The following sections create a service account with those permissions
+and mint a token for it.
+
+## Build the bridge
+
+The bridge is gated behind the `bridge` Go build tag, so it is **absent from public operator
+images**. Only a build produced with `-tags bridge` contains the bridge server and its SPA. CI
+publishes these as separate images with a `-bridge` tag suffix: `<branch-ref-slug>-bridge` on branch
+and merge request pipelines, and `latest-bridge` on the default branch. Release tags never produce a
+bridge image.
+
+Build a bridge image locally with the dedicated task or Dockerfile:
+
+```shell
+CONTAINER_CLI=docker task docker-build-bridge   # tags <image>:<TAG>-bridge
+# or: docker build -f Dockerfile.bridge -t <image>:<tag>-bridge .
+```
+
+For a local operator process, build with the tag:
+
+```shell
+go build -tags bridge -o bin/manager .
+```
+
+## Enable the bridge
+
+Enabling requires a bridge build (above); `ENABLE_BRIDGE` has no effect in a public image because
+the bridge is not compiled in. Set `ENABLE_BRIDGE=true`, which the operator reads in
+[controllers/settings/settings.go](../../controllers/settings/settings.go). The bind address
+defaults to `:8090`. To change it, set `BRIDGE_BIND_ADDRESS`.
+
+- To enable the bridge in-cluster, deploy a `-bridge` image and set the chart value
+  `bridge.enabled=true`. The manager Deployment then injects `ENABLE_BRIDGE` and
+  `BRIDGE_BIND_ADDRESS` and opens the container port.
+
+  ```shell
+  export HELM_CHARTS=$(pwd)/charts CHART_VERSION=$(head -n1 CHART_VERSIONS)
+  ARGS='--set bridge.enabled=true --set image.tag=latest-bridge' task deploy_operator
+  ```
+
+- To enable the bridge locally, set the variable when you run the tagged binary:
+
+  ```shell
+  export HELM_CHARTS=$(pwd)/charts CHART_VERSION=$(head -n1 CHART_VERSIONS)
+  ENABLE_BRIDGE=true go run -tags bridge .
+  ```
+
+Confirm the server started:
+
+```shell
+kubectl -n gitlab-system logs deploy/gitlab-controller-manager | grep bridge
+#   -> "starting bridge server","addr":":8090"
+```
+
+> [!warning]
+> The chart exposes only a container port for the bridge, with no `Service` or `Ingress`. Reach it
+> with `kubectl port-forward`. Do not expose it publicly while it is a proof of concept.
+
+## Create a service account and grant access
+
+Create a service account and bind it to a role with the verbs the caller needs on GitLab resources.
+This example grants full CRUD. For a read-only caller, drop `create`, `update`, `patch`, and
+`delete`.
+
+```shell
+kubectl -n gitlab-system create serviceaccount bridge-user
+
+kubectl create clusterrole gitlab-editor \
+  --verb=get,list,watch,create,update,patch,delete \
+  --resource=gitlabs.apps.gitlab.com
+
+kubectl create clusterrolebinding bridge-user \
+  --clusterrole=gitlab-editor \
+  --serviceaccount=gitlab-system:bridge-user
+```
+
+To limit the caller to a single namespace, use a `Role` and `RoleBinding` instead of the
+cluster-scoped variants.
+
+## Get a token
+
+Mint a short-lived token for the service account with the TokenRequest API (Kubernetes 1.24 and
+later):
+
+```shell
+TOKEN=$(kubectl -n gitlab-system create token bridge-user --duration=1h)
+```
+
+A kubeconfig that authenticates with a client certificate or an exec or OIDC plugin cannot be
+reduced to a bearer token. In that case, use `kubectl create token <service_account>` or your OIDC
+ID token instead.
+
+## Access the bridge
+
+Forward the port, then use the token:
+
+```shell
+kubectl -n gitlab-system port-forward deploy/gitlab-controller-manager 8090:8090
+```
+
+- Use `curl` with the token:
+
+  ```shell
+  curl -H "Authorization: Bearer $TOKEN" localhost:8090/api/v1/gitlabs
+  ```
+
+- In the SPA, open <http://localhost:8090/>, paste the token into the header token field, and select
+  **Save token**. The SPA attaches the token to every API request and stores it in the browser
+  `localStorage`.
+- For the API documentation, open <http://localhost:8090/docs>, select **Authorize**, and paste the
+  token to try requests from the documentation UI.
+
+> [!note]
+> The SPA stores the token in `localStorage`, which any script on the page can read. This is
+> acceptable for the current proof of concept with short-lived tokens. Do not treat it as a
+> production credential store.
+
+## Verify the RBAC delegation
+
+To confirm the bridge uses the caller identity rather than the operator identity, use a token whose
+service account lacks a verb. For example, a read-only account that attempts a create receives a
+`403` response:
+
+```shell
+# A read succeeds.
+curl -H "Authorization: Bearer $TOKEN" localhost:8090/api/v1/gitlabs
+# A create the caller cannot perform returns HTTP 403.
+```
+
+## Frontend development
+
+To work on the SPA with hot-module reload, run the bridge so `:8090` is reachable. Use `task run` or
+a port-forward. Then start the Vite dev server:
+
+```shell
+task frontend-dev   # http://localhost:5173, proxies /api, /openapi*, and /docs to :8090
+```
+
+For more information about the frontend workflow and regenerating the OpenAPI document and typed
+client, see [internal/bridge/CLAUDE.md](../../internal/bridge/CLAUDE.md).

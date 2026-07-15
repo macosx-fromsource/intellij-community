@@ -15,6 +15,13 @@ fullnameOverride: ""
 
 extraEnvs: []
 
+# bridge is the backend-for-frontend HTTP server that exposes a CRUD API and
+# an embedded SPA for configuring GitLab instances. It is disabled by default.
+bridge:
+  enabled: false
+  # port the bridge server listens on inside the container.
+  port: 8090
+
 podAnnotations:
   kubectl.kubernetes.io/default-container: manager
 

@@ -153,6 +153,14 @@ func main() {
 	}
 	// +kubebuilder:scaffold:builder
 
+	// setupBridge is a no-op unless the binary is built with the `bridge` build
+	// tag (see bridge.go / bridge_stub.go); the bridge is absent from public
+	// builds entirely.
+	if err := setupBridge(mgr); err != nil {
+		setupLog.Error(err, "unable to add bridge server")
+		os.Exit(1)
+	}
+
 	// Report Operator as "alive" to probe.
 	settings.ErrAliveStatus = nil
 

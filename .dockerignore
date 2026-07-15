@@ -1,0 +1,5 @@
+# Node dependencies are reinstalled in the webbuilder stage (npm ci).
+**/node_modules
+
+# The SPA is built fresh in the webbuilder stage; don't ship host build output.
+internal/bridge/web/dist

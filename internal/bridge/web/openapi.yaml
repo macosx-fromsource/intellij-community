@@ -1,0 +1,373 @@
+components:
+  schemas:
+    ChartDTO:
+      additionalProperties: false
+      properties:
+        values:
+          additionalProperties: {}
+          description: Free-form Helm values used to render the GitLab Chart.
+          type: object
+        version:
+          description: Semantic version of the GitLab Chart.
+          type: string
+      type: object
+    Condition:
+      additionalProperties: false
+      properties:
+        lastTransitionTime:
+          type: string
+        message:
+          type: string
+        observedGeneration:
+          format: int64
+          type: integer
+        reason:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+      required:
+        - type
+        - status
+        - lastTransitionTime
+        - reason
+        - message
+      type: object
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    ErrorModel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/ErrorModel.json
+          format: uri
+          readOnly: true
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          examples:
+            - Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          type:
+            - array
+            - "null"
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          examples:
+            - https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          examples:
+            - 400
+          format: int64
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          examples:
+            - Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          examples:
+            - https://example.com/errors/example
+          format: uri
+          type: string
+      type: object
+    GitLabList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/GitLabList.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          description: The GitLab resources.
+          items:
+            $ref: "#/components/schemas/GitLabResource"
+          type:
+            - array
+            - "null"
+      required:
+        - items
+      type: object
+    GitLabResource:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/GitLabResource.json
+          format: uri
+          readOnly: true
+          type: string
+        chart:
+          $ref: "#/components/schemas/ChartDTO"
+          description: GitLab Chart configuration.
+        labels:
+          additionalProperties:
+            type: string
+          description: Labels applied to the GitLab resource.
+          type: object
+        name:
+          description: Name of the GitLab resource.
+          type: string
+        namespace:
+          description: Namespace the GitLab resource lives in.
+          type: string
+        status:
+          $ref: "#/components/schemas/StatusDTO"
+          description: Most recently observed status. Read-only.
+          readOnly: true
+      required:
+        - name
+        - namespace
+        - chart
+      type: object
+    StatusDTO:
+      additionalProperties: false
+      properties:
+        conditions:
+          description: Detailed status conditions.
+          items:
+            $ref: "#/components/schemas/Condition"
+          type:
+            - array
+            - "null"
+        phase:
+          description: Current lifecycle phase.
+          type: string
+        version:
+          description: Deployed GitLab version.
+          type: string
+      type: object
+  securitySchemes:
+    bearer:
+      description: Kubernetes bearer token. The API acts as the caller identified by this token, subject to the caller's own RBAC.
+      scheme: bearer
+      type: http
+info:
+  title: GitLab Operator Bridge
+  version: 0.1.0
+openapi: 3.1.0
+paths:
+  /api/v1/gitlabs:
+    get:
+      operationId: list-gitlabs-all-namespaces
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitLabList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List GitLab resources across all watched namespaces
+      tags:
+        - gitlabs
+  /api/v1/namespaces/{namespace}/gitlabs:
+    get:
+      operationId: list-gitlabs
+      parameters:
+        - description: Namespace of the GitLab resource.
+          in: path
+          name: namespace
+          required: true
+          schema:
+            description: Namespace of the GitLab resource.
+            examples:
+              - gitlab-system
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitLabList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List GitLab resources in a namespace
+      tags:
+        - gitlabs
+    post:
+      operationId: create-gitlab
+      parameters:
+        - description: Namespace of the GitLab resource.
+          in: path
+          name: namespace
+          required: true
+          schema:
+            description: Namespace of the GitLab resource.
+            examples:
+              - gitlab-system
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitLabResource"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitLabResource"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a GitLab resource
+      tags:
+        - gitlabs
+  /api/v1/namespaces/{namespace}/gitlabs/{name}:
+    delete:
+      operationId: delete-gitlab
+      parameters:
+        - description: Namespace of the GitLab resource.
+          in: path
+          name: namespace
+          required: true
+          schema:
+            description: Namespace of the GitLab resource.
+            examples:
+              - gitlab-system
+            type: string
+        - description: Name of the GitLab resource.
+          in: path
+          name: name
+          required: true
+          schema:
+            description: Name of the GitLab resource.
+            examples:
+              - gitlab
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a GitLab resource
+      tags:
+        - gitlabs
+    get:
+      operationId: get-gitlab
+      parameters:
+        - description: Namespace of the GitLab resource.
+          in: path
+          name: namespace
+          required: true
+          schema:
+            description: Namespace of the GitLab resource.
+            examples:
+              - gitlab-system
+            type: string
+        - description: Name of the GitLab resource.
+          in: path
+          name: name
+          required: true
+          schema:
+            description: Name of the GitLab resource.
+            examples:
+              - gitlab
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitLabResource"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a GitLab resource
+      tags:
+        - gitlabs
+    put:
+      operationId: update-gitlab
+      parameters:
+        - description: Namespace of the GitLab resource.
+          in: path
+          name: namespace
+          required: true
+          schema:
+            description: Namespace of the GitLab resource.
+            examples:
+              - gitlab-system
+            type: string
+        - description: Name of the GitLab resource.
+          in: path
+          name: name
+          required: true
+          schema:
+            description: Name of the GitLab resource.
+            examples:
+              - gitlab
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GitLabResource"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitLabResource"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update a GitLab resource
+      tags:
+        - gitlabs
+security:
+  - bearer: []

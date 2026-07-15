@@ -121,6 +121,38 @@ var _ = Describe("Component", func() {
 
 `logr.Logger` with structured key-value pairs: `log.Info("msg", "key", val)`. Use `log.V(1)`/`log.V(2)` for debug.
 
+## Bridge (Backend for Frontend)
+
+`internal/bridge/` hosts a bridge (backend-for-frontend) HTTP server that exposes CRUD over the
+GitLab CR so a SPA can configure GitLab instances.
+
+- **Stack:** [Huma](https://github.com/danielgtaylor/huma) (code-first, `net/http` via the
+  `humago` adapter) emits **OpenAPI 3.1**; the TypeScript client is generated with
+  **openapi-typescript** + **openapi-fetch**.
+- **Why Huma:** it reflects the existing kubebuilder CR Go types, keeping a single source of
+  truth aligned with the CRD (no second schema, unlike a proto-first approach).
+- **Runtime:** disabled by default; enable with `ENABLE_BRIDGE=true` (chart: `bridge.enabled`).
+  Registered via `mgr.Add` in [main.go](main.go) as a non-leader-elected `manager.Runnable`;
+  reuses `mgr.GetClient()`. Binds `BRIDGE_BIND_ADDRESS` (default `:8090`, set in
+  [controllers/settings/settings.go](controllers/settings/settings.go)). Logs via stdlib `slog`.
+- **Endpoints:** CRUD under `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]`, OpenAPI at
+  `/openapi.yaml` (+ `/openapi.json`), docs UI at `/docs`, SPA embedded via `go:embed`
+  (`internal/bridge/web/dist`).
+- **SPA:** `internal/bridge/web/` is a Vue 3 + TypeScript app (Vite, Vue Router, Pinia) built into
+  `web/dist`; the operator image builds it in a Node stage. `task frontend-dev` / `frontend-build`;
+  details in [internal/bridge/CLAUDE.md](internal/bridge/CLAUDE.md).
+- **Regenerate:** `task openapi` writes `internal/bridge/web/openapi.yaml`; `task frontend-client`
+  regenerates the TS client.
+- **Auth:** caller-identity delegation, like the old Kubernetes Dashboard. Every `/api` request
+  must carry `Authorization: Bearer <token>`; the bridge builds a per-request client from that
+  token (`rest.AnonymousClientConfig` + `BearerToken`, see
+  [internal/bridge/auth.go](internal/bridge/auth.go)), so authn/authz are delegated to the
+  kube-apiserver and the caller's own RBAC applies — the operator's service account is never lent
+  out. Get a token with `kubectl create token <sa>`; the SPA has a token field and `/docs` an
+  Authorize button.
+- **PoC caveats:** the SPA keeps the token in `localStorage` (XSS-exposed; use short-lived tokens);
+  `spec.chart.values` is a free-form object (no schema until the structured CRD lands).
+
 ## Key Directories
 
 | Directory | Purpose |
@@ -129,6 +161,7 @@ var _ = Describe("Component", func() {
 | `pkg/gitlab/` | Adapter abstraction |
 | `pkg/support/` | Utilities (values, secrets, charts, kube) |
 | `helm/` | Helm chart templating |
+| `internal/bridge/` | Bridge (backend-for-frontend) HTTP API + embedded SPA |
 | `config/` | CRDs, RBAC, webhooks |
 | `doc/developer/` | Developer docs |
 

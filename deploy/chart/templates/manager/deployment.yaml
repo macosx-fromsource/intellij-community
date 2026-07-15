@@ -48,7 +48,17 @@ spec:
           name: health-port
         - containerPort: 8443
           name: metrics
+        {{- if .Values.bridge.enabled }}
+        - containerPort: {{ .Values.bridge.port }}
+          name: bridge
+        {{- end }}
         env:
+        {{- if .Values.bridge.enabled }}
+        - name: ENABLE_BRIDGE
+          value: "true"
+        - name: BRIDGE_BIND_ADDRESS
+          value: ":{{ .Values.bridge.port }}"
+        {{- end }}
         {{- if not .Values.watchCluster }}
         - name: WATCH_NAMESPACE
           valueFrom:

@@ -181,6 +181,55 @@ tasks:
     cmds:
       - ./controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
+  openapi:
+    desc: Generates the backend-for-frontend OpenAPI document from the Huma API.
+    sources:
+      - internal/bridge/**/*.go
+      - api/v1beta1/*.go
+    generates:
+      - internal/bridge/web/openapi.yaml
+    cmds:
+      - go run ./hack/gen-openapi -out internal/bridge/web/openapi.yaml
+
+  frontend-client:
+    desc: Generates the TypeScript API client from the OpenAPI document via openapi-typescript.
+    deps:
+      - openapi
+    dir: internal/bridge/web
+    cmds:
+      - npx --yes openapi-typescript openapi.yaml -o src/lib/api/schema.d.ts
+
+  frontend-install:
+    desc: Installs the bridge SPA dependencies (npm ci).
+    dir: internal/bridge/web
+    sources:
+      - internal/bridge/web/package.json
+      - internal/bridge/web/package-lock.json
+    cmds:
+      - npm ci
+
+  frontend-build:
+    desc: Builds the bridge SPA into internal/bridge/web/dist (embedded via go:embed).
+    deps:
+      - frontend-install
+      - frontend-client
+    dir: internal/bridge/web
+    sources:
+      - internal/bridge/web/src/**/*
+      - internal/bridge/web/index.html
+      - internal/bridge/web/*.ts
+      - internal/bridge/web/*.json
+    generates:
+      - internal/bridge/web/dist/index.html
+    cmds:
+      - npm run build
+
+  frontend-dev:
+    desc: Runs the bridge SPA dev server (Vite) with HMR, proxying the API to the bridge.
+    dir: internal/bridge/web
+    cmds:
+      - npm run dev
+
   vet:
     desc: Vets code using `go vet`.
     cmds:
@@ -416,6 +465,19 @@ tasks:
     cmds:
       - $CONTAINER_CLI push $IMG_REGISTRY/$IMG_REPOSITORY/$IMG_NAME:$TAG
 
+  docker-build-bridge:
+    desc: Build the bridge-enabled Docker image (Dockerfile.bridge, `-tags bridge`, `-bridge` suffix).
+    deps:
+      - retrieve-charts
+    cmds:
+      - mkdir -p .go/pkg/mod
+      - $CONTAINER_CLI build -f Dockerfile.bridge . -t $IMG_REGISTRY/$IMG_REPOSITORY/$IMG_NAME:$TAG-bridge
+
+  docker-push-bridge:
+    desc: Push the bridge-enabled Docker image using `$CONTAINER_CLI push`.
+    cmds:
+      - $CONTAINER_CLI push $IMG_REGISTRY/$IMG_REPOSITORY/$IMG_NAME:$TAG-bridge
+
   unit-tests:
     desc: |
       Runs unit tests locally, but skip the slow controller tests.
@@ -427,10 +489,12 @@ tasks:
       # if skip operation test, skip the operation_test.go file
       EXTRA_FLAGS: '{{ if eq .SKIP_OPERATION_TESTS "yes" }}--skip-file=operation_test --skip-file=gitlab_webhook_test{{ end }}'
     cmds:
+      # --skip-package=bridge excludes internal/bridge: it is gated behind the
+      # `bridge` build tag and has its own job (see bridge-unit-tests).
       - >-
         CHART_VERSION=$CHART_VERSION
         SKIP_ENVTEST={{ .SKIP_ENVTEST }}
-        go run github.com/onsi/ginkgo/v2/ginkgo -cover -output-dir=coverage {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
+        go run github.com/onsi/ginkgo/v2/ginkgo -cover -output-dir=coverage --skip-package=bridge {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
 
   slow-unit-tests:
     desc: |
@@ -441,6 +505,15 @@ tasks:
         vars:
           SKIP_ENVTEST: "no"
           TEST_PKGS: './controllers/...'
+
+  bridge-unit-tests:
+    desc: |
+      Runs the bridge (internal/bridge) unit tests. These use plain `go test` +
+      testify and are excluded from `unit-tests`; no charts or envtest needed.
+    vars:
+      SKIP_ENVTEST: '{{ default "yes" .SKIP_ENVTEST }}'
+    cmds:
+      - SKIP_ENVTEST={{ .SKIP_ENVTEST }} go test ./internal/bridge/...
 
   test-in-docker:
     desc: Runs tests in a Docker container.
