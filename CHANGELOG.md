@@ -1,3 +1,28 @@
+## 3.2.0 (2026-07-16)
+
+### fixed (1 change)
+
+- [Fix Gateway API resource reconciliation order](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/917ff864b311bb651f5e01626f9253b2bed40117) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1544))
+
+### changed (16 changes)
+
+- [Update golang.org/x/mod to v0.38.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/886ac8ec5f1cee51120c03ad99044760e09800e8) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1555))
+- [Pin docker.io/node to 16e22a5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/65b0282e82ab828feb19d77f3a175c42737b80cf) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1550))
+- [Update helm.sh/helm/v4 to v4.2.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7e78aeb50e761bbb4e64f8ffc350ce8372a538c9) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1512))
+- [Update golang to v1.26.5](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/c50e09df7147dade83fe966ed7ac5185435c56b6) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1547))
+- [Update prom-op-api/monitoring to v0.92.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2c2de25e1477f67f3e57329524c64dfe0e1fd712) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1536))
+- [Update github.com/onsi/gomega to v1.42.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/bebfaddc044aa2291bb0a26d19cb15eaeb69f098) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1524))
+- [Update github.com/envoyproxy/gateway to v1.8.2](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b661b9f647960850964b8dfeb7b99cf7acecd0fe) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1532))
+- [Update github.com/envoyproxy/gateway to v1.8.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3e8359bbf500de61d45fc619e88e4a7f21d1b246) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1500))
+- [Update ubi9-micro to 35de56a](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/708510407a3f133b003db5dfec7b5fbc7aa27b89) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1523))
+- [Update github.com/onsi/ginkgo/v2 to v2.32.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4955e6b2d589159e4acea355030ad956daa03355) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1521))
+- [Update prom-op-api/monitoring to v0.92.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a148581d1607071c2b9df70c06bb5d1de90ef8ac) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1520))
+- [Update ubi9-micro to fdf68a4](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/e9d344fe9860c2a6b1f82f8a5b4c4c5215ebfabd) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1519))
+- [Update registry.gitlab.com/gitlab-org/cloud-native/preflight to v1.19.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7fdd060e64b1155225f3bf291784a63937ce3397) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1518))
+- [Update testing dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a6607f8e833283ac85eed300cce428754639559c) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1514))
+- [Update github.com/onsi/ginkgo/v2 to v2.30.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/3dd60ea756e33b7acfa6999b9d0874271aaefda8) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1507))
+- [Update gitlab-chart to 905feb7](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/9a0e843a8d238e2569f7cfa82bb91f10add3ab02) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1455))
+
 ## 3.1.2 (2026-07-08)
 
 No changes.
