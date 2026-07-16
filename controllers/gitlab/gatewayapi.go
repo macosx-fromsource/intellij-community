@@ -47,16 +47,21 @@ func envoyProxy(template helm.Template) client.Object {
 func WantedGatewayApiResources(template helm.Template, adapter gitlab.Adapter) []client.Object {
 	var res = []client.Object{}
 
-	if gw := gateway(template, adapter); gw != nil {
-		res = append(res, gw)
+	// EnvoyProxy must be created/patched before GatewayClass and Gateway, which
+	// reference it. Envoy Gateway provisions the managed proxy Service/Deployment
+	// as soon as GatewayClass is Accepted, using EnvoyProxy's spec at that point -
+	// it does not reliably re-derive already-provisioned resources from later
+	// EnvoyProxy changes. See https://gateway.envoyproxy.io/docs/tasks/operations/customize-envoyproxy/
+	if ep := envoyProxy(template); ep != nil {
+		res = append(res, ep)
 	}
 
 	if gwc := gatewayClass(template); gwc != nil {
 		res = append(res, gwc)
 	}
 
-	if ep := envoyProxy(template); ep != nil {
-		res = append(res, ep)
+	if gw := gateway(template, adapter); gw != nil {
+		res = append(res, gw)
 	}
 
 	if pp := envoyPatchPolicy(template); pp != nil {

@@ -1,6 +1,8 @@
 package gitlab
 
 import (
+	"slices"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -23,6 +25,7 @@ var _ = Describe("Gateway API", func() {
 		Expect(template).NotTo(BeNil())
 
 		gatewayResources = WantedGatewayApiResources(template, adapter)
+		gatewayKinds = nil
 		for _, r := range gatewayResources {
 			gatewayKinds = append(gatewayKinds, r.GetObjectKind().GroupVersionKind().Kind)
 		}
@@ -62,6 +65,18 @@ var _ = Describe("Gateway API", func() {
 			Expect(gatewayKinds).To(ContainElement(GatewayKind))
 			Expect(gatewayKinds).To(ContainElement(GatewayClassKind))
 			Expect(gatewayKinds).To(ContainElement(EnvoyProxyKind))
+		})
+
+		It("Orders EnvoyProxy before GatewayClass before Gateway", func() {
+			envoyProxyIdx := slices.Index(gatewayKinds, EnvoyProxyKind)
+			gatewayClassIdx := slices.Index(gatewayKinds, GatewayClassKind)
+			gatewayIdx := slices.Index(gatewayKinds, GatewayKind)
+
+			Expect(envoyProxyIdx).To(BeNumerically(">=", 0), "EnvoyProxy not found in gateway kinds")
+			Expect(gatewayClassIdx).To(BeNumerically(">=", 0), "GatewayClass not found in gateway kinds")
+			Expect(gatewayIdx).To(BeNumerically(">=", 0), "Gateway not found in gateway kinds")
+			Expect(envoyProxyIdx).To(BeNumerically("<", gatewayClassIdx))
+			Expect(gatewayClassIdx).To(BeNumerically("<", gatewayIdx))
 		})
 	})
 })
