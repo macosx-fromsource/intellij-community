@@ -17,6 +17,7 @@ as thin `nix run .#…` shell apps).
 | Operator binary | `nix build .#manager` | `nix run .#build` (→ `./bin/manager`) |
 | GitLab charts | `nix build .#gitlab-charts` | `nix run .#retrieve-charts` (→ `./charts`, for the Taskfile/test flow) |
 | Operator image | `nix build .#image` (a **streamer script**, not a tarball — run it to emit the archive) | `nix run .#load-image-dev` (streams it into kind) |
+| Bridge image (opt-in) | `nix build .#image-bridge` (streamer; also `.#bridge-web`, `.#manager-bridge`, `.#operator-manifest-bridge`) | `nix run .#load-image-bridge` |
 | CR overlay | `nix build .#cr-overlay-gateway` / `.#cr-overlay` | — |
 
 Prefer the pure commands; the impure twins exist for the existing workflow and
@@ -39,6 +40,33 @@ Reachability note: kind has no cloud LoadBalancer, so Envoy is a NodePort
 service. If the host mapping doesn't reach it, port-forward
 (`kubectl -n gitlab-system port-forward svc/<envoy-gateway-svc> 4433:443`) or
 use `NGINX_INGRESS=1`.
+
+## Bridge (backend-for-frontend)
+
+The bridge is an opt-in HTTP server + embedded SPA (see
+[doc/developer/bridge.md](../doc/developer/bridge.md)). It is gated behind the
+`bridge` Go build tag, so it is **absent from the default `.#image`** — the
+bridge outputs are separate and never change the public build.
+
+A bridge build differs from the default in two ways, both handled by the flake:
+the manager is compiled with `-tags bridge`, and the Vue SPA is built and
+overlaid into the `//go:embed` dir before compiling. `.#bridge-web` builds the
+SPA (offline — `schema.d.ts` is committed), `.#manager-bridge` the tagged
+binary, `.#image-bridge` the image (tag `dev-bridge`), and
+`.#operator-manifest-bridge` renders the manifest with `bridge.enabled=true`.
+
+| Command | Does |
+| --- | --- |
+| `BRIDGE=1 nix run .#up-dev` | Full local env, bridge variant: loads `dev-bridge` image + deploys with `bridge.enabled=true`. |
+| `nix run .#deploy-bridge` | Deploy the bridge-enabled image (run `.#load-image-bridge` first). |
+| `nix run .#bridge-access` | Ensure caller RBAC → mint a token → print the token + UI/docs/API URLs → port-forward `:8090`. |
+
+`bridge-access` is env-overridable (`BRIDGE_SA`, `BRIDGE_ROLE`,
+`BRIDGE_TOKEN_DURATION`, `BRIDGE_LOCAL_PORT` / `BRIDGE_REMOTE_PORT`,
+`BRIDGE_DEPLOYMENT`) and runs against an already-deployed bridge. The bridge
+exposes only a container port (no Service/Ingress), so port-forward is the
+intended access path. Paste the printed token (raw, no `Bearer ` prefix) into
+the SPA token bar and select **Save token**.
 
 ## Versions & overrides
 
@@ -81,6 +109,7 @@ version requires recreating the cluster (`nix run .#kind-down && nix run .#up-de
 | `nix run .#refresh-dev` | Inner loop: rebuild image → load into kind → restart the operator. |
 | `nix run .#deploy` | Deploy using the **published** manifest (registry image, `:latest`). |
 | `nix run .#deploy-dev` | Deploy using the **locally built** image (run `.#load-image-dev` first). |
+| `nix run .#deploy-bridge` / `.#bridge-access` | Bridge variant — see [Bridge](#bridge-backend-for-frontend). |
 | `nix run .#kind-up` / `.#kind-down` | Create / delete the kind cluster. |
 | `nix run .#deps-dev` | Provision external dev dependencies (writes `external-deps.yaml`). |
 | `nix run .#lint` / `.#test` / `.#fmt` / `.#vet` | Quality + tests. |
@@ -100,6 +129,13 @@ the build, and paste the `got: sha256-…` value Nix prints back in.
 | `chartDeps.outputHash` | `deploy/chart/Chart.lock` changes | `nix build .#chart-deps` |
 | `gitlabCharts.outputHash` | `CHART_VERSIONS` changes | `nix build .#gitlab-charts` |
 | `mkManager … vendorHash` | `go.mod` / `go.sum` change | `nix build .#manager` |
+| `bridgeWeb … npmDepsHash` | `internal/bridge/web/package-lock.json` changes | `nix build .#bridge-web` |
+
+`vendorHash` is shared by `.#manager` and `.#manager-bridge`: `go mod vendor`
+pulls the bridge's imports (Huma) in via `internal/bridge` regardless of the
+build tag, so both vendor the same tree. `npmDepsHash` uses
+`nix run nixpkgs#prefetch-npm-deps -- internal/bridge/web/package-lock.json`
+rather than the `fakeHash` procedure.
 
 ## Tool versions (mise + tool2nix)
 
