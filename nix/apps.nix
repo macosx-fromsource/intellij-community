@@ -16,10 +16,12 @@
   mkOperatorSetFlags,
   operatorManifest,
   operatorManifestDev,
+  operatorManifestBridge,
   crOverlay,
   crOverlayGateway,
   gitlabCharts,
   image,
+  imageBridge,
 }:
 let
   # --- codegen / quality / test ----------------------------------------
@@ -132,15 +134,35 @@ let
 
   # Stream the Nix-built operator image into the kind cluster so the dev
   # manifest (pullPolicy=Never) can use it without a registry push.
-  loadImage = mkScript "load-image-dev" clusterTools ''
-    ${envDefaults}
-    archive="$(mktemp -t operator-image.XXXXXX.tar)"
-    trap 'rm -f "$archive"' EXIT
-    echo "Streaming ${devImageName}:${cfg.devImageTag} archive..."
-    "${image}" > "$archive"
-    kind load image-archive "$archive" --name "$KIND_CLUSTER_NAME"
-    echo "Loaded ${devImageName}:${cfg.devImageTag} into kind cluster $KIND_CLUSTER_NAME"
-  '';
+  mkLoadImage =
+    {
+      name,
+      imageStreamer,
+      tag,
+    }:
+    mkScript name clusterTools ''
+      ${envDefaults}
+      archive="$(mktemp -t operator-image.XXXXXX.tar)"
+      trap 'rm -f "$archive"' EXIT
+      echo "Streaming ${devImageName}:${tag} archive..."
+      "${imageStreamer}" > "$archive"
+      kind load image-archive "$archive" --name "$KIND_CLUSTER_NAME"
+      echo "Loaded ${devImageName}:${tag} into kind cluster $KIND_CLUSTER_NAME"
+    '';
+  loadImage = mkLoadImage {
+    name = "load-image-dev";
+    imageStreamer = image;
+    tag = cfg.devImageTag;
+  };
+  # Bridge-enabled image (tag dev-bridge). Load it, then `nix run .#deploy-bridge`
+  # to deploy the operator with the bridge server enabled. The bridge exposes
+  # only a container port (no Service/Ingress); reach it with `kubectl
+  # port-forward deploy/gitlab-controller-manager 8090:8090`.
+  loadImageBridge = mkLoadImage {
+    name = "load-image-bridge";
+    imageStreamer = imageBridge;
+    tag = "${cfg.devImageTag}-bridge";
+  };
 
   # Full deploy flow. Thin wrapper: exports the Nix-built artifacts (pure
   # manifest + CR overlay) and config defaults, then hands off to the
@@ -177,9 +199,27 @@ let
     kubectl --context "$KUBE_CONTEXT" -n "$ns" rollout status deploy/envoy-gateway --timeout="$KUBERNETES_TIMEOUT"
   '';
 
+  # `bridge = true` deploys the bridge-enabled dev image (tag dev-bridge, with
+  # the chart's bridge.enabled=true). It pins deploy.sh's escape-hatch
+  # GITLAB_OPERATOR_MANIFEST to the bridge manifest — the fully-rendered
+  # manifest, no further selection needed — so we do NOT also set DEV_IMAGE
+  # (which would only select a manifest, and only when GITLAB_OPERATOR_MANIFEST
+  # is unset). Keeping them mutually exclusive avoids relying on deploy.sh's
+  # internal precedence. Load the image first with `nix run .#load-image-bridge`.
   mkDeploy =
-    { dev }:
-    mkScript (if dev then "deploy-dev" else "deploy")
+    {
+      dev,
+      bridge ? false,
+    }:
+    mkScript
+      (
+        if bridge then
+          "deploy-bridge"
+        else if dev then
+          "deploy-dev"
+        else
+          "deploy"
+      )
       (
         clusterTools
         ++ [
@@ -191,6 +231,10 @@ let
         ${envDefaults}
         export OPERATOR_MANIFEST="${operatorManifest}"
         export OPERATOR_MANIFEST_DEV="${operatorManifestDev}"
+        ${lib.optionalString bridge ''
+          export GITLAB_OPERATOR_MANIFEST="${operatorManifestBridge}"
+          echo "Deploying the bridge-enabled operator image (${devImageName}:${cfg.devImageTag}-bridge)."
+        ''}
         # Front door defaults to Gateway API (Envoy Gateway) — the chart's own
         # 10.1.0 default. Set NGINX_INGRESS=1 to fall back to classic Ingress
         # (bundled nginx-ingress), e.g. for the host:443->32443 nodePort path.
@@ -204,12 +248,57 @@ let
           ${lib.getExe gatewayDeps}
         fi
         export DEV_IMAGE_NAME="${devImageName}"
-        export DEV_IMAGE_TAG="${cfg.devImageTag}"
-        ${lib.optionalString dev "export DEV_IMAGE=1"}
+        export DEV_IMAGE_TAG="${cfg.devImageTag}${lib.optionalString bridge "-bridge"}"
+        ${lib.optionalString (dev && !bridge) "export DEV_IMAGE=1"}
         exec bash ./scripts/deploy.sh
       '';
   deploy = mkDeploy { dev = false; };
   deployDev = mkDeploy { dev = true; };
+  deployBridge = mkDeploy {
+    dev = true;
+    bridge = true;
+  };
+
+  # One command to reach a deployed bridge (see deploy-bridge / up-dev BRIDGE=1):
+  # ensure a caller service account with CRUD RBAC on gitlabs.apps.gitlab.com,
+  # mint a short-lived token (the bridge delegates to the caller's identity —
+  # see doc/developer/bridge.md), print it with the UI/docs/API URLs, then
+  # port-forward the manager's bridge port. Everything is env-overridable.
+  # RBAC applies are idempotent (create piped through apply). Ctrl-C stops the
+  # forward. Runs against an already-deployed bridge; it does not deploy one.
+  bridgeAccess = mkScript "bridge-access" clusterTools ''
+    ${envDefaults}
+    SA="''${BRIDGE_SA:-bridge-user}"
+    ROLE="''${BRIDGE_ROLE:-gitlab-editor}"
+    DURATION="''${BRIDGE_TOKEN_DURATION:-1h}"
+    LOCAL_PORT="''${BRIDGE_LOCAL_PORT:-8090}"
+    REMOTE_PORT="''${BRIDGE_REMOTE_PORT:-8090}"
+    DEPLOYMENT="''${BRIDGE_DEPLOYMENT:-deploy/gitlab-controller-manager}"
+
+    kc=(kubectl --context "$KUBE_CONTEXT")
+
+    echo "==> ensuring RBAC ($SA / $ROLE) on gitlabs.apps.gitlab.com in $TARGET_NAMESPACE"
+    "''${kc[@]}" -n "$TARGET_NAMESPACE" create serviceaccount "$SA" \
+      --dry-run=client -o yaml | "''${kc[@]}" apply -f -
+    "''${kc[@]}" create clusterrole "$ROLE" \
+      --verb=get,list,watch,create,update,patch,delete \
+      --resource=gitlabs.apps.gitlab.com \
+      --dry-run=client -o yaml | "''${kc[@]}" apply -f -
+    "''${kc[@]}" create clusterrolebinding "$SA" \
+      --clusterrole="$ROLE" --serviceaccount="$TARGET_NAMESPACE:$SA" \
+      --dry-run=client -o yaml | "''${kc[@]}" apply -f -
+
+    echo "==> minting token for $SA (duration $DURATION)"
+    TOKEN="$("''${kc[@]}" -n "$TARGET_NAMESPACE" create token "$SA" --duration="$DURATION")"
+
+    printf '\nBridge token (send as: Authorization: Bearer <token>):\n\n%s\n\n' "$TOKEN"
+    printf 'UI:   http://localhost:%s/\n' "$LOCAL_PORT"
+    printf 'Docs: http://localhost:%s/docs\n' "$LOCAL_PORT"
+    printf 'API:  curl -H "Authorization: Bearer %s" http://localhost:%s/api/v1/gitlabs\n\n' "$TOKEN" "$LOCAL_PORT"
+
+    echo "==> port-forwarding $DEPLOYMENT $LOCAL_PORT:$REMOTE_PORT (Ctrl-C to stop)"
+    exec "''${kc[@]}" -n "$TARGET_NAMESPACE" port-forward "$DEPLOYMENT" "$LOCAL_PORT:$REMOTE_PORT"
+  '';
 
   # Inner dev loop: rebuild the operator image, load it into kind, and
   # restart the operator so it picks up the new image (the dev manifest
@@ -230,6 +319,10 @@ let
   # local image. Each step is an existing app, composed here. The cluster must
   # come first: dev-deps installs into the cluster (kubectl/helm) and relies on
   # the current context, which `kind create cluster` points at the new cluster.
+  #
+  # Set BRIDGE=1 to bring up the bridge-enabled variant instead: it loads the
+  # dev-bridge image and deploys with bridge.enabled=true. Reach the bridge
+  # afterwards with `nix run .#bridge-access` (mints a token + port-forwards).
   up = mkScript "up-dev" clusterTools ''
     ${envDefaults}
     echo "==> kind cluster"
@@ -240,10 +333,18 @@ let
     fi
     echo "==> dev dependencies (external-deps.yaml)"
     ${lib.getExe devDeps}
-    echo "==> build + load operator image"
-    ${lib.getExe loadImage}
-    echo "==> deploy operator + GitLab CR (local dev image)"
-    ${lib.getExe deployDev}
+    if [ -n "''${BRIDGE:-}" ]; then
+      echo "==> build + load bridge operator image"
+      ${lib.getExe loadImageBridge}
+      echo "==> deploy operator (bridge enabled) + GitLab CR"
+      ${lib.getExe deployBridge}
+      echo "==> bridge is enabled — run 'nix run .#bridge-access' to mint a token and port-forward"
+    else
+      echo "==> build + load operator image"
+      ${lib.getExe loadImage}
+      echo "==> deploy operator + GitLab CR (local dev image)"
+      ${lib.getExe deployDev}
+    fi
   '';
 in
 {
@@ -259,6 +360,8 @@ in
     build-operator = mkApp buildOperator;
     deploy = mkApp deploy;
     deploy-dev = mkApp deployDev;
+    deploy-bridge = mkApp deployBridge;
+    bridge-access = mkApp bridgeAccess;
     refresh-dev = mkApp devRefresh;
     up-dev = mkApp up;
     kind-up = mkApp kindUp;
@@ -266,5 +369,6 @@ in
     deps-dev = mkApp devDeps;
     gateway-deps = mkApp gatewayDeps;
     load-image-dev = mkApp loadImage;
+    load-image-bridge = mkApp loadImageBridge;
   };
 }

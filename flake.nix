@@ -244,10 +244,11 @@
             mkOperatorSetFlags
             operatorManifest
             operatorManifestDev
+            operatorManifestBridge
             crOverlay
             crOverlayGateway
             ;
-          inherit (imageMod) gitlabCharts image;
+          inherit (imageMod) gitlabCharts image imageBridge;
         };
       in
       {
@@ -266,10 +267,15 @@
           gitlab-charts = imageMod.gitlabCharts; # FOD: bundled GitLab charts (bootstrap its hash)
           operator-manifest = manifests.operatorManifest;
           operator-manifest-dev = manifests.operatorManifestDev;
+          operator-manifest-bridge = manifests.operatorManifestBridge; # dev-bridge image + bridge.enabled=true
+
           cr-overlay = manifests.crOverlay;
           cr-overlay-gateway = manifests.crOverlayGateway; # Gateway-API variant (default front door)
           manager = imageMod.manager; # the compiled operator binary
+          manager-bridge = imageMod.managerBridge; # operator binary with the bridge server (-tags bridge)
+          bridge-web = imageMod.bridgeWeb; # built bridge SPA (internal/bridge/web/dist)
           image = imageMod.image; # streamed operator container image
+          image-bridge = imageMod.imageBridge; # streamed bridge-enabled image (tag dev-bridge)
           default = imageMod.manager;
         };
 
@@ -289,6 +295,21 @@
                 # NOTE: to add schema validation, wire kubeconform here with an
                 # offline -schema-location mirror (its default fetch is network-
                 # bound and would break sandbox purity).
+              '';
+          # Beyond the generic non-empty/Deployment sanity above, prove the
+          # bridge manifest actually WIRES the bridge: bridge.enabled=true must
+          # surface ENABLE_BRIDGE=true on a manager Deployment container (the
+          # whole reason operator-manifest-bridge exists). Guards against the
+          # chart silently dropping the env if bridge.enabled stops taking.
+          operator-manifest-bridge =
+            pkgs.runCommand "check-operator-manifest-bridge" { nativeBuildInputs = [ pkgs.yq-go ]; }
+              ''
+                test -s ${manifests.operatorManifestBridge}
+                yq eval-all -e '
+                  [ select(.kind == "Deployment").spec.template.spec.containers[].env[]
+                    | select(.name == "ENABLE_BRIDGE" and .value == "true") ] | length > 0
+                ' ${manifests.operatorManifestBridge} >/dev/null
+                touch "$out"
               '';
           cr-overlay = pkgs.runCommand "check-cr-overlay" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
             yq eval -e '.spec.chart.values.global.ingress.enabled' \

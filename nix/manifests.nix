@@ -84,6 +84,7 @@ let
     {
       tag ? cfg.image.tag,
       pullPolicy ? null,
+      bridgeEnabled ? false,
     }:
     pkgs.runCommand "operator.yaml" { nativeBuildInputs = [ helm ]; } ''
       export HOME="$TMPDIR"   # helm wants a writable HOME/cache
@@ -101,6 +102,7 @@ let
           inherit tag pullPolicy;
           clusterMode = lib.boolToString cfg.clusterMode;
         }} \
+        ${lib.optionalString bridgeEnabled "--set bridge.enabled=true"} \
         > "$out"
     '';
 
@@ -111,6 +113,16 @@ let
   operatorManifestDev = mkOperatorManifest {
     tag = cfg.devImageTag;
     pullPolicy = "Never";
+  };
+  # Bridge dev: the locally-built bridge image (tag=dev-bridge), never pulled,
+  # with the chart's bridge.enabled=true so the manager injects ENABLE_BRIDGE
+  # and opens the bridge container port. Load the image via
+  # `nix run .#load-image-bridge`. The bridge exposes only a container port (no
+  # Service/Ingress) — reach it with `kubectl port-forward`.
+  operatorManifestBridge = mkOperatorManifest {
+    tag = "${cfg.devImageTag}-bridge";
+    pullPolicy = "Never";
+    bridgeEnabled = true;
   };
 
   # Static half of the GitLab CR (kind-sizing / ingress / pages settings)
@@ -239,6 +251,7 @@ in
     mkOperatorManifest
     operatorManifest
     operatorManifestDev
+    operatorManifestBridge
     crOverlay
     crOverlayGateway
     ;
