@@ -132,6 +132,11 @@
     # Export secret values for further consumption in subsequent jobs
     - echo "ROOT_PASSWORD=$(kubectl -n $TESTS_NAMESPACE get secret gitlab-gitlab-initial-root-password -ojsonpath='{.data.password}' | base64 --decode ; echo)" >> deploy_namespace.env
     - echo "GITLAB_VERSION=$(kubectl -n $TESTS_NAMESPACE exec -i $(kubectl -n $TESTS_NAMESPACE get pods | grep sidekiq | awk '{print $1}') -c sidekiq -- cat /srv/gitlab/VERSION)" >> deploy_namespace.env
+    # Fresh admin PAT for the QA jobs: lets gitlab-qa build its admin API
+    # client from a token instead of signing in as root through the UI (the
+    # first UI login on a fresh instance lands on the onboarding page and
+    # fails page validation). Empty on failure — QA falls back to UI sign-in.
+    - echo "GITLAB_ADMIN_TOKEN=$(NO_TRAP=1 ./scripts/test.sh create_qa_admin_token)" >> deploy_namespace.env
   artifacts:
     paths:
       #NOTE: this will affect following Jobs providing manifest crafted to be deployed into tests.
@@ -205,6 +210,14 @@
   script:
     - export QA_ENVIRONMENT_URL="https://gitlab-${TESTS_NAMESPACE}.${DOMAIN}"
     - echo $QA_ENVIRONMENT_URL $GITLAB_VERSION
+    # GITLAB_ADMIN_TOKEN comes from the review job's dotenv artifact. Export
+    # it under the name gitlab-qa forwards to the QA container so the admin
+    # API client is built from the token, skipping the root UI sign-in.
+    - |
+      if [ -n "${GITLAB_ADMIN_TOKEN}" ]; then
+        echo "Using fresh admin PAT for the gitlab-qa admin API client"
+        export GITLAB_QA_ADMIN_ACCESS_TOKEN="${GITLAB_ADMIN_TOKEN}"
+      fi
     - gem install gitlab-qa
     - echo "Running - 'gitlab-qa Test::Instance::Any EE:$GITLAB_VERSION $QA_ENVIRONMENT_URL -- $QA_OPTIONS'"
     - SIGNUP_DISABLED=true QA_DEBUG=true GITLAB_USERNAME=root GITLAB_PASSWORD=$ROOT_PASSWORD GITLAB_ADMIN_USERNAME=root GITLAB_ADMIN_PASSWORD=$ROOT_PASSWORD gitlab-qa Test::Instance::Any EE:$GITLAB_VERSION $QA_ENVIRONMENT_URL -- $QA_OPTIONS

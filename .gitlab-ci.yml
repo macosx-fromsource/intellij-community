@@ -13,7 +13,6 @@ variables:
   AGENT_OPENSHIFT: "ocp421-ci-cluster"
   DOMAIN_OPENSHIFT: "ocp-ci-421.k8s-ft.win"
   DOMAIN_GKE133: "gitlab-operator-v133.k8s-ft.win"
-  DOMAIN_GKE134: "gitlab-operator-v134.k8s-ft.win"
   DOMAIN_GKE135: "gitlab-operator-v135.k8s-ft.win"
   DOMAIN_VCLUSTER134: "gitlab-operator-vc134.k8s-ft.win"
   DOMAIN_VCLUSTER135: "gitlab-operator-vc135.k8s-ft.win"
@@ -65,7 +64,9 @@ variables:
   CNPG_POSTGRESQL_TAG: "17"
   # Git ref of the GitLab chart repository to source CI lib scripts from.
   # Used to provision Valkey, PostgreSQL, and Garage in CI.
-  CHART_CI_LIB_REF: "905feb7e632222d33ad1b6e64921531c0da0e6ea"
+  # Must include is_k3d_deployment support (charts master 2026-07) so the
+  # CNPG operator is installed per-namespace on k3d clusters.
+  CHART_CI_LIB_REF: "f0c6b1cbb50ccf2d08737a363f36efd3b3dff550"
 
   # Pull DockerHub images through dependency proxy to not hit rate limits.
   DOCKERHUB_PREFIX: "docker.io"
