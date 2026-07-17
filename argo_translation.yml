@@ -14,6 +14,8 @@ components:
     ignored_paths:
       - 'doc/.*/**'
       - 'doc/developer/**'
+      - 'doc/CLAUDE.md'
+      - 'doc/SKILLS.md'
     # Redirects: See Redirects component for more info
       - 'doc/operator_upgrades.md'
 
