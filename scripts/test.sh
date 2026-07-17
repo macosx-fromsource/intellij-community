@@ -7,6 +7,10 @@ CLEANUP="${CLEANUP:-yes}"
 HOSTSUFFIX="${HOSTSUFFIX:-${TESTS_NAMESPACE}}"
 DOMAIN="${DOMAIN:-example.com}"
 DEBUG_CLEANUP="${DEBUG_CLEANUP:-off}"
+# K3D_MODE: the job provisions its own single-use k3d cluster. There is no
+# pre-provisioned wildcard TLS secret or ExternalDNS; the instance is served
+# over plain HTTP on a nip.io domain.
+K3D_MODE="${K3D_MODE:-false}"
 
 REGISTRY_AUTH_SECRET_NS=${REGISTRY_AUTH_SECRET_NS:-""}
 REGISTRY_AUTH_SECRET=${REGISTRY_AUTH_SECRET:-""}
@@ -65,7 +69,10 @@ main() {
 
   install_gitlab_operator
   verify_operator_is_running
-  copy_certificate
+
+  if [ "$K3D_MODE" != "true" ]; then
+    copy_certificate
+  fi
 
   provision_external_services
 
@@ -102,6 +109,14 @@ prepare_build_directories() {
 # Operator.
 setup_chart_ci_scripts() {
   [ -n "${_CHART_CI_SCRIPTS_LOADED:-}" ] && return 0
+
+  # The chart CI lib scripts require openssl (e.g. to generate the registry
+  # database password in cloudnativepg.sh). The operator build-base image
+  # does not ship it.
+  if ! command -v openssl &>/dev/null && command -v apk &>/dev/null; then
+    echo "Installing openssl (required by the chart CI lib scripts)"
+    apk add --no-cache openssl
+  fi
 
   echo "Downloading chart CI lib scripts from ${CHART_REPO_URL} @ ${CHART_CI_LIB_REF}"
   local scripts_dir="${BUILD_DIR}/chart-ci-lib"
@@ -207,10 +222,18 @@ build_gitlab_custom_resource() {
   ${YQ} -i eval ".spec.chart.values.global.pages.objectStore.connection.secret = \"$(garage_release_name)-gitlab-object-storage\"" "${cr_file}"
   ${YQ} -i eval ".spec.chart.values.registry.storage.secret = \"$(garage_release_name)-gitlab-registry-storage\"" "${cr_file}"
 
-  # Annotate the Envoy Service backing the Gateway so external-dns provisions
-  # DNS records for the review app endpoints.
-  ${YQ} -i eval ".spec.chart.values.gatewayApiResources.gateway.infrastructure.annotations.\"external-dns.alpha.kubernetes.io/ttl\" = \"10\"" "${cr_file}"
-  ${YQ} -i eval ".spec.chart.values.gatewayApiResources.gateway.infrastructure.annotations.\"external-dns.alpha.kubernetes.io/hostname\" = \"kas-${HOSTSUFFIX}.${DOMAIN},registry-${HOSTSUFFIX}.${DOMAIN},gitlab-${HOSTSUFFIX}.${DOMAIN}\"" "${cr_file}"
+  if [ "$K3D_MODE" = "true" ]; then
+    # nip.io already resolves to the job's Docker host and there is no
+    # wildcard TLS secret: serve over plain HTTP.
+    ${YQ} -i eval ".spec.chart.values.global.hosts.https = false" "${cr_file}"
+    ${YQ} -i eval ".spec.chart.values.global.ingress.tls.enabled = false" "${cr_file}"
+    ${YQ} -i eval "del(.spec.chart.values.global.ingress.tls.secretName)" "${cr_file}"
+  else
+    # Annotate the Envoy Service backing the Gateway so external-dns provisions
+    # DNS records for the review app endpoints.
+    ${YQ} -i eval ".spec.chart.values.gatewayApiResources.gateway.infrastructure.annotations.\"external-dns.alpha.kubernetes.io/ttl\" = \"10\"" "${cr_file}"
+    ${YQ} -i eval ".spec.chart.values.gatewayApiResources.gateway.infrastructure.annotations.\"external-dns.alpha.kubernetes.io/hostname\" = \"kas-${HOSTSUFFIX}.${DOMAIN},registry-${HOSTSUFFIX}.${DOMAIN},gitlab-${HOSTSUFFIX}.${DOMAIN}\"" "${cr_file}"
+  fi
   set +x
 }
 
@@ -233,6 +256,43 @@ copy_certificate() {
 verify_gitlab_is_running() {
   wait_until_gitlab_running
   test_gitlab_endpoint
+}
+
+wait_for_toolbox() {
+  kubectl wait pods -n "${TESTS_NAMESPACE}" -l app=toolbox,release=gitlab --for condition=Ready --timeout=120s
+}
+
+# create_qa_admin_token mints a fresh admin personal access token via
+# gitlab-rails in the toolbox pod and prints it. A token-based admin API
+# client lets gitlab-qa skip the root UI sign-in in before(:suite), which
+# otherwise lands on the first-login onboarding page of a freshly deployed
+# instance and fails page validation before any example runs.
+# Ported from gitlab-org/charts/gitlab scripts/ci/autodevops.sh.
+# Note: invoke through "NO_TRAP=1 ./scripts/test.sh create_qa_admin_token"
+# so the EXIT trap does not print to stdout after the token.
+create_qa_admin_token() {
+  wait_for_toolbox >/dev/null 2>&1
+  local toolbox_pod runner_output token
+  toolbox_pod=$(kubectl get pods -n "${TESTS_NAMESPACE}" -l app=toolbox,release=gitlab -o custom-columns=":metadata.name" --no-headers | head -1 | tr -d '[:space:]')
+  runner_output=$(kubectl exec -n "${TESTS_NAMESPACE}" "${toolbox_pod}" -ic toolbox -- \
+    gitlab-rails runner "
+      u = User.find_by_username('root')
+      t = u.personal_access_tokens.create!(
+        name: 'ci-qa-admin',
+        scopes: [:api],
+        expires_at: 1.day.from_now
+      )
+      puts t.token
+    " 2>&1)
+  # GitLab 17+ PAT tokens include a routing suffix with dots, e.g. glpat-xxx.01.yyy
+  # Match the full token including dots to avoid truncating it.
+  token=$(echo "${runner_output}" | grep -oE 'glpat-[A-Za-z0-9._-]+' | head -1)
+  if [ -z "${token}" ]; then
+    echo "create_qa_admin_token: ERROR: no glpat- token found in runner output" >&2
+    echo "${runner_output}" >&2
+    return 1
+  fi
+  echo "${token}"
 }
 
 cleanup() {
@@ -272,7 +332,9 @@ cleanup() {
 
 wait_until_gitlab_running() {
   local sleepSeconds=10
-  local maxattempts=60
+  # Overridable: a fresh k3d cluster pulls every image cold and needs more
+  # headroom than the pre-warmed shared clusters.
+  local maxattempts="${GITLAB_RUNNING_MAXATTEMPTS:-60}"
   local attempts=0
   local exitcode
   local output
@@ -301,7 +363,9 @@ wait_until_gitlab_running() {
 }
 
 test_gitlab_endpoint() {
-  local endpoint="https://gitlab-$HOSTSUFFIX.$DOMAIN"
+  local protocol="https"
+  [ "$K3D_MODE" = "true" ] && protocol="http"
+  local endpoint="${protocol}://gitlab-$HOSTSUFFIX.$DOMAIN"
 
   echo "Testing GitLab endpoint: $endpoint"
   sleep 5

@@ -33,6 +33,19 @@ We manage Kubernetes clusters in Google Cloud using GKE. These clusters are used
 The clusters are orchestrated using the [`infrastructure-provisioning`](https://gitlab.com/gitlab-org/distribution/infrastructure/infrastructure-provisioning)
 project. CI access is managed using [`kube-agents`](https://gitlab.com/gitlab-org/distribution/infrastructure/kube-agents) .
 
+## k3d cluster tests
+
+The `review_k3d_*` jobs create a single-use [k3d](https://k3d.io) cluster inside the job's Docker-in-Docker environment
+instead of connecting to a shared, always-on cluster. Each job deploys the operator and a GitLab custom resource, runs
+the QA smoke suite against it over a [nip.io](https://nip.io) domain, and destroys the cluster when the job ends. There
+is no GitLab environment or cleanup job for these tests — nothing outlives the job.
+
+These jobs run on the privileged `e2e` runner fleet. The Kubernetes version is pinned with the `K3D_K8S_IMAGE` variable
+(a [`rancher/k3s`](https://hub.docker.com/r/rancher/k3s/tags) image tag).
+
+The shared GKE and vcluster environments are being migrated to k3d.
+See [epic &98](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/98) for the migration plan.
+
 ## QA pipelines
 
 By default, QA pipelines will include Smoke suite - a [small subset of fast end-to-end functional tests](https://docs.gitlab.com/development/testing_guide/smoke/)
