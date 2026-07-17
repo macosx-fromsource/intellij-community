@@ -7,7 +7,11 @@
 # scripts/ci/k3d.sh and adapted for the operator CI conventions.
 # See: https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/98
 
+# Configurable variables. Override any of these from the CI job environment.
 K3D_VERSION="${K3D_VERSION:-5.8.3}"
+DOCKER_VERSION="${DOCKER_VERSION:-28.0.1}"
+# Path where the cluster's kubeconfig is written.
+K3D_KUBECONFIG="${K3D_KUBECONFIG:-/tmp/k3d-kubeconfig.yaml}"
 
 function k3d_cluster_name() {
   echo -n "gitlab"
@@ -26,10 +30,9 @@ function k3d_install() {
   # operator build-base image is Alpine-based and ships podman only; the
   # static binary requires no package repo configuration.
   if ! command -v docker &>/dev/null; then
-    local docker_version="${DOCKER_VERSION:-28.0.1}"
-    echo "Installing Docker CLI v${docker_version} (${docker_arch})"
+    echo "Installing Docker CLI v${DOCKER_VERSION} (${docker_arch})"
     curl -fLo /tmp/docker.tgz \
-      "https://download.docker.com/linux/static/stable/${docker_arch}/docker-${docker_version}.tgz"
+      "https://download.docker.com/linux/static/stable/${docker_arch}/docker-${DOCKER_VERSION}.tgz"
     tar -xz -C /usr/local/bin --strip-components=1 -f /tmp/docker.tgz docker/docker
     echo "Docker CLI $(docker --version) installed"
   else
@@ -85,8 +88,8 @@ function k3d_create() {
     --wait \
     --timeout 120s
 
-  k3d kubeconfig get "${cluster_name}" > /tmp/k3d-kubeconfig.yaml
-  export KUBECONFIG=/tmp/k3d-kubeconfig.yaml
+  k3d kubeconfig get "${cluster_name}" > "${K3D_KUBECONFIG}"
+  export KUBECONFIG="${K3D_KUBECONFIG}"
 
   # nip.io domain: *.IP.nip.io resolves to IP — zero-config DNS for the job.
   export DOMAIN="${docker_ip}.nip.io"
@@ -115,7 +118,7 @@ function k3d_collect_debug() {
 
   # after_script runs in a fresh shell: restore the kubeconfig exported by
   # k3d_create if it exists.
-  [ -f /tmp/k3d-kubeconfig.yaml ] && export KUBECONFIG=/tmp/k3d-kubeconfig.yaml
+  [ -f "${K3D_KUBECONFIG}" ] && export KUBECONFIG="${K3D_KUBECONFIG}"
 
   echo "k3d_collect_debug: namespace='${ns}' output='${debug_dir}'"
 
