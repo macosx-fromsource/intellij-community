@@ -9,6 +9,8 @@ tmp-cluster/
 
 # Nix build symlinks (nix build .#…)
 result*
+# In case anyone wants to 'use flake'
+.envrc
 
 .DS_Store
 # Created by https://www.gitignore.io/api/go,vim,emacs,visualstudiocode
