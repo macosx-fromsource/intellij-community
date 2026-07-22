@@ -94,7 +94,8 @@ func (r *GitLabReconciler) reconcileRegistryMigrationsJob(ctx context.Context, a
 		return err
 	} else if exists {
 		r.Log.V(2).Info("registry migrations Job already exists")
-		return nil
+
+		return adapter.PopulateManagedObjects(migrationsJob)
 	}
 
 	return r.createOrPatch(ctx, migrationsJob, adapter)
