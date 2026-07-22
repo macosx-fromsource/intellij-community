@@ -66,12 +66,6 @@ gitlab:
         app.kubernetes.io/component: sidekiq
         app.kubernetes.io/instance: {{ .ReleaseName }}-sidekiq
 
-  spamcheck:
-    common:
-      labels:
-        app.kubernetes.io/component: spamcheck
-        app.kubernetes.io/instance: {{ .ReleaseName }}-spamcheck
-
   toolbox:
     common:
       labels:

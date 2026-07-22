@@ -105,9 +105,6 @@ const (
 	// MinioComponentName is the common name of MinIO.
 	MinioComponentName = "minio"
 
-	// SpamcheckComponentName is the common name of Spamcheck.
-	SpamcheckComponentName = "spamcheck"
-
 	// ZoektComponentName is the common name of Zoekt.
 	ZoektComponentName = "gitlab-zoekt"
 

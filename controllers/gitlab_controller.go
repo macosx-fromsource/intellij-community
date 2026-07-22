@@ -264,12 +264,6 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		}
 	}
 
-	if adapter.WantsComponent(component.Spamcheck) {
-		if err := r.reconcileSpamcheck(ctx, adapter, template); err != nil {
-			return requeue(err)
-		}
-	}
-
 	if adapter.WantsComponent(component.Zoekt) {
 		if err := r.reconcileZoekt(ctx, adapter, template); err != nil {
 			return requeue(err)
