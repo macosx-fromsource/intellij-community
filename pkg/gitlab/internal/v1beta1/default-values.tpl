@@ -19,23 +19,6 @@ global:
 certmanager-issuer:
   email: {{ .Settings.CertmanagerIssuerEmail }}
 
-postgresql:
-  serviceAccount:
-    enabled: true
-    create: false
-    name: {{ .Settings.AppNonRootServiceAccount }}
-  securityContext:
-    fsGroup: 1000
-    runAsUser: 1000
-
-redis:
-  master:
-    serviceAccount:
-      name: {{ .Settings.AppNonRootServiceAccount }}
-  securityContext:
-    fsGroup: 1000
-    runAsUser: 1000
-
 shared-secrets:
   serviceAccount:
     create: false

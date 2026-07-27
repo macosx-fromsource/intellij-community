@@ -120,7 +120,6 @@ To use the NGINX Ingress Controller for Ingress, complete the following:
 
    - `gitlab.yourdomain.com` -> `11.22.33.444`
    - `registry.yourdomain.com` -> `11.22.33.444`
-   - `minio.yourdomain.com` -> `11.22.33.444`
 
    Creating individual A records rather than a wildcard A record ensures that existing Routes (such as the Route for the OpenShift
    dashboard) continue to work as expected.

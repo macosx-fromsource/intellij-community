@@ -293,17 +293,8 @@ func checkLabels(a *Adapter) {
 		case component.NginxIngress:
 			labelsKey = "nginx-ingress.labels"
 			checkMoreLabels = true
-		case component.PostgreSQL:
-			labelsKey = "postgresql.commonLabels"
-			checkMoreLabels = false
-		case component.Redis:
-			labelsKey = "redis.commonLabels"
-			checkMoreLabels = false
 		case component.Registry:
 			labelsKey = "registry.common.labels"
-			checkMoreLabels = false
-		case component.MinIO:
-			labelsKey = "minio.common.labels"
 			checkMoreLabels = false
 		case component.SharedSecrets:
 			continue

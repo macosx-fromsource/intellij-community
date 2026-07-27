@@ -51,7 +51,7 @@ In the meantime, the following examples are considered risky:
 - Adding new resources.
 - Changing ServiceAccount names or RBAC policies
 - Changing security contexts.
-- Upgrading Chart dependencies, such as Redis or PostgreSQL chart versions
+- Upgrading Chart dependencies, such as NGINX Ingress or Prometheus chart versions
 - Chart-breaking changes that are introduced in major releases or stop versions
 
 Examples of low risk changes are:

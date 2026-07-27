@@ -183,7 +183,6 @@ func gatewayAcmeSolver(adapter gitlab.Adapter) *acmev1.ACMEChallengeSolver {
 type EndpointTLS struct {
 	gitlab   bool
 	registry bool
-	minio    bool
 }
 
 // RequiresCertManagerCertificate function returns true when an administrator
@@ -213,14 +212,8 @@ func (ep EndpointTLS) Registry() bool {
 	return ep.registry
 }
 
-// Minio returns true if Minio endpoint requires
-// a cert-manager provisioned certificate.
-func (ep EndpointTLS) Minio() bool {
-	return ep.minio
-}
-
 // Any returns true if any ingress requires
 // a cert-manager certificate.
 func (ep EndpointTLS) Any() bool {
-	return ep.gitlab || ep.registry || ep.minio
+	return ep.gitlab || ep.registry
 }

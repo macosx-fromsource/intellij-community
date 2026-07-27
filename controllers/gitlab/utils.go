@@ -1,13 +1,5 @@
 package gitlab
 
-import (
-	"fmt"
-
-	"github.com/Masterminds/semver/v3"
-
-	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab"
-)
-
 const (
 	// Known object kinds.
 	CertificateKind             = "Certificate"
@@ -72,11 +64,8 @@ const (
 	// PrometheusComponentName is the common name of Prometheus.
 	PrometheusComponentName = "prometheus"
 
-	// DefaultRedisComponentName is the default common name of Redis.
-	DefaultRedisComponentName = "redis"
-
-	// DefaultPostgresComponentName is the default common name of PostgreSQL.
-	DefaultPostgresComponentName = "postgresql"
+	// RedisComponentName is the common name of Redis.
+	RedisComponentName = "redis"
 
 	// NGINXComponentName is the common name of NGINX Ingress.
 	NGINXComponentName = "nginx-ingress"
@@ -102,63 +91,14 @@ const (
 	// ToolboxComponentName is the common name of Toolbox.
 	ToolboxComponentName = "toolbox"
 
-	// MinioComponentName is the common name of MinIO.
-	MinioComponentName = "minio"
-
 	// ZoektComponentName is the common name of Zoekt.
 	ZoektComponentName = "gitlab-zoekt"
 
 	// GeoLogcursorComponentName is the common name of Geo Logcursor.
 	GeoLogcursorComponentName = "geo-logcursor"
-
-	gitlabComponentLabel = "gitlab.io/component"
-	appLabel             = "app"
-
-	ChartVersion100 = "10.0.0"
 )
 
 // RedisSubqueues is the array of possible Redis subqueues.
 func RedisSubqueues() [5]string {
 	return [5]string{"cache", "sharedState", "queues", "actioncable", "traceChunks"}
-}
-
-// PostgresComponentName provides the name of the PostgreSQL component taking name overrides into account.
-// Attention: This component name is not part of all PostgreSQL ressource names.
-func PostgresComponentName(adapter gitlab.Adapter) string {
-	if nameOverride := adapter.Values().GetString("postgresql.nameOverride", ""); nameOverride != "" {
-		return nameOverride
-	}
-
-	return DefaultPostgresComponentName
-}
-
-// RedisComponentName provides the name of the Redis component taking name overrides into account.
-func RedisComponentName(adapter gitlab.Adapter) string {
-	if nameOverride := adapter.Values().GetString("redis.nameOverride", ""); nameOverride != "" {
-		return nameOverride
-	}
-
-	return DefaultRedisComponentName
-}
-
-func updateCommonLabels(releaseName, componentName string, labels map[string]string) {
-	labels["app.kubernetes.io/name"] = releaseName
-	labels["app.kubernetes.io/instance"] = fmt.Sprintf("%s-%s", releaseName, componentName)
-	labels["app.kubernetes.io/component"] = componentName
-	labels["app.kubernetes.io/part-of"] = "gitlab"
-	labels["app.kubernetes.io/managed-by"] = "gitlab-operator"
-}
-
-func IsChartVersionOlderThan(version, target string) bool {
-	c, err := semver.NewConstraint(fmt.Sprintf("< %s", target))
-	if err != nil {
-		panic(err)
-	}
-
-	v, err := semver.NewVersion(version)
-	if err != nil {
-		panic(err)
-	}
-
-	return c.Check(v)
 }

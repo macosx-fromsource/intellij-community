@@ -84,20 +84,17 @@ GitLab Helm chart [troubleshooting documentation](https://docs.gitlab.com/charts
 
 ### Core services not ready
 
-The GitLab Operator relies on installing instances of Redis, PostgreSQL and
-Gitaly, which are known as the core services. If after deploying a GitLab
-customer resource there are an excessive number of operator log messages
-stating that the core services are not ready, then it is one of these
-services that is having problems becoming operational.
+The GitLab Operator installs Gitaly, and Praefect when it is enabled. These are known as the core
+services. After you deploy a GitLab custom resource, an excessive number of Operator log messages
+stating that the core services are not ready means one of these services cannot become operational.
 
-Specifically check the endpoints for each of these services to insure that
-they are getting connected to the service's Pod. This is also a possible
-indication that the cluster does not have enough resources to support the
-GitLab instance and additional nodes should be added to the cluster.
+Check the endpoints of each service to confirm they connect to the service's Pod. Missing endpoints
+can also indicate that the cluster lacks the resources to support the GitLab instance. In that case,
+add nodes to the cluster.
 
-Issue [#305](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/305)
-has been created to track the reporting of which core service is stopping
-the deployment of the GitLab instance.
+For more information, see
+[issue 305](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/issues/305), which tracks
+reporting which core service blocks the deployment.
 
 ### GitLab UI unreachable (Ingresses have no address and/or CertManager Challenges failing)
 
@@ -165,37 +162,6 @@ can be found in the [installation documentation](installation.md#metrics).
 
 An OpenShift cluster has a built in Metrics Server and as a result the
 HPAs should operate correctly.
-
-### Restoring data when PersistentVolumeClaim configuration changes
-
-When working with components such as MinIO for data persistence, it may sometimes be necessary to reconnect
-to a previous PersistentVolume.
-
-For example, [!419](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/419)
-replaced the Operator-defined MinIO components with the MinIO components from the GitLab Helm Charts. As part of
-this change, the object names changed, including the PersistentVolumeClaim. As a result, it was necessary for anyone
-using the Operator-bundled MinIO instance to take extra steps to reconnect to the previous PersistentVolume containing
-the persisted data.
-
-After upgrading to GitLab Operator `0.6.4`, complete the following steps to connect a new PersistentVolumeClaim to a previous PersistentVolume:
-
-1. Delete the `$RELEASE_NAME-minio-secret` Secret. The contents of the Secret will change with `0.6.4` upgrade, but the Secret name will not.
-1. Edit the previous MinIO PersistentVolume, changing `.spec.persistentVolumeReclaimPolicy` from `Delete` to `Retain`.
-1. Delete the previous MinIO StatefulSet, `$RELEASE_NAME-minio`.
-1. Remove `.spec.ClaimRef` from the previous MinIO PersistentVolume to dissociate it from the previous MinIO PersistentVolumeClaim.
-1. Delete the previous MinIO PersistentVolumeClaim, `export-gitlab-minio-0`.
-1. Confirm the previous PersistentVolume status is now `Available`.
-1. Set the following value in the GitLab custom resource: `minio.persistence.volumeName=<previous PersistentVolume name>`.
-1. Apply the GitLab custom resource.
-1. Delete the new MinIO PersistentVolumeClaim (and MinIO pod, so that the PersistentVolumeClaim is unbound and can be deleted). The Operator will recreate
-   the PersistentVolumeClaim. This is required because the `.spec` field is immutable.
-1. Confirm that the previous MinIO PersistentVolume is now bound to new MinIO PersistentVolumeClaim.
-1. Confirm that data is restored by navigating in the GitLab UI to issues, artifacts, etc.
-
-For more information on reconnecting to previous PersistentVolumes, see our
-[persistent volumes documentation](https://docs.gitlab.com/charts/advanced/persistent-volumes/).
-
-As a reminder, the bundled MinIO instance is [not recommended for production use](https://docs.gitlab.com/charts/charts/minio/#enable-the-sub-chart).
 
 ### Configure multiple database connections
 
