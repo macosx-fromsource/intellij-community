@@ -64,9 +64,6 @@ const (
 	// PrometheusComponentName is the common name of Prometheus.
 	PrometheusComponentName = "prometheus"
 
-	// RedisComponentName is the common name of Redis.
-	RedisComponentName = "redis"
-
 	// NGINXComponentName is the common name of NGINX Ingress.
 	NGINXComponentName = "nginx-ingress"
 

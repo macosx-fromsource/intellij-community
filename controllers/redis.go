@@ -11,7 +11,7 @@ import (
 func (r *GitLabReconciler) validateExternalRedisConfiguration(ctx context.Context, adapter gitlab.Adapter) error {
 	defaultRedisSecretName := adapter.Values().GetString("global.redis.auth.secret")
 	if defaultRedisSecretName == "" {
-		defaultRedisSecretName = fmt.Sprintf("%s-%s-secret", adapter.ReleaseName(), gitlabctl.RedisComponentName)
+		defaultRedisSecretName = fmt.Sprintf("%s-redis-secret", adapter.ReleaseName())
 	}
 
 	// If any of the sub-queues and configured, ensure relevant Secrets are created if enabled.
