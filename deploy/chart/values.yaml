@@ -28,10 +28,10 @@ podAnnotations:
 resources:
   limits:
     cpu: 200m
-    memory: 300Mi
+    memory: 500Mi
   requests:
     cpu: 200m
-    memory: 100Mi
+    memory: 250Mi
 
 affinity: {}
 nodeSelector: {}
