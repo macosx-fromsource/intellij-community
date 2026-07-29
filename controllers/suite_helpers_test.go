@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -13,6 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gitlabv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
@@ -115,19 +118,34 @@ func createObject(obj client.Object) error {
 	return err
 }
 
+// updateObjectBackoff gives the update enough attempts to outlast a burst of
+// status writes from the reconciler.
+var updateObjectBackoff = wait.Backoff{
+	Duration: 100 * time.Millisecond,
+	Factor:   2.0,
+	Jitter:   0.1,
+	Steps:    6,
+}
+
 func updateObject(obj client.Object, mutate func(client.Object) error) error {
 	key := client.ObjectKeyFromObject(obj)
-	actual := obj.DeepCopyObject().(client.Object)
 
-	if err := k8sClient.Get(ctx, key, actual); err != nil {
-		return err
-	}
+	// The reconciler writes the status of the GitLab custom resource while the
+	// test mutates its spec, so the update can lose the optimistic concurrency
+	// check with "the object has been modified". Re-read and retry on conflict.
+	return retry.RetryOnConflict(updateObjectBackoff, func() error {
+		actual := obj.DeepCopyObject().(client.Object)
 
-	if err := mutate(actual); err != nil {
-		return err
-	}
+		if err := k8sClient.Get(ctx, key, actual); err != nil {
+			return err
+		}
 
-	return k8sClient.Update(ctx, actual)
+		if err := mutate(actual); err != nil {
+			return err
+		}
+
+		return k8sClient.Update(ctx, actual)
+	})
 }
 
 func getObject(name string, obj client.Object) error {
