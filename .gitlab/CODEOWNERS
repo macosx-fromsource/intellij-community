@@ -29,9 +29,9 @@
 ## but still require an approval from a Localization team DRI for each file.
 /doc-locale/** @gitlab-com/localization/maintainers/tech-docs
 /argo_translation.yml @gitlab-com/localization/maintainers/tech-docs
-/doc-locale/ja-jp/** @gitlab-com/localization/maintainers/tech-docs @gitlab-com/localization/maintainers/tech-docs/japanese
-/doc-locale/ko-kr/** @gitlab-com/localization/maintainers/tech-docs @gitlab-com/localization/maintainers/tech-docs/korean
-/doc-locale/fr-fr/** @gitlab-com/localization/maintainers/tech-docs @gitlab-com/localization/maintainers/tech-docs/french
+/doc-locale/ja-jp/** @gitlab-com/localization/maintainers/tech-docs @gitlab-com/localization/maintainers/japanese
+/doc-locale/ko-kr/** @gitlab-com/localization/maintainers/tech-docs @gitlab-com/localization/maintainers/korean
+/doc-locale/fr-fr/** @gitlab-com/localization/maintainers/tech-docs @gitlab-com/localization/maintainers/french
 
 # Distribution CI/CD
 /ci/scripts/* @gitlab-org/maintainers/gitlab-operator @balasankarc
