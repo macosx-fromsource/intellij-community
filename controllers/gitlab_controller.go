@@ -32,6 +32,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlbuilder "sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -544,45 +545,48 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "ServiceMonitor") {
 		r.Log.Info("using monitoring.coreos.com/v1 for ServiceMonitor")
-		r.ownIfPermitted(builder, authClient, "monitoring.coreos.com", "servicemonitors", false, &monitoringv1.ServiceMonitor{})
+		r.ownIfPermitted(builder, authClient, "monitoring.coreos.com", "servicemonitors", &monitoringv1.ServiceMonitor{})
 	}
 
 	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "PodMonitor") {
 		r.Log.Info("using monitoring.coreos.com/v1 for PodMonitor")
-		r.ownIfPermitted(builder, authClient, "monitoring.coreos.com", "podmonitors", false, &monitoringv1.PodMonitor{})
+		r.ownIfPermitted(builder, authClient, "monitoring.coreos.com", "podmonitors", &monitoringv1.PodMonitor{})
 	}
 
 	if settings.IsGroupVersionSupported("cert-manager.io", "v1") {
 		r.Log.Info("using cert-manager.io/v1")
-		r.ownIfPermitted(builder, authClient, "cert-manager.io", "issuers", false, &certmanagerv1.Issuer{})
-		r.ownIfPermitted(builder, authClient, "cert-manager.io", "certificates", false, &certmanagerv1.Certificate{})
+		r.ownIfPermitted(builder, authClient, "cert-manager.io", "issuers", &certmanagerv1.Issuer{})
+		r.ownIfPermitted(builder, authClient, "cert-manager.io", "certificates", &certmanagerv1.Certificate{})
 	}
 
 	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1") {
 		r.Log.Info("using gateway.networking.k8s.io/v1")
-		// GatewayClass is a cluster-scoped resource, so it is always checked at
-		// cluster scope regardless of the Operator's watch namespace.
-		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "gatewayclasses", true, &gatewayv1.GatewayClass{})
-		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "gateways", false, &gatewayv1.Gateway{})
-		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "httproutes", false, &gatewayv1.HTTPRoute{})
+		// GatewayClasses are never owned because they are cluster-scoped, and can't be owned by
+		// a namespaced controller. Therefore they are only reconciled when another owned resource
+		// changes.
+		// We are still checking RBAC permissions on startup but never register a watch.
+		r.checkPermission(authClient, "gateway.networking.k8s.io", "gatewayclasses", "")
+
+		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "gateways", &gatewayv1.Gateway{})
+		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "httproutes", &gatewayv1.HTTPRoute{})
 	}
 
 	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1alpha2") {
 		r.Log.Info("using gateway.networking.k8s.io/v1alpha2")
-		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "tcproutes", false, &gatewayalpha2.TCPRoute{})
+		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "tcproutes", &gatewayalpha2.TCPRoute{})
 	}
 
 	if settings.IsGroupVersionSupported("app.k8s.io", "v1beta1") {
 		r.Log.Info("using app.k8s.io/v1beta1")
-		r.ownIfPermitted(builder, authClient, "app.k8s.io", "applications", false, &applicationv1beta1.Application{})
+		r.ownIfPermitted(builder, authClient, "app.k8s.io", "applications", &applicationv1beta1.Application{})
 	}
 
 	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1alpha1") {
 		r.Log.Info("using gateway.envoyproxy.io/v1alpha1")
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoypatchpolicies", false, &envoy.EnvoyPatchPolicy{})
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "securitypolicies", false, &envoy.SecurityPolicy{})
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "clienttrafficpolicies", false, &envoy.ClientTrafficPolicy{})
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoyproxies", false, &envoy.EnvoyProxy{})
+		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoypatchpolicies", &envoy.EnvoyPatchPolicy{})
+		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "securitypolicies", &envoy.SecurityPolicy{})
+		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "clienttrafficpolicies", &envoy.ClientTrafficPolicy{})
+		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoyproxies", &envoy.EnvoyProxy{})
 	}
 
 	return builder.Complete(r)
@@ -590,28 +594,35 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // ownIfPermitted registers an owned-resource watch on the builder, but only when
 // the Operator's ServiceAccount has the RBAC permissions to manage the given
-// resource. Otherwise the watch is skipped and the reason is logged.
+// resource in the Operator's watch namespace. Otherwise the watch is skipped and
+// the reason is logged.
 //
-// Namespaced resources are checked against the Operator's watch namespace, while
-// cluster-scoped resources (clusterScoped == true) are always checked at cluster
-// scope.
-func (r *GitLabReconciler) ownIfPermitted(builder *ctrlbuilder.Builder, authClient kubernetes.Interface, group, resource string, clusterScoped bool, obj client.Object) {
-	namespace := settings.WatchNamespace
-	if clusterScoped {
-		namespace = ""
-	}
-
-	if settings.CanManageResource(authClient, group, resource, namespace) {
-		r.Log.Info("watching resource", "group", group, "resource", resource)
-		builder.Owns(obj)
-
+// Only namespaced resources can be owned: builder.Owns() maps an event back to
+// its GitLab custom resource through an owner reference, and a cluster-scoped
+// resource must not have a namespace-scoped owner.
+func (r *GitLabReconciler) ownIfPermitted(builder *ctrlbuilder.Builder, authClient kubernetes.Interface, group, resource string, obj client.Object) {
+	if !r.checkPermission(authClient, group, resource, settings.WatchNamespace) {
 		return
 	}
 
-	r.Log.Info("not watching resource: the Operator's ServiceAccount lacks the RBAC permissions to manage it. "+
+	r.Log.Info("watching resource", "group", group, "resource", resource)
+	builder.Owns(obj)
+}
+
+// checkPermission reports whether the Operator's ServiceAccount has the RBAC
+// permissions to manage the given resource, and logs the consequences when it
+// does not. Pass an empty namespace to check at cluster scope.
+func (r *GitLabReconciler) checkPermission(authClient kubernetes.Interface, group, resource, namespace string) bool {
+	if settings.CanManageResource(authClient, group, resource, namespace) {
+		return true
+	}
+
+	r.Log.Info("the Operator's ServiceAccount lacks the RBAC permissions to manage this resource. "+
 		"If a GitLab custom resource is reconciled that requires this resource, the Operator will be unable to "+
 		"create or update it and reconciliation will fail until the missing permissions are granted.",
 		"group", group, "resource", resource)
+
+	return false
 }
 
 // jobFinished checks the status of a specified Job.
@@ -734,12 +745,24 @@ func (r *GitLabReconciler) createOrPatch(ctx context.Context, templateObject cli
 		"type", fmt.Sprintf("%T", templateObject),
 		"reference", key)
 
-	logger.V(2).Info("setting controller reference")
-
 	obj := templateObject.DeepCopyObject().(client.Object)
 
-	if err := controllerutil.SetControllerReference(adapter.Origin(), obj, r.Scheme); err != nil {
+	namespaced, err := apiutil.IsObjectNamespaced(obj, r.Scheme, r.RESTMapper())
+	if err != nil {
 		return err
+	}
+
+	// Kubernetes treats a namespace-scoped owner of a cluster-scoped resource as
+	// an unresolvable owner reference, and rejects it outright when the resource
+	// carries no namespace. Cluster-scoped resources are therefore left without
+	// one; they are still tracked as managed objects and removed once a GitLab
+	// custom resource no longer wants them.
+	if namespaced {
+		logger.V(2).Info("setting controller reference")
+
+		if err := controllerutil.SetControllerReference(adapter.Origin(), obj, r.Scheme); err != nil {
+			return err
+		}
 	}
 
 	outcome, err := kube.ApplyObject(obj, apply.WithContext(ctx),
