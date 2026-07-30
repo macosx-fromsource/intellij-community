@@ -442,10 +442,6 @@ gitlab:
     enabled: false
   sidekiq:
     enabled: false
-redis:
-  install: false
-postgresql:
-  install: false
 shared-secrets:
   enabled: false
 `)

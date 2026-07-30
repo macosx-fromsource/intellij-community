@@ -78,20 +78,6 @@ gitlab:
         app.kubernetes.io/component: webservice
         app.kubernetes.io/instance: {{ .ReleaseName }}-webservice
 
-minio:
-  common:
-    labels:
-      app.kubernetes.io/component: minio
-      app.kubernetes.io/instance: {{ .ReleaseName }}-minio
-
-postgresql:
-  commonLabels:
-    gitlab.io/component: postgresql
-
-redis:
-  commonLabels:
-    gitlab.io/component: redis
-
 registry:
   common:
     labels:

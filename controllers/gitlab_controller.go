@@ -212,24 +212,12 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return requeueWithDefaultDelay()
 	}
 
-	if adapter.WantsComponent(component.Redis) {
-		if err := r.reconcileRedis(ctx, adapter, template); err != nil {
-			return requeue(err)
-		}
-	} else {
-		if err := r.validateExternalRedisConfiguration(ctx, adapter); err != nil {
-			return requeue(err)
-		}
+	if err := r.validateExternalRedisConfiguration(ctx, adapter); err != nil {
+		return requeue(err)
 	}
 
-	if adapter.WantsComponent(component.PostgreSQL) {
-		if err := r.reconcilePostgres(ctx, adapter, template); err != nil {
-			return requeue(err)
-		}
-	} else {
-		if err := r.validateExternalPostgresConfiguration(ctx, adapter); err != nil {
-			return requeue(err)
-		}
+	if err := r.validateExternalPostgresConfiguration(ctx, adapter); err != nil {
+		return requeue(err)
 	}
 
 	if adapter.WantsComponent(component.Gitaly) {
@@ -249,12 +237,6 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			if err := r.reconcileGitalyPraefect(ctx, adapter, template); err != nil {
 				return requeue(err)
 			}
-		}
-	}
-
-	if adapter.WantsComponent(component.MinIO) {
-		if err := r.reconcileMinioInstance(ctx, adapter, template); err != nil {
-			return requeue(err)
 		}
 	}
 
@@ -393,12 +375,6 @@ func (r *GitLabReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "ServiceMonitor") {
 		if err := r.reconcileServiceMonitors(ctx, adapter, template); err != nil {
 			return requeue(err)
-		}
-
-		if adapter.WantsComponent(component.PostgreSQL) {
-			if err := r.createOrPatch(ctx, internal.PostgresqlServiceMonitor(adapter), adapter); err != nil {
-				return requeue(err)
-			}
 		}
 	}
 
@@ -854,14 +830,6 @@ func (r *GitLabReconciler) isEndpointReady(ctx context.Context, service string, 
 
 func (r *GitLabReconciler) ifCoreServicesReady(ctx context.Context, adapter gitlab.Adapter, template helm.Template) (bool, string) {
 	serviceNames := []string{}
-
-	if adapter.WantsComponent(component.PostgreSQL) {
-		serviceNames = append(serviceNames, gitlabctl.PostgresService(adapter, template).GetName())
-	}
-
-	if adapter.WantsComponent(component.Redis) {
-		serviceNames = append(serviceNames, gitlabctl.RedisMasterService(adapter, template).GetName())
-	}
 
 	if adapter.WantsComponent(component.Gitaly) {
 		if !adapter.WantsComponent(component.Praefect) || !adapter.WantsFeature(feature.ReplaceGitalyWithPraefect) {

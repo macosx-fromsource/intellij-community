@@ -15,13 +15,10 @@ const (
 	GitLabKAS      gitlab.Component = "kas"
 	Mailroom       gitlab.Component = "mailroom"
 	Migrations     gitlab.Component = "migrations"
-	MinIO          gitlab.Component = "minio"
 	NginxIngress   gitlab.Component = "nginx-ingress"
 	NginxGeo       gitlab.Component = "nginx-ingress-geo"
-	PostgreSQL     gitlab.Component = "postgresql"
 	Praefect       gitlab.Component = "praefect"
 	Prometheus     gitlab.Component = "prometheus"
-	Redis          gitlab.Component = "redis"
 	Registry       gitlab.Component = "registry"
 	SharedSecrets  gitlab.Component = "shared-secrets"
 	Sidekiq        gitlab.Component = "sidekiq"
@@ -32,16 +29,11 @@ const (
 
 var (
 	Core = gitlab.Components{
-		PostgreSQL,
-		Redis,
 		Gitaly,
 	}
 
 	Stateful = gitlab.Components{
-		PostgreSQL,
-		Redis,
 		Gitaly,
-		MinIO,
 	}
 
 	All = gitlab.Components{
@@ -52,10 +44,7 @@ var (
 		GitLabKAS,
 		Mailroom,
 		Migrations,
-		MinIO,
 		NginxIngress,
-		PostgreSQL,
-		Redis,
 		Registry,
 		SharedSecrets,
 		Sidekiq,
