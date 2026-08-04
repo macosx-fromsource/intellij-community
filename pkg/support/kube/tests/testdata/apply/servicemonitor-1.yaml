@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: test-servicemonitor
+  namespace: default
+  annotations:
+    source: servicemonitor-1
+spec:
+  jobLabel: test-job
+  selector:
+    matchLabels:
+      app: test
+  endpoints:
+    - port: metrics

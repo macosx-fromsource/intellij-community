@@ -13,8 +13,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/mergepatch"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	"k8s.io/kubectl/pkg/scheme"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/kubectl/pkg/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,7 +46,6 @@ type ApplyConfig struct {
 	Context   context.Context
 	Logger    logr.Logger
 	Overwrite bool
-	Scheme    *runtime.Scheme
 
 	object client.Object
 }
@@ -58,17 +58,17 @@ type ApplyConfig struct {
 //   - WithContext
 //   - WithLogger
 //   - WithManager
-//   - WithScheme
 //
 // See each option for further details.
 type ApplyOption = func(*ApplyConfig)
 
 // ApplyObject creates or patches the given object in the Kubernetes cluster.
 //
-// It imitates `kubectl apply` and utilizes three-way strategic merge patch. It
-// falls back to JSON merge patch when strategic merge patch is not possible.
-// It annotates objects with the last configuration that was used to create or
-// update them with the same annotation that `kubectl apply` uses.
+// It imitates `kubectl apply`: built-in types are patched with a three-way
+// strategic merge patch, and everything else, custom resources in particular,
+// with a three-way JSON merge patch. It annotates objects with the last
+// configuration that was used to create or update them with the same annotation
+// that `kubectl apply` uses.
 //
 // It returns the executed operation and an error.
 func ApplyObject(object client.Object, options ...ApplyOption) (ApplyOutcome, error) {
@@ -89,7 +89,6 @@ func defaultApplyConfig(object client.Object) *ApplyConfig {
 		Codec:   unstructured.UnstructuredJSONScheme,
 		Context: context.Background(),
 		Logger:  logr.Discard(),
-		Scheme:  scheme.Scheme,
 
 		/* Automatically resolve conflicts between the modified and current
 		   configuration by using values from the modified configuration */
@@ -147,7 +146,9 @@ func (c *ApplyConfig) apply() (ApplyOutcome, error) {
 		err = c.wrapObjectError(err, "failed to obtain current configuration")
 	case err == nil:
 		/* Patch the existing object. */
-		patched, err := c.patch(modified)
+		var patched bool
+
+		patched, err = c.patch(modified)
 		if err == nil && patched {
 			outcome = ObjectUpdated
 		}
@@ -209,77 +210,99 @@ func (c *ApplyConfig) calculatePatch(modified []byte) (client.Patch, error) {
 		return nil, c.wrapObjectError(err, "failed to get original configuration")
 	}
 
-	var (
-		patchType types.PatchType
-		patchData []byte
-	)
-
-	/* Create the versioned object from the type */
-	versionedObject, err := c.getVersionedObject()
-
 	preconditions := []mergepatch.PreconditionFunc{
 		/* Ignore read-only metadata attributes. */
 		ignoreMetadataKey("creationTimestamp"),
 	}
 
+	/* Create the versioned object from the type. */
+	versionedObject, err := c.builtinVersionedObject()
+
 	switch {
 	case runtime.IsNotRegisteredError(err):
-		c.Logger.V(2).Info("object kind is not registered, using merge patch",
-			"error", err)
-
-		/* Fall back to generic JSON merge patch. */
-		patchType = types.MergePatchType
-
-		preconditions = append(preconditions,
-			mergepatch.RequireKeyUnchanged("apiVersion"),
-			mergepatch.RequireKeyUnchanged("kind"),
-			mergepatch.RequireMetadataKeyUnchanged("name"),
-		)
-
-		patchData, err = jsonmergepatch.CreateThreeWayJSONMergePatch(
-			original, modified, current, preconditions...)
-		if err != nil {
-			if mergepatch.IsPreconditionFailed(err) {
-				return nil, c.wrapObjectError(err, "at least one of apiVersion, kind and name was changed")
-			}
-
-			c.Logger.V(2).Error(err, "failed to create merge patch",
-				"original", string(original),
-				"modified", string(modified),
-				"current", string(current),
-			)
-
-			return nil, c.wrapObjectError(err, "failed to create merge patch")
-		}
+		return c.jsonMergePatch(original, modified, current, preconditions)
 	case err != nil:
 		return nil, c.wrapObjectError(err, "failed to get instance of versioned object")
-	case err == nil:
-		/* Compute a three way strategic merge patch to send to server. */
-		patchType = types.StrategicMergePatchType
-
-		lookupPatchMeta, err := strategicpatch.NewPatchMetaFromStruct(versionedObject)
-		if err != nil {
-			return nil, c.wrapObjectError(err, "unable to obtain patch meta")
-		}
-
-		patchData, err = strategicpatch.CreateThreeWayMergePatch(
-			original, modified, current, lookupPatchMeta, c.Overwrite, preconditions...)
-		if err != nil {
-			c.Logger.V(2).Error(err, "failed to create strategic merge patch",
-				"original", string(original),
-				"modified", string(modified),
-				"current", string(current),
-			)
-
-			return nil, c.wrapObjectError(err, "failed to create strategic merge patch")
-		}
+	default:
+		return c.strategicMergePatch(versionedObject, original, modified, current, preconditions)
 	}
-
-	return client.RawPatch(patchType, patchData), nil
 }
 
-func (c *ApplyConfig) getVersionedObject() (runtime.Object, error) {
-	return c.Scheme.New(c.object.GetObjectKind().GroupVersionKind())
+// jsonMergePatch computes a three way JSON merge patch. It is the only patch
+// type the kube-apiserver accepts for CRD-backed resources.
+func (c *ApplyConfig) jsonMergePatch(original, modified, current []byte, preconditions []mergepatch.PreconditionFunc) (client.Patch, error) {
+	c.Logger.V(2).Info("object kind is not a built-in type, using JSON merge patch")
+
+	preconditions = append(preconditions,
+		mergepatch.RequireKeyUnchanged("apiVersion"),
+		mergepatch.RequireKeyUnchanged("kind"),
+		mergepatch.RequireMetadataKeyUnchanged("name"),
+	)
+
+	patchData, err := jsonmergepatch.CreateThreeWayJSONMergePatch(
+		original, modified, current, preconditions...)
+	if err != nil {
+		if mergepatch.IsPreconditionFailed(err) {
+			return nil, c.wrapObjectError(err, "at least one of apiVersion, kind and name was changed")
+		}
+
+		c.logPatchFailure(err, "failed to create merge patch", original, modified, current)
+
+		return nil, c.wrapObjectError(err, "failed to create merge patch")
+	}
+
+	return client.RawPatch(types.MergePatchType, patchData), nil
+}
+
+// strategicMergePatch computes a three way strategic merge patch from the patch
+// metadata of the built-in Go type.
+func (c *ApplyConfig) strategicMergePatch(versionedObject runtime.Object, original, modified, current []byte, preconditions []mergepatch.PreconditionFunc) (client.Patch, error) {
+	lookupPatchMeta, err := strategicpatch.NewPatchMetaFromStruct(versionedObject)
+	if err != nil {
+		return nil, c.wrapObjectError(err, "unable to obtain patch meta")
+	}
+
+	patchData, err := strategicpatch.CreateThreeWayMergePatch(
+		original, modified, current, lookupPatchMeta, c.Overwrite, preconditions...)
+	if err != nil {
+		c.logPatchFailure(err, "failed to create strategic merge patch", original, modified, current)
+
+		return nil, c.wrapObjectError(err, "failed to create strategic merge patch")
+	}
+
+	return client.RawPatch(types.StrategicMergePatchType, patchData), nil
+}
+
+func (c *ApplyConfig) logPatchFailure(err error, message string, original, modified, current []byte) {
+	c.Logger.V(2).Error(err, message,
+		"original", string(original),
+		"modified", string(modified),
+		"current", string(current),
+	)
+}
+
+// builtinScheme holds the built-in Kubernetes API types, and only those.
+//
+// It decides the patch type: the kube-apiserver accepts strategic merge patch
+// for built-in types only. CRD-backed resources (Gateway API, Envoy Gateway,
+// cert-manager, Prometheus Operator, ...) reject it with 415 Unsupported Media
+// Type and have to be patched with a JSON merge patch.
+//
+// This is deliberately a private scheme and not the caller's: the Operator
+// registers its CRD types into the scheme it hands to the manager, so looking a
+// kind up there would wrongly report that a custom resource supports strategic
+// merge patch.
+var builtinScheme = func() *runtime.Scheme {
+	s := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(s))
+
+	return s
+}()
+
+// builtinVersionedObject returns a new instance of the built-in Go type behind
+// the object, or a NotRegisteredError when the object is not a built-in type.
+func (c *ApplyConfig) builtinVersionedObject() (runtime.Object, error) {
+	return builtinScheme.New(c.object.GetObjectKind().GroupVersionKind())
 }
 
 func (c *ApplyConfig) isEmptyPatch(p client.Patch) bool {
