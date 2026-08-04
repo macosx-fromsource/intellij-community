@@ -4,6 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -48,6 +49,69 @@ var _ = Describe("ApplyObject", func() {
 		Expect(d.Spec.Template.Spec.Volumes[2].Name).To(Equal("dummy"))
 		Expect(d.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(3))
 		Expect(d.Spec.Template.Spec.Containers[0].VolumeMounts[0].Name).To(Equal("dummy"))
+
+		Eventually(DeleteObject(d)).Should(Succeed())
+	})
+
+	It("patches custom resources whose Go type is registered in the scheme", func() {
+		/* The kube-apiserver only accepts strategic merge patch for built-in
+		   types. A custom resource must be patched with a JSON merge patch even
+		   when its Go type is known, otherwise the server rejects the request
+		   with 415 Unsupported Media Type. */
+		obj := ReadObject("apply/servicemonitor-1")
+		Expect(
+			kube.ApplyObject(obj, apply.WithManager(Manager)),
+		).To(Equal(kube.ObjectCreated))
+
+		sm := &monitoringv1.ServiceMonitor{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      obj.GetName(),
+				Namespace: obj.GetNamespace(),
+			},
+		}
+		Eventually(GetObject(sm)).Should(Succeed())
+		Expect(sm.Spec.JobLabel).To(Equal("test-job"))
+
+		obj = ReadObject("apply/servicemonitor-2")
+		Expect(
+			kube.ApplyObject(obj, apply.WithManager(Manager)),
+		).To(Equal(kube.ObjectUpdated))
+
+		Eventually(func() (string, error) {
+			if err := GetObject(sm)(); err != nil {
+				return "", err
+			}
+
+			return sm.Spec.JobLabel, nil
+		}).Should(Equal("changed-job"))
+
+		Eventually(DeleteObject(sm)).Should(Succeed())
+	})
+
+	It("reports an error when the server rejects the patch", func() {
+		obj := ReadObject("apply/deployment-1")
+		Expect(
+			kube.ApplyObject(obj, apply.WithManager(Manager)),
+		).To(Equal(kube.ObjectCreated))
+
+		d := &appsv1.Deployment{
+			ObjectMeta: v1.ObjectMeta{
+				Name:      obj.GetName(),
+				Namespace: obj.GetNamespace(),
+			},
+		}
+		Eventually(GetObject(d)).Should(Succeed())
+
+		/* An immutable field: the server rejects the patch. */
+		obj = ReadObject("apply/deployment-2")
+		deployment, ok := obj.(*appsv1.Deployment)
+		Expect(ok).To(BeTrue())
+
+		deployment.Spec.Selector.MatchLabels = map[string]string{"app": "not-test"}
+
+		outcome, err := kube.ApplyObject(obj, apply.WithManager(Manager))
+		Expect(err).To(HaveOccurred())
+		Expect(outcome).To(Equal(kube.ObjectUnchanged))
 
 		Eventually(DeleteObject(d)).Should(Succeed())
 	})

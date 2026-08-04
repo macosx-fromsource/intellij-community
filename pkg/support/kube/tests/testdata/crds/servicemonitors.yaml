@@ -1,0 +1,27 @@
+---
+# A minimal stand-in for the Prometheus Operator ServiceMonitor CRD.
+#
+# What matters for the tests is that this is a custom resource whose Go type is
+# registered in the scheme: the kube-apiserver rejects strategic merge patch for
+# custom resources, so ApplyObject must not pick that patch type just because it
+# can resolve the kind.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: servicemonitors.monitoring.coreos.com
+spec:
+  group: monitoring.coreos.com
+  names:
+    kind: ServiceMonitor
+    listKind: ServiceMonitorList
+    plural: servicemonitors
+    singular: servicemonitor
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true

@@ -13,11 +13,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gatewayalpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	gitlabv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
 	gitlabctl "gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/gitlab"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/adapter"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/gitlab/status"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
@@ -505,6 +509,85 @@ global:
 					return len(httpRoutes.Items), nil
 				}, PollTimeout, PollInterval).Should(BeNumerically(">", 0))
 			})
+		})
+	})
+
+	Context("Cluster-scoped resources", func() {
+		It("Should apply a cluster-scoped resource without an owner reference", func() {
+			releaseName := "cluster-scoped-owner"
+
+			By("Creating a new GitLab resource")
+			Expect(createObject(CreateMockGitLab(releaseName, Namespace, support.Values{}))).Should(Succeed())
+
+			gitlab := &gitlabv1beta1.GitLab{}
+
+			Eventually(func() error {
+				return getObject(releaseName, gitlab)
+			}, PollTimeout, PollInterval).Should(Succeed())
+
+			adapter, err := adapter.NewV1Beta1(ctx, gitlab)
+			Expect(err).NotTo(HaveOccurred())
+
+			reconciler := &GitLabReconciler{
+				Client: k8sClient,
+				Log:    ctrl.Log.WithName("test").WithName("createOrPatch"),
+				Scheme: k8sClient.Scheme(),
+			}
+
+			// A cluster-scoped resource must not have a namespace-scoped owner, so
+			// createOrPatch has to leave the owner reference off. Setting one would
+			// make the apply fail and abort the whole reconcile.
+			By("Applying a cluster-scoped GatewayClass")
+
+			name := fmt.Sprintf("%s-gateway-class", releaseName)
+			gatewayClass := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "gateway.networking.k8s.io/v1",
+				"kind":       "GatewayClass",
+				"metadata":   map[string]interface{}{"name": name},
+				"spec":       map[string]interface{}{"controllerName": "gitlab.com/test"},
+			}}
+
+			Expect(reconciler.createOrPatch(ctx, gatewayClass, adapter)).To(Succeed())
+
+			applied := &gatewayv1.GatewayClass{}
+
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Name: name}, applied)
+			}, PollTimeout, PollInterval).Should(Succeed())
+
+			Expect(applied.GetOwnerReferences()).To(BeEmpty())
+
+			By("Setting an owner reference on a namespaced resource")
+
+			configMap := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata": map[string]interface{}{
+					"name":      fmt.Sprintf("%s-scope-test", releaseName),
+					"namespace": Namespace,
+				},
+				"data": map[string]interface{}{"key": "value"},
+			}}
+
+			Expect(reconciler.createOrPatch(ctx, configMap, adapter)).To(Succeed())
+			Expect(configMap.GetOwnerReferences()).To(BeEmpty()) // the template object is not mutated
+
+			appliedConfigMap := &corev1.ConfigMap{}
+
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{
+					Name: fmt.Sprintf("%s-scope-test", releaseName), Namespace: Namespace,
+				}, appliedConfigMap)
+			}, PollTimeout, PollInterval).Should(Succeed())
+
+			Expect(appliedConfigMap.GetOwnerReferences()).To(HaveLen(1))
+			Expect(appliedConfigMap.GetOwnerReferences()[0].Name).To(Equal(releaseName))
+
+			By("Deleting the created resources")
+			Expect(k8sClient.Delete(ctx, applied)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, appliedConfigMap)).To(Succeed())
+			Eventually(deleteObjectPromise(releaseName, &gitlabv1beta1.GitLab{}),
+				PollTimeout, PollInterval).Should(Succeed())
 		})
 	})
 })
