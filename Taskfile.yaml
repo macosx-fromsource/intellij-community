@@ -181,6 +181,16 @@ tasks:
     cmds:
       - ./controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
+  install_v2alpha1_crds:
+    desc: |
+      Installs the apps.gitlab.com/v2alpha1 CRDs for Bridge development.
+      These are not part of the Helm chart, so they reach no release manifest and no OLM bundle.
+      Acts on the current kubectl context.
+    cmds:
+      # Adds GitLabCore, Orbit, and DataInsightPlatform. Each is a definition of its own with
+      # v2alpha1 as its only version, so the existing GitLab definition is left alone.
+      - $KUBECTL apply -f config/crd/bases/
+
   openapi:
     desc: Generates the backend-for-frontend OpenAPI document from the Huma API.
     sources:

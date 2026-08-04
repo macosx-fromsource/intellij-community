@@ -1,0 +1,10 @@
+apiVersion: apps.gitlab.com/v2alpha1
+kind: Orbit
+metadata:
+  name: orbit
+spec:
+  gitlabRef:
+    name: gitlab # the GitLab resource in this namespace that Orbit belongs to
+  chart:
+    version: "X.Y.Z" # see https://gitlab.com/gitlab-org/orbit/orbit-helm-charts
+    values: {}
