@@ -63,6 +63,9 @@ spec:
           dependencyProxy:
             enabled: true
             bucket: gitlab-dependency-proxy
+        extraEnv:
+          GITLAB_LICENSE_MODE: "test"
+          CUSTOMER_PORTAL_URL: "https://customers.staging.gitlab.com"
       gitlab:
         webservice:
           minReplicas: 1
