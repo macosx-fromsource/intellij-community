@@ -6,7 +6,7 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/cert-manager/cert-manager v1.20.2
-	github.com/danielgtaylor/huma/v2 v2.38.0
+	github.com/danielgtaylor/huma/v2 v2.39.0
 	github.com/envoyproxy/gateway v1.8.3
 	github.com/go-logr/logr v1.4.4
 	github.com/mitchellh/copystructure v1.2.0
