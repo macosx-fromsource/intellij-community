@@ -98,3 +98,22 @@ func authMiddleware(api huma.API, cf ClientFactory) func(huma.Context, func(huma
 		next(huma.WithValue(ctx, clientCtxKey{}, cl))
 	}
 }
+
+// localClientMiddleware injects a single, fixed client for API routes instead of
+// building a per-request client from a bearer token. It is used by the local
+// serve mode (the `kubectl bridge` plugin), where the client is built from the
+// caller's own kubeconfig — so the caller's kubectl identity (client cert,
+// exec/OIDC, or token, whatever their kubeconfig uses) authenticates to the API
+// server directly, with no bearer token to pass. Non-API routes pass through
+// untouched, exactly like authMiddleware.
+func localClientMiddleware(c client.Client) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		if !strings.HasPrefix(ctx.URL().Path, "/api/") {
+			next(ctx)
+
+			return
+		}
+
+		next(huma.WithValue(ctx, clientCtxKey{}, c))
+	}
+}

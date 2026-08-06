@@ -10,7 +10,7 @@ architecture and stack rationale. This file documents how to work on and locally
 
 | File | Purpose |
 |---|---|
-| `server.go` | `Server` (`manager.Runnable`); `NewAPI(client)` builds the `humago` mux |
+| `server.go` | `Server` (`manager.Runnable`); `NewAPI(cf)` / `NewLocalAPI(client)` build the `humago` mux |
 | `handlers.go` | 6 CRUD operations registered with `huma.Register`; K8s→HTTP error mapping |
 | `dto.go` | Wire DTOs (`GitLabResource`/`ChartDTO`/`StatusDTO`) + mappers to/from `apiv1beta1.GitLab` |
 | `static.go` + `web/dist/` | `go:embed` SPA serving with client-side-routing fallback |
@@ -61,7 +61,35 @@ curl -H "Authorization: Bearer $TOKEN" localhost:8090/api/v1/gitlabs
 ```
 
 A client-cert or exec/OIDC kubeconfig can't be reduced to a bearer token — use
-`kubectl create token <sa>` (or your OIDC id-token) instead.
+`kubectl create token <sa>` (or your OIDC id-token) instead, or run the `kubectl bridge` plugin.
+
+## Local serve mode (`kubectl bridge` plugin)
+
+[../../cmd/kubectl-bridge](../../cmd/kubectl-bridge) is a kubectl plugin that runs the same server on
+the user's machine. It builds one client from the ambient kubeconfig via `clientcmd` (honoring
+`--context`/`--kubeconfig`/`KUBECONFIG`), so client-cert, exec/OIDC and token kubeconfigs all work —
+client-go builds the transport, exactly as kubectl does. It uses a private `flag.FlagSet` to avoid
+the global `--kubeconfig` flag that transitively-imported k8s libraries register.
+
+Server side this is `NewLocalAPI(c)`: same routes, but `localClientMiddleware` ([auth.go](auth.go))
+injects that fixed client into `clientCtxKey` for `/api/` requests instead of `authMiddleware`
+building one per bearer token, and the Huma config declares no bearer security scheme (no
+**Authorize** button in `/docs`). The in-cluster `NewAPI`/`authMiddleware` path is untouched. There
+is **no request authentication** in this mode, so the plugin defaults to loopback and warns
+(`warnIfNotLoopback`) when bound anywhere else.
+
+`registerStatic(mux, localMode)` ([static.go](static.go)) injects
+`<script>window.__BRIDGE_AUTH__="local"</script>` before `</head>` of `index.html` when
+`localMode` is set. The SPA reads it through
+[web/src/lib/authMode.ts](web/src/lib/authMode.ts) and `App.vue` hides the token field, showing a
+"Local — kubeconfig identity" indicator instead. Local-mode behavior is covered by
+[local_test.go](local_test.go).
+
+```shell
+task build-kubectl-plugin     # bin/kubectl-bridge (deps: frontend-build)
+task install-kubectl-plugin   # go install -> $GOBIN, else $(go env GOPATH)/bin
+kubectl bridge --verbose      # --port/-p, --address, --context, --kubeconfig, --no-open
+```
 
 ## Testing
 
@@ -77,7 +105,8 @@ SKIP_ENVTEST=yes go test ./internal/bridge/...
 
 `web/` is a Vue 3 SPA scaffolded with **create-vue** (Vite + Vue Router + Pinia + ESLint + Prettier
 + Vitest). It talks to the bridge through a typed **openapi-fetch** client whose types are generated
-from `openapi.yaml` by **openapi-typescript**. Node is pinned to **22** via [mise.toml](../../mise.toml);
+from `openapi.yaml` by **openapi-typescript**. Node is pinned to **26** via [mise.toml](../../mise.toml), matching the
+[Dockerfile.bridge](../../Dockerfile.bridge) webbuilder stage;
 run commands inside a mise-activated shell (or prefix `mise exec --`).
 
 Structure: `src/lib/api/` (typed client), `src/stores/gitlabs.ts` (Pinia CRUD store),
