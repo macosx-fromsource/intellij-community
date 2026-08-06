@@ -488,6 +488,26 @@ tasks:
     cmds:
       - $CONTAINER_CLI push $IMG_REGISTRY/$IMG_REPOSITORY/$IMG_NAME:$TAG-bridge
 
+  build-kubectl-plugin:
+    desc: Build the `kubectl bridge` plugin (runs the bridge locally under your kubeconfig).
+    deps:
+      - frontend-build
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/kubectl-bridge ./cmd/kubectl-bridge
+
+  install-kubectl-plugin:
+    desc: Install the `kubectl bridge` plugin with `go install` (into GOBIN, or GOPATH/bin).
+    deps:
+      - frontend-build
+    vars:
+      # Where `go install` puts the binary: GOBIN when set, otherwise GOPATH/bin.
+      BIN_DIR:
+        sh: go env GOBIN | grep . || echo "$(go env GOPATH)/bin"
+    cmds:
+      - go install ./cmd/kubectl-bridge
+      - 'echo "Installed {{.BIN_DIR}}/kubectl-bridge. Ensure {{.BIN_DIR}} is on PATH, then run: kubectl bridge"'
+
   unit-tests:
     desc: |
       Runs unit tests locally, but skip the slow controller tests.

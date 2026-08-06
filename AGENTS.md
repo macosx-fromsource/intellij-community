@@ -150,6 +150,12 @@ GitLab CR so a SPA can configure GitLab instances.
   kube-apiserver and the caller's own RBAC applies — the operator's service account is never lent
   out. Get a token with `kubectl create token <sa>`; the SPA has a token field and `/docs` an
   Authorize button.
+- **`kubectl bridge` plugin:** [cmd/kubectl-bridge](cmd/kubectl-bridge) runs the same server locally
+  under the caller's kubeconfig (client-cert/exec-OIDC/token all work, no token to paste).
+  `bridge.NewLocalAPI(c)` swaps `authMiddleware` for `localClientMiddleware` (one fixed client, no
+  bearer check) and marks `index.html` so the SPA hides the token field. It does no request auth of
+  its own, so it binds loopback by default and warns otherwise.
+  `task build-kubectl-plugin` / `install-kubectl-plugin`.
 - **PoC caveats:** the SPA keeps the token in `localStorage` (XSS-exposed; use short-lived tokens);
   `spec.chart.values` is a free-form object (no schema until the structured CRD lands).
 

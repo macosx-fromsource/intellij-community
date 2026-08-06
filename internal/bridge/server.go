@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -68,7 +69,28 @@ func NewAPI(cf ClientFactory) (huma.API, http.Handler) {
 
 	api.UseMiddleware(authMiddleware(api, cf))
 	RegisterRoutes(api)
-	registerStatic(mux)
+	registerStatic(mux, false)
+
+	return api, mux
+}
+
+// NewLocalAPI builds the same HTTP handler as NewAPI but for local serve mode:
+// instead of authenticating each request with a bearer token, it injects a
+// single fixed client (built from the caller's own kubeconfig) for every API
+// request. This backs the `kubectl bridge` plugin, which runs the bridge on the
+// caller's machine so their kubectl identity — including a client-cert or
+// exec/OIDC kubeconfig that has no bearer token — authenticates to the API
+// server directly. The API therefore declares no bearer security scheme, and it
+// performs no request authentication of its own, so the caller is responsible
+// for where the handler is exposed — normally a loopback address.
+func NewLocalAPI(c client.Client) (huma.API, http.Handler) {
+	mux := http.NewServeMux()
+
+	api := humago.New(mux, huma.DefaultConfig(apiTitle, apiVersion))
+
+	api.UseMiddleware(localClientMiddleware(c))
+	RegisterRoutes(api)
+	registerStatic(mux, true)
 
 	return api, mux
 }

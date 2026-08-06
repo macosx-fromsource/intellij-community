@@ -19,6 +19,11 @@ The bridge uses caller-identity delegation, like the old Kubernetes Dashboard. T
 use the operator service account for API calls. Instead, every request to `/api` must carry a bearer
 token:
 
+> [!note]
+> This applies to the bridge running in the cluster. The `kubectl bridge` plugin runs the bridge on
+> your machine and authenticates with your kubeconfig instead, so it needs no bearer token. For more
+> information, see [Run the bridge as a kubectl plugin](#run-the-bridge-as-a-kubectl-plugin).
+
 ```plaintext
 Authorization: Bearer <token>
 ```
@@ -195,6 +200,78 @@ service account lacks a verb. For example, a read-only account that attempts a c
 # A read succeeds.
 curl -H "Authorization: Bearer $TOKEN" localhost:8090/api/v1/gitlabs
 # A create the caller cannot perform returns HTTP 403.
+```
+
+## Run the bridge as a kubectl plugin
+
+The `kubectl bridge` plugin runs the bridge on your own machine instead of in the cluster. The plugin
+builds its Kubernetes client from your kubeconfig, so it authenticates the same way `kubectl` does.
+Client certificate, exec, OIDC, and token kubeconfigs all work. You do not create a service account,
+mint a token, or paste anything into the UI.
+
+Use the plugin when you want the UI without deploying a bridge image, or when your kubeconfig cannot
+be reduced to a bearer token.
+
+> [!warning]
+> The plugin performs no authentication of its own. Anyone who reaches the port acts with your
+> kubeconfig permissions. It binds loopback by default. You can bind a routable address, for example
+> to run the plugin in a container, but the plugin prints a warning because that exposes full cluster
+> access to the network.
+
+### Install the plugin
+
+Build and install the binary. The task builds the SPA first, then runs `go install`, which compiles
+the SPA into the binary with `go:embed`:
+
+```shell
+task install-kubectl-plugin
+```
+
+The binary goes where `go install` puts it: `$GOBIN` when set, otherwise `$(go env GOPATH)/bin`. The
+task prints the resolved path.
+
+That directory must be on your `PATH`, because `kubectl` discovers plugins by searching `PATH` for
+executables named `kubectl-<name>`. Add it to your shell profile if needed:
+
+```shell
+export PATH="$(go env GOPATH)/bin:$PATH"
+```
+
+Confirm `kubectl` found the plugin:
+
+```shell
+kubectl plugin list | grep kubectl-bridge
+```
+
+To build the binary into `bin/kubectl-bridge` without installing it, use `task build-kubectl-plugin`.
+
+### Start the plugin
+
+Run the plugin against your current kubeconfig context:
+
+```shell
+kubectl bridge
+```
+
+The plugin prints the identity it acts as and the URL, then opens the URL in your browser. The
+header shows **Local — kubeconfig identity** instead of the token field. Stop the plugin with
+<kbd>Control</kbd>+<kbd>C</kbd>.
+
+### Plugin flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--port`, `-p` | `8090` | Local port to bind. Falls back to a random free port when the port is busy. |
+| `--address` | `127.0.0.1` | Address to bind. IPv6 literals such as `::1` work. A non-loopback address is allowed, with a warning. |
+| `--context` | Current context | Kubeconfig context to use. |
+| `--kubeconfig` | Standard loading rules | Path to the kubeconfig file. |
+| `--no-open` | Off | Print the URL instead of opening a browser. |
+| `--verbose`, `-v` | Off | Log startup details and every served request at debug level. |
+
+For example, to use a different context on another port without opening a browser:
+
+```shell
+kubectl bridge --context staging --port 9000 --no-open
 ```
 
 ## Frontend development

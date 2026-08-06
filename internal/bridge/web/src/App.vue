@@ -2,9 +2,11 @@
 import { ref } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 
+import { isLocalAuthMode } from '@/lib/authMode'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
+const localMode = isLocalAuthMode()
 const draft = ref(auth.token)
 const editing = ref(!auth.isAuthenticated)
 
@@ -29,7 +31,12 @@ function clear(): void {
   <header class="app-header">
     <RouterLink to="/" class="brand">GitLab Operator</RouterLink>
     <div class="token-bar">
-      <template v-if="editing">
+      <template v-if="localMode">
+        <span class="token-status" title="Authenticated via your kubeconfig (kubectl bridge)">
+          Local — kubeconfig identity
+        </span>
+      </template>
+      <template v-else-if="editing">
         <input
           v-model="draft"
           type="password"
