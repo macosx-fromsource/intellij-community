@@ -82,6 +82,7 @@ type GitLabStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:resource:shortName=gl
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="STATUS",type=string,JSONPath=`.status.phase`

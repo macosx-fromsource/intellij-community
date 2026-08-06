@@ -87,6 +87,45 @@ kubectl -n gitlab-system logs deploy/gitlab-controller-manager | grep bridge
 > The chart exposes only a container port for the bridge, with no `Service` or `Ingress`. Reach it
 > with `kubectl port-forward`. Do not expose it publicly while it is a proof of concept.
 
+## Install the v2alpha1 custom resources
+
+The `apps.gitlab.com/v2alpha1` resources that
+[ADR 26](adr/0026-design-of-v2alpha1-custom-resources.md) designs are not part of the Helm chart.
+The chart is what produces the release manifests and the OLM bundle, so leaving them out keeps them
+out of everything a user installs.
+
+Install them in a development cluster:
+
+```shell
+task install_v2alpha1_crds
+```
+
+The task acts on the current `kubectl` context. Check it first, because a development cluster can
+hold a real GitLab instance. It reads `$NAMESPACE` and `$NAME_OVERRIDE` to find the webhook Service,
+so use the same values you deployed the Operator with.
+
+The task adds three definitions, each with `v2alpha1` as its only version:
+
+| Definition | Kind |
+|---|---|
+| `gitlabcores.apps.gitlab.com` | `GitLabCore` |
+| `orbits.apps.gitlab.com` | `Orbit` |
+| `datainsightplatforms.apps.gitlab.com` | `DataInsightPlatform` |
+
+`GitLabCore` is a definition of its own, not a second version of `GitLab`. A definition carries one
+kind across all of its versions, so a differently named kind needs a definition of its own. The
+existing `gitlabs.apps.gitlab.com` definition is untouched, keeps `v1beta1` as its only served and
+stored version, and needs no conversion webhook.
+
+Nothing converts a `GitLab` into a `GitLabCore`. Kubernetes converts only between versions of one
+definition, so an instance created through `GitLab` stays there. To work with the new resource,
+start from the
+[GitLabCore sample](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/config/samples/gitlabcore_v2alpha1.yaml).
+
+> [!note]
+> No controller reconciles `GitLabCore`, `Orbit`, or `DataInsightPlatform` yet. Creating one stores
+> the object and nothing else happens.
+
 ## Create a service account and grant access
 
 Create a service account and bind it to a role with the verbs the caller needs on GitLab resources.

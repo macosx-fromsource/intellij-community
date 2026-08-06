@@ -1,0 +1,10 @@
+apiVersion: apps.gitlab.com/v2alpha1
+kind: DataInsightPlatform
+metadata:
+  name: dip
+spec:
+  gitlabRef:
+    name: gitlab # the GitLab resource in this namespace that the platform belongs to
+  chart:
+    version: "X.Y.Z" # see https://gitlab.com/gitlab-org/cloud-native/charts/dip-chart
+    values: {}

@@ -20,6 +20,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - app.k8s.io
+  resources:
+  - applications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - apps
   resources:
   - daemonsets
@@ -114,6 +126,36 @@ rules:
   - patch
   - update
 - apiGroups:
+  - gateway.envoyproxy.io
+  resources:
+  - clienttrafficpolicies
+  - envoypatchpolicies
+  - envoyproxies
+  - securitypolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gatewayclasses
+  - gateways
+  - httproutes
+  - tcproutes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - podmonitors
@@ -130,48 +172,6 @@ rules:
   - networking.k8s.io
   resources:
   - ingresses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - gateway.networking.k8s.io
-  resources:
-  - httproutes
-  - tcproutes
-  - gateways
-  - gatewayclasses
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - gateway.envoyproxy.io
-  resources:
-  - envoyproxies
-  - envoypatchpolicies
-  - clienttrafficpolicies
-  - securitypolicies
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - app.k8s.io
-  resources:
-  - applications
   verbs:
   - create
   - delete

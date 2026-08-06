@@ -34,58 +34,33 @@ Bridge. The API is shaped by the following decisions:
 - **Helm charts at reconciliation time.** The Operator continues to use the GitLab Helm charts to
   reconcile the desired state, as it does today. The structured resources are translated into
   chart values internally; the charts remain the deployment mechanism.
-- **User-facing meta resource.** A single user-facing "meta" GitLab resource corresponds to the
-  GitLab umbrella chart. This is the resource Bridge writes to, and it represents the GitLab
-  instance as a whole.
-- **Operator-managed internal resources.** The Operator splits the meta resource into smaller,
-  internal resources that are not customer-facing. Each internal resource owns one component and
-  is reconciled independently, which keeps reconciliation modular and enables us to potentially
-  replace some components with [Fairway-based](https://gitlab.com/gitlab-com/gl-infra/platform/runway/fairway)
-  Helm charts later on.
-- **Initial set of internal resources.** The initial internal resources are `Webservice`,
-  `Sidekiq`, `Migrations`, and `OpenBao`. The set is expected to grow as more components are
-  brought under the structured API.
-- **Compatibility.** Existing installations based on the `apps.gitlab.com/v1beta1` custom
-  resource will need a path to the new meta resource. A conversion webhook or other automated
-  migration approaches will be explored once the API definition has settled.
+- **One resource per chart.** Each chart the Operator deploys gets a custom resource of its own.
+  All resources are peers. Each one is user-facing, is reconciled on its own, and none owns
+  another. Bridge writes to every one of them. The set grows as the umbrella chart is broken up,
+  because a component that moves to a chart of its own gains a resource of its own. This keeps
+  reconciliation modular and lets us replace a bundled component with a
+  [Fairway-based](https://gitlab.com/gitlab-com/gl-infra/platform/runway/fairway) Helm chart by
+  adding a resource for the new chart.
+- **Compatibility.** Existing installations based on the `apps.gitlab.com/v1beta1` custom resource
+  need a path to the new API. That path is designed alongside the new resources rather than after
+  them, and stays disabled while the API is still changing.
 
-```mermaid
-flowchart TB
-    B[Bridge]
-
-    subgraph userfacing [User-facing API]
-        GL[GitLab meta resource]
-    end
-
-    subgraph internal [Operator-managed internal resources]
-        WS[Webservice]
-        SK[Sidekiq]
-        MG[Migrations]
-        OB[OpenBao]
-    end
-
-    B -->|writes desired state| GL
-    GL -->|split by Operator| WS
-    GL -->|split by Operator| SK
-    GL -->|split by Operator| MG
-    GL -->|split by Operator| OB
-
-    WS -.->|Helm chart| K[Kubernetes workloads]
-    SK -.->|Helm chart| K
-    MG -.->|Helm chart| K
-    OB -.->|Helm chart| K
-```
+[ADR 26](0026-design-of-v2alpha1-custom-resources.md) is the design behind these decisions. This ADR
+records what the new API is for and the rules it follows. ADR 26 records what the resources look
+like: which ones exist and the chart behind each, the API group and version, the shape of the
+specification, and how the specification is validated and converted.
 
 ## Consequences
 
-- Bridge interacts only with the user-facing meta resource, keeping its contract stable and
-  independent of how the Operator decomposes the work internally.
-- The Operator can evolve the internal resources — adding, splitting, or renaming them — without
-  changing the user-facing API, as long as the meta resource is preserved.
-- Splitting components into dedicated internal resources allows the Operator to reconcile them
-  independently, at the cost of additional resources to manage and reason about.
+- Bridge interacts with one resource per chart. It gains direct control over each component, and it
+  takes on the job of keeping the set consistent.
+- Tying the resource set to the chart set keeps the API aligned with how GitLab is packaged. Adding
+  a resource is how a new chart enters the API, so the set changes as the umbrella chart is broken
+  up.
+- Each resource is reconciled on its own, at the cost of more resources to manage and reason about
+  than a single resource covering a whole instance.
 - Retaining the Helm charts as the reconciliation mechanism avoids re-implementing GitLab
   deployment logic, but ties the structured API to what the charts can express.
-- The new API supersedes `apps.gitlab.com/v1beta1`. A migration path from the old resource to the
-  structured meta resource — such as a conversion webhook or another automated approach — will be
-  explored once the API definition has settled.
+- The new API supersedes `apps.gitlab.com/v1beta1`. Designing the migration alongside the new
+  resources keeps a path available from the start, and leaving it disabled keeps existing
+  installations untouched until the API settles.

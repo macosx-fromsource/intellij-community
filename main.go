@@ -44,6 +44,10 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+// The apps.gitlab.com/v2alpha1 types are absent from the scheme because nothing reconciles them
+// yet. GitLabCore is a definition of its own rather than a version of GitLab, so no conversion
+// links the two and registering the types would buy nothing. Add them with their controllers.
+//
 //nolint:wsl
 func init() {
 	settings.Load()
