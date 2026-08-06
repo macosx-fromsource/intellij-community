@@ -152,9 +152,12 @@ GitLab CR so a SPA can configure GitLab instances.
   Authorize button.
 - **`kubectl bridge` plugin:** [cmd/kubectl-bridge](cmd/kubectl-bridge) runs the same server locally
   under the caller's kubeconfig (client-cert/exec-OIDC/token all work, no token to paste).
-  `bridge.NewLocalAPI(c)` swaps `authMiddleware` for `localClientMiddleware` (one fixed client, no
-  bearer check) and marks `index.html` so the SPA hides the token field. It does no request auth of
-  its own, so it binds loopback by default and warns otherwise.
+  `bridge.NewLocalAPI(c, acceptHosts...)` swaps `authMiddleware` for `localClientMiddleware` (one
+  fixed client, no bearer check) and marks `index.html` so the SPA hides the token field. It does no
+  request auth of its own, so it binds loopback by default and warns otherwise, and
+  `localGuardMiddleware` 403s `/api/` requests with an unexpected `Host` (DNS rebinding) or a
+  cross-origin `Sec-Fetch-Site`/`Origin`/`Referer`, so a stray browser tab can't drive the cluster
+  (`--accept-hosts` widens the host allowlist).
   `task build-kubectl-plugin` / `install-kubectl-plugin`.
 - **PoC caveats:** the SPA keeps the token in `localStorage` (XSS-exposed; use short-lived tokens);
   `spec.chart.values` is a free-form object (no schema until the structured CRD lands).

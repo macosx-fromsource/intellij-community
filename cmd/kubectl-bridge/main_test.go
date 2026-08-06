@@ -53,6 +53,31 @@ func TestBrowserHost(t *testing.T) {
 	}
 }
 
+// The server only answers API requests addressed to a host it expects, so a
+// deliberate non-loopback bind has to carry that address through — otherwise
+// --address would serve nothing but 403s. An unspecified address says nothing
+// about the name the browser will use, so it adds none.
+func TestAPIAcceptHosts(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		address     string
+		acceptHosts string
+		want        []string
+	}{
+		{"loopback default", "127.0.0.1", "", []string{"127.0.0.1"}},
+		{"routable address", "10.10.1.248", "", []string{"10.10.1.248"}},
+		{"unspecified", "0.0.0.0", "", []string{}},
+		{"unspecified IPv6", "::", "", []string{}},
+		{"empty", "", "", []string{}},
+		{"explicit hosts", "0.0.0.0", "bridge.internal, my-box", []string{"bridge.internal", "my-box"}},
+		{"hosts and address", "10.10.1.248", "bridge.internal", []string{"bridge.internal", "10.10.1.248"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, apiAcceptHosts(tc.address, tc.acceptHosts))
+		})
+	}
+}
+
 // An IPv6 literal must bind. Naive "host:port" concatenation produces
 // "::1:8090", which fails with "too many colons in address".
 func TestListenIPv6Loopback(t *testing.T) {

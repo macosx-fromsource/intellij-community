@@ -80,15 +80,20 @@ func NewAPI(cf ClientFactory) (huma.API, http.Handler) {
 // request. This backs the `kubectl bridge` plugin, which runs the bridge on the
 // caller's machine so their kubectl identity — including a client-cert or
 // exec/OIDC kubeconfig that has no bearer token — authenticates to the API
-// server directly. The API therefore declares no bearer security scheme, and it
-// performs no request authentication of its own, so the caller is responsible
-// for where the handler is exposed — normally a loopback address.
-func NewLocalAPI(c client.Client) (huma.API, http.Handler) {
+// server directly. The API therefore declares no bearer security scheme.
+//
+// Since requests carry no credential of their own, API routes are guarded by
+// localGuardMiddleware, which serves only requests addressed to a loopback host
+// and not issued by a browser on behalf of another origin. acceptHosts adds Host
+// header names to accept beyond the loopback ones, which is needed when the
+// handler is deliberately exposed under another name or address; the caller
+// remains responsible for who can reach the port at all.
+func NewLocalAPI(c client.Client, acceptHosts ...string) (huma.API, http.Handler) {
 	mux := http.NewServeMux()
 
 	api := humago.New(mux, huma.DefaultConfig(apiTitle, apiVersion))
 
-	api.UseMiddleware(localClientMiddleware(c))
+	api.UseMiddleware(localGuardMiddleware(api, acceptHosts), localClientMiddleware(c))
 	RegisterRoutes(api)
 	registerStatic(mux, true)
 

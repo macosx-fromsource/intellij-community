@@ -71,12 +71,21 @@ the user's machine. It builds one client from the ambient kubeconfig via `client
 client-go builds the transport, exactly as kubectl does. It uses a private `flag.FlagSet` to avoid
 the global `--kubeconfig` flag that transitively-imported k8s libraries register.
 
-Server side this is `NewLocalAPI(c)`: same routes, but `localClientMiddleware` ([auth.go](auth.go))
-injects that fixed client into `clientCtxKey` for `/api/` requests instead of `authMiddleware`
-building one per bearer token, and the Huma config declares no bearer security scheme (no
-**Authorize** button in `/docs`). The in-cluster `NewAPI`/`authMiddleware` path is untouched. There
-is **no request authentication** in this mode, so the plugin defaults to loopback and warns
-(`warnIfNotLoopback`) when bound anywhere else.
+Server side this is `NewLocalAPI(c, acceptHosts...)`: same routes, but `localClientMiddleware`
+([auth.go](auth.go)) injects that fixed client into `clientCtxKey` for `/api/` requests instead of
+`authMiddleware` building one per bearer token, and the Huma config declares no bearer security
+scheme (no **Authorize** button in `/docs`). The in-cluster `NewAPI`/`authMiddleware` path is
+untouched. There is **no request authentication** in this mode, so the plugin defaults to loopback and
+warns (`warnIfNotLoopback`) when bound anywhere else.
+
+Loopback stops other machines, not other browser tabs — with no token to guess, any page the user has
+open could `fetch` `http://127.0.0.1:<port>/api/...` and spend their cluster permissions (the class of
+issue behind CVE-2020-8558, mitigated in `kubectl proxy` by `--accept-hosts`). `localGuardMiddleware`
+([auth.go](auth.go)) runs before `localClientMiddleware` and 403s `/api/` requests that either carry a
+`Host` outside the loopback names plus `acceptHosts` (DNS rebinding) or look like a browser fetch for
+another origin (`Sec-Fetch-Site` other than `same-origin`/`none`, or an `Origin`/`Referer` authority
+differing from `Host`). Requests with none of those headers pass, so `curl` still works. The plugin
+feeds `acceptHosts` from `--accept-hosts` plus its bind address (`apiAcceptHosts`).
 
 `registerStatic(mux, localMode)` ([static.go](static.go)) injects
 `<script>window.__BRIDGE_AUTH__="local"</script>` before `</head>` of `index.html` when
