@@ -221,7 +221,7 @@ create_bundle() {
 annotate_bundle() {
     local bundle_dir="${1}"
 
-    BUNDLE_DIR="${bundle_dir}/bundle" redhat/operator-certification/scripts/configure_bundle.sh adjust_annotations adjust_csv set_upgrade_path
+    BUNDLE_DIR="${bundle_dir}/bundle" scripts/redhat/configure_bundle.sh adjust_annotations adjust_csv set_upgrade_path
 }
 
 copy_bundle() {

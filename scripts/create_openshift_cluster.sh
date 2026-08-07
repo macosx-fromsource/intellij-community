@@ -39,7 +39,7 @@ main() {
   . "${scripts_dir}/install_certmanager.sh" 'openshift'
 
   echo "If this is a cluster meant to run CI pipelines, run"
-  echo "./ci/scripts/install_external_dns.sh to finish network configuration"
+  echo "./.gitlab/ci/scripts/install_external_dns.sh to finish network configuration"
 }
 
 verify_requirements() {
