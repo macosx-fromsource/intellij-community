@@ -8,12 +8,12 @@ title: Helm rendering with internal/render
 The `internal/render` package templates Helm charts into Kubernetes objects. It makes no cluster
 calls and keeps no release records. Use it for every new controller that renders a chart.
 
-The legacy `helm/` package still renders the `v1beta1` resources and is frozen.
+The deprecated `helm/` package still renders the `v1beta1` resources and is frozen.
 
 | Resources | Renderer | Consumers |
 |---|---|---|
-| `v1beta1` | Legacy `helm/` | GitLab controller and webhook |
-| v2 | `internal/render` | New controllers |
+| `v1beta1` | Deprecated `helm/` | GitLab controller and webhook in `controllers/` |
+| v2 | `internal/render` | Controllers in `internal/controller/` |
 
 ## Render a chart
 
@@ -105,7 +105,7 @@ if len(settings.DefaultKubeAPIVersions) > 0 {
 
 ## Offline rendering caveats
 
-Templating without a cluster limits what chart constructs can see. The legacy `helm/` package
+Templating without a cluster limits what chart constructs can see. The deprecated `helm/` package
 renders with a client-side dry run and shares every caveat below, so moving a chart between the two
 engines does not change these behaviors.
 
@@ -299,9 +299,12 @@ missing.
 
 ### Run the end-to-end tests
 
-`internal/render/hookexec/e2e_test.go` installs the chart into a real cluster the way a v2
-controller should: render once, apply `Result.CRDs`, run the `pre-install` hooks, and only then apply
-the workloads. Use it as the worked example for consuming hooks.
+`internal/render/hookexec/e2e_test.go` installs the chart into a real cluster: render once, apply
+`Result.CRDs`, run the `pre-install` hooks, and only then apply the workloads. Use it as the worked
+example for consuming hooks.
+
+The test applies the chart definitions, and the GitLabCore reconciler never does. For more
+information, see [The GitLabCore reconciler](gitlabcore.md).
 
 The test is gated behind the `e2e` build tag, so the unit tests never pick it up. It creates and
 deletes a namespace, so point kubectl at a throwaway cluster:

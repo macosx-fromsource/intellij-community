@@ -51,7 +51,8 @@ gitlab-operator
 $ tree -dL 2 .
 .
 ├── api
-│   └── v1beta1
+│   ├── v1beta1
+│   └── v2alpha1
 ├── bundle
 │   ├── manifests
 │   ├── metadata
@@ -82,11 +83,21 @@ $ tree -dL 2 .
 │   └── assets
 ├── helm
 │   └── testdata
+├── internal
+│   ├── bridge
+│   ├── controller
+│   └── render
 └── scripts
     └── manifests
 ```
 
-- The `controllers` directory contains the controller implementations for the GitLab and GitLab Backup controllers.
+- The `controllers` directory contains the controller implementations for the GitLab and GitLab Backup
+  controllers. It is deprecated and frozen: it serves the `v1beta1` resources only, as does the
+  `helm` directory that renders their charts. Fix bugs there, but add nothing new.
+- The `internal/controller` directory contains the controllers of the `v2alpha1` resources, one
+  package per resource. They render with `internal/render`. For more information, see
+  [The GitLabCore reconciler](gitlabcore.md) and
+  [Helm rendering with internal/render](render.md).
 - The `api` directory contains the API resource definitions for the GitLab and GLBackup resources owned by the operator. The API definitions are grouped by their API version.
   The `*_types.go` file inside `api/<api_version>` contains spec definitions and markers used to generate the custom resource definitions and Cluster Service Version file used by OLM.
 - The `config/samples` directory contains an example manifest for the GitLab custom resource.

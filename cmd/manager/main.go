@@ -44,14 +44,15 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
-// The apps.gitlab.com/v2alpha1 types are absent from the scheme because nothing reconciles them
-// yet. GitLabCore is a definition of its own rather than a version of GitLab, so no conversion
-// links the two and registering the types would buy nothing. Add them with their controllers.
+// addV2Alpha1ToScheme is a no-op unless the binary is built with the `bridge` build tag (see
+// gitlabcore.go / gitlabcore_stub.go); the apps.gitlab.com/v2alpha1 types are absent from public
+// builds along with the controller that reconciles them.
 //
 //nolint:wsl
 func init() {
 	settings.Load()
 	runtime.Must(appsv1beta1.AddToScheme(scheme))
+	addV2Alpha1ToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -153,6 +154,14 @@ func main() {
 
 	if err = appsv1beta1.SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "GitLab")
+		os.Exit(1)
+	}
+
+	// setupGitLabCore is a no-op unless the binary is built with the `bridge` build
+	// tag (see gitlabcore.go / gitlabcore_stub.go), and it stays behind the
+	// ENABLE_BRIDGE runtime flag even then.
+	if err := setupGitLabCore(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "GitLabCore")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

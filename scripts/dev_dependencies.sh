@@ -20,6 +20,13 @@ CNPG_POSTGRESQL_TAG="${CNPG_POSTGRESQL_TAG:-17}"
 OUTPUT_FILE="${OUTPUT_FILE:-external-deps.yaml}"
 export NAMESPACE GARAGE_APP_VERSION CNPG_POSTGRESQL_TAG
 
+# The v2alpha1 example is a complete GitLabCore, not a fragment to merge, so it
+# needs a hostname and a chart version of its own.
+V2ALPHA1_OUTPUT_FILE="${V2ALPHA1_OUTPUT_FILE:-external-deps-v2alpha1.yaml}"
+GITLAB_HOSTNAME="${GITLAB_HOSTNAME:-gitlab.${DOMAIN:-example.com}}"
+NAMESPACE_SA="${GITLAB_MANAGER_SERVICE_ACCOUNT:-gitlab-manager}"
+CHART_VERSION="${CHART_VERSION:-$(head -n1 "${PROJECT_ROOT}/CHART_VERSIONS")}"
+
 function check_prerequisites() {
   for tool in kubectl helm curl; do
     if ! command -v "${tool}" > /dev/null 2>&1; then
@@ -108,6 +115,97 @@ EOF
   echo "    kubectl -n ${NAMESPACE} apply -f mygitlab.yaml"
 }
 
+# cmd_generate_gitlabcore writes a complete v2alpha1 GitLabCore that points at
+# the external dependencies this script deployed. Unlike the v1beta1 output, it
+# is applied as it is: the hostname and the license are structured fields, and
+# everything else stays in the free-form chart values.
+function cmd_generate_gitlabcore() {
+  cat > "${V2ALPHA1_OUTPUT_FILE}" <<EOF
+# An example GitLabCore for local development, wired to the external
+# dependencies of scripts/dev_dependencies.sh.
+#
+# The reconciler is registered only when the Operator runs with
+# ENABLE_BRIDGE=true, and the definition ships in no release. The namespace needs
+# the ${NAMESPACE_SA} ServiceAccount, which the Operator installation provisions
+# and the shared secrets Job runs under:
+#
+#   task install_v2alpha1_crds
+#   kubectl -n ${NAMESPACE} apply -f ${V2ALPHA1_OUTPUT_FILE}
+#
+# See doc/developer/gitlabcore.md.
+apiVersion: apps.gitlab.com/v2alpha1
+kind: GitLabCore
+metadata:
+  name: gitlab
+spec:
+  hostname: ${GITLAB_HOSTNAME}
+  chart:
+    version: "${CHART_VERSION}"
+    values:
+      # The reconciler applies no CustomResourceDefinition, so the Gateway API
+      # is off: its definitions and the ones of Envoy Gateway would have to be
+      # in the cluster first. Install them with \`task install_envoy_gateway\`
+      # and drop this block to route through the Gateway API instead.
+      global:
+        gatewayApi:
+          enabled: false
+          installEnvoy: false
+          configureCertmanager: false
+        ingress:
+          enabled: true
+          configureCertmanager: false
+          class: nginx
+          tls:
+            enabled: false
+        redis:
+          host: $(valkey_release_name)
+          auth:
+            secret: $(valkey_auth_secret)
+            key: $(valkey_auth_secret_key)
+        psql:
+          host: $(cnpg_cluster_host)
+          password:
+            secret: $(cnpg_cluster_secret)
+            key: password
+        pages:
+          objectStore:
+            connection:
+              secret: $(garage_release_name)-gitlab-object-storage
+              key: config
+        appConfig:
+          object_store:
+            enabled: true
+            connection:
+              secret: $(garage_release_name)-gitlab-object-storage
+              key: config
+      gitlab:
+        toolbox:
+          backups:
+            objectStorage:
+              config:
+                secret: $(garage_release_name)-gitlab-object-storage-s3cmd
+                key: config
+      registry:
+        storage:
+          secret: $(garage_release_name)-gitlab-registry-storage
+          key: config
+      # The reconciler applies no RBAC either, so a component that needs RBAC of
+      # its own does not work: NGINX and Prometheus are off. Bring your own
+      # Ingress controller, and have an administrator provision the RBAC of any
+      # component you turn back on.
+      nginx-ingress:
+        enabled: false
+      prometheus:
+        install: false
+EOF
+
+  echo "==> Generated ${V2ALPHA1_OUTPUT_FILE}"
+  echo "    Hostname: ${GITLAB_HOSTNAME}, chart ${CHART_VERSION}"
+  echo "    Apply it as it is, against an Operator running with ENABLE_BRIDGE=true:"
+  echo "    task install_v2alpha1_crds"
+  echo "    kubectl -n ${NAMESPACE} apply -f ${V2ALPHA1_OUTPUT_FILE}"
+}
+
 function cmd_setup() {
   echo "Setting up external dependencies in namespace '${NAMESPACE}'..."
   echo ""
@@ -130,6 +228,8 @@ function cmd_setup() {
   echo ""
 
   cmd_generate_cr
+  echo ""
+  cmd_generate_gitlabcore
 }
 
 function cmd_teardown() {
@@ -199,29 +299,44 @@ function cmd_status() {
 
 function usage() {
   cat <<EOF
-Usage: $0 {setup|teardown|status}
+Usage: $0 {setup|teardown|status|generate}
 
-  setup    Deploy Valkey, CloudNativePG, and Garage as external GitLab dependencies.
-           Generates an external-deps.yaml CR with the connection values to merge into your mygitlab.yaml.
+  setup    Deploy Valkey, CloudNativePG, and Garage as external GitLab dependencies,
+           then generate both custom resources described under 'generate'.
   teardown Remove the deployed external dependencies (does not remove the operator release).
   status   Show the current status of the external dependencies.
+  generate Write the custom resources for the already deployed dependencies, without
+           deploying anything: the v1beta1 values to merge into your mygitlab.yaml, and
+           a complete v2alpha1 GitLabCore to apply as it is.
 
 Environment variables:
-  NAMESPACE           Kubernetes namespace to use (default: gitlab-system)
-  OUTPUT_FILE         Output path for the generated external deps CR (default: external-deps.yaml)
-  GARAGE_APP_VERSION  Garage version to install (default: 2.2.0)
-  CNPG_POSTGRESQL_TAG PostgreSQL image tag for CloudNativePG (default: 17)
-  CHART_REPO_URL      GitLab Charts repository URL (default: https://gitlab.com/gitlab-org/charts/gitlab)
-  CHART_CI_LIB_REF    Git ref for CI library scripts (default: master)
+  NAMESPACE             Kubernetes namespace to use (default: gitlab-system)
+  OUTPUT_FILE           Output path for the generated v1beta1 values (default: external-deps.yaml)
+  V2ALPHA1_OUTPUT_FILE  Output path for the generated GitLabCore (default: external-deps-v2alpha1.yaml)
+  GITLAB_HOSTNAME       Hostname of the GitLabCore (default: gitlab.\${DOMAIN:-example.com})
+  CHART_VERSION         Chart version of the GitLabCore (default: first line of CHART_VERSIONS)
+  GARAGE_APP_VERSION    Garage version to install (default: 2.2.0)
+  CNPG_POSTGRESQL_TAG   PostgreSQL image tag for CloudNativePG (default: 17)
+  CHART_REPO_URL        GitLab Charts repository URL (default: https://gitlab.com/gitlab-org/charts/gitlab)
+  CHART_CI_LIB_REF      Git ref for CI library scripts (default: master)
 
 See doc/developer/installation.md#external-dependencies for full documentation.
 EOF
   exit 1
 }
 
+function cmd_generate() {
+  setup_chart_ci_scripts
+
+  cmd_generate_cr
+  echo ""
+  cmd_generate_gitlabcore
+}
+
 case "${1:-}" in
   setup)    cmd_setup ;;
   teardown) cmd_teardown ;;
   status)   cmd_status ;;
+  generate) cmd_generate ;;
   *)        usage ;;
 esac

@@ -48,6 +48,7 @@ rules:
 - apiGroups:
   - apps.gitlab.com
   resources:
+  - gitlabcores
   - gitlabs
   verbs:
   - create
@@ -60,12 +61,14 @@ rules:
 - apiGroups:
   - apps.gitlab.com
   resources:
+  - gitlabcores/finalizers
   - gitlabs/finalizers
   verbs:
   - update
 - apiGroups:
   - apps.gitlab.com
   resources:
+  - gitlabcores/status
   - gitlabs/status
   verbs:
   - get
@@ -172,6 +175,18 @@ rules:
   - networking.k8s.io
   resources:
   - ingresses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
   verbs:
   - create
   - delete

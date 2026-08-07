@@ -166,10 +166,13 @@ GitLab CR so a SPA can configure GitLab instances.
 
 | Directory | Purpose |
 |---|---|
-| `controllers/gitlab/` | Per-component reconciler helpers |
+| `controllers/` | v1beta1 GitLab reconciler (**deprecated**, frozen) |
+| `controllers/gitlab/` | Per-component reconciler helpers (v1beta1) |
+| `helm/` | Helm chart templating for v1beta1 (**deprecated**, frozen) |
+| `internal/controller/` | v2alpha1 controllers, one package per resource (wired in behind the `bridge` build tag) |
+| `internal/render/` | Helm rendering for v2 resources (use this for new code) |
 | `pkg/gitlab/` | Adapter abstraction |
 | `pkg/support/` | Utilities (values, secrets, charts, kube) |
-| `helm/` | Helm chart templating |
 | `internal/bridge/` | Bridge (backend-for-frontend) HTTP API + embedded SPA |
 | `config/` | CRDs, RBAC, webhooks |
 | `doc/developer/` | Developer docs |

@@ -125,6 +125,7 @@ CHART_NIGHTLY_VERSION
 
 # Generated files from scripts/dev_dependencies.sh
 external-deps.yaml
+external-deps-v2alpha1.yaml
 mygitlab.yaml
 
 # kubectl-bridge plugin build artifacts (task build-kubectl-plugin)
