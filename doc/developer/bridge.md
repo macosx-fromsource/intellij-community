@@ -218,6 +218,21 @@ be reduced to a bearer token.
 > to run the plugin in a container, but the plugin prints a warning because that exposes full cluster
 > access to the network.
 
+Loopback keeps other machines out, but not other tabs in your browser: with no token to guess, a page
+on any site you have open could otherwise `fetch` `http://127.0.0.1:8090/api/...` with your
+kubeconfig permissions. As `kubectl proxy --accept-hosts` does for the same problem, the plugin
+answers `403` to `/api` requests that either:
+
+- Carry a `Host` that is neither a loopback name (`localhost`, `127.0.0.1`, `[::1]`, …) nor one you
+  passed to `--accept-hosts`. This blocks DNS rebinding, where a name the attacker controls resolves
+  to `127.0.0.1` so that their page counts as same-origin with the plugin.
+- Look like a browser fetch made for another origin, judged by `Sec-Fetch-Site`, `Origin`, and
+  `Referer`.
+
+The SPA's own requests, the docs UI, and non-browser clients such as `curl` are unaffected. A
+routable address passed to `--address` is accepted as a host too; reaching the plugin under some
+other name (a DNS entry, a container host name) needs `--accept-hosts`.
+
 ### Install the plugin
 
 Build and install the binary. The task builds the SPA first, then runs `go install`, which compiles
@@ -263,6 +278,7 @@ header shows **Local — kubeconfig identity** instead of the token field. Stop 
 |---|---|---|
 | `--port`, `-p` | `8090` | Local port to bind. Falls back to a random free port when the port is busy. |
 | `--address` | `127.0.0.1` | Address to bind. IPv6 literals such as `::1` work. A non-loopback address is allowed, with a warning. |
+| `--accept-hosts` | Loopback names | Comma-separated `Host` header names to accept on `/api` besides loopback ones and the bind address. Needed to reach the plugin under another name. |
 | `--context` | Current context | Kubeconfig context to use. |
 | `--kubeconfig` | Standard loading rules | Path to the kubeconfig file. |
 | `--no-open` | Off | Print the URL instead of opening a browser. |

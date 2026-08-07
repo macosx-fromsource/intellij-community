@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"cmp"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,14 +19,14 @@ import (
 // newLocalTestServer starts an httptest server built with NewLocalAPI, backed by
 // a fake client, and registered for automatic teardown. It mirrors what the
 // `kubectl bridge` plugin does with a kubeconfig-derived client.
-func newLocalTestServer(t *testing.T) *httptest.Server {
+func newLocalTestServer(t *testing.T, acceptHosts ...string) *httptest.Server {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, apiv1beta1.AddToScheme(scheme))
 
 	c := fake.NewClientBuilder().WithScheme(scheme).Build()
-	_, handler := NewLocalAPI(c)
+	_, handler := NewLocalAPI(c, acceptHosts...)
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -71,6 +72,116 @@ func TestLocalAPIIgnoresBearerToken(t *testing.T) {
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// doLocalWithHeaders performs a request against the local-mode test server with
+// the given headers, mimicking what a browser sends. A "Host" entry sets the
+// request's host rather than a plain header, which is how a DNS rebinding attack
+// reaches a loopback server.
+func doLocalWithHeaders(t *testing.T, server *httptest.Server, method, path string, headers map[string]string) *http.Response {
+	t.Helper()
+
+	req, err := http.NewRequest(method, server.URL+path, nil)
+	require.NoError(t, err)
+
+	for name, value := range headers {
+		if name == "Host" {
+			req.Host = value
+
+			continue
+		}
+
+		req.Header.Set(name, value)
+	}
+
+	resp, err := server.Client().Do(req)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	return resp
+}
+
+// Local mode has no credential to check, so a page on any site the caller has
+// open could otherwise drive the API with their kubeconfig permissions. Every
+// shape a browser gives such a request away by must be refused, while the
+// bridge's own UI, static routes and non-browser clients must not be. A 403 on
+// the DELETE row also shows the guard runs before the handler: reaching the
+// cluster would have answered 404 for a GitLab that does not exist.
+func TestLocalGuard(t *testing.T) {
+	server := newLocalTestServer(t)
+	del := "/api/v1/namespaces/gitlab-system/gitlabs/gitlab"
+
+	for name, tc := range map[string]struct {
+		method  string
+		path    string
+		headers map[string]string
+		want    int
+	}{
+		"cross-site fetch metadata": {"", "", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
+		"same-site fetch metadata":  {"", "", map[string]string{"Sec-Fetch-Site": "same-site"}, http.StatusForbidden},
+		"foreign origin":            {"", "", map[string]string{"Origin": "http://evil.example"}, http.StatusForbidden},
+		"opaque origin":             {"", "", map[string]string{"Origin": "null"}, http.StatusForbidden},
+		"foreign referer":           {"", "", map[string]string{"Referer": "http://evil.example/p"}, http.StatusForbidden},
+		"cross-origin write":        {http.MethodDelete, del, map[string]string{"Origin": "http://evil.example"}, http.StatusForbidden},
+		// DNS rebinding points a name the attacker controls at loopback, so their
+		// page is same-origin with the bridge and only the Host gives it away.
+		"rebound host": {"", "", map[string]string{
+			"Host": "rebind.evil.example", "Sec-Fetch-Site": "same-origin", "Origin": "http://rebind.evil.example",
+		}, http.StatusForbidden},
+		"SPA fetch": {"", "", map[string]string{
+			"Sec-Fetch-Site": "same-origin", "Origin": server.URL, "Referer": server.URL + "/gitlabs",
+		}, http.StatusOK},
+		"user navigation": {"", "", map[string]string{"Sec-Fetch-Site": "none"}, http.StatusOK},
+		"docs UI":         {"", "", map[string]string{"Referer": server.URL + "/docs"}, http.StatusOK},
+		// Static assets carry no cluster permissions, so they stay reachable.
+		"SPA document":     {"", "/", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusOK},
+		"OpenAPI document": {"", "/openapi.yaml", map[string]string{"Origin": "http://evil.example"}, http.StatusOK},
+	} {
+		t.Run(name, func(t *testing.T) {
+			method, path := cmp.Or(tc.method, http.MethodGet), cmp.Or(tc.path, "/api/v1/gitlabs")
+
+			resp := doLocalWithHeaders(t, server, method, path, tc.headers)
+			require.Equal(t, tc.want, resp.StatusCode)
+		})
+	}
+}
+
+// Reaching the bridge under another name is legitimate when asked for
+// explicitly, e.g. bound to a routable address for a colleague or a container.
+func TestLocalAPIAcceptsConfiguredHost(t *testing.T) {
+	server := newLocalTestServer(t, "bridge.internal")
+
+	resp := doLocalWithHeaders(t, server, http.MethodGet, "/api/v1/gitlabs", map[string]string{
+		"Host":           "bridge.internal",
+		"Sec-Fetch-Site": "same-origin",
+		"Origin":         "http://bridge.internal",
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// Only literals count as loopback: resolving a name here is exactly the hole the
+// Host check closes, since an attacker's name can point at 127.0.0.1.
+func TestIsLoopbackAuthority(t *testing.T) {
+	for _, tc := range []struct {
+		authority string
+		want      bool
+	}{
+		{"127.0.0.1:8090", true},
+		{"127.0.0.1", true},
+		{"[::1]:8090", true},
+		{"::1", true},
+		{"localhost:8090", true},
+		{"LocalHost", true},
+		{"192.168.1.5:8090", false},
+		{"bridge.internal:8090", false},
+		{"localhost.evil.example", false},
+		{"", false},
+	} {
+		t.Run(tc.authority, func(t *testing.T) {
+			require.Equal(t, tc.want, isLoopbackAuthority(tc.authority))
+		})
+	}
 }
 
 // The local API declares no bearer security scheme, so the docs UI shows no

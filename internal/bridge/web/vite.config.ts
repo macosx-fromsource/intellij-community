@@ -29,7 +29,13 @@ export default defineConfig({
   },
   server: {
     proxy: Object.fromEntries(
-      proxyPaths.map((path) => [path, { target: bridgeTarget, changeOrigin: true }]),
+      // changeOrigin stays off so the Host header keeps naming the dev server the
+      // browser actually asked for. The bridge's local serve mode (`kubectl
+      // bridge`) rejects /api requests whose Origin does not match their Host, and
+      // rewriting Host to the target while forwarding the browser's Origin would
+      // look exactly like a cross-origin request. The target is a loopback address,
+      // so no virtual-host trick needs it.
+      proxyPaths.map((path) => [path, { target: bridgeTarget, changeOrigin: false }]),
     ),
   },
 })

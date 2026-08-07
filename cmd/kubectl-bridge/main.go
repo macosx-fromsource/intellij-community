@@ -9,7 +9,10 @@
 // token), identical to how kubectl itself connects, with no token to paste and
 // no ServiceAccount to mint. The server does no request authentication of its
 // own — it is as privileged as the kubeconfig on the machine — so it defaults to
-// a loopback address and warns when bound anywhere else.
+// a loopback address and warns when bound anywhere else. Because loopback keeps
+// out other machines but not other browser tabs, the API also rejects requests
+// addressed to a host it does not expect or issued cross-origin (see
+// localGuardMiddleware in internal/bridge); --accept-hosts widens the former.
 package main
 
 import (
@@ -25,6 +28,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -59,6 +63,7 @@ func run() error {
 	var (
 		port        int
 		address     string
+		acceptHosts string
 		kubeContext string
 		kubeconfig  string
 		noOpen      bool
@@ -72,6 +77,8 @@ func run() error {
 	fs.IntVar(&port, "port", defaultPort, "local port to bind (falls back to a random free port if busy)")
 	fs.IntVar(&port, "p", defaultPort, "shorthand for --port")
 	fs.StringVar(&address, "address", defaultAddress, "address to bind; a non-loopback address is allowed but warned about")
+	fs.StringVar(&acceptHosts, "accept-hosts", "",
+		"comma-separated Host header names to accept on /api besides loopback ones (needed to reach the bridge under another name)")
 	fs.StringVar(&kubeContext, "context", "", "kubeconfig context to use (default: current context)")
 	fs.StringVar(&kubeconfig, "kubeconfig", "", "path to the kubeconfig file (default: standard loading rules)")
 	fs.BoolVar(&noOpen, "no-open", false, "do not open a browser; just print the URL")
@@ -99,7 +106,7 @@ func run() error {
 
 	warnIfNotLoopback(address)
 
-	_, handler := bridge.NewLocalAPI(c)
+	_, handler := bridge.NewLocalAPI(c, apiAcceptHosts(address, acceptHosts)...)
 
 	ln, url, err := listen(address, port)
 	if err != nil {
@@ -249,6 +256,29 @@ func browserHost(address string) string {
 	return address
 }
 
+// apiAcceptHosts lists the Host header names the served API accepts on top of
+// the loopback ones it always accepts. Everything the caller passed via
+// --accept-hosts is taken as-is; the bind address is added when it is a concrete
+// address or name, so that --address 192.168.1.5 (or a hostname) stays usable
+// without a second flag. An unspecified address such as 0.0.0.0 adds nothing —
+// it says nothing about the name the browser will use, and the point of the check
+// is to know that name in advance.
+func apiAcceptHosts(address, acceptHosts string) []string {
+	hosts := make([]string, 0, 2)
+
+	for _, host := range strings.Split(acceptHosts, ",") {
+		if host = strings.TrimSpace(host); host != "" {
+			hosts = append(hosts, host)
+		}
+	}
+
+	if ip := net.ParseIP(address); address != "" && (ip == nil || !ip.IsUnspecified()) {
+		hosts = append(hosts, address)
+	}
+
+	return hosts
+}
+
 // warnIfNotLoopback prints a warning when the server will be reachable from
 // beyond this machine. Binding elsewhere is allowed on purpose (running the
 // plugin in a container or on a remote host is legitimate), but the server
@@ -259,8 +289,10 @@ func warnIfNotLoopback(address string) {
 	}
 
 	fmt.Fprintf(os.Stderr,
-		"warning: binding %s, which is not loopback. This server performs no authentication:\n"+
-			"         anyone who can reach the port acts with your kubeconfig permissions.\n",
+		"warning: binding %s, which is not loopback. This server performs no request\n"+
+			"         authentication: anyone who can reach the port acts with your kubeconfig\n"+
+			"         permissions. API requests must still be addressed to an accepted host\n"+
+			"         (loopback, this address, or --accept-hosts).\n",
 		address)
 }
 
