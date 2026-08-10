@@ -268,7 +268,7 @@ tasks:
       - fmt
       - vet
     cmds:
-      - go build -o bin/manager main.go
+      - go build -o bin/manager ./cmd/manager
 
   run:
     desc: Run the manager against the cluster configured in ~/.kube/config.
@@ -278,7 +278,7 @@ tasks:
       - vet
       - manifests
     cmds:
-      - go run ./main.go
+      - go run ./cmd/manager
 
   build_dir:
     desc: Ensures that the build directory is present.

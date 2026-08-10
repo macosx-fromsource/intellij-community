@@ -19,19 +19,18 @@ let
     fileset = lib.fileset.unions [
       (repoSrc + "/go.mod")
       (repoSrc + "/go.sum")
-      (repoSrc + "/main.go")
+      (repoSrc + "/cmd/manager")
       (repoSrc + "/api")
       (repoSrc + "/controllers")
       (repoSrc + "/helm")
       (repoSrc + "/pkg")
-      # Bridge: the entrypoint tag files plus only what compilation needs from
-      # internal/ — the Go sources and the //go:embed placeholder dir
-      # (internal/bridge/static.go embeds `all:web/dist`). The SPA sources under
-      # internal/bridge/web/ have their own derivation (bridgeWeb) and are
-      # overlaid at preBuild, so excluding them here keeps the Go build cache
-      # stable when only the SPA changes (no recompile of the non-bridge manager).
-      (repoSrc + "/bridge.go")
-      (repoSrc + "/bridge_stub.go")
+      # Bridge: only what compilation needs from internal/ — the Go sources and
+      # the //go:embed placeholder dir (internal/bridge/static.go embeds
+      # `all:web/dist`). The SPA sources under internal/bridge/web/ have their
+      # own derivation (bridgeWeb) and are overlaid at preBuild, so excluding
+      # them here keeps the Go build cache stable when only the SPA changes (no
+      # recompile of the non-bridge manager). The entrypoint tag files live in
+      # cmd/manager/ and come along with cmd/ above.
       (lib.fileset.fileFilter (f: f.hasExt "go") (repoSrc + "/internal"))
       (repoSrc + "/internal/bridge/web/dist")
     ];
@@ -57,11 +56,13 @@ let
   };
 
   # Operator binary. CGO is off so it is static and drops into a minimal
-  # image; the output is renamed to `manager` to match `bin/manager`.
+  # image; the entrypoint package is cmd/manager, so the output is named
+  # `manager` and matches `bin/manager`.
   # Re-bootstrap `vendorHash` when go.mod/go.sum change — see nix/README.md.
   # `bridge = true` compiles with the `bridge` build tag (wires the
-  # backend-for-frontend server, see bridge.go) and overlays the built SPA into
-  # the go:embed dir. The bridge is absent from the default build (bridge_stub.go).
+  # backend-for-frontend server, see cmd/manager/bridge.go) and overlays the built
+  # SPA into the go:embed dir. The bridge is absent from the default build
+  # (cmd/manager/bridge_stub.go).
   # vendorHash is shared: `go mod vendor` pulls the bridge's imports (Huma) in
   # via internal/bridge regardless of the build tag, so both variants vendor the
   # same tree. Re-bootstrap when go.mod/go.sum (or the pinned Go) change.
@@ -75,7 +76,7 @@ let
       version = "dev";
       src = goSrc;
       vendorHash = "sha256-VFkmQnS6ZZolvxWf9LbZ0zXADXNNgjnxQLN6M5heFa4=";
-      subPackages = [ "." ];
+      subPackages = [ "cmd/manager" ];
       env.CGO_ENABLED = 0;
       tags = lib.optionals bridge [ "bridge" ];
       # Fill the (otherwise `.gitkeep`-only) embed dir with the built SPA so
@@ -83,12 +84,6 @@ let
       # writable, so this in-place overlay is safe.
       preBuild = lib.optionalString bridge ''
         cp -r ${bridgeWeb}/* internal/bridge/web/dist/
-      '';
-      # Name the binary `manager` regardless of the module's base name.
-      postInstall = ''
-        if [ -e "$out/bin/gitlab-operator" ]; then
-          mv "$out/bin/gitlab-operator" "$out/bin/manager"
-        fi
       '';
       doCheck = false; # tests need envtest assets; run them via `nix run .#test`
     };
@@ -121,7 +116,7 @@ let
       };
 
   # GitLab chart tarballs the operator serves at runtime (the image's
-  # /charts; main.go exits if empty). charts/ is generated, not committed,
+  # /charts; cmd/manager/main.go exits if empty). charts/ is generated, not committed,
   # so fetch the CHART_VERSIONS in an FOD like chartDeps. Re-bootstrap the
   # hash when CHART_VERSIONS changes — see nix/README.md.
   chartVersions = lib.filter (s: s != "") (

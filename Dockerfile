@@ -14,11 +14,10 @@ COPY .go/pkg/mod/ /go/pkg/mod/
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the go source. bridge_stub.go provides the no-op setupBridge for the
-# default (untagged) build; bridge.go (the //go:build bridge variant) is
-# deliberately NOT copied, so the bridge is absent from this image.
-COPY main.go main.go
-COPY bridge_stub.go bridge_stub.go
+# Copy the go source. cmd/manager/bridge_stub.go provides the no-op setupBridge
+# for the default (untagged) build; cmd/manager/bridge.go only compiles under the
+# `bridge` build tag, which is not set here, so the bridge is absent from this image.
+COPY cmd/manager/ cmd/manager/
 COPY api/ api/
 COPY helm/ helm/
 COPY pkg/ pkg/
@@ -29,7 +28,7 @@ COPY internal/ internal/
 ARG TARGETOS
 ARG TARGETARCH
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o manager .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o manager ./cmd/manager
 
 # Use ubi micro as base image to package the manager binary
 # Refer to https://www.redhat.com/en/blog/introduction-ubi-micro for more details
