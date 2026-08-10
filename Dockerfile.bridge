@@ -29,8 +29,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy the go source
-COPY main.go main.go
-COPY bridge.go bridge.go
+COPY cmd/manager/ cmd/manager/
 COPY api/ api/
 COPY helm/ helm/
 COPY pkg/ pkg/
@@ -44,7 +43,7 @@ COPY --from=webbuilder /web/dist internal/bridge/web/dist
 ARG TARGETOS
 ARG TARGETARCH
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -tags bridge -o manager .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -tags bridge -o manager ./cmd/manager
 
 # Use ubi micro as base image to package the manager binary
 # Refer to https://www.redhat.com/en/blog/introduction-ubi-micro for more details

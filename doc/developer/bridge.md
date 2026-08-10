@@ -55,7 +55,7 @@ CONTAINER_CLI=docker task docker-build-bridge   # tags <image>:<TAG>-bridge
 For a local operator process, build with the tag:
 
 ```shell
-go build -tags bridge -o bin/manager .
+go build -tags bridge -o bin/manager ./cmd/manager
 ```
 
 ## Enable the bridge
@@ -78,7 +78,7 @@ defaults to `:8090`. To change it, set `BRIDGE_BIND_ADDRESS`.
 
   ```shell
   export HELM_CHARTS=$(pwd)/charts CHART_VERSION=$(head -n1 CHART_VERSIONS)
-  ENABLE_BRIDGE=true go run -tags bridge .
+  ENABLE_BRIDGE=true go run -tags bridge ./cmd/manager
   ```
 
 Confirm the server started:

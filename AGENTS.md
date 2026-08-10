@@ -132,7 +132,7 @@ GitLab CR so a SPA can configure GitLab instances.
 - **Why Huma:** it reflects the existing kubebuilder CR Go types, keeping a single source of
   truth aligned with the CRD (no second schema, unlike a proto-first approach).
 - **Runtime:** disabled by default; enable with `ENABLE_BRIDGE=true` (chart: `bridge.enabled`).
-  Registered via `mgr.Add` in [main.go](main.go) as a non-leader-elected `manager.Runnable`;
+  Registered via `mgr.Add` in [cmd/manager/main.go](cmd/manager/main.go) as a non-leader-elected `manager.Runnable`;
   reuses `mgr.GetClient()`. Binds `BRIDGE_BIND_ADDRESS` (default `:8090`, set in
   [controllers/settings/settings.go](controllers/settings/settings.go)). Logs via stdlib `slog`.
 - **Endpoints:** CRUD under `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]`, OpenAPI at

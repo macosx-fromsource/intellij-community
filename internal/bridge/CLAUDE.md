@@ -185,8 +185,8 @@ kubectl -n gitlab-system rollout restart deploy/gitlab-controller-manager
 
 ### Gotchas
 
-- **Dockerfile must `COPY internal/`** — the builder stage copies source dirs explicitly; `main.go`
-  imports `internal/bridge`, so omitting it breaks the image build (and would break CI/registry
+- **Dockerfile must `COPY internal/`** — the builder stage copies source dirs explicitly;
+  `cmd/manager` imports `internal/bridge`, so omitting it breaks the image build (and would break CI/registry
   builds too, not just local).
 - **SPA build happens in the image** — the Dockerfile has a `webbuilder` Node stage that runs
   `npm ci && npm run build` and copies `web/dist` into the Go builder before `go build`, so

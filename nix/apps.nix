@@ -44,7 +44,7 @@ let
   # `nix build .#manager` instead.
   build = mkScript "build" goTools ''
     mkdir -p bin
-    go build -o bin/manager main.go
+    go build -o bin/manager ./cmd/manager
   '';
   # Impure fetch into ./charts (for the existing Taskfile/test workflow).
   # For a pure, hash-pinned chart set use `nix build .#gitlab-charts`.
