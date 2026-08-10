@@ -32,6 +32,10 @@ func KasRoutes(template helm.Template) []client.Object {
 	})
 }
 
+func KasBackendTlsPolicy(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(BackendTlsPolicyKind, KasComponentName)
+}
+
 func KasService(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(ServiceKind, KasComponentName)
 }

@@ -21,10 +21,11 @@ const (
 	ApplicationKind = "Application"
 
 	// Kinds related to Gateway API.
-	HttpRouteKind    = "HTTPRoute"
-	TcpRouteKind     = "TCPRoute"
-	GatewayKind      = "Gateway"
-	GatewayClassKind = "GatewayClass"
+	HttpRouteKind        = "HTTPRoute"
+	TcpRouteKind         = "TCPRoute"
+	GatewayKind          = "Gateway"
+	GatewayClassKind     = "GatewayClass"
+	BackendTlsPolicyKind = "BackendTLSPolicy"
 	// Kind related to Envoy Gateway.
 	EnvoyProxyKind               = "EnvoyProxy"
 	EnvoyPatchPolicyKind         = "EnvoyPatchPolicy"

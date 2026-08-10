@@ -40,6 +40,11 @@ func RegistryRoute(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(HttpRouteKind, RegistryComponentName)
 }
 
+// RegistryBackendTlsPolicy returns the BackendTLSPolicy of the Registry component.
+func RegistryBackendTlsPolicy(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(BackendTlsPolicyKind, RegistryComponentName)
+}
+
 func RegistryMigrationsJob(template helm.Template) client.Object {
 	if job := template.Query().ObjectByKindAndComponent(JobKind, RegistryMigrationComponentName); job != nil {
 		return job

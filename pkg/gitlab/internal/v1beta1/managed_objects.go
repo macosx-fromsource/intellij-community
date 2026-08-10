@@ -118,6 +118,10 @@ var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersion
 		Version:  "v1",
 		Resource: "gatewayclasses",
 	}, {
+		Group:    "gateway.networking.k8s.io",
+		Version:  "v1",
+		Resource: "backendtlspolicies",
+	}, {
 		Group:    "gateway.envoyproxy.io",
 		Version:  "v1alpha1",
 		Resource: "envoyproxies",

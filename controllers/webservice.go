@@ -28,6 +28,10 @@ func (r *GitLabReconciler) reconcileWebserviceExceptDeployments(ctx context.Cont
 		return err
 	}
 
+	if err := r.reconcileWebserviceBackendTlsPolicies(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	if err := r.reconcileWebserviceClientTrafficPolicies(ctx, adapter, template); err != nil {
 		return err
 	}
@@ -100,6 +104,16 @@ func (r *GitLabReconciler) reconcileWebserviceIngresses(ctx context.Context, ada
 func (r *GitLabReconciler) reconcileWebserviceRoute(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	if route := gitlabctl.WebserviceRoute(template); route != nil {
 		if err := r.createOrPatch(ctx, route, adapter); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) reconcileWebserviceBackendTlsPolicies(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	for _, policy := range gitlabctl.WebserviceBackendTlsPolicies(template) {
+		if err := r.createOrPatch(ctx, policy, adapter); err != nil {
 			return err
 		}
 	}

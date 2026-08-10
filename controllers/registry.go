@@ -33,6 +33,10 @@ func (r *GitLabReconciler) reconcileRegistry(ctx context.Context, adapter gitlab
 		return err
 	}
 
+	if err := r.reconcileRegistryBackendTlsPolicy(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -79,6 +83,16 @@ func (r *GitLabReconciler) reconcileRegistryIngress(ctx context.Context, adapter
 func (r *GitLabReconciler) reconcileRegistryRoute(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	if err := r.createOrPatch(ctx, gitlabctl.RegistryRoute(template), adapter); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) reconcileRegistryBackendTlsPolicy(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	if policy := gitlabctl.RegistryBackendTlsPolicy(template); policy != nil {
+		if err := r.createOrPatch(ctx, policy, adapter); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -102,6 +102,7 @@ type GitLabReconciler struct {
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=tcproutes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gatewayclasses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=backendtlspolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=gateway.envoyproxy.io,resources=envoyproxies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=gateway.envoyproxy.io,resources=envoypatchpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=gateway.envoyproxy.io,resources=clienttrafficpolicies,verbs=get;list;watch;create;update;patch;delete
@@ -547,6 +548,12 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "gateways", &gatewayv1.Gateway{})
 		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "httproutes", &gatewayv1.HTTPRoute{})
+
+		// BackendTLSPolicy only graduated to gateway.networking.k8s.io/v1 in Gateway API 1.4,
+		// so the kind can be missing even though the group version itself is served.
+		if settings.IsGroupVersionKindSupported("gateway.networking.k8s.io/v1", "BackendTLSPolicy") {
+			r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "backendtlspolicies", &gatewayv1.BackendTLSPolicy{})
+		}
 	}
 
 	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1alpha2") {
