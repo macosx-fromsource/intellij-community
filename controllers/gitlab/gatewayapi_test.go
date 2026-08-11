@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
 
@@ -38,6 +39,17 @@ func caSecretName(policy client.Object) string {
 	Expect(btp.Spec.Validation.CACertificateRefs).To(HaveLen(1))
 
 	return string(btp.Spec.Validation.CACertificateRefs[0].Name)
+}
+
+// backendTrafficValues turns on the components that the chart renders an Envoy
+// BackendTrafficPolicy for. GitLab Shell only gets one when it terminates the
+// PROXY protocol, KAS only when it is enabled at all.
+func backendTrafficValues() support.Values {
+	v := support.Values{}
+	_ = v.SetValue("global.kas.enabled", true)
+	_ = v.SetValue("global.shell.tcp.proxyProtocol", true)
+
+	return v
 }
 
 var _ = Describe("Gateway API", func() {
@@ -134,6 +146,60 @@ var _ = Describe("Gateway API", func() {
 				Expect(registryPolicy).To(BeNil())
 				Expect(kasPolicy).To(BeNil())
 				Expect(webservicePolicies).To(BeEmpty())
+			})
+		})
+	})
+
+	Describe("BackendTrafficPolicies", func() {
+		var kasPolicy, webservicePolicy, shellPolicy client.Object
+
+		JustBeforeEach(func() {
+			mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
+			adapter := CreateMockAdapter(mockGitLab)
+			template, err := GetTemplate(adapter)
+
+			Expect(err).To(BeNil())
+
+			kasPolicy = KasBackendTrafficPolicy(template)
+			webservicePolicy = WebserviceBackendTrafficPolicy(template)
+			shellPolicy = ShellBackendTrafficPolicy(template)
+		})
+
+		When("Envoy policies are installed", func() {
+			BeforeEach(func() {
+				chartValues = WithOverrides(GatewayAPIModeValues(), backendTrafficValues())
+			})
+
+			It("Templates the KAS BackendTrafficPolicy", func() {
+				Expect(kasPolicy).NotTo(BeNil())
+				Expect(kasPolicy.GetName()).To(Equal(fmt.Sprintf("%s-kas", releaseName)))
+			})
+
+			It("Templates the Webservice BackendTrafficPolicy", func() {
+				Expect(webservicePolicy).NotTo(BeNil())
+				Expect(webservicePolicy.GetName()).To(Equal(fmt.Sprintf("%s-webservice-btp", releaseName)))
+			})
+
+			It("Templates the GitLab Shell BackendTrafficPolicy", func() {
+				if shellPolicy == nil {
+					// GitLab Shell only gained a BackendTrafficPolicy after Chart 10.2.1.
+					Skip(fmt.Sprintf("Chart %s does not template a GitLab Shell BackendTrafficPolicy", helm.GetChartVersion()))
+				}
+
+				Expect(shellPolicy.GetName()).To(Equal(fmt.Sprintf("%s-gitlab-shell", releaseName)))
+			})
+		})
+
+		When("Envoy policies are not installed", func() {
+			BeforeEach(func() {
+				chartValues = WithOverrides(GatewayAPIModeValues(), backendTrafficValues())
+				_ = chartValues.SetValue("global.gatewayApi.installEnvoy", false)
+			})
+
+			It("Templates no BackendTrafficPolicy", func() {
+				Expect(kasPolicy).To(BeNil())
+				Expect(webservicePolicy).To(BeNil())
+				Expect(shellPolicy).To(BeNil())
 			})
 		})
 	})

@@ -33,6 +33,10 @@ func (r *GitLabReconciler) reconcileKas(ctx context.Context, adapter gitlab.Adap
 		return err
 	}
 
+	if err := r.reconcileKasBackendTrafficPolicy(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -92,6 +96,16 @@ func (r *GitLabReconciler) reconcileKasRoutes(ctx context.Context, adapter gitla
 
 func (r *GitLabReconciler) reconcileKasBackendTlsPolicy(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	if policy := gitlabctl.KasBackendTlsPolicy(template); policy != nil {
+		if err := r.createOrPatch(ctx, policy, adapter); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) reconcileKasBackendTrafficPolicy(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	if policy := gitlabctl.KasBackendTrafficPolicy(template); policy != nil {
 		if err := r.createOrPatch(ctx, policy, adapter); err != nil {
 			return err
 		}

@@ -319,6 +319,7 @@ Manager RBAC rules for namespaced resources. Always granted.
   - envoyproxies
   - envoypatchpolicies
   - clienttrafficpolicies
+  - backendtrafficpolicies
   - securitypolicies
   verbs:
   - create

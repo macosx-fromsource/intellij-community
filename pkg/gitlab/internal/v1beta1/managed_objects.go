@@ -136,6 +136,10 @@ var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersion
 	}, {
 		Group:    "gateway.envoyproxy.io",
 		Version:  "v1alpha1",
+		Resource: "backendtrafficpolicies",
+	}, {
+		Group:    "gateway.envoyproxy.io",
+		Version:  "v1alpha1",
 		Resource: "securitypolicies",
 	},
 }

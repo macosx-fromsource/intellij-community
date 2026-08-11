@@ -83,6 +83,11 @@ func WebserviceBackendTlsPolicies(template helm.Template) []client.Object {
 	})
 }
 
+// WebserviceBackendTrafficPolicy returns the Envoy BackendTrafficPolicy targeting the Webservice HTTPRoute.
+func WebserviceBackendTrafficPolicy(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(EnvoyBackendTrafficPolicyKind, WebserviceComponentName)
+}
+
 // WebserviceClientTrafficPolicies returns the Envoy ClientTrafficPolicies for the Webservice component.
 func WebserviceClientTrafficPolicies(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(EnvoyClientTrafficPolicyKind, map[string]string{

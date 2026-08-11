@@ -27,10 +27,11 @@ const (
 	GatewayClassKind     = "GatewayClass"
 	BackendTlsPolicyKind = "BackendTLSPolicy"
 	// Kind related to Envoy Gateway.
-	EnvoyProxyKind               = "EnvoyProxy"
-	EnvoyPatchPolicyKind         = "EnvoyPatchPolicy"
-	EnvoyClientTrafficPolicyKind = "ClientTrafficPolicy"
-	EnvoySecurityPolicyKind      = "SecurityPolicy"
+	EnvoyProxyKind                = "EnvoyProxy"
+	EnvoyPatchPolicyKind          = "EnvoyPatchPolicy"
+	EnvoyClientTrafficPolicyKind  = "ClientTrafficPolicy"
+	EnvoyBackendTrafficPolicyKind = "BackendTrafficPolicy"
+	EnvoySecurityPolicyKind       = "SecurityPolicy"
 
 	// GitlabComponentName is the com mon name of GitLab.
 	GitLabComponentName = "gitlab"
