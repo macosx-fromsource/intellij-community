@@ -1,0 +1,18 @@
+{{- if .Values.invalidHooks.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-unknown-event
+  annotations:
+    "helm.sh/hook": pre-upgrde
+data: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-nonstring-hook
+  annotations:
+    # An unquoted scalar decodes as a boolean, not a string.
+    "helm.sh/hook": true
+data: {}
+{{- end }}

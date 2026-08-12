@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-hooked-smoke
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    # No weight and no delete policy: defaults apply.
+    "helm.sh/hook": test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: smoke
+      image: busybox

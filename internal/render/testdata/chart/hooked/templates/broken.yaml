@@ -1,0 +1,3 @@
+{{- if .Values.broken.create }}
+this is not: [valid yaml
+{{- end }}
