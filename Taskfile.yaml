@@ -260,6 +260,9 @@ tasks:
         --output.text.path=stdout
         --output.text.print-issued-lines=false
         --output.code-climate.path=gl-code-quality-report.json
+      # The e2e files are behind a build tag, so the default run never sees
+      # them. Lint them separately to keep them from rotting.
+      - golangci-lint run --build-tags e2e ./internal/render/...
 
   manager:
     desc: Build the manager binary using `go build`.
@@ -544,6 +547,29 @@ tasks:
       SKIP_ENVTEST: '{{ default "yes" .SKIP_ENVTEST }}'
     cmds:
       - SKIP_ENVTEST={{ .SKIP_ENVTEST }} go test ./internal/bridge/...
+
+  e2e-tests:
+    desc: |
+      Runs the end-to-end tests against the cluster of the current kubeconfig
+      context. These create and delete namespaces, so point kubectl at a
+      throwaway cluster. Gated behind the `e2e` build tag, so `unit-tests`
+      never picks them up.
+
+      Set E2E_APPLY_CRDS=1 to install the chart definitions, and
+      E2E_APPLY_WORKLOADS=1 to apply the chart workloads, which need real
+      PostgreSQL, Redis, and object storage to become ready. Both write
+      cluster-wide, so they are off by default.
+
+      Set E2E_KEEP_NAMESPACE=1 to inspect the namespace afterwards. The
+      cluster-scoped objects are then kept too, so delete them by hand.
+    deps:
+      - retrieve-charts
+    vars:
+      TEST_PKGS: '{{ default "./internal/render/..." .TEST_PKGS }}'
+      TIMEOUT: '{{ default "30m" .TIMEOUT }}'
+    cmds:
+      - echo "Running e2e tests against $(kubectl config current-context)..."
+      - go test -tags e2e -count=1 -timeout {{ .TIMEOUT }} -v {{ .TEST_PKGS }}
 
   test-in-docker:
     desc: Runs tests in a Docker container.

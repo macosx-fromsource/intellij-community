@@ -1,0 +1,15 @@
+{{- if .Values.unquotedWeight.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-hooked-unquoted
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    # An unquoted weight decodes as a number, not a string, so it only
+    # parses while decoding yields an int64. A float64 would fall through
+    # to the default weight of 0.
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": 7
+data:
+  key: value
+{{- end }}

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-hooked-smoke-data
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    # The Helm 2 legacy alias normalizes to "test"; the garbage weight
+    # falls back to 0.
+    "helm.sh/hook": test-success
+    "helm.sh/hook-weight": "not-a-number"
+data:
+  key: value

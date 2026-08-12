@@ -1,0 +1,9 @@
+{{- if .Values.foreignCR.create -}}
+apiVersion: example.com/v1alpha1
+kind: ForeignResource
+metadata:
+  name: {{ include "test.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+{{- end }}

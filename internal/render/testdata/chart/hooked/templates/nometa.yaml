@@ -1,0 +1,4 @@
+{{- if .Values.noTypeMeta.create }}
+metadata:
+  name: no-type-meta
+{{- end }}
