@@ -34,7 +34,8 @@ review_k3d_v134:
     DOCKER_OPTIONS: "--registry-mirror ${DOCKER_MIRROR} --insecure-registry 172.16.0.0/12"
     QA_ARTIFACTS_DIR: $CI_PROJECT_DIR
     QA_CAN_TEST_PRAEFECT: "false"
-    EE_LICENSE: $GITLAB_QA_EE_LICENSE
+    # License is activated via QA_EE_ACTIVATION_CODE, a project CI/CD variable
+    # picked up automatically by gitlab-qa (no explicit mapping needed).
     QA_OPTIONS: "--tag smoke"
   before_script:
     - source ci/scripts/k3d.sh
