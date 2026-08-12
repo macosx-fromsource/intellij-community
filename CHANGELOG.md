@@ -1,3 +1,9 @@
+## 3.2.2 (2026-08-12)
+
+### changed (1 change)
+
+- [Bump default memory requests and limits](https://gitlab.com/gitlab-org/security/cloud-native/gitlab-operator/-/commit/50411a109ec9c3600af5cb33bf34cbf471598b0e)
+
 ## 3.2.1 (2026-07-29)
 
 No changes.
