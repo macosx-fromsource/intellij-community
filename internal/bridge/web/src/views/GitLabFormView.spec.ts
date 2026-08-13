@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 
 import { api } from '@/lib/api/client'
 import GitLabFormView from './GitLabFormView.vue'
@@ -26,7 +26,24 @@ vi.mock('@/components/YamlEditor.vue', () => ({
   },
 }))
 
-const mockApi = api as unknown as { POST: Mock }
+const mockApi = api as unknown as { GET: Mock; POST: Mock }
+
+// The versions are baked into the bundle at build time, so the form reads them
+// from a module rather than the API. The spec pins them.
+const chartVersions = ['10.2.2', '10.1.4', '10.0.6']
+
+vi.mock('@/lib/chartVersions', () => ({
+  chartVersions: ['10.2.2', '10.1.4', '10.0.6'],
+  latestChartVersion: '10.2.2',
+}))
+
+/** Mounts the form and lets its mounted hook settle. */
+async function mountForm(): Promise<VueWrapper> {
+  const wrapper = mount(GitLabFormView)
+  await flushPromises()
+
+  return wrapper
+}
 
 const push = vi.fn<(to: unknown) => void>()
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
@@ -81,8 +98,8 @@ describe('GitLabFormView', () => {
     vi.clearAllMocks()
   })
 
-  it('starts on the first step and shows all three', () => {
-    const wrapper = mount(GitLabFormView)
+  it('starts on the first step and shows all three', async () => {
+    const wrapper = await mountForm()
 
     expect(
       wrapper.findAll('nav button').map((button) => button.text().replace(/^\d+\s*/, '')),
@@ -91,7 +108,7 @@ describe('GitLabFormView', () => {
   })
 
   it('walks forward through the steps with Next', async () => {
-    const wrapper = mount(GitLabFormView)
+    const wrapper = await mountForm()
 
     const next = () =>
       wrapper
@@ -110,7 +127,7 @@ describe('GitLabFormView', () => {
   // The name identifies the resource, so an empty one holds the form on the step
   // it belongs to rather than reaching the API.
   it('keeps an incomplete first step from being left', async () => {
-    const wrapper = mount(GitLabFormView)
+    const wrapper = await mountForm()
 
     await fill(wrapper, 'Name', '')
     await selectStep(wrapper, 'Overrides')
@@ -121,8 +138,8 @@ describe('GitLabFormView', () => {
 
   // The namespace is the one the Operator installation owns, and the form offers
   // no choice of it.
-  it('creates in gitlab-system without asking', () => {
-    const wrapper = mount(GitLabFormView)
+  it('creates in gitlab-system without asking', async () => {
+    const wrapper = await mountForm()
 
     const labels = panel(wrapper)
       .findAll('label span:first-child')
@@ -132,10 +149,45 @@ describe('GitLabFormView', () => {
     expect(panel(wrapper).text()).toContain('Created in the gitlab-system namespace.')
   })
 
+  // The version is prefilled with the latest this build knows of, which is
+  // compiled in rather than fetched.
+  it('prefills the chart version with the latest of the build', async () => {
+    const wrapper = await mountForm()
+
+    const input = panel(wrapper).get('input[name="chart-version"]')
+
+    expect((input.element as HTMLInputElement).value).toBe(chartVersions[0])
+    expect(panel(wrapper).text()).toContain(chartVersions.join(', '))
+    expect(mockApi.GET).not.toHaveBeenCalled()
+  })
+
+  // The field is free-form, because what renders is what the Operator image
+  // carries, which this build can only know as of its own time.
+  it('takes a version the build does not know of', async () => {
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Chart version', '11.0.0-rc1')
+    await selectStep(wrapper, 'Dependencies')
+
+    expect(currentStep(wrapper)).toBe('Dependencies')
+    expect(wrapper.text()).not.toContain('A chart version is required.')
+  })
+
+  // Nothing renders without a version, so the field cannot be cleared.
+  it('requires a version', async () => {
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Chart version', '  ')
+    await selectStep(wrapper, 'Dependencies')
+
+    expect(currentStep(wrapper)).toBe('Basics')
+    expect(wrapper.text()).toContain('A chart version is required.')
+  })
+
   // A data store connection is all three fields or none, and the check belongs
   // to the step that holds them.
   it('reports an incomplete dependency on the step that owns it', async () => {
-    const wrapper = mount(GitLabFormView)
+    const wrapper = await mountForm()
 
     await selectStep(wrapper, 'Dependencies')
     await fill(wrapper, 'Hostname', 'gitlab-postgresql')
@@ -148,7 +200,7 @@ describe('GitLabFormView', () => {
   // Object storage is one Secret rather than a host and a Secret, and it is
   // still all or nothing.
   it('reports an incomplete object storage connection', async () => {
-    const wrapper = mount(GitLabFormView)
+    const wrapper = await mountForm()
 
     await selectStep(wrapper, 'Dependencies')
     await group(wrapper, 'Object storage').findAll('input')[0]!.setValue('gitlab-object-storage')
@@ -161,10 +213,9 @@ describe('GitLabFormView', () => {
   it('creates the resource from every step once the last one submits', async () => {
     mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
 
-    const wrapper = mount(GitLabFormView)
+    const wrapper = await mountForm()
 
     await fill(wrapper, 'Hostname', 'gitlab.example.com')
-    await fill(wrapper, 'Chart version', '9.11.1')
     await selectStep(wrapper, 'Dependencies')
 
     const psql = group(wrapper, 'PostgreSQL').findAll('input')
@@ -203,7 +254,7 @@ describe('GitLabFormView', () => {
         objectStorage: {
           connectionSecretRef: { name: 'gitlab-object-storage', key: 'connection' },
         },
-        chart: { version: '9.11.1', values: {} },
+        chart: { version: chartVersions[0], values: {} },
       },
     })
   })
@@ -211,7 +262,7 @@ describe('GitLabFormView', () => {
   // Enter in a field submits a form, and the submit button lives on the last
   // step. Advancing is what that has to mean on the earlier ones.
   it('advances rather than creates when an earlier step submits', async () => {
-    const wrapper = mount(GitLabFormView)
+    const wrapper = await mountForm()
 
     await wrapper.get('form').trigger('submit')
 

@@ -273,6 +273,8 @@ tasks:
       - internal/bridge/web/index.html
       - internal/bridge/web/*.ts
       - internal/bridge/web/*.json
+      # The SPA bakes these in at build time; see internal/bridge/web/vite.config.ts.
+      - CHART_VERSIONS
     generates:
       - internal/bridge/web/dist/index.html
     cmds:

@@ -15,6 +15,9 @@ WORKDIR /web
 COPY internal/bridge/web/package.json internal/bridge/web/package-lock.json ./
 RUN npm ci
 COPY internal/bridge/web/ ./
+# The SPA bakes the chart versions in at build time (see vite.config.ts), from the
+# same file the image fetches its charts with.
+COPY CHART_VERSIONS ./CHART_VERSIONS
 RUN npx --yes openapi-typescript openapi.yaml -o src/lib/api/schema.d.ts && npm run build
 
 # Build the manager binary

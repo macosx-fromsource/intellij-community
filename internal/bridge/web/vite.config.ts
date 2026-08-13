@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
 import { defineConfig } from 'vite'
@@ -11,10 +12,40 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 const bridgeTarget = process.env.BRIDGE_URL ?? 'http://localhost:8090'
 const proxyPaths = ['/api', '/openapi.yaml', '/openapi.json', '/docs', '/schemas']
 
+/**
+ * The chart versions the Operator carries, read from CHART_VERSIONS at build
+ * time and baked into the bundle. The file is the same source the image uses to
+ * fetch the charts, and the SPA is built in that image, so the two agree.
+ *
+ * Two candidate paths: the repository root for a build from a checkout, and the
+ * working directory for the Docker webbuilder stage, which copies the file next
+ * to the SPA. A missing file fails the build rather than shipping an empty
+ * dropdown.
+ */
+function chartVersions(): string[] {
+  const candidates = [
+    fileURLToPath(new URL('../../../CHART_VERSIONS', import.meta.url)),
+    fileURLToPath(new URL('./CHART_VERSIONS', import.meta.url)),
+  ]
+
+  const path = candidates.find((candidate) => existsSync(candidate))
+  if (!path) {
+    throw new Error(`CHART_VERSIONS not found; looked in ${candidates.join(', ')}`)
+  }
+
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'))
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   base: '/',
   plugins: [vue(), vueDevTools()],
+  define: {
+    __CHART_VERSIONS__: JSON.stringify(chartVersions()),
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

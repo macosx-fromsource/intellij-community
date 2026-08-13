@@ -143,7 +143,8 @@ var _ = Describe("Component", func() {
   values lives in `internal/controller/gitlabcore/values.go`.
 - **Endpoints:** CRUD under `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]` (`/api/v1` versions
   the bridge API, not the CR), OpenAPI at `/openapi.yaml` (+ `/openapi.json`), docs UI at `/docs`,
-  SPA embedded via `go:embed` (`internal/bridge/web/dist`).
+  SPA embedded via `go:embed` (`internal/bridge/web/dist`). The chart version the form prefills is
+  compiled into the SPA from `CHART_VERSIONS` (Vite `define`), not served.
 - **SPA:** `internal/bridge/web/` is a Vue 3 + TypeScript app (Vite, Vue Router, Pinia) built into
   `web/dist`; the operator image builds it in a Node stage. `task frontend-dev` / `frontend-build`;
   details in [internal/bridge/CLAUDE.md](internal/bridge/CLAUDE.md).

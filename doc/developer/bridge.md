@@ -196,6 +196,11 @@ kubectl -n gitlab-system port-forward deploy/gitlab-controller-manager 8090:8090
 
 ## Configure a GitLab instance
 
+The chart version field is prefilled with the latest version in the `CHART_VERSIONS` file, which the
+SPA reads when it is built (see `internal/bridge/web/vite.config.ts`). The operator image builds the
+SPA from the same file it fetches its charts with, so the prefilled version is one the image carries,
+and the form needs no request to know it. The field stays free-form for every other version.
+
 The form in the SPA writes one `GitLabCore` resource, in three steps:
 
 1. **Basics**: what the instance is, and which chart deploys it.
@@ -218,7 +223,7 @@ Each field maps to the specification:
 | **PostgreSQL** | `spec.postgresql` | Hostname of the database server, and the Secret that holds the password of the database user. For the versions and extensions GitLab requires, see [the PostgreSQL requirements](https://docs.gitlab.com/install/requirements/#postgresql). |
 | **Valkey** | `spec.redis` | Hostname of the Valkey server, and the Secret that holds its password. Redis works in its place, and the resource and the chart values both still call the field `redis`. For the versions GitLab requires, see [the Redis requirements](https://docs.gitlab.com/install/requirements/#redis). |
 | **Object storage** | `spec.objectStorage` | Name and key of the Secret that holds the object storage connection. Setting it turns the consolidated object storage on, which the chart needs: artifacts, LFS, uploads, and packages are enabled with no connection of their own. The registry, Pages, and backups keep their own settings in the chart values. |
-| **Chart version** | `spec.chart.version` | Semantic version of the GitLab chart, which has to be one the Operator carries. An upgrade is a change of this field. |
+| **Chart version** | `spec.chart.version` | Prefilled with the latest version the SPA was built with. Free-form, because what renders is what the Operator image carries. Required: nothing renders without a version. An upgrade is a change of this field. |
 | **Chart values** | `spec.chart.values` | Free-form YAML for everything the fields above do not cover. |
 
 All three connections are required. The chart bundles neither PostgreSQL nor Redis, and it enables

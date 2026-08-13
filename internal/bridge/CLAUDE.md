@@ -141,9 +141,14 @@ Structure: `src/lib/api/` (typed client), `src/stores/gitlabs.ts` (Pinia CRUD st
 `src/views/GitLabsListView.vue` + `GitLabFormView.vue`, `src/router/index.ts`. The form edits the
 structured fields (hostname, edition, PostgreSQL, Redis, license, chart version) as inputs and
 `chart.values` as a YAML textarea (free-form; no schema yet), across three steps — Basics
-(name/hostname/edition/license/chart version), Dependencies (PostgreSQL/Valkey/object storage), Overrides (chart
+(name/chart version/hostname/edition/license), Dependencies (PostgreSQL/Valkey/object storage), Overrides (chart
 values). The namespace is not a field: creation goes to `gitlab-system` (`defaultNamespace`), and an
-edit keeps the namespace of the route. `validateStep`/`goTo` check a step on the way forward only, and the panels use
+edit keeps the namespace of the route. The chart versions are compiled in rather than fetched:
+`vite.config.ts` reads `CHART_VERSIONS` into `__CHART_VERSIONS__`, which
+[web/src/lib/chartVersions.ts](web/src/lib/chartVersions.ts) exports, and the version field is a
+free-form input prefilled with the latest of them. The Docker webbuilder stage copies
+`CHART_VERSIONS` next to the SPA; a missing file fails that build rather than shipping an empty
+prefill. `validateStep`/`goTo` check a step on the way forward only, and the panels use
 `v-show` so the CodeMirror editor of the last step mounts once. The PostgreSQL, Valkey, object storage, and license
 groups are all-or-nothing, validated client-side before the request; the license group sits under
 the edition select and is hidden (and left out of the request) for `ce`. The Valkey group writes

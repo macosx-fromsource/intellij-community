@@ -7,6 +7,7 @@ import postgresqlLogo from '@/assets/icons/postgresql.svg'
 import valkeyLogo from '@/assets/icons/valkey.svg'
 import YamlEditor from '@/components/YamlEditor.vue'
 import type { GitLabResource } from '@/lib/api/client'
+import { chartVersions, latestChartVersion } from '@/lib/chartVersions'
 import { useGitLabsStore } from '@/stores/gitlabs'
 
 const props = defineProps<{
@@ -40,7 +41,13 @@ const valkey = reactive({ host: '', secretName: '', secretKey: '' })
 const valkeyError = ref<string | null>(null)
 const objectStorage = reactive({ secretName: '', secretKey: '' })
 const objectStorageError = ref<string | null>(null)
-const version = ref('')
+/**
+ * The chart version, prefilled with the latest one this build carries. It stays
+ * a free-form field: what renders is what the Operator image carries, which the
+ * SPA can only know as of its own build.
+ */
+const version = ref(latestChartVersion ?? '')
+
 const valuesText = ref('')
 const valuesError = ref<string | null>(null)
 
@@ -232,6 +239,14 @@ function validateStep(index: number): boolean {
       return false
     }
 
+    // The reconciler renders nothing without a version, so the form does not
+    // send a resource without one.
+    if (!version.value.trim()) {
+      basicsError.value = 'A chart version is required.'
+
+      return false
+    }
+
     return parseLicense() !== null
   }
 
@@ -293,7 +308,7 @@ async function submit() {
     redis: parseConnection(valkey, valkeyError, 'Valkey') ?? undefined,
     objectStorage: parseObjectStorage() ?? undefined,
     chart: {
-      version: version.value || undefined,
+      version: version.value.trim(),
       values: parseValues() ?? {},
     },
   }
@@ -348,6 +363,17 @@ async function submit() {
         <p v-if="basicsError" class="error">{{ basicsError }}</p>
 
         <label>
+          <span>Chart version</span>
+          <input v-model="version" name="chart-version" placeholder="e.g. 10.2.2" />
+          <span class="hint">
+            It renders the instance, and an upgrade is a change of this field. The Operator has to
+            carry the chart.<template v-if="chartVersions.length">
+              This build knows of {{ chartVersions.join(', ') }}.</template
+            >
+          </span>
+        </label>
+
+        <label>
           <span>Hostname</span>
           <input v-model="hostname" placeholder="gitlab.example.com" />
         </label>
@@ -383,15 +409,6 @@ async function submit() {
 
           <p v-if="licenseError" class="error">{{ licenseError }}</p>
         </fieldset>
-
-        <label>
-          <span>Chart version</span>
-          <input v-model="version" placeholder="e.g. 9.11.1" />
-          <span class="hint">
-            A version the Operator carries. It renders the instance, and an upgrade is a change of
-            this field.
-          </span>
-        </label>
       </div>
 
       <div v-show="step === 1" class="step-panel">
