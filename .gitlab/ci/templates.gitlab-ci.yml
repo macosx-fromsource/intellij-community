@@ -55,8 +55,8 @@
     - ls -l ${BUILD_DIR} || true
     # Trim HOSTSUFFIX and TESTS_NAMESPACE to acceptable length (63 char)
     # as per kubernetes/DNS specs
-    - source ci/scripts/trim_env.sh
-    - ci/scripts/create_trimmed_env_file.sh deploy_namespace.env
+    - source .gitlab/ci/scripts/trim_env.sh
+    - .gitlab/ci/scripts/create_trimmed_env_file.sh deploy_namespace.env
     - DEPLOYMENT_ENV_ID=${CI_JOB_NAME#build_review_}
     - echo "DEPLOYMENT_ENV_ID=${DEPLOYMENT_ENV_ID}"
     ## -- End of trimming
@@ -119,7 +119,7 @@
     # Debug info:
     - ls -l ${BUILD_DIR} || true
     - ls -l ${INSTALL_DIR} || true
-    - ci/scripts/debug_trimmed_env.sh
+    - .gitlab/ci/scripts/debug_trimmed_env.sh
     # -- End of Debug
     - !reference [.vars_on_dev_gitlab_org, script]
     # Restore short-named deployment files first (because artifact paths won't accept dynamic vars)
@@ -157,14 +157,14 @@
 .review_vcluster_template:
   extends: .review_template
   before_script:
-    - source ci/scripts/vcluster.sh
+    - source .gitlab/ci/scripts/vcluster.sh
     - kas_cluster_connect
     - kubectl version
   script:
     # Debug info:
     - ls -l ${BUILD_DIR} || true
     - ls -l ${INSTALL_DIR} || true
-    - ci/scripts/debug_trimmed_env.sh
+    - .gitlab/ci/scripts/debug_trimmed_env.sh
     # -- End of Debug
     - !reference [.vars_on_dev_gitlab_org, script]
     # Restore short-named deployment files first (because artifact paths won't accept dynamic vars)
@@ -285,7 +285,7 @@
 .stop_review_vcluster_template:
   extends: .stop_review_template
   before_script:
-    - source ci/scripts/vcluster.sh
+    - source .gitlab/ci/scripts/vcluster.sh
     - kas_cluster_connect
     - kubectl version
   script:

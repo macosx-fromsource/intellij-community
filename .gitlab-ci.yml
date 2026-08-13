@@ -116,6 +116,9 @@ include:
     inputs:
       gitlab_dangerfiles_version: "4.7.0"
       job_stage: "check"
+      # gitlab-dangerfiles discovers project-local rules in danger/ relative to
+      # the Dangerfile, so both live under .gitlab/.
+      dangerfile: ".gitlab/Dangerfile"
     rules:
       - if: '$CI_SERVER_HOST == "gitlab.com"'
   - template: Jobs/Dependency-Scanning.latest.gitlab-ci.yml
@@ -133,10 +136,10 @@ include:
       - if: '$CI_PROJECT_PATH == "gitlab-org/cloud-native/gitlab-operator"'
       # - !reference [.if_not_chart_version_pipeline]
       - if: '$PIPELINE_TYPE != "chart_version"'
-  - local: ci/rules.gitlab-ci.yml
-  - local: ci/templates.gitlab-ci.yml
+  - local: .gitlab/ci/rules.gitlab-ci.yml
+  - local: .gitlab/ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
-  - local: ci/review-*.gitlab-ci.yml
+  - local: .gitlab/ci/review-*.gitlab-ci.yml
 
 default:
   interruptible: true
@@ -501,9 +504,9 @@ bridge_unit_tests:
     # Update module cache so it can be saved in CI cache (only the dependencies required to build)
     - echo "Updating module cache using GO_IMAGE=${GO_IMAGE}"
     - docker run -v "${GOPATH}:/go" -v "${CI_PROJECT_DIR}:/code" -w /code ${GO_IMAGE} go list ./...
-    - source ci/scripts/buildx/lib/build.sh
-    - source ci/scripts/buildx/lib/configure.sh
-    - ci/scripts/buildx/bootstrap.sh
+    - source .gitlab/ci/scripts/buildx/lib/build.sh
+    - source .gitlab/ci/scripts/buildx/lib/configure.sh
+    - .gitlab/ci/scripts/buildx/bootstrap.sh
   script:
     - docker_build_and_push $DOCKER_TAGS
     - sign $DOCKER_TAGS
@@ -912,7 +915,7 @@ create_chart_pipelines:
         for cv in $(tail -n +2 CHART_VERSIONS)
         do
           _es="-${cv//./-}"
-          sed -e "s/@@CHART@@/${cv}/g; s/@@SUFFIX@@/${_es}/g" ci/trigger-template.yml.tpl >> other_charts.yml
+          sed -e "s/@@CHART@@/${cv}/g; s/@@SUFFIX@@/${_es}/g" .gitlab/ci/trigger-template.yml.tpl >> other_charts.yml
         done
   artifacts:
     when: on_success
