@@ -30,9 +30,13 @@ The script downloads its CI library from the [GitLab Charts repository](https://
 at runtime, which is the same library used by `scripts/test.sh` in CI. This ensures that
 local and CI environments are consistent.
 
-After setup, the script generates an `external-deps.yaml` file containing only the connection
-values for Redis, PostgreSQL, and object storage. Merge those values into your own `mygitlab.yaml`
-under `spec.chart.values` before applying the CR.
+After setup, the script generates two files:
+
+- `external-deps.yaml` contains only the connection values for Redis, PostgreSQL, and object storage.
+  Merge those values into your own `mygitlab.yaml` under `spec.chart.values` before applying the
+  `v1beta1` GitLab CR.
+- `external-deps-v2alpha1.yaml` is a complete `v2alpha1` `GitLabCore` wired to the same services.
+  Apply it as it is. For more information, see [The GitLabCore reconciler](gitlabcore.md).
 
 The script requires approximately 2 CPU cores, 4 GiB of memory, and 12 GiB of persistent storage.
 
@@ -60,8 +64,7 @@ The script requires approximately 2 CPU cores, 4 GiB of memory, and 12 GiB of pe
    NAMESPACE=my-namespace bash scripts/dev_dependencies.sh setup
    ```
 
-   The script deploys the external services and writes an `external-deps.yaml` file
-   containing the Redis, PostgreSQL, and object storage connection values.
+   The script deploys the external services and writes the two files described above.
 
 1. Merge the contents of `external-deps.yaml` under `spec.chart.values` in your `mygitlab.yaml`.
 
@@ -70,6 +73,14 @@ The script requires approximately 2 CPU cores, 4 GiB of memory, and 12 GiB of pe
    ```shell
    kubectl -n gitlab-system apply -f mygitlab.yaml
    ```
+
+To use the `v2alpha1` `GitLabCore` instead, install its definition and the permissions the
+reconciler needs, run the Operator with `ENABLE_BRIDGE=true`, and apply the generated resource:
+
+```shell
+task install_v2alpha1_crds
+kubectl -n gitlab-system apply -f external-deps-v2alpha1.yaml
+```
 
 #### What the script does
 
@@ -90,6 +101,13 @@ Check status:
 bash scripts/dev_dependencies.sh status
 ```
 
+Regenerate the custom resources without deploying anything, for example after changing the
+hostname or the chart version:
+
+```shell
+GITLAB_HOSTNAME=gitlab.my-cluster.test bash scripts/dev_dependencies.sh generate
+```
+
 Remove the external dependencies (does not affect the operator or GitLab CR):
 
 ```shell
@@ -107,7 +125,10 @@ helm uninstall gitlab-operator --namespace gitlab-system
 | Variable              | Default                                              | Description                                        |
 |-----------------------|------------------------------------------------------|----------------------------------------------------|
 | `NAMESPACE`           | `gitlab-system`                                      | Kubernetes namespace for all services              |
-| `OUTPUT_FILE`         | `external-deps.yaml`                                 | Output path for the generated external deps CR     |
+| `OUTPUT_FILE`         | `external-deps.yaml`                                 | Output path for the generated `v1beta1` values     |
+| `V2ALPHA1_OUTPUT_FILE`| `external-deps-v2alpha1.yaml`                        | Output path for the generated `GitLabCore`         |
+| `GITLAB_HOSTNAME`     | `gitlab.${DOMAIN:-example.com}`                      | Hostname of the generated `GitLabCore`             |
+| `CHART_VERSION`       | first line of `CHART_VERSIONS`                       | Chart version of the generated `GitLabCore`        |
 | `GARAGE_APP_VERSION`  | `2.2.0`                                              | Garage version to install                          |
 | `CNPG_POSTGRESQL_TAG` | `17`                                                 | PostgreSQL image tag used by CloudNativePG         |
 | `CHART_REPO_URL`      | `https://gitlab.com/gitlab-org/charts/gitlab`        | GitLab Charts repository for CI library scripts    |

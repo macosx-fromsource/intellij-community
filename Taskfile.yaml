@@ -183,13 +183,57 @@ tasks:
 
   install_v2alpha1_crds:
     desc: |
-      Installs the apps.gitlab.com/v2alpha1 CRDs for Bridge development.
+      Installs the apps.gitlab.com/v2alpha1 CRDs for Bridge development, and grants the manager
+      ServiceAccount what the GitLabCore reconciler needs on top of the chart permissions.
       These are not part of the Helm chart, so they reach no release manifest and no OLM bundle.
       Acts on the current kubectl context.
+    vars:
+      DRY_RUN: '{{ default "none" .DRY_RUN }}'
     cmds:
       # Adds GitLabCore, Orbit, and DataInsightPlatform. Each is a definition of its own with
       # v2alpha1 as its only version, so the existing GitLab definition is left alone.
-      - $KUBECTL apply -f config/crd/bases/
+      - $KUBECTL apply --dry-run={{ .DRY_RUN }} -f config/crd/bases/
+      # The chart grants the manager the v1beta1 GitLab permissions only, and no
+      # PodDisruptionBudget permissions at all: the v1beta1 controller applies no PDB, while the
+      # GitLabCore reconciler applies everything the chart renders.
+      #
+      # These go into a role of their own rather than into the chart-managed manager role, so that
+      # `task deploy_operator` does not revert them and rerunning this task changes nothing.
+      # Silent: the manifest is not worth echoing on every run.
+      - cmd: |
+          $KUBECTL apply --dry-run={{ .DRY_RUN }} -f - <<EOF
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: $NAME_OVERRIDE-manager-v2alpha1-role
+          rules:
+          - apiGroups: [apps.gitlab.com]
+            resources: [gitlabcores]
+            verbs: [get, list, watch, create, update, patch, delete]
+          - apiGroups: [apps.gitlab.com]
+            resources: [gitlabcores/status]
+            verbs: [get, update, patch]
+          - apiGroups: [apps.gitlab.com]
+            resources: [gitlabcores/finalizers]
+            verbs: [update]
+          - apiGroups: [policy]
+            resources: [poddisruptionbudgets]
+            verbs: [get, list, watch, create, update, patch, delete]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: $NAME_OVERRIDE-manager-v2alpha1-rolebinding
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: $NAME_OVERRIDE-manager-v2alpha1-role
+          subjects:
+          - kind: ServiceAccount
+            name: $NAME_OVERRIDE-manager
+            namespace: $NAMESPACE
+          EOF
+        silent: true
 
   openapi:
     desc: Generates the backend-for-frontend OpenAPI document from the Huma API.
@@ -260,9 +304,10 @@ tasks:
         --output.text.path=stdout
         --output.text.print-issued-lines=false
         --output.code-climate.path=gl-code-quality-report.json
-      # The e2e files are behind a build tag, so the default run never sees
-      # them. Lint them separately to keep them from rotting.
-      - golangci-lint run --build-tags e2e ./internal/render/...
+      # The e2e and bridge files are behind build tags, so the default run never
+      # sees them. Lint them separately to keep them from rotting.
+      - golangci-lint run --build-tags e2e ./internal/render/... ./internal/controller/...
+      - golangci-lint run --build-tags bridge ./...
 
   manager:
     desc: Build the manager binary using `go build`.
@@ -281,7 +326,16 @@ tasks:
       - vet
       - manifests
     cmds:
-      - go run ./cmd/manager
+      - go run {{ .BUILD_TAGS }} ./cmd/manager
+
+  run_bridge:
+    desc: |
+      Run the manager with the `bridge` build tag, which is what compiles in the bridge server and
+      the v2alpha1 GitLabCore reconciler. Both stay behind ENABLE_BRIDGE at runtime.
+    cmds:
+      - task: run
+        vars:
+          BUILD_TAGS: -tags bridge
 
   build_dir:
     desc: Ensures that the build directory is present.
@@ -555,17 +609,25 @@ tasks:
       throwaway cluster. Gated behind the `e2e` build tag, so `unit-tests`
       never picks them up.
 
-      Set E2E_APPLY_CRDS=1 to install the chart definitions, and
-      E2E_APPLY_WORKLOADS=1 to apply the chart workloads, which need real
-      PostgreSQL, Redis, and object storage to become ready. Both write
-      cluster-wide, so they are off by default.
+      The GitLabCore reconciler test needs the v2alpha1 definitions in the
+      cluster; it skips without them. Install them with
+      `task install_v2alpha1_crds`.
+
+      In internal/render: set E2E_APPLY_CRDS=1 to install the chart
+      definitions, and E2E_APPLY_WORKLOADS=1 to apply the chart workloads,
+      which need real PostgreSQL, Redis, and object storage to become ready.
+      Both write cluster-wide, so they are off by default.
+
+      In internal/controller: set E2E_CLUSTER_SCOPED=1 to let the release
+      render cluster-scoped objects and definitions, which writes outside the
+      test namespace. It is off by default.
 
       Set E2E_KEEP_NAMESPACE=1 to inspect the namespace afterwards. The
       cluster-scoped objects are then kept too, so delete them by hand.
     deps:
       - retrieve-charts
     vars:
-      TEST_PKGS: '{{ default "./internal/render/..." .TEST_PKGS }}'
+      TEST_PKGS: '{{ default "./internal/render/... ./internal/controller/..." .TEST_PKGS }}'
       TIMEOUT: '{{ default "30m" .TIMEOUT }}'
     cmds:
       - echo "Running e2e tests against $(kubectl config current-context)..."
