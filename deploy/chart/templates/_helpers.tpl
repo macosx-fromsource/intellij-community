@@ -301,6 +301,7 @@ Manager RBAC rules for namespaced resources. Always granted.
 - apiGroups:
   - gateway.networking.k8s.io
   resources:
+  - backendtlspolicies
   - httproutes
   - tcproutes
   - gateways
@@ -318,6 +319,7 @@ Manager RBAC rules for namespaced resources. Always granted.
   - envoyproxies
   - envoypatchpolicies
   - clienttrafficpolicies
+  - backendtrafficpolicies
   - securitypolicies
   verbs:
   - create

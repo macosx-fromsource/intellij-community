@@ -58,3 +58,8 @@ func ShellServiceMonitor(template helm.Template) client.Object {
 func ShellRoute(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(TcpRouteKind, GitLabShellComponentName)
 }
+
+// ShellBackendTrafficPolicy returns the Envoy BackendTrafficPolicy of GitLab Shell component.
+func ShellBackendTrafficPolicy(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(EnvoyBackendTrafficPolicyKind, GitLabShellComponentName)
+}

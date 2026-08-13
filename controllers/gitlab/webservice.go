@@ -76,6 +76,18 @@ func WebserviceRoute(template helm.Template) client.Object {
 	return template.Query().ObjectByKindAndComponent(HttpRouteKind, WebserviceComponentName)
 }
 
+// WebserviceBackendTlsPolicies returns the BackendTLSPolicies for the Webservice component, one per Deployment.
+func WebserviceBackendTlsPolicies(template helm.Template) []client.Object {
+	return template.Query().ObjectsByKindAndLabels(BackendTlsPolicyKind, map[string]string{
+		"app": WebserviceComponentName,
+	})
+}
+
+// WebserviceBackendTrafficPolicy returns the Envoy BackendTrafficPolicy targeting the Webservice HTTPRoute.
+func WebserviceBackendTrafficPolicy(template helm.Template) client.Object {
+	return template.Query().ObjectByKindAndComponent(EnvoyBackendTrafficPolicyKind, WebserviceComponentName)
+}
+
 // WebserviceClientTrafficPolicies returns the Envoy ClientTrafficPolicies for the Webservice component.
 func WebserviceClientTrafficPolicies(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(EnvoyClientTrafficPolicyKind, map[string]string{

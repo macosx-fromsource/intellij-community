@@ -128,6 +128,7 @@ rules:
 - apiGroups:
   - gateway.envoyproxy.io
   resources:
+  - backendtrafficpolicies
   - clienttrafficpolicies
   - envoypatchpolicies
   - envoyproxies
@@ -143,6 +144,7 @@ rules:
 - apiGroups:
   - gateway.networking.k8s.io
   resources:
+  - backendtlspolicies
   - gatewayclasses
   - gateways
   - httproutes

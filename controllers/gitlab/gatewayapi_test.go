@@ -1,15 +1,56 @@
 package gitlab
 
 import (
+	"fmt"
 	"slices"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/helm"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
+
+// backendTlsValues turns on the service-level TLS of every component that the
+// chart renders a BackendTLSPolicy for. Registry additionally requires its host
+// protocol to be https, which the chart asserts on.
+func backendTlsValues() support.Values {
+	v := support.Values{}
+	_ = v.SetValue("global.hosts.registry.protocol", "https")
+	_ = v.SetValue("registry.tls.enabled", true)
+	_ = v.SetValue("registry.tls.caSecretName", "registry-ca")
+	_ = v.SetValue("global.workhorse.tls.enabled", true)
+	_ = v.SetValue("gitlab.webservice.workhorse.tls.caSecretName", "workhorse-ca")
+	_ = v.SetValue("global.kas.enabled", true)
+	_ = v.SetValue("global.kas.tls.enabled", true)
+	_ = v.SetValue("global.kas.tls.caSecretName", "kas-ca")
+
+	return v
+}
+
+// caSecretName returns the single CA Secret the given BackendTLSPolicy validates
+// the backend certificate against.
+func caSecretName(policy client.Object) string {
+	btp, ok := policy.(*gatewayv1.BackendTLSPolicy)
+	Expect(ok).To(BeTrue(), "%T is not a BackendTLSPolicy", policy)
+	Expect(btp.Spec.Validation.CACertificateRefs).To(HaveLen(1))
+
+	return string(btp.Spec.Validation.CACertificateRefs[0].Name)
+}
+
+// backendTrafficValues turns on the components that the chart renders an Envoy
+// BackendTrafficPolicy for. GitLab Shell only gets one when it terminates the
+// PROXY protocol, KAS only when it is enabled at all.
+func backendTrafficValues() support.Values {
+	v := support.Values{}
+	_ = v.SetValue("global.kas.enabled", true)
+	_ = v.SetValue("global.shell.tcp.proxyProtocol", true)
+
+	return v
+}
 
 var _ = Describe("Gateway API", func() {
 	var chartValues support.Values
@@ -53,6 +94,113 @@ var _ = Describe("Gateway API", func() {
 		It("Templates the non-vendor specific Gateway API resources only", func() {
 			Expect(gatewayResources).To(HaveLen(1))
 			Expect(gatewayKinds).To(ContainElement(GatewayKind))
+		})
+	})
+
+	Describe("BackendTLSPolicies", func() {
+		var registryPolicy, kasPolicy client.Object
+		var webservicePolicies []client.Object
+
+		JustBeforeEach(func() {
+			mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
+			adapter := CreateMockAdapter(mockGitLab)
+			template, err := GetTemplate(adapter)
+
+			Expect(err).To(BeNil())
+
+			registryPolicy = RegistryBackendTlsPolicy(template)
+			kasPolicy = KasBackendTlsPolicy(template)
+			webservicePolicies = WebserviceBackendTlsPolicies(template)
+		})
+
+		When("the components serve TLS behind the Gateway", func() {
+			BeforeEach(func() {
+				chartValues = WithOverrides(GatewayAPIModeValues(), backendTlsValues())
+			})
+
+			It("Templates the BackendTLSPolicy of every component", func() {
+				Expect(registryPolicy).NotTo(BeNil())
+				Expect(registryPolicy.GetName()).To(Equal(fmt.Sprintf("%s-registry", releaseName)))
+
+				Expect(kasPolicy).NotTo(BeNil())
+				Expect(kasPolicy.GetName()).To(Equal(fmt.Sprintf("%s-kas", releaseName)))
+
+				// Webservice renders one policy per entry of `webservice.deployments`.
+				Expect(webservicePolicies).To(HaveLen(1))
+				Expect(webservicePolicies[0].GetName()).To(Equal(fmt.Sprintf("%s-webservice-default", releaseName)))
+			})
+
+			It("Points every BackendTLSPolicy at the configured CA Secret", func() {
+				Expect(caSecretName(registryPolicy)).To(Equal("registry-ca"))
+				Expect(caSecretName(kasPolicy)).To(Equal("kas-ca"))
+				Expect(caSecretName(webservicePolicies[0])).To(Equal("workhorse-ca"))
+			})
+		})
+
+		When("the components do not serve TLS", func() {
+			BeforeEach(func() {
+				chartValues = GatewayAPIModeValues()
+			})
+
+			It("Templates no BackendTLSPolicy", func() {
+				Expect(registryPolicy).To(BeNil())
+				Expect(kasPolicy).To(BeNil())
+				Expect(webservicePolicies).To(BeEmpty())
+			})
+		})
+	})
+
+	Describe("BackendTrafficPolicies", func() {
+		var kasPolicy, webservicePolicy, shellPolicy client.Object
+
+		JustBeforeEach(func() {
+			mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
+			adapter := CreateMockAdapter(mockGitLab)
+			template, err := GetTemplate(adapter)
+
+			Expect(err).To(BeNil())
+
+			kasPolicy = KasBackendTrafficPolicy(template)
+			webservicePolicy = WebserviceBackendTrafficPolicy(template)
+			shellPolicy = ShellBackendTrafficPolicy(template)
+		})
+
+		When("Envoy policies are installed", func() {
+			BeforeEach(func() {
+				chartValues = WithOverrides(GatewayAPIModeValues(), backendTrafficValues())
+			})
+
+			It("Templates the KAS BackendTrafficPolicy", func() {
+				Expect(kasPolicy).NotTo(BeNil())
+				Expect(kasPolicy.GetName()).To(Equal(fmt.Sprintf("%s-kas", releaseName)))
+			})
+
+			It("Templates the Webservice BackendTrafficPolicy", func() {
+				Expect(webservicePolicy).NotTo(BeNil())
+				Expect(webservicePolicy.GetName()).To(Equal(fmt.Sprintf("%s-webservice-btp", releaseName)))
+			})
+
+			It("Templates the GitLab Shell BackendTrafficPolicy", func() {
+				if shellPolicy == nil {
+					// GitLab Shell only gained a BackendTrafficPolicy after Chart 10.2.1.
+					Skip(fmt.Sprintf("Chart %s does not template a GitLab Shell BackendTrafficPolicy", helm.GetChartVersion()))
+				}
+
+				Expect(shellPolicy.GetName()).To(Equal(fmt.Sprintf("%s-gitlab-shell", releaseName)))
+			})
+		})
+
+		When("Envoy policies are not installed", func() {
+			BeforeEach(func() {
+				chartValues = WithOverrides(GatewayAPIModeValues(), backendTrafficValues())
+				_ = chartValues.SetValue("global.gatewayApi.installEnvoy", false)
+			})
+
+			It("Templates no BackendTrafficPolicy", func() {
+				Expect(kasPolicy).To(BeNil())
+				Expect(webservicePolicy).To(BeNil())
+				Expect(shellPolicy).To(BeNil())
+			})
 		})
 	})
 

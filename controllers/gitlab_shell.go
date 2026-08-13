@@ -25,6 +25,10 @@ func (r *GitLabReconciler) reconcileGitLabShell(ctx context.Context, adapter git
 		return err
 	}
 
+	if err := r.reconcileShellBackendTrafficPolicy(ctx, adapter, template); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -65,6 +69,16 @@ func (r *GitLabReconciler) reconcileShellService(ctx context.Context, adapter gi
 func (r *GitLabReconciler) reconcileShellRoute(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
 	if err := r.createOrPatch(ctx, gitlabctl.ShellRoute(template), adapter); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (r *GitLabReconciler) reconcileShellBackendTrafficPolicy(ctx context.Context, adapter gitlab.Adapter, template helm.Template) error {
+	if policy := gitlabctl.ShellBackendTrafficPolicy(template); policy != nil {
+		if err := r.createOrPatch(ctx, policy, adapter); err != nil {
+			return err
+		}
 	}
 
 	return nil
