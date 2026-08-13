@@ -52,7 +52,22 @@ describe('gitlabs store', () => {
     mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
 
     const store = useGitLabsStore()
-    const resource = { name: 'demo', namespace: 'ns', chart: { version: '9.11.1', values: {} } }
+    const resource = {
+      name: 'demo',
+      namespace: 'ns',
+      hostname: 'gitlab.example.com',
+      edition: 'ee' as const,
+      license: { secretRef: { name: 'gitlab-license', key: 'license' } },
+      postgresql: {
+        host: 'gitlab-postgresql',
+        passwordSecretRef: { name: 'gitlab-postgresql-password', key: 'password' },
+      },
+      redis: {
+        host: 'gitlab-valkey',
+        passwordSecretRef: { name: 'gitlab-valkey-auth', key: 'default' },
+      },
+      chart: { version: '9.11.1', values: {} },
+    }
     const ok = await store.create(resource)
 
     expect(ok).toBe(true)

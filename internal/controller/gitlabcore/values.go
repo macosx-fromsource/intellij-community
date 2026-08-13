@@ -25,9 +25,26 @@ const (
 	installEnvoyKey    = "global.gatewayApi.installEnvoy"
 	hostsDomainKey     = "global.hosts.domain"
 	hostsGitLabNameKey = "global.hosts.gitlab.name"
+	editionKey         = "global.edition"
 	// These two name where the license lives, not the license itself.
 	licenseSecretKey = "global.gitlab.license.secret" //nolint:gosec // A chart value path, not a credential.
 	licenseKeyKey    = "global.gitlab.license.key"
+
+	// The connections to the external data stores. The password keys name where a password lives,
+	// not the password itself.
+	psqlHostKey           = "global.psql.host"
+	psqlPasswordSecretKey = "global.psql.password.secret" //nolint:gosec // A chart value path, not a credential.
+	psqlPasswordKeyKey    = "global.psql.password.key"    //nolint:gosec // A chart value path, not a credential.
+	redisHostKey          = "global.redis.host"
+	redisAuthSecretKey    = "global.redis.auth.secret" //nolint:gosec // A chart value path, not a credential.
+	redisAuthKeyKey       = "global.redis.auth.key"
+
+	// The subchart toggle of the container registry, as its own values declare it.
+	registryEnabledKey = "registry.enabled"
+
+	objectStoreEnabledKey          = "global.appConfig.object_store.enabled"
+	objectStoreConnectionSecretKey = "global.appConfig.object_store.connection.secret" //nolint:gosec // A chart value path, not a credential.
+	objectStoreConnectionKeyKey    = "global.appConfig.object_store.connection.key"
 
 	sharedSecretsCreateRBACKey = "shared-secrets.rbac.create"
 	sharedSecretsCreateSAKey   = "shared-secrets.serviceAccount.create"
@@ -58,11 +75,31 @@ func EffectiveValues(core *apiv2alpha1.GitLabCore) (support.Values, error) {
 		return nil, err
 	}
 
+	if err := setRegistryDefault(values); err != nil {
+		return nil, err
+	}
+
 	if err := setHostnameValues(values, core.Spec.Hostname); err != nil {
 		return nil, err
 	}
 
+	if err := setEditionValue(values, core.Spec.Edition); err != nil {
+		return nil, err
+	}
+
 	if err := setLicenseValues(values, core.Spec.License); err != nil {
+		return nil, err
+	}
+
+	if err := setPostgreSQLValues(values, core.Spec.PostgreSQL); err != nil {
+		return nil, err
+	}
+
+	if err := setRedisValues(values, core.Spec.Redis); err != nil {
+		return nil, err
+	}
+
+	if err := setObjectStorageValues(values, core.Spec.ObjectStorage); err != nil {
 		return nil, err
 	}
 
@@ -136,6 +173,21 @@ func setOverrideValues(values support.Values) error {
 	return nil
 }
 
+// setRegistryDefault turns the container registry off.
+//
+// The registry keeps its images in object storage of its own, configured
+// through registry.storage, which no structured field covers: the consolidated
+// object storage of spec.objectStorage does not reach it. An instance would
+// therefore need free-form values to render with a registry that works, so the
+// default is off rather than a component that comes up unconfigured.
+//
+// This is a default rather than an override. An instance that wants a registry
+// turns it back on in spec.chart.values, where it also has to supply the
+// storage.
+func setRegistryDefault(values support.Values) error {
+	return errors.Wrapf(values.SetValue(registryEnabledKey, false), "failed to set %s", registryEnabledKey)
+}
+
 // setSharedSecretsValues mirrors the shared secrets defaults of the v1beta1
 // controller.
 //
@@ -203,6 +255,102 @@ func setHostnameValues(values support.Values, hostname string) error {
 
 	if err := values.SetValue(hostsDomainKey, domain); err != nil {
 		return errors.Wrapf(err, "failed to set %s", hostsDomainKey)
+	}
+
+	return nil
+}
+
+// setEditionValue maps spec.edition onto the chart edition, which selects the
+// image repository every component pulls from.
+//
+// An empty edition leaves the chart default in place. The field defaults to
+// `ee`, so this only happens for an object stored before the field existed.
+func setEditionValue(values support.Values, edition apiv2alpha1.Edition) error {
+	if edition == "" {
+		return nil
+	}
+
+	return errors.Wrapf(values.SetValue(editionKey, string(edition)), "failed to set %s", editionKey)
+}
+
+// setPostgreSQLValues points the chart at the PostgreSQL server. The chart
+// bundles no database since version 10, so these values, or the free-form
+// equivalents, are what makes a release render at all.
+//
+// Only the host and the password Secret are mapped. The port, the database, and
+// the user keep their chart defaults, and an instance that needs another one
+// sets it in the free-form values.
+func setPostgreSQLValues(values support.Values, psql *apiv2alpha1.PostgreSQLSpec) error {
+	if psql == nil {
+		return nil
+	}
+
+	mapping := map[string]interface{}{
+		psqlHostKey:           psql.Host,
+		psqlPasswordSecretKey: psql.PasswordSecretRef.Name,
+		psqlPasswordKeyKey:    psql.PasswordSecretRef.Key,
+	}
+
+	for key, value := range mapping {
+		if err := values.SetValue(key, value); err != nil {
+			return errors.Wrapf(err, "failed to set %s", key)
+		}
+	}
+
+	return nil
+}
+
+// setRedisValues points the chart at the Redis server, which Valkey can stand
+// in for. Like PostgreSQL, the chart bundles none since version 10.
+//
+// The chart enables Redis authentication by default, so naming the Secret is
+// all the structured field has to do.
+func setRedisValues(values support.Values, redis *apiv2alpha1.RedisSpec) error {
+	if redis == nil {
+		return nil
+	}
+
+	mapping := map[string]interface{}{
+		redisHostKey:       redis.Host,
+		redisAuthSecretKey: redis.PasswordSecretRef.Name,
+		redisAuthKeyKey:    redis.PasswordSecretRef.Key,
+	}
+
+	for key, value := range mapping {
+		if err := values.SetValue(key, value); err != nil {
+			return errors.Wrapf(err, "failed to set %s", key)
+		}
+	}
+
+	return nil
+}
+
+// setObjectStorageValues points the consolidated object storage of the chart at
+// the Secret that holds the connection.
+//
+// Naming the Secret also turns the consolidated object storage on: the
+// connection configures nothing while it is off, so a resource that carries one
+// means to use it. The registry, the Pages daemon, and the backup toolbox read
+// settings of their own, which stay in the free-form values.
+//
+// The Secret is passed through rather than read. It holds the endpoint, the
+// region, and the credentials in the format the chart expects, and no
+// credential passes through the Operator.
+func setObjectStorageValues(values support.Values, storage *apiv2alpha1.ObjectStorageSpec) error {
+	if storage == nil {
+		return nil
+	}
+
+	mapping := map[string]interface{}{
+		objectStoreEnabledKey:          true,
+		objectStoreConnectionSecretKey: storage.ConnectionSecretRef.Name,
+		objectStoreConnectionKeyKey:    storage.ConnectionSecretRef.Key,
+	}
+
+	for key, value := range mapping {
+		if err := values.SetValue(key, value); err != nil {
+			return errors.Wrapf(err, "failed to set %s", key)
+		}
 	}
 
 	return nil

@@ -63,6 +63,114 @@ var _ = Describe("EffectiveValues", func() {
 		})
 	})
 
+	When("the Community Edition is selected", func() {
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.Edition = apiv2alpha1.EditionCE
+
+		values, err := EffectiveValues(core)
+
+		It("switches the chart to it", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(editionKey)).To(Equal("ce"))
+		})
+	})
+
+	When("no edition is set", func() {
+		core := &apiv2alpha1.GitLabCore{}
+
+		values, err := EffectiveValues(core)
+
+		It("leaves the chart default in place", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(editionKey)).To(BeEmpty())
+		})
+	})
+
+	When("PostgreSQL is specified", func() {
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.PostgreSQL = &apiv2alpha1.PostgreSQLSpec{
+			Host:              "dev-cluster-rw",
+			PasswordSecretRef: apiv2alpha1.SecretKeySelector{Name: "dev-cluster-app", Key: "password"},
+		}
+
+		values, err := EffectiveValues(core)
+
+		It("points the chart at the server and the password Secret", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(psqlHostKey)).To(Equal("dev-cluster-rw"))
+			Expect(values.GetString(psqlPasswordSecretKey)).To(Equal("dev-cluster-app"))
+			Expect(values.GetString(psqlPasswordKeyKey)).To(Equal("password"))
+		})
+	})
+
+	When("Redis is specified", func() {
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.Redis = &apiv2alpha1.RedisSpec{
+			Host:              "dev-valkey",
+			PasswordSecretRef: apiv2alpha1.SecretKeySelector{Name: "dev-valkey-auth", Key: "default"},
+		}
+
+		values, err := EffectiveValues(core)
+
+		It("points the chart at the server and the auth Secret", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(redisHostKey)).To(Equal("dev-valkey"))
+			Expect(values.GetString(redisAuthSecretKey)).To(Equal("dev-valkey-auth"))
+			Expect(values.GetString(redisAuthKeyKey)).To(Equal("default"))
+		})
+	})
+
+	When("object storage is specified", func() {
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.ObjectStorage = &apiv2alpha1.ObjectStorageSpec{
+			ConnectionSecretRef: apiv2alpha1.SecretKeySelector{
+				Name: "gitlab-object-storage", Key: "config",
+			},
+		}
+
+		values, err := EffectiveValues(core)
+
+		It("turns the consolidated object storage on and points it at the Secret", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetBool(objectStoreEnabledKey)).To(BeTrue())
+			Expect(values.GetString(objectStoreConnectionSecretKey)).To(Equal("gitlab-object-storage"))
+			Expect(values.GetString(objectStoreConnectionKeyKey)).To(Equal("config"))
+		})
+	})
+
+	When("neither data store is specified", func() {
+		core := &apiv2alpha1.GitLabCore{}
+
+		values, err := EffectiveValues(core)
+
+		It("leaves the connections to the free-form values", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(psqlHostKey)).To(BeEmpty())
+			Expect(values.GetString(redisHostKey)).To(BeEmpty())
+			Expect(values.GetBool(objectStoreEnabledKey)).To(BeFalse())
+		})
+	})
+
+	When("the free-form values name another database than the structured field", func() {
+		userValues := support.Values{}
+		_ = userValues.SetValue(psqlHostKey, "administrator-cluster-rw")
+
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.PostgreSQL = &apiv2alpha1.PostgreSQLSpec{
+			Host:              "dev-cluster-rw",
+			PasswordSecretRef: apiv2alpha1.SecretKeySelector{Name: "dev-cluster-app", Key: "password"},
+		}
+		core.Spec.Chart.Values = apiv2alpha1.ChartValues{Object: userValues}
+
+		values, err := EffectiveValues(core)
+
+		It("keeps the host of the administrator and the derived password Secret", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(psqlHostKey)).To(Equal("administrator-cluster-rw"))
+			Expect(values.GetString(psqlPasswordSecretKey)).To(Equal("dev-cluster-app"))
+		})
+	})
+
 	When("the free-form values set a key the structured fields also map to", func() {
 		userValues := support.Values{}
 		_ = userValues.SetValue(hostsDomainKey, "administrator.example.com")
@@ -97,6 +205,33 @@ var _ = Describe("EffectiveValues", func() {
 			Expect(values.GetString(sharedSecretsSANameKey)).To(Equal(settings.ManagerServiceAccount))
 			Expect(values.GetString(sharedSecretsRunAsUserKey)).To(BeEmpty())
 			Expect(values.GetString(sharedSecretsFSGroupKey)).To(BeEmpty())
+		})
+	})
+
+	When("nothing asks for a container registry", func() {
+		core := &apiv2alpha1.GitLabCore{}
+
+		values, err := EffectiveValues(core)
+
+		It("leaves it off, because its storage is not configured either", func() {
+			Expect(err).To(BeNil())
+			Expect(values.HasKey(registryEnabledKey)).To(BeTrue())
+			Expect(values.GetBool(registryEnabledKey)).To(BeFalse())
+		})
+	})
+
+	When("the free-form values ask for a container registry", func() {
+		userValues := support.Values{}
+		_ = userValues.SetValue(registryEnabledKey, true)
+
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.Chart.Values = apiv2alpha1.ChartValues{Object: userValues}
+
+		values, err := EffectiveValues(core)
+
+		It("gives them one, because the Operator only defaults it off", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetBool(registryEnabledKey)).To(BeTrue())
 		})
 	})
 

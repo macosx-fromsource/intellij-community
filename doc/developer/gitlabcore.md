@@ -98,11 +98,35 @@ then `spec.chart.values` merged over them, then the Operator overrides.
 | Field | Chart values |
 |---|---|
 | `spec.hostname` | `global.hosts.gitlab.name`, and `global.hosts.domain` from the parent domain |
+| `spec.edition` | `global.edition` |
 | `spec.license.secretRef` | `global.gitlab.license.secret`, `global.gitlab.license.key` |
+| `spec.postgresql` | `global.psql.host`, `global.psql.password.secret`, `global.psql.password.key` |
+| `spec.redis` | `global.redis.host`, `global.redis.auth.secret`, `global.redis.auth.key` |
+| `spec.objectStorage` | `global.appConfig.object_store.enabled`, `global.appConfig.object_store.connection.secret`, `global.appConfig.object_store.connection.key` |
 
 A hostname of `gitlab.example.com` therefore yields a domain of `example.com`, and with it the
 sibling hosts `registry.example.com` and `kas.example.com`. An apex hostname is its own domain,
 because stripping its first label would leave the public suffix.
+
+`spec.edition` selects the image repository every component pulls from. It defaults to `ee`, which
+runs the Free feature set until a license activates more. Pick `ce` only for an instance that must
+carry no proprietary code.
+
+Since chart version 10, the chart bundles neither PostgreSQL nor Redis, so `spec.postgresql` and
+`spec.redis` point at servers you run. Valkey stands in for Redis. Each maps a host and the Secret
+that holds the password. The port, the database, and the user keep their chart defaults, so an
+instance that needs another one sets it in the free-form values. For the versions and extensions
+GitLab requires, see [the PostgreSQL requirements](https://docs.gitlab.com/install/requirements/#postgresql).
+
+`spec.objectStorage` names the Secret that holds the object storage connection, and naming it also
+turns the consolidated object storage on: the connection configures nothing while it is off. The
+chart enables object storage for artifacts, LFS, uploads, and packages, and gives them no connection
+of their own, so a resource without this field and without the equivalent free-form values fails its
+`checkConfig` with `the connection property can not be empty`. The
+Secret carries the endpoint, the region, and the credentials in the
+[connection format](https://docs.gitlab.com/charts/charts/globals/#connection) of the chart, and the
+Operator passes it through without reading it. The registry, the Pages daemon, and the backup
+toolbox read settings of their own, which stay in the free-form values.
 
 The derived layer also mirrors the shared secrets defaults of the `v1beta1` controller:
 
@@ -111,6 +135,7 @@ The derived layer also mirrors the shared secrets defaults of the `v1beta1` cont
 | `shared-secrets.serviceAccount.create: false`, `name: $GITLAB_MANAGER_SERVICE_ACCOUNT` | The Job runs under the ServiceAccount of the Operator, which the Operator installation provisions. |
 | `shared-secrets.rbac.create: false` | The Operator creates no RBAC, and the Job needs none: its account already has it. |
 | `shared-secrets.securityContext.runAsUser: ""`, `fsGroup: ""` | Keeps the Job compatible with the OpenShift `nonroot` SecurityContextConstraint, which assigns both itself. |
+| `registry.enabled: false` | The container registry keeps its images in object storage of its own, through `registry.storage`, which no structured field covers. An instance that wants one turns it back on in `spec.chart.values`, where it also supplies the storage. |
 
 That ServiceAccount has to exist in the namespace of the resource, with permission to manage Secrets
 there, before the first reconcile. The `v1beta1` controller reaches the same result by applying only

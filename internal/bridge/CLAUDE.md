@@ -1,7 +1,8 @@
 # Bridge (backend-for-frontend)
 
-HTTP server exposing CRUD over the GitLab CR, an OpenAPI document, and an embedded SPA, so a
-frontend can configure GitLab instances. Runs inside the operator as a `manager.Runnable`.
+HTTP server exposing CRUD over the `GitLabCore` CR (`apps.gitlab.com/v2alpha1`), an OpenAPI
+document, and an embedded SPA, so a frontend can configure GitLab instances. Runs inside the
+operator as a `manager.Runnable`.
 
 See the "Bridge (Backend for Frontend)" section in the root [AGENTS.md](../../AGENTS.md) for the
 architecture and stack rationale. This file documents how to work on and locally deploy the bridge.
@@ -12,7 +13,7 @@ architecture and stack rationale. This file documents how to work on and locally
 |---|---|
 | `server.go` | `Server` (`manager.Runnable`); `NewAPI(cf)` / `NewLocalAPI(client)` build the `humago` mux |
 | `handlers.go` | 6 CRUD operations registered with `huma.Register`; K8s→HTTP error mapping |
-| `dto.go` | Wire DTOs (`GitLabResource`/`ChartDTO`/`StatusDTO`) + mappers to/from `apiv1beta1.GitLab` |
+| `dto.go` | Wire DTOs (`GitLabResource`/`LicenseDTO`/`PostgreSQLDTO`/`RedisDTO`/`SecretRefDTO`/`ChartDTO`/`StatusDTO`) + mappers to/from `apiv2alpha1.GitLabCore` |
 | `static.go` + `web/dist/` | `go:embed` SPA serving with client-side-routing fallback |
 | `web/` | Vue 3 + TS SPA (Vite, Vue Router, Pinia); see the Frontend section |
 | `web/openapi.yaml` | Generated OpenAPI doc (do not hand-edit; run `task openapi`) |
@@ -28,6 +29,22 @@ task frontend-client  # regenerates the TS client from the doc
 Run `task openapi` whenever handlers/DTOs change; the generator builds the Huma API with a nil
 client (spec only), so it never touches a cluster.
 
+## Resource
+
+The bridge drives `GitLabCore` (`apps.gitlab.com/v2alpha1`), not the deprecated `v1beta1` `GitLab`.
+`GitLabResource` mirrors the specification: `hostname`, `edition` (`ce`/`ee`), `license.secretRef`,
+`postgresql` and `redis` (host + password Secret each), `objectStorage` (one connection Secret), and
+`chart.version`/`chart.values`. Only
+Secret references travel over the wire, never a license key or a password. The DTO repeats the CRD constraints as Huma
+validation tags, so the OpenAPI document carries them and a bad hostname is a 422 from the bridge
+rather than a rejection from the API server. Free-form `chart.values` stay the escape hatch for
+everything the structured layer does not cover; the reconciler merges them over the values derived
+from the structured fields, and they win on conflict (see [ADR 26](../../doc/developer/adr/0026-design-of-v2alpha1-custom-resources.md)).
+
+Nothing converts a `v1beta1` `GitLab` into a `GitLabCore` (separate definitions, separate kinds), so
+the bridge serves `GitLabCore` only — there is no dual-version mode. The paths keep the `gitlabs`
+segment: `/api/v1` versions the bridge API, not the custom resource.
+
 ## Endpoints
 
 - CRUD: `/api/v1/gitlabs` (list all watched ns) and `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]`
@@ -42,7 +59,7 @@ Like the old Kubernetes Dashboard: every `/api` request must send `Authorization
 [auth.go](auth.go) holds a huma middleware that extracts the token and builds a per-request client
 (`rest.AnonymousClientConfig(base)` + `BearerToken`, sharing one `RESTMapper`); handlers pull it via
 `clientFrom(ctx)`. Authn **and** authz are delegated to the kube-apiserver — the caller needs their
-own RBAC on `gitlabs.apps.gitlab.com`; 401/403 from the API server are mapped through in `mapError`.
+own RBAC on `gitlabcores.apps.gitlab.com`; 401/403 from the API server are mapped through in `mapError`.
 Non-`/api` routes (`/openapi.*`, `/docs`, SPA) stay open. The SPA attaches the token via an
 openapi-fetch middleware ([web/src/lib/api/client.ts](web/src/lib/api/client.ts)) reading a token
 held by the `auth` Pinia store ([web/src/stores/auth.ts](web/src/stores/auth.ts)); enter it in the
@@ -53,7 +70,7 @@ Get a token for local use (needs k8s ≥ 1.24):
 ```shell
 kubectl -n gitlab-system create serviceaccount bridge-user
 kubectl create clusterrole gitlab-editor \
-  --verb=get,list,watch,create,update,patch,delete --resource=gitlabs.apps.gitlab.com
+  --verb=get,list,watch,create,update,patch,delete --resource=gitlabcores.apps.gitlab.com
 kubectl create clusterrolebinding bridge-user \
   --clusterrole=gitlab-editor --serviceaccount=gitlab-system:bridge-user
 TOKEN=$(kubectl -n gitlab-system create token bridge-user --duration=1h)
@@ -104,7 +121,9 @@ kubectl bridge --verbose      # --port/-p, --address, --context, --kubeconfig, -
 
 Unlike the rest of the repo (Ginkgo/Gomega), the bridge uses Go's standard `testing` package
 with **testify** (`require`). `handlers_test.go` drives the real handlers via `httptest` + a fake
-client (no cluster needed):
+client (no cluster needed). The SPA has Vitest specs beside the sources:
+`stores/gitlabs.spec.ts` (store) and `views/GitLabFormView.spec.ts` (steps, per-step validation, and
+the body the form posts), run with `npm run test:unit`.
 
 ```shell
 SKIP_ENVTEST=yes go test ./internal/bridge/...
@@ -119,8 +138,18 @@ from `openapi.yaml` by **openapi-typescript**. Node is pinned to **26** via [mis
 run commands inside a mise-activated shell (or prefix `mise exec --`).
 
 Structure: `src/lib/api/` (typed client), `src/stores/gitlabs.ts` (Pinia CRUD store),
-`src/views/GitLabsListView.vue` + `GitLabFormView.vue`, `src/router/index.ts`. `chart.values` is
-edited as a JSON textarea (free-form; no schema yet).
+`src/views/GitLabsListView.vue` + `GitLabFormView.vue`, `src/router/index.ts`. The form edits the
+structured fields (hostname, edition, PostgreSQL, Redis, license, chart version) as inputs and
+`chart.values` as a YAML textarea (free-form; no schema yet), across three steps — Basics
+(name/hostname/edition/license/chart version), Dependencies (PostgreSQL/Valkey/object storage), Overrides (chart
+values). The namespace is not a field: creation goes to `gitlab-system` (`defaultNamespace`), and an
+edit keeps the namespace of the route. `validateStep`/`goTo` check a step on the way forward only, and the panels use
+`v-show` so the CodeMirror editor of the last step mounts once. The PostgreSQL, Valkey, object storage, and license
+groups are all-or-nothing, validated client-side before the request; the license group sits under
+the edition select and is hidden (and left out of the request) for `ce`. The Valkey group writes
+`spec.redis` — the wire field, the resource, and the chart all keep the Redis name. The data store groups carry the
+official project logo from `src/assets/icons/`, and object storage a plain glyph painted through a
+CSS mask; see the [README](web/src/assets/icons/README.md) there before touching those files.
 
 ```shell
 task frontend-install   # npm ci

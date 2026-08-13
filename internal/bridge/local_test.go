@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	apiv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
+	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
 )
 
 // newLocalTestServer starts an httptest server built with NewLocalAPI, backed by
@@ -23,7 +23,7 @@ func newLocalTestServer(t *testing.T, acceptHosts ...string) *httptest.Server {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
-	require.NoError(t, apiv1beta1.AddToScheme(scheme))
+	require.NoError(t, apiv2alpha1.AddToScheme(scheme))
 
 	c := fake.NewClientBuilder().WithScheme(scheme).Build()
 	_, handler := NewLocalAPI(c, acceptHosts...)
@@ -188,7 +188,7 @@ func TestIsLoopbackAuthority(t *testing.T) {
 // Authorize button and the generated document does not advertise a token.
 func TestLocalAPIHasNoBearerSecurityScheme(t *testing.T) {
 	scheme := runtime.NewScheme()
-	require.NoError(t, apiv1beta1.AddToScheme(scheme))
+	require.NoError(t, apiv2alpha1.AddToScheme(scheme))
 
 	api, _ := NewLocalAPI(fake.NewClientBuilder().WithScheme(scheme).Build())
 

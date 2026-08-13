@@ -28,9 +28,13 @@ import (
 )
 
 const (
-	releaseName   = "test"
-	testNamespace = "default"
-	testHostname  = "gitlab.example.com"
+	releaseName        = "test"
+	testNamespace      = "default"
+	testHostname       = "gitlab.example.com"
+	testPostgreSQLHost = "psql.example.com"
+	testRedisHost      = "redis.example.com"
+
+	testObjectStorageSecret = "object-storage-secret"
 )
 
 func TestGitLabCore(t *testing.T) {
@@ -66,6 +70,24 @@ func CreateMockGitLabCore(name, namespace string, customValues support.Values) *
 		},
 		Spec: apiv2alpha1.GitLabCoreSpec{
 			Hostname: testHostname,
+			Edition:  apiv2alpha1.EditionEE,
+			PostgreSQL: &apiv2alpha1.PostgreSQLSpec{
+				Host: testPostgreSQLHost,
+				PasswordSecretRef: apiv2alpha1.SecretKeySelector{
+					Name: "psql-password", Key: "password",
+				},
+			},
+			Redis: &apiv2alpha1.RedisSpec{
+				Host: testRedisHost,
+				PasswordSecretRef: apiv2alpha1.SecretKeySelector{
+					Name: "redis-password", Key: "password",
+				},
+			},
+			ObjectStorage: &apiv2alpha1.ObjectStorageSpec{
+				ConnectionSecretRef: apiv2alpha1.SecretKeySelector{
+					Name: testObjectStorageSecret, Key: "connection",
+				},
+			},
 			Chart: apiv2alpha1.ChartSpec{
 				Version: chartVersion(),
 				Values: apiv2alpha1.ChartValues{
@@ -124,9 +146,12 @@ func mockRESTMapper() meta.RESTMapper {
 	return mapper
 }
 
-// minimalValues are the smallest values that render the full chart, mirroring
-// the minimal values of the controllers/gitlab suite. The hosts are absent on
-// purpose: spec.hostname supplies them.
+// minimalValues are the smallest values that render the chart, mirroring the
+// minimal values of the controllers/gitlab suite. The registry storage is
+// absent because the reconciler defaults the registry off. The hosts are absent on
+// purpose, and so are the PostgreSQL, Redis, and object storage connections:
+// spec.hostname, spec.postgresql, spec.redis, and spec.objectStorage supply
+// them.
 func minimalValues() string {
 	return `
 certmanager-issuer:
@@ -140,26 +165,9 @@ gitlab:
         config:
           secret: backup-storage-secret
           key: config
-registry:
-  storage:
-    secret: registry-storage-secret
-    key: config
 global:
-  redis:
-    host: redis.example.com
-  psql:
-    host: psql.example.com
-    password:
-      secret: psql-password
-      key: password
   pages:
     objectStore:
-      connection:
-        secret: object-storage-secret
-        key: connection
-  appConfig:
-    object_store:
-      enabled: true
       connection:
         secret: object-storage-secret
         key: connection

@@ -4,13 +4,37 @@ metadata:
   name: gitlab
 spec:
   hostname: gitlab.example.com # use a real hostname here
+  edition: ee # 'ee' runs the Free feature set until a license activates more, 'ce' is the Community Edition
   license:
     secretRef:
       name: gitlab-license
       key: license
+  # The chart bundles no database and no Redis server, so both are required.
+  # See https://docs.gitlab.com/install/requirements/#postgresql
+  postgresql:
+    host: gitlab-postgresql.databases.svc.cluster.local # use a real host here
+    passwordSecretRef:
+      name: gitlab-postgresql-password
+      key: password
+  # Valkey serves as a drop-in replacement for Redis.
+  redis:
+    host: gitlab-valkey.databases.svc.cluster.local # use a real host here
+    passwordSecretRef:
+      name: gitlab-valkey-auth
+      key: default
+  # One Secret in the connection format of the chart, holding the endpoint, the
+  # region, and the credentials. Setting it turns the consolidated object
+  # storage on. See https://docs.gitlab.com/charts/charts/globals/#connection
+  objectStorage:
+    connectionSecretRef:
+      name: gitlab-object-storage
+      key: connection
   chart:
     version: "X.Y.Z" # select a version from the CHART_VERSIONS file in the root of this project
     values:  # see https://docs.gitlab.com/charts for configuration options
+      # The Operator defaults `registry.enabled` to false, because the registry
+      # keeps its images in storage of its own. Turn it on here, together with
+      # `registry.storage`, to deploy one.
       global:
         ingress:
           class: nginx # ensure this matches the ingress class defined within the NGINX ingress controller
