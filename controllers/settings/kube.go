@@ -86,12 +86,19 @@ func IsGroupVersionSupported(group, version string) bool {
 	return true
 }
 
+// IsGroupVersionKindSupported reports whether the cluster serves the given Kind
+// under the given GroupVersion, for example "monitoring.coreos.com/v1" and
+// "ServiceMonitor".
 func IsGroupVersionKindSupported(groupVersion, kind string) bool {
 	client, err := KubernetesConfig().NewKubernetesClient()
 	if err != nil {
 		return false
 	}
 
+	return isGroupVersionKindSupported(client.Discovery(), groupVersion, kind)
+}
+
+func isGroupVersionKindSupported(client discovery.DiscoveryInterface, groupVersion, kind string) bool {
 	rs, err := client.ServerResourcesForGroupVersion(groupVersion)
 	if err != nil {
 		return false
