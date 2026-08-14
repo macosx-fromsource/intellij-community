@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	authorizationv1 "k8s.io/api/authorization/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
@@ -113,6 +114,73 @@ var _ = Describe("CanManageResource", func() {
 				})
 
 			Expect(canManageResource(context.Background(), client, group, resource, namespace)).To(BeFalse())
+		})
+	})
+})
+
+var _ = Describe("IsGroupVersionKindSupported", func() {
+	const (
+		groupVersion = "monitoring.coreos.com/v1"
+		kind         = "ServiceMonitor"
+	)
+
+	var client *fake.Clientset
+
+	BeforeEach(func() {
+		client = fake.NewClientset()
+		client.Resources = []*metav1.APIResourceList{
+			{
+				GroupVersion: groupVersion,
+				APIResources: []metav1.APIResource{
+					{Name: "podmonitors", Kind: "PodMonitor"},
+					{Name: "servicemonitors", Kind: kind},
+				},
+			},
+		}
+	})
+
+	When("the GroupVersion serves the Kind", func() {
+		It("returns true", func() {
+			Expect(isGroupVersionKindSupported(client.Discovery(), groupVersion, kind)).To(BeTrue())
+		})
+	})
+
+	When("the GroupVersion does not serve the Kind", func() {
+		It("returns false", func() {
+			Expect(isGroupVersionKindSupported(client.Discovery(), groupVersion, "Prometheus")).To(BeFalse())
+		})
+	})
+
+	When("the GroupVersion is not served at all", func() {
+		It("returns false", func() {
+			Expect(isGroupVersionKindSupported(client.Discovery(), "app.k8s.io/v1beta1", "Application")).To(BeFalse())
+		})
+	})
+
+	When("the Kind is served under a different version of the same group", func() {
+		It("returns false", func() {
+			Expect(isGroupVersionKindSupported(client.Discovery(), "monitoring.coreos.com/v1alpha1", kind)).To(BeFalse())
+		})
+	})
+
+	When("the GroupVersion serves no resources", func() {
+		It("returns false", func() {
+			client.Resources = []*metav1.APIResourceList{
+				{GroupVersion: groupVersion},
+			}
+
+			Expect(isGroupVersionKindSupported(client.Discovery(), groupVersion, kind)).To(BeFalse())
+		})
+	})
+
+	When("discovery fails", func() {
+		It("returns false", func() {
+			client.PrependReactor("get", "resource",
+				func(_ clienttesting.Action) (bool, runtime.Object, error) {
+					return true, nil, fmt.Errorf("boom")
+				})
+
+			Expect(isGroupVersionKindSupported(client.Discovery(), groupVersion, kind)).To(BeFalse())
 		})
 	})
 })
