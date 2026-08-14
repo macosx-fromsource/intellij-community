@@ -555,9 +555,13 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if settings.IsGroupVersionKindSupported("gateway.networking.k8s.io/v1", "BackendTLSPolicy") {
 			r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "backendtlspolicies", &gatewayv1.BackendTLSPolicy{})
 		}
+
+		if settings.IsGroupVersionKindSupported("gateway.networking.k8s.io/v1", "TCPRoute") {
+			r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "tcproutes", &gatewayv1.TCPRoute{})
+		}
 	}
 
-	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1alpha2") {
+	if settings.IsGroupVersionKindSupported("gateway.networking.k8s.io/v1alpha2", "TCPRoute") {
 		r.Log.Info("using gateway.networking.k8s.io/v1alpha2")
 		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "tcproutes", &gatewayalpha2.TCPRoute{})
 	}
@@ -567,8 +571,8 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.ownIfPermitted(builder, authClient, "app.k8s.io", "applications", &applicationv1beta1.Application{})
 	}
 
-	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1alpha1") {
-		r.Log.Info("using gateway.envoyproxy.io/v1alpha1")
+	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1") {
+		r.Log.Info("using gateway.envoyproxy.io/v1")
 		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoypatchpolicies", &envoy.EnvoyPatchPolicy{})
 		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "securitypolicies", &envoy.SecurityPolicy{})
 		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "clienttrafficpolicies", &envoy.ClientTrafficPolicy{})
