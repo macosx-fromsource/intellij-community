@@ -571,8 +571,8 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.ownIfPermitted(builder, authClient, "app.k8s.io", "applications", &applicationv1beta1.Application{})
 	}
 
-	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1") {
-		r.Log.Info("using gateway.envoyproxy.io/v1")
+	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1alpha1") {
+		r.Log.Info("using gateway.envoyproxy.io/v1alpha1")
 		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoypatchpolicies", &envoy.EnvoyPatchPolicy{})
 		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "securitypolicies", &envoy.SecurityPolicy{})
 		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "clienttrafficpolicies", &envoy.ClientTrafficPolicy{})
