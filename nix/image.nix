@@ -75,7 +75,9 @@ let
       pname = "gitlab-operator${lib.optionalString bridge "-bridge"}";
       version = "dev";
       src = goSrc;
-      vendorHash = "sha256-VFkmQnS6ZZolvxWf9LbZ0zXADXNNgjnxQLN6M5heFa4=";
+      vendorHash = "sha256-X+o2I3AvOLtOhQPyzrb52vMo5ueBXeDePgTfug7kOiA=";
+      # main lives in cmd/manager (moved there in 6e4d37ca); building "." would
+      # compile the non-main module root and install NO binary → empty $out.
       subPackages = [ "cmd/manager" ];
       env.CGO_ENABLED = 0;
       tags = lib.optionals bridge [ "bridge" ];
@@ -142,7 +144,7 @@ let
     dontInstall = true;
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-bKsV3eWhm128/VCAKTHQfWO4Soe4Kq14E81wCA4KQGY=";
+    outputHash = "sha256-cVV6IPy3vAKgSLcZXh/B1stnxx7NeiH5lWJHq6d2GL8=";
   };
 
   # Image filesystem laid out to match the upstream Dockerfile contract:
@@ -153,7 +155,15 @@ let
     managerBin:
     pkgs.runCommand "operator-image-root" { } ''
       mkdir -p "$out" "$out/charts" "$out/tmp"
-      cp ${managerBin}/bin/manager "$out/manager"
+      # Locate the binary rather than hardcoding bin/manager: a cross-compiled
+      # buildGoModule can emit it under bin/<goos>_<goarch>/manager instead of
+      # bin/manager, so find it either way (host or cross).
+      manager_bin="$(find ${managerBin}/bin -type f -name manager | head -n1)"
+      if [ -z "$manager_bin" ]; then
+        echo "no 'manager' binary under ${managerBin}/bin" >&2
+        exit 1
+      fi
+      cp "$manager_bin" "$out/manager"
       cp ${gitlabCharts}/*.tgz "$out/charts/"
       chmod 1777 "$out/tmp"
     '';

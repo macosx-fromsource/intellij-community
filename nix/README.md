@@ -105,7 +105,7 @@ version requires recreating the cluster (`nix run .#kind-down && nix run .#up-de
 
 | Command | Does |
 | --- | --- |
-| `nix run .#up-dev` | Full clean local env: kind cluster → dev deps → build+load dev image → deploy operator + GitLab CR. |
+| `nix run .#up-dev` | Full clean local env: kind cluster → dev deps (or a restored snapshot on a fresh cluster) → build+load dev image → deploy operator + GitLab CR. Uses the [prebaked node image + snapshot cache](#caching-up-dev-speedup) when present. |
 | `nix run .#refresh-dev` | Inner loop: rebuild image → load into kind → restart the operator. |
 | `nix run .#deploy` | Deploy using the **published** manifest (registry image, `:latest`). |
 | `nix run .#deploy-dev` | Deploy using the **locally built** image (run `.#load-image-dev` first). |
@@ -114,15 +114,91 @@ version requires recreating the cluster (`nix run .#kind-down && nix run .#up-de
 | `nix run .#deps-dev` | Provision external dev dependencies (writes `external-deps.yaml`). |
 | `nix run .#lint` / `.#test` / `.#fmt` / `.#vet` | Quality + tests. |
 | `nix run .#generate` / `.#manifests` | controller-gen codegen. |
+| `nix run .#refresh-hashes [go\|npm\|charts\|deps\|all]` | Re-pin the flake's FOD/vendor/npm hashes after their inputs change (see [Re-bootstrapping hashes](#re-bootstrapping-hashes-renovate-bumps-these)). |
 
 `nix flake check` renders the manifest + CR overlay offline — the same check CI
 can run.
 
+## Caching (`up-dev` speedup)
+
+The first `up-dev` is slow: it pulls the full set of GitLab + dependency images
+over the network, then waits on the external-dep setup (`dev_dependencies.sh`)
+and the GitLab migration jobs. Two **opt-in, additive** caches make every later
+standup fast. Both are keyed by the canonical chart version, so cached state
+always matches what you deploy:
+
+1. **Prebaked kind node image** — a copy of the base node with every cluster
+   image already in containerd, committed as `kindest/node-gitlab:<chartver>`.
+   A fresh `up-dev` then does **zero** network image pulls. `up-dev` selects it
+   automatically (`nodeImageResolver`); set `NO_BAKED_NODE=1` to ignore it.
+2. **Post-migration state snapshot** — a logical dump of the migrated CNPG DB +
+   Garage object storage + the dep workloads/secrets. On a **freshly created**
+   cluster `up-dev` restores this instead of running `dev_dependencies.sh` + the
+   migration jobs; set `NO_RESTORE=1` to force the slow path. Restore only runs
+   on a cluster `up-dev` just created — never against a live, already-migrated
+   GitLab.
+
+### Building + using the caches
+
+```sh
+nix run .#up-dev        # 1. first standup (slow — nothing cached yet)
+nix run .#warm-cache    # 2. while it's up: capture → prewarm → bake → snapshot
+nix run .#kind-down
+nix run .#up-dev        # 3. fast standup: 0 image pulls + restored state
+```
+
+| Command | Does |
+| --- | --- |
+| `nix run .#warm-cache` | One shot: `capture-images → prewarm-images → bake-node-image → snapshot-dev`. Run once after the first `up-dev`. |
+| `nix run .#capture-images` | Record every image containerd pulled onto the node. |
+| `nix run .#prewarm-images` | skopeo-pull that set into the local archive cache (parallelism: `PREWARM_JOBS`, default 6). |
+| `nix run .#bake-node-image` | Commit `kindest/node-gitlab:<chartver>` with those images preloaded. |
+| `nix run .#snapshot-dev` / `.#restore-dev` | Capture / restore the migrated DB + Garage + deps (restore also runs automatically inside `up-dev`). |
+| `nix run .#cache-clean [--node\|--snapshot\|--images\|--all]` | Invalidate caches for the **current** chart version (see below). |
+
+The archive cache lives under `$GITLAB_OPERATOR_CACHE` (default
+`~/.cache/gitlab-operator`); the baked node image lives in your container
+runtime's image store (docker/podman/nerdctl).
+
+> **⚠️ Disk usage.** These caches are large. The prebaked node image is on the
+> order of ~20 GB, and the pulled image-archive cache is a comparable multi-GB
+> set (self-contained docker-archives, so shared layers are stored per image and
+> can total *more* than the node). Add the per-version DB/Garage snapshot, and
+> note that **every distinct chart version you cache adds another full set**.
+> Budget on the order of tens of GB and clean up versions you no longer use.
+
+### Clearing the cache
+
+`cache-clean` operates on the **current** chart version only (set
+`GITLAB_CHART_VERSION` to target another). With no flags it drops just the
+derived caches (baked node + snapshot) and keeps the expensive image archives:
+
+```sh
+nix run .#cache-clean            # baked node + snapshot for this version
+nix run .#cache-clean -- --all   # + the pulled image archives for this version
+```
+
+`nix run` needs `--` before app flags — `nix run .#cache-clean -- --all`, not
+`--all`.
+
+To **completely** wipe every cache across **all** chart versions (full reset):
+
+```sh
+# 1. archives + snapshots + image lists (all versions)
+rm -rf "${GITLAB_OPERATOR_CACHE:-$HOME/.cache/gitlab-operator}"
+# 2. every baked node image (swap docker for podman/nerdctl if that's your runtime)
+docker rmi $(docker images 'kindest/node-gitlab' -q)
+```
+
 ## Re-bootstrapping hashes (Renovate bumps these)
 
-Three hashes are pinned and must be refreshed when their inputs change. The
-procedure is the same for all: replace the hash with `pkgs.lib.fakeHash`, run
-the build, and paste the `got: sha256-…` value Nix prints back in.
+Four hashes are pinned and must be refreshed when their inputs change.
+`nix run .#refresh-hashes [go|npm|charts|deps|all]` (default: `go charts deps`)
+automates it — for each target it swaps the hash for the `fakeHash` sentinel,
+builds the attr so Nix reports the real `got: sha256-…`, and patches it back
+into `nix/image.nix` / `nix/manifests.nix`. To refresh one by hand, follow the
+same procedure: replace the hash with `pkgs.lib.fakeHash`, run the build, and
+paste the `got: sha256-…` value Nix prints back in.
 
 | Hash | Refresh when… | Rebuild with |
 | --- | --- | --- |
