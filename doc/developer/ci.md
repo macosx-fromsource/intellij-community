@@ -26,24 +26,57 @@ kubeconfig files for connecting to these clusters are stored in the 1Password cl
 The clusters are orchestrated using the [`openshift-provisioning`](https://gitlab.com/gitlab-org/distribution/infrastructure/openshift-provisioning)
 project. CI access is managed using [`kube-agents`](https://gitlab.com/gitlab-org/distribution/infrastructure/kube-agents) .
 
-## Kubernetes CI clusters
-
-We manage Kubernetes clusters in Google Cloud using GKE. These clusters are used to run the same acceptance tests that run on the OpenShift CI clusters.
-
-The clusters are orchestrated using the [`infrastructure-provisioning`](https://gitlab.com/gitlab-org/distribution/infrastructure/infrastructure-provisioning)
-project. CI access is managed using [`kube-agents`](https://gitlab.com/gitlab-org/distribution/infrastructure/kube-agents) .
-
 ## k3d cluster tests
 
-The `review_k3d_*` jobs create a single-use [k3d](https://k3d.io) cluster inside the job's Docker-in-Docker environment
-instead of connecting to a shared, always-on cluster. Each job deploys the operator and a GitLab custom resource, runs
-the QA smoke suite against it over a [nip.io](https://nip.io) domain, and destroys the cluster when the job ends. There
-is no GitLab environment or cleanup job for these tests — nothing outlives the job.
+The `k3d` trigger job in `.gitlab/ci/review-k3d.gitlab-ci.yml` holds a `parallel:matrix` with one row per
+tested Kubernetes version. Each row spawns a child pipeline from
+`.gitlab/ci/k3d-version-pipeline.gitlab-ci.yml` whose `review_k3d` job creates a single-use
+[k3d](https://k3d.io) cluster inside the job's Docker-in-Docker environment. The job deploys the
+operator and a GitLab custom resource, runs the QA smoke suite against it over a
+[nip.io](https://nip.io) domain, and destroys the cluster when the job ends. The jobs have no
+GitLab environment or cleanup job because nothing outlives the job.
 
-These jobs run on the privileged `e2e` runner fleet. The Kubernetes version is pinned with the `K3D_K8S_IMAGE` variable
-(a [`rancher/k3s`](https://hub.docker.com/r/rancher/k3s/tags) image tag).
+These jobs run on the privileged `e2e` runner fleet.
 
-The shared GKE and vcluster environments are being migrated to k3d.
+The primary version (matrix row with `K3D_PRIMARY: "primary"`) runs automatically on merge request
+and branch pipelines. The other versions are manual there, and all versions run automatically on
+nightly (scheduled), stable-branch, and default-branch pipelines.
+
+Chart-version pipelines are already at the maximum descendant-pipeline depth, so they run the same
+test as the direct `review_k3d_chart_version` job with the same matrix instead of the trigger job.
+
+### Tested configurations
+
+The review jobs cover these combinations of operator scope and Ingress path:
+
+| Job | Kubernetes | Operator scope | Ingress path |
+|---|---|---|---|
+| `k3d: [v133]` | 1.33 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
+| `k3d: [v134]` | 1.34 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
+| `k3d: [v135]` (primary) | 1.35 | Namespaced | Chart-managed Envoy Gateway, HTTP |
+| `review_vcluster135` | 1.35 | Cluster-wide | Chart-bundled NGINX controller, TLS |
+| `review_vcluster_flux` | 1.35 | Cluster-wide | Chart-managed Envoy Gateway, TLS |
+| `review_ocp` | OpenShift | Cluster-wide | Pre-provisioned external gateway, TLS |
+
+The namespaced operator (`CLUSTER_MODE: "false"`) deploys with `nginx-ingress.create=false`, so it
+does not create the cluster-scoped resources (IngressClass, RBAC) that the chart-bundled NGINX
+controller requires to start. Namespaced rows therefore pair with Gateway API instead. The k3d jobs
+serve plain HTTP because a single-use cluster has no pre-provisioned wildcard TLS certificate.
+
+### Add or remove a Kubernetes version
+
+Edit the `parallel:matrix` in `.gitlab/ci/review-k3d.gitlab-ci.yml`. Each row sets:
+
+- `K3D_K8S_IMAGE`: the [`rancher/k3s`](https://hub.docker.com/r/rancher/k3s/tags) image tag that
+  pins the Kubernetes version.
+- `K3D_K8S_VERSION_SLUG`: a short label, for example `v135`, used in the child pipeline name.
+- `CLUSTER_MODE`: `"true"` for the cluster-wide operator, `"false"` for the namespaced operator.
+- Optional. `K3D_PRIMARY: "primary"` on exactly one row: the version that runs automatically on
+  merge request pipelines.
+- Optional. `TEST_CR_FILES_DIR` and `INSTALL_ENVOY_GATEWAY: "true"` for the Gateway API/Envoy
+  variant instead of the default NGINX Ingress overlay.
+
+The shared vcluster environments are also being migrated to k3d.
 See [epic &98](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/98) for the migration plan.
 
 ## QA pipelines

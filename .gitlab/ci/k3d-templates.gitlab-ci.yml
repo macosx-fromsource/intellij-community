@@ -1,28 +1,18 @@
-# k3d per-job cluster test — Kubernetes v1.34 (PoC).
+# Shared template for the k3d per-job cluster test.
 #
-# Replaces the GKE 1.34 review environment. Instead of deploying into a
-# shared always-on cluster through a GitLab agent, the job creates its own
-# single-use k3d cluster inside the job's Docker-in-Docker environment,
-# deploys the operator and a GitLab custom resource, runs the QA smoke suite
-# against it over a nip.io domain, and destroys the cluster when the job
-# ends. No GitLab environment, resource group, or stop job is needed —
-# nothing outlives the job.
-#
-# See https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/98
+# Included by .gitlab/ci/k3d-version-pipeline.gitlab-ci.yml (the child pipeline layer,
+# one child per version matrix row) and by .gitlab-ci.yml so that
+# chart-version pipelines can run the same test as a direct job
+# (see review_k3d_chart_version in .gitlab/ci/review-k3d.gitlab-ci.yml).
+# Relies on .dind (.gitlab/ci/templates.gitlab-ci.yml) being included alongside.
 
-review_k3d_v134:
+.review_k3d_template:
   extends: .dind
   stage: review
   tags:
     - e2e
   variables:
     K3D_MODE: "true"
-    K3D_K8S_IMAGE: "rancher/k3s:v1.34.1-k3s1"
-    # Cluster-wide mode, parity with the replaced GKE 1.34 job. Besides the
-    # watch scope, this makes the operator chart create the ServiceAccount,
-    # RBAC, and IngressClass (nginx-ingress.create) that the GitLab chart's
-    # bundled NGINX controller requires to start.
-    CLUSTER_MODE: "true"
     # The whole cluster is destroyed in after_script; per-resource cleanup
     # would only slow the job down.
     CLEANUP: "no"
@@ -49,10 +39,18 @@ review_k3d_v134:
     - k3d_info
     - kubectl version --output=json
     # cert-manager is required by the operator's webhook certificate
-    # (manager.webhook.selfSignedCert). Shared clusters have it pre-installed;
-    # a fresh k3d cluster does not. The GitLab instance itself is served over
-    # plain HTTP, so no other certificates are needed.
-    - task install_certmanager
+    # (manager.webhook.selfSignedCert); a fresh k3d cluster has nothing
+    # pre-installed. The GitLab instance itself is served over plain HTTP.
+    # The Gateway API rows additionally install Envoy Gateway (Gateway API
+    # CRDs + controller) and enable cert-manager's Gateway API support,
+    # mirroring the vcluster-flux path.
+    - |
+      if [ "$INSTALL_ENVOY_GATEWAY" = "true" ]; then
+        task install_envoy_gateway
+        task install_certmanager_envoy
+      else
+        task install_certmanager
+      fi
     - task wait_certmanager
     # Deploy the operator, external services, and the GitLab CR, then wait
     # until the instance is Running and answering on its endpoint.
@@ -92,9 +90,3 @@ review_k3d_v134:
   retry: 1
   allow_failure:
     exit_codes: 42
-  rules:
-    - !reference [.skip_if_not_canonical]
-    - !reference [.skip_if_release_tag]
-    - !reference [.skip_if_docs_branch]
-    - !reference [.skip_if_gitlab_chart_child_pipeline]
-    - !reference [.if_commit_branch_or_mr_branch]

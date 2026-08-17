@@ -228,6 +228,22 @@ build_gitlab_custom_resource() {
     ${YQ} -i eval ".spec.chart.values.global.hosts.https = false" "${cr_file}"
     ${YQ} -i eval ".spec.chart.values.global.ingress.tls.enabled = false" "${cr_file}"
     ${YQ} -i eval "del(.spec.chart.values.global.ingress.tls.secretName)" "${cr_file}"
+
+    # HTTP-only Gateway API mode, mirroring the chart's k3d Envoy jobs
+    # (scripts/ci/values/gitlab-chart/gatewayapi-http.values.yaml there).
+    if [ "$(${YQ} eval '.spec.chart.values.global.gatewayApi.enabled // false' "${cr_file}")" = "true" ]; then
+      # Serve the Gateway listeners over HTTP (the default is HTTPS) and drop
+      # the listener TLS certificateRefs that point at the pre-provisioned
+      # wildcard secret, which does not exist on a fresh k3d cluster. With
+      # broken TLS listeners Envoy answers every request with 404.
+      ${YQ} -i eval '.spec.chart.values.gatewayApiResources.gateway.protocol = "HTTP"' "${cr_file}"
+      ${YQ} -i eval 'del(.spec.chart.values.gatewayApiResources.gateway.listeners)' "${cr_file}"
+      # Keep %2F in URL paths unchanged so API calls using namespace/project
+      # notation (root%2Fproject) are routed correctly. In HTTP-only mode all
+      # listeners share port 80, so only a gateway-wide ClientTrafficPolicy
+      # takes effect.
+      ${YQ} -i eval '.spec.chart.values.gatewayApiResources.envoy.clientTrafficPolicySpec.path.escapedSlashesAction = "KeepUnchanged"' "${cr_file}"
+    fi
   else
     # Annotate the Envoy Service backing the Gateway so external-dns provisions
     # DNS records for the review app endpoints.
