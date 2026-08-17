@@ -32,6 +32,14 @@
     # See https://gitlab.com/sbordei/tool2nix
     tool2nix.url = "gitlab:sbordei/tool2nix";
     tool2nix.inputs.nixpkgs.follows = "nixpkgs";
+
+    # GitLab Helm chart flake. The operator consumes its portable `lib`
+    # (render/values/version helpers) instead of vendoring that plumbing, and
+    # reads its offline `rendered` render to PRE-SEED the local image cache used
+    # by the prebaked kind node image (nix/images.nix). Bump with
+    # `nix flake update gitlab-charts`. SSH remote (uses your local SSH agent).
+    gitlab-charts.url = "git+ssh://git@gitlab.com/gitlab-org/charts/gitlab.git?ref=master";
+    gitlab-charts.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -40,6 +48,7 @@
       nixpkgs,
       flake-utils,
       tool2nix,
+      gitlab-charts,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -111,6 +120,12 @@
           };
           # Tag used for the locally-built (Nix) operator image in dev flow.
           devImageTag = "dev";
+          # Prebaked kind node image: the base node with every cluster image
+          # (GitLab components + prereqs + external deps) preloaded into
+          # containerd, so a fresh `up-dev` performs zero network image pulls.
+          # Tagged per deployed chart version by `nix run .#bake-node-image`
+          # and preferred by `up-dev` via nodeImageResolver. See nix/images.nix.
+          nodeImageRepo = "kindest/node-gitlab";
           kindClusterName = "gitlab";
           # kind node k8s must be >= 1.31: chart 10.1.x's Gateway API CRDs use
           # the CEL isIP() function, which older API servers can't compile.
@@ -149,6 +164,28 @@
           in
           "${builtins.elemAt parts 0}.${builtins.elemAt parts 1}"; # 1.33
 
+        # THE canonical chart version: the highest entry in CHART_VERSIONS by
+        # true version ordering (builtins.compareVersions, NOT lexical `head`).
+        # Exported as GITLAB_CHART_VERSION (via envMap) so scripts/deploy.sh's
+        # own `sort -rV | head` fallback is overridden with this exact value,
+        # AND reused as the key for every cache artifact (prebaked node image,
+        # state snapshot, image cache) so cached state always matches the chart
+        # version actually deployed. They agree today only because CHART_VERSIONS
+        # happens to be sorted descending; this makes that a guarantee, not luck.
+        # Override with GITLAB_CHART_VERSION.
+        defaultChartVersion =
+          let
+            versions = lib.filter (s: s != "") (
+              lib.splitString "\n" (builtins.readFile ./CHART_VERSIONS)
+            );
+          in
+          lib.last (lib.sort (a: b: builtins.compareVersions a b < 0) versions);
+
+        # Shared shell snippets (container-runtime probe + cache env) sourced by
+        # the cache/cluster apps, so the runtime probe and cache-dir/version
+        # resolution live in ONE place instead of being copy-pasted per app.
+        shellLib = import ./nix/lib.nix { inherit defaultChartVersion; };
+
         # --- env-var defaults, single-sourced from cfg ------------------------
         # THE one place that answers "where does $FOO's default come from?".
         # Each impure app sources `envDefaults` first, which `export`s every
@@ -174,6 +211,7 @@
           GITLAB_TLSCERTNAME = cfg.tlsSecretName; # script default: custom-gitlab-tls
           BUILD_DIR = cfg.buildDir; # script default: .build
           KUBERNETES_TIMEOUT = cfg.k8sTimeout; # script default: 300s
+          GITLAB_CHART_VERSION = defaultChartVersion; # script default: sort -rV CHART_VERSIONS | head -n1
         };
         # Shell prelude every impure/cluster app sources first. Order-safe:
         # KUBE_CONTEXT is derived after KIND_CLUSTER_NAME has been resolved.
@@ -199,47 +237,88 @@
           export GITLAB_ACME_EMAIL="''${GITLAB_ACME_EMAIL:-dev@localhost}"
         '';
 
+        # Prefer the prebaked node image (nix run .#bake-node-image) when it
+        # exists in the local container runtime, so `up-dev` starts a fresh
+        # cluster with all images already in containerd (no network pulls).
+        # Sourced by up-dev AFTER envDefaults so it wins over the cfg default;
+        # kindUp's own envDefaults then keeps the exported value
+        # (''${KIND_IMAGE:-...}). Runtime-agnostic: probes docker/podman/nerdctl
+        # off the host PATH, matching how the image apps discover a runtime.
+        nodeImageResolver = ''
+          if [ -n "''${NO_BAKED_NODE:-}" ]; then
+            echo "==> NO_BAKED_NODE set — using base node image ${cfg.kindNodeImage} (fresh image pulls)"
+          else
+            ${shellLib.runtimeProbe}
+            # GITLAB_CHART_VERSION is the canonical version exported by
+            # envDefaults, which up-dev sources before this resolver — so the
+            # baked-node lookup key always matches the deployed chart version.
+            __baked="${cfg.nodeImageRepo}:$GITLAB_CHART_VERSION"
+            __rt="$(detect_runtime 2>/dev/null || true)"
+            if [ -n "$__rt" ] && "$__rt" image inspect "$__baked" >/dev/null 2>&1; then
+              export KIND_IMAGE="$__baked"
+              echo "==> using prebaked node image $__baked (no image pulls expected)"
+            fi
+          fi
+        '';
+
         # Fully-qualified ref the chart composes from image.{registry,repository,name}.
         # We build/load the local dev image under this exact name + devImageTag
         # so the rendered manifest resolves to the image already present in kind.
         devImageName = "${cfg.image.registry}/${cfg.image.repository}/${cfg.image.name}";
 
         # --- modules (relative paths threaded so they resolve at flake root) --
-        manifests = import ./nix/manifests.nix {
+        # One scope for every nix/ module: callPackageWith fills each module's
+        # declared formals from here and ignores what a module doesn't ask for,
+        # so a new SHARED arg is added once here instead of in every import.
+        # `pkgs //` keeps modules that take a bare `pkgs`/`lib` working. Only
+        # per-module specifics (source paths, the charts render, and apps'
+        # cross-module wiring) remain as explicit override args below.
+        moduleScope = pkgs // {
           inherit
             pkgs
-            lib
             cfg
             yaml
             helm
-            ;
-          chartSrc = ./deploy/chart;
-        };
-        imageMod = import ./nix/image.nix {
-          inherit
-            pkgs
-            lib
-            cfg
+            mkScript
+            mkApp
+            envDefaults
+            clusterTools
+            goTools
+            helmTools
             devImageName
-            helm
+            defaultChartVersion
+            kindK8sVersion
+            nodeImageResolver
             ;
+          inherit (shellLib) runtimeProbe cacheEnv;
+        };
+        callModule = lib.callPackageWith moduleScope;
+
+        manifests = callModule ./nix/manifests.nix { chartSrc = ./deploy/chart; };
+        imageMod = callModule ./nix/image.nix {
           repoSrc = ./.;
           chartVersionsFile = ./CHART_VERSIONS;
         };
-        appsMod = import ./nix/apps.nix {
-          inherit
-            pkgs
-            lib
-            cfg
-            devImageName
-            envDefaults
-            kindK8sVersion
-            goTools
-            helmTools
-            clusterTools
-            mkScript
-            mkApp
-            ;
+        imagesMod = callModule ./nix/images.nix {
+          # Offline chart render from the charts flake → GitLab component image
+          # pre-seed for prewarm-images (see nix/images.nix).
+          chartsRendered = gitlab-charts.packages.${system}.rendered;
+        };
+        snapshotMod = callModule ./nix/snapshot.nix { };
+        # up-dev restores this instead of running dev_dependencies.sh when a
+        # snapshot for the deployed chart version exists (see nix/apps.nix `up`).
+        restoreDevExe = lib.getExe snapshotMod.restoreDev;
+        # Executables of the individual cache steps, sequenced by apps.nix's
+        # warm-cache meta-app (mirrors restoreDevExe). `.program` is each app's
+        # getExe path, so warm-cache just runs them in order.
+        cacheExes = {
+          capture = imagesMod.apps.capture-images.program;
+          prewarm = imagesMod.apps.prewarm-images.program;
+          bake = imagesMod.apps.bake-node-image.program;
+          snapshot = snapshotMod.apps.snapshot-dev.program;
+        };
+        appsMod = callModule ./nix/apps.nix {
+          inherit restoreDevExe cacheExes;
           inherit (manifests)
             mkOperatorSetFlags
             operatorManifest
@@ -276,6 +355,7 @@
           bridge-web = imageMod.bridgeWeb; # built bridge SPA (internal/bridge/web/dist)
           image = imageMod.image; # streamed operator container image
           image-bridge = imageMod.imageBridge; # streamed bridge-enabled image (tag dev-bridge)
+          image-list = imagesMod.imageList; # GitLab component images parsed from the charts render (prewarm pre-seed)
           default = imageMod.manager;
         };
 
@@ -318,7 +398,13 @@
           '';
         };
 
-        apps = appsMod.apps;
+        # Disjoint union: a duplicate app name across modules is a build error,
+        # not a silent last-wins shadow (`//` would quietly drop one).
+        apps = lib.foldl' lib.attrsets.unionOfDisjoint { } [
+          appsMod.apps
+          imagesMod.apps
+          snapshotMod.apps
+        ];
       }
     );
 }

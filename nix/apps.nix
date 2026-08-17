@@ -5,8 +5,14 @@
   pkgs,
   lib,
   cfg,
+  defaultChartVersion,
+  cacheEnv,
+  runtimeProbe,
   devImageName,
   envDefaults,
+  nodeImageResolver,
+  restoreDevExe,
+  cacheExes,
   kindK8sVersion,
   goTools,
   helmTools,
@@ -60,8 +66,65 @@ let
     done < CHART_VERSIONS
   '';
 
+  # Re-bootstrap the flake's pinned hashes after their inputs change. Maps each
+  # hash to the attr that surfaces it and the file it lives in:
+  #   go     vendorHash   (go.mod/go.sum)           nix/image.nix     via .#manager
+  #   npm    npmDepsHash  (web/package-lock.json)   nix/image.nix     via .#bridge-web
+  #   charts outputHash   (CHART_VERSIONS)          nix/image.nix     via .#gitlab-charts
+  #   deps   outputHash   (deploy/chart Chart.lock) nix/manifests.nix via .#chart-deps
+  #
+  # Method: set the hash to the all-A sentinel (lib.fakeHash), build the attr so
+  # Nix reports the real `got:` hash on the mismatch, then patch it back. Impure
+  # (fetches to compute the hashes) and edits the two nix files in place. Pass
+  # any of: go npm charts deps all  (default: go charts deps).
+  refreshHashes = mkScript "refresh-hashes" [
+    pkgs.gnused
+    pkgs.gnugrep
+    pkgs.coreutils
+  ] ''
+    [ -f flake.nix ] || { echo "run from the repo root (flake.nix not found)" >&2; exit 1; }
+    FAKE="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+    refresh() {
+      local label="$1" attr="$2" file="$3" key="$4"
+      echo "==> $label: $key in $file (via .#$attr)"
+      local orig
+      orig="$(sed -n -E "s|.*''${key}[[:space:]]*=[[:space:]]*\"([^\"]*)\".*|\1|p" "$file" | head -n1)"
+      sed -i -E "s|(''${key}[[:space:]]*=[[:space:]]*\")[^\"]*(\")|\1''${FAKE}\2|" "$file"
+      local out got
+      out="$(nix build ".#''${attr}" --no-link 2>&1 || true)"
+      got="$(printf '%s\n' "$out" | sed -n 's/.*got:[[:space:]]*\(sha256-[A-Za-z0-9+/=]*\).*/\1/p' | head -n1)"
+      if [ -z "$got" ]; then
+        echo "   ERROR: could not determine hash for .#$attr — restoring original." >&2
+        sed -i -E "s|(''${key}[[:space:]]*=[[:space:]]*\")[^\"]*(\")|\1''${orig}\2|" "$file"
+        printf '%s\n' "$out" >&2
+        return 1
+      fi
+      sed -i -E "s|(''${key}[[:space:]]*=[[:space:]]*\")[^\"]*(\")|\1''${got}\2|" "$file"
+      if [ "$got" = "$orig" ]; then echo "   unchanged ($got)"; else echo "   updated: $got"; fi
+    }
+
+    if [ "$#" -eq 0 ]; then set -- go charts deps; fi
+    targets=()
+    for a in "$@"; do
+      if [ "$a" = all ]; then targets+=(go npm charts deps); else targets+=("$a"); fi
+    done
+    for t in "''${targets[@]}"; do
+      case "$t" in
+        go)     refresh "Go vendorHash"      manager       nix/image.nix     vendorHash ;;
+        npm)    refresh "Bridge npmDepsHash" bridge-web    nix/image.nix     npmDepsHash ;;
+        charts) refresh "Bundled charts FOD" gitlab-charts nix/image.nix     outputHash ;;
+        deps)   refresh "Chart subchart FOD" chart-deps    nix/manifests.nix outputHash ;;
+        *) echo "unknown target: $t (expected: go npm charts deps all)" >&2; exit 1 ;;
+      esac
+    done
+    echo "==> done — review the diff in nix/image.nix / nix/manifests.nix."
+  '';
+
   test = mkScript "test" (goTools ++ helmTools) ''
-    CHART_VERSION="''${CHART_VERSION:-$(head -n1 CHART_VERSIONS)}"
+    # Default to the canonical chart version (same rule as deploy), not a raw
+    # first-line read, so tests run against the version we actually ship.
+    CHART_VERSION="''${CHART_VERSION:-${defaultChartVersion}}"
     SKIP_ENVTEST="''${SKIP_ENVTEST:-yes}"
     # Default to the pure gitlabCharts derivation (no impure retrieve-charts
     # step needed); override HELM_CHARTS to point at your own checkout.
@@ -325,14 +388,34 @@ let
   # afterwards with `nix run .#bridge-access` (mints a token + port-forwards).
   up = mkScript "up-dev" clusterTools ''
     ${envDefaults}
+    ${nodeImageResolver}
     echo "==> kind cluster"
+    # Track whether WE created the cluster this run. Restore only auto-runs on a
+    # freshly-created cluster: restore-dev re-applies snapshot secrets, the CNPG
+    # cluster spec, and pipes pg_dumpall into the primary — safe on an empty
+    # cluster, destructive against a live, already-migrated GitLab (a second
+    # up-dev, or a re-run after a partial failure). On a pre-existing cluster we
+    # fall to the slow dev_dependencies path; there is intentionally no override
+    # to force a restore onto an existing cluster (safe-by-default).
+    __fresh_cluster=""
     if kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME"; then
       echo "kind cluster $KIND_CLUSTER_NAME already exists; skipping creation"
     else
       ${lib.getExe kindUp}
+      __fresh_cluster=1
     fi
-    echo "==> dev dependencies (external-deps.yaml)"
-    ${lib.getExe devDeps}
+    ${cacheEnv}
+    __snap="$CACHE_DIR/snapshot-$CHART_VER"
+    if [ -n "$__fresh_cluster" ] && [ -d "$__snap" ] && [ -z "''${NO_RESTORE:-}" ]; then
+      echo "==> snapshot found — restoring deps + migrated DB (skips dev_dependencies + migrations; set NO_RESTORE=1 to force the slow path)"
+      ${restoreDevExe}
+    else
+      if [ -z "$__fresh_cluster" ] && [ -d "$__snap" ]; then
+        echo "==> cluster already exists — skipping snapshot restore (only auto-restored on a fresh cluster)"
+      fi
+      echo "==> dev dependencies (external-deps.yaml)"
+      ${lib.getExe devDeps}
+    fi
     if [ -n "''${BRIDGE:-}" ]; then
       echo "==> build + load bridge operator image"
       ${lib.getExe loadImageBridge}
@@ -346,6 +429,97 @@ let
       ${lib.getExe deployDev}
     fi
   '';
+
+  # ONE command to populate both caches after the first (slow) up-dev, so the
+  # next standup is fast. Sequences four existing apps; order matters:
+  #   1. capture-images  record exactly what containerd pulled (errors if no
+  #                      cluster — so this doubles as the "cluster up?" guard).
+  #   2. prewarm-images  pull that set into the local archive cache (capture
+  #                      MUST precede it, else prewarm uses the partial pre-seed).
+  #   3. bake-node-image commit a kind node image with those images preloaded.
+  #   4. snapshot-dev    capture the migrated cluster state (needs the cluster
+  #                      still running).
+  # Fail-fast (set -euo pipefail): a failed step stops the rest and is surfaced;
+  # re-run the individual app after fixing it. Runtime inputs come from each
+  # sub-app's own closure, so this wrapper needs none.
+  warmCache = mkScript "warm-cache" [ ] ''
+    echo "==> [1/4] capture-images (record what containerd pulled)"
+    "${cacheExes.capture}"
+    echo "==> [2/4] prewarm-images (pull into the local archive cache)"
+    "${cacheExes.prewarm}"
+    echo "==> [3/4] bake-node-image (commit a preloaded kind node image)"
+    "${cacheExes.bake}"
+    echo "==> [4/4] snapshot-dev (capture the migrated cluster state)"
+    "${cacheExes.snapshot}"
+    echo "==> warm-cache done — the next 'nix run .#up-dev' should be fast (0 pulls + restored state)."
+  '';
+
+  # Invalidate cached state so the next up-dev rebuilds it. Caches are keyed by
+  # chart version, so this operates on the CURRENT version ($CHART_VER); to wipe
+  # a different version's caches set GITLAB_CHART_VERSION, or `rm -rf` the cache
+  # dir for a full cross-version reset.
+  #   default (no flags)  drop the two per-version DERIVED caches (baked node
+  #                       image + state snapshot) — the ones that go stale when
+  #                       the chart or operator image changes. Keeps the
+  #                       expensive pulled image archives.
+  #   --node              baked kind node image only
+  #   --snapshot          state snapshot only
+  #   --images            pulled image archive cache + this version's image list
+  #   --all               all of the above
+  # Touches only the local cache + the container runtime's image store — never
+  # the cluster — so it's safe to run any time.
+  cacheClean = mkScript "cache-clean" [ ] ''
+    ${cacheEnv}
+    ${runtimeProbe}
+    do_node=""
+    do_snap=""
+    do_imgs=""
+    if [ "$#" -eq 0 ]; then
+      do_node=1
+      do_snap=1
+    else
+      for a in "$@"; do
+        case "$a" in
+          --node) do_node=1 ;;
+          --snapshot) do_snap=1 ;;
+          --images) do_imgs=1 ;;
+          --all) do_node=1; do_snap=1; do_imgs=1 ;;
+          *) echo "unknown flag: $a (expected: --node --snapshot --images --all)" >&2; exit 1 ;;
+        esac
+      done
+    fi
+
+    echo "==> cache-clean for chart version $CHART_VER (cache: $CACHE_DIR)"
+
+    if [ -n "$do_node" ]; then
+      baked="${cfg.nodeImageRepo}:$CHART_VER"
+      rt="$(detect_runtime 2>/dev/null || true)"
+      if [ -n "$rt" ] && "$rt" image inspect "$baked" >/dev/null 2>&1; then
+        echo "    removing baked node image $baked"
+        "$rt" rmi "$baked" >/dev/null 2>&1 || echo "    warn: could not remove $baked"
+      else
+        echo "    baked node image $baked not present — skipping"
+      fi
+    fi
+
+    if [ -n "$do_snap" ]; then
+      snapdir="$CACHE_DIR/snapshot-$CHART_VER"
+      if [ -d "$snapdir" ]; then
+        echo "    removing snapshot $snapdir"
+        rm -rf "$snapdir"
+      else
+        echo "    no snapshot at $snapdir — skipping"
+      fi
+    fi
+
+    if [ -n "$do_imgs" ]; then
+      echo "    removing image archive cache $CACHE_DIR/images + image-list-$CHART_VER.txt"
+      rm -rf "$CACHE_DIR/images"
+      rm -f "$CACHE_DIR/image-list-$CHART_VER.txt"
+    fi
+
+    echo "==> cache-clean done."
+  '';
 in
 {
   apps = {
@@ -357,6 +531,7 @@ in
     build = mkApp build;
     test = mkApp test;
     retrieve-charts = mkApp retrieveCharts;
+    refresh-hashes = mkApp refreshHashes;
     build-operator = mkApp buildOperator;
     deploy = mkApp deploy;
     deploy-dev = mkApp deployDev;
@@ -364,6 +539,8 @@ in
     bridge-access = mkApp bridgeAccess;
     refresh-dev = mkApp devRefresh;
     up-dev = mkApp up;
+    warm-cache = mkApp warmCache;
+    cache-clean = mkApp cacheClean;
     kind-up = mkApp kindUp;
     kind-down = mkApp kindDown;
     deps-dev = mkApp devDeps;
