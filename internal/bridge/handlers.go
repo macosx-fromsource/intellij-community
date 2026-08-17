@@ -8,7 +8,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	apiv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
+	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
 )
 
 const (
@@ -54,11 +54,15 @@ type listOutput struct {
 	Body GitLabList
 }
 
-// RegisterRoutes registers the CRUD operations for the GitLab custom resource on
-// the given Huma API. Each handler obtains its Kubernetes client from the request
-// context (populated by authMiddleware from the caller's bearer token), so no
-// client is captured here and the routes can be registered even when the API is
-// built solely to emit the OpenAPI document.
+// RegisterRoutes registers the CRUD operations for the GitLabCore custom
+// resource (`apps.gitlab.com/v2alpha1`) on the given Huma API. The paths keep
+// the `gitlabs` segment: it names the GitLab instances the bridge manages, and
+// `/api/v1` is the version of the bridge API, not of the custom resource.
+//
+// Each handler obtains its Kubernetes client from the request context
+// (populated by authMiddleware from the caller's bearer token), so no client is
+// captured here and the routes can be registered even when the API is built
+// solely to emit the OpenAPI document.
 func RegisterRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-gitlabs-all-namespaces",
@@ -87,12 +91,12 @@ func RegisterRoutes(api huma.API) {
 		Summary:     "Get a GitLab resource",
 		Tags:        []string{tagGitLabs},
 	}, func(ctx context.Context, in *namespacedNamePath) (*resourceBody, error) {
-		gl := &apiv1beta1.GitLab{}
-		if err := clientFrom(ctx).Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, gl); err != nil {
+		core := &apiv2alpha1.GitLabCore{}
+		if err := clientFrom(ctx).Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, core); err != nil {
 			return nil, mapError(err)
 		}
 
-		return &resourceBody{Body: toResource(gl)}, nil
+		return &resourceBody{Body: toResource(core)}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -105,14 +109,14 @@ func RegisterRoutes(api huma.API) {
 	}, func(ctx context.Context, in *createInput) (*resourceBody, error) {
 		in.Body.Namespace = in.Namespace
 
-		gl := &apiv1beta1.GitLab{}
-		applyToGitLab(in.Body, gl)
+		core := &apiv2alpha1.GitLabCore{}
+		applyToGitLabCore(in.Body, core)
 
-		if err := clientFrom(ctx).Create(ctx, gl); err != nil {
+		if err := clientFrom(ctx).Create(ctx, core); err != nil {
 			return nil, mapError(err)
 		}
 
-		return &resourceBody{Body: toResource(gl)}, nil
+		return &resourceBody{Body: toResource(core)}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -124,20 +128,20 @@ func RegisterRoutes(api huma.API) {
 	}, func(ctx context.Context, in *updateInput) (*resourceBody, error) {
 		c := clientFrom(ctx)
 
-		gl := &apiv1beta1.GitLab{}
-		if err := c.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, gl); err != nil {
+		core := &apiv2alpha1.GitLabCore{}
+		if err := c.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, core); err != nil {
 			return nil, mapError(err)
 		}
 
 		in.Body.Namespace = in.Namespace
 		in.Body.Name = in.Name
-		applyToGitLab(in.Body, gl)
+		applyToGitLabCore(in.Body, core)
 
-		if err := c.Update(ctx, gl); err != nil {
+		if err := c.Update(ctx, core); err != nil {
 			return nil, mapError(err)
 		}
 
-		return &resourceBody{Body: toResource(gl)}, nil
+		return &resourceBody{Body: toResource(core)}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -148,11 +152,11 @@ func RegisterRoutes(api huma.API) {
 		Tags:          []string{tagGitLabs},
 		DefaultStatus: http.StatusNoContent,
 	}, func(ctx context.Context, in *namespacedNamePath) (*struct{}, error) {
-		gl := &apiv1beta1.GitLab{}
-		gl.Name = in.Name
-		gl.Namespace = in.Namespace
+		core := &apiv2alpha1.GitLabCore{}
+		core.Name = in.Name
+		core.Namespace = in.Namespace
 
-		if err := clientFrom(ctx).Delete(ctx, gl); err != nil {
+		if err := clientFrom(ctx).Delete(ctx, core); err != nil {
 			return nil, mapError(err)
 		}
 
@@ -160,9 +164,10 @@ func RegisterRoutes(api huma.API) {
 	})
 }
 
-// listGitLabs lists GitLab resources, optionally scoped to a single namespace.
+// listGitLabs lists GitLabCore resources, optionally scoped to a single
+// namespace.
 func listGitLabs(ctx context.Context, c client.Client, namespace string) (*listOutput, error) {
-	list := &apiv1beta1.GitLabList{}
+	list := &apiv2alpha1.GitLabCoreList{}
 
 	var opts []client.ListOption
 	if namespace != "" {

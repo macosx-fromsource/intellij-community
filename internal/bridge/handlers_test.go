@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	apiv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
+	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
 )
 
 // testToken is the bearer token attached to requests by doRequest. The test
@@ -26,11 +26,13 @@ const testToken = "test-token"
 // for automatic teardown. The ClientFactory returns that fake client regardless
 // of the bearer token, so the auth middleware is exercised without a real API
 // server.
-func newTestServer(t *testing.T) *httptest.Server {
+// It returns the fake client too, so a test can assert on the GitLabCore
+// objects the handlers wrote rather than only on what they answered.
+func newTestServer(t *testing.T) (*httptest.Server, client.Client) {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
-	require.NoError(t, apiv1beta1.AddToScheme(scheme))
+	require.NoError(t, apiv2alpha1.AddToScheme(scheme))
 
 	c := fake.NewClientBuilder().WithScheme(scheme).Build()
 	cf := ClientFactory(func(string) (client.Client, error) { return c, nil })
@@ -39,7 +41,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
-	return server
+	return server, c
 }
 
 // doRequest performs an HTTP request against the test server, JSON-encoding the
@@ -84,11 +86,27 @@ func decodeResource(t *testing.T, resp *http.Response) GitLabResource {
 }
 
 func TestCRUDLifecycle(t *testing.T) {
-	server := newTestServer(t)
+	server, c := newTestServer(t)
 
 	create := GitLabResource{
 		Name:      "gitlab",
 		Namespace: "gitlab-system",
+		Hostname:  "gitlab.example.com",
+		Edition:   "ee",
+		License: &LicenseDTO{
+			SecretRef: SecretRefDTO{Name: "gitlab-license", Key: "license"},
+		},
+		PostgreSQL: &PostgreSQLDTO{
+			Host:              "gitlab-postgresql",
+			PasswordSecretRef: SecretRefDTO{Name: "gitlab-postgresql-password", Key: "password"},
+		},
+		Redis: &RedisDTO{
+			Host:              "gitlab-valkey",
+			PasswordSecretRef: SecretRefDTO{Name: "gitlab-valkey-auth", Key: "default"},
+		},
+		ObjectStorage: &ObjectStorageDTO{
+			ConnectionSecretRef: SecretRefDTO{Name: "gitlab-object-storage", Key: "connection"},
+		},
 		Chart: ChartDTO{
 			Version: "9.11.1",
 			Values:  map[string]any{"global": map[string]any{"hosts": map[string]any{"domain": "example.com"}}},
@@ -102,14 +120,31 @@ func TestCRUDLifecycle(t *testing.T) {
 		created := decodeResource(t, resp)
 		require.Equal(t, "gitlab", created.Name)
 		require.Equal(t, "gitlab-system", created.Namespace)
+		require.Equal(t, "gitlab.example.com", created.Hostname)
 		require.Equal(t, "9.11.1", created.Chart.Version)
 		require.Contains(t, created.Chart.Values, "global")
+		require.Equal(t, "ee", created.Edition)
+		require.NotNil(t, created.License)
+		require.Equal(t, "gitlab-license", created.License.SecretRef.Name)
+		require.Equal(t, "license", created.License.SecretRef.Key)
+		require.NotNil(t, created.PostgreSQL)
+		require.Equal(t, "gitlab-postgresql", created.PostgreSQL.Host)
+		require.Equal(t, "gitlab-postgresql-password", created.PostgreSQL.PasswordSecretRef.Name)
+		require.NotNil(t, created.Redis)
+		require.Equal(t, "gitlab-valkey", created.Redis.Host)
+		require.Equal(t, "default", created.Redis.PasswordSecretRef.Key)
+		require.NotNil(t, created.ObjectStorage)
+		require.Equal(t, "gitlab-object-storage", created.ObjectStorage.ConnectionSecretRef.Name)
 	})
 
 	t.Run("get", func(t *testing.T) {
 		resp := doRequest(t, server, http.MethodGet, "/api/v1/namespaces/gitlab-system/gitlabs/gitlab", nil)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		require.Equal(t, "gitlab", decodeResource(t, resp).Name)
+
+		got := decodeResource(t, resp)
+		require.Equal(t, "gitlab", got.Name)
+		require.Equal(t, "gitlab.example.com", got.Hostname)
+		require.NotNil(t, got.License)
 	})
 
 	t.Run("list", func(t *testing.T) {
@@ -121,12 +156,53 @@ func TestCRUDLifecycle(t *testing.T) {
 		require.Len(t, list.Items, 1)
 	})
 
+	t.Run("stores a GitLabCore with structured fields", func(t *testing.T) {
+		core := &apiv2alpha1.GitLabCore{}
+		key := client.ObjectKey{Namespace: "gitlab-system", Name: "gitlab"}
+		require.NoError(t, c.Get(t.Context(), key, core))
+
+		require.Equal(t, "gitlab.example.com", core.Spec.Hostname)
+		require.Equal(t, apiv2alpha1.EditionEE, core.Spec.Edition)
+		require.Equal(t, "9.11.1", core.Spec.Chart.Version)
+		require.Contains(t, core.Spec.Chart.Values.Object, "global")
+		require.NotNil(t, core.Spec.License)
+		require.Equal(t, "gitlab-license", core.Spec.License.SecretRef.Name)
+		require.Equal(t, "license", core.Spec.License.SecretRef.Key)
+		require.NotNil(t, core.Spec.PostgreSQL)
+		require.Equal(t, "gitlab-postgresql", core.Spec.PostgreSQL.Host)
+		require.Equal(t, "gitlab-postgresql-password", core.Spec.PostgreSQL.PasswordSecretRef.Name)
+		require.Equal(t, "password", core.Spec.PostgreSQL.PasswordSecretRef.Key)
+		require.NotNil(t, core.Spec.Redis)
+		require.Equal(t, "gitlab-valkey", core.Spec.Redis.Host)
+		require.Equal(t, "gitlab-valkey-auth", core.Spec.Redis.PasswordSecretRef.Name)
+		require.Equal(t, "default", core.Spec.Redis.PasswordSecretRef.Key)
+		require.NotNil(t, core.Spec.ObjectStorage)
+		require.Equal(t, "gitlab-object-storage", core.Spec.ObjectStorage.ConnectionSecretRef.Name)
+		require.Equal(t, "connection", core.Spec.ObjectStorage.ConnectionSecretRef.Key)
+	})
+
 	t.Run("update", func(t *testing.T) {
 		create.Chart.Version = "9.11.4"
+		create.Hostname = "gitlab.example.org"
+		create.Edition = "ce"
 
 		resp := doRequest(t, server, http.MethodPut, "/api/v1/namespaces/gitlab-system/gitlabs/gitlab", create)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		require.Equal(t, "9.11.4", decodeResource(t, resp).Chart.Version)
+
+		updated := decodeResource(t, resp)
+		require.Equal(t, "9.11.4", updated.Chart.Version)
+		require.Equal(t, "gitlab.example.org", updated.Hostname)
+		require.Equal(t, "ce", updated.Edition)
+	})
+
+	// An update replaces the resource, so a field the request leaves out is
+	// cleared rather than kept from the stored object.
+	t.Run("update clears an omitted license", func(t *testing.T) {
+		create.License = nil
+
+		resp := doRequest(t, server, http.MethodPut, "/api/v1/namespaces/gitlab-system/gitlabs/gitlab", create)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Nil(t, decodeResource(t, resp).License)
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -140,8 +216,35 @@ func TestCRUDLifecycle(t *testing.T) {
 	})
 }
 
+// The wire types carry the constraints of the custom resource definition, so
+// the bridge rejects a hostname the API server would reject anyway, and the
+// caller gets the reason from the OpenAPI document rather than from a webhook.
+func TestRejectsUnknownEdition(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	resp := doRequest(t, server, http.MethodPost, "/api/v1/namespaces/gitlab-system/gitlabs", GitLabResource{
+		Name:      "gitlab",
+		Namespace: "gitlab-system",
+		Edition:   "enterprise",
+	})
+
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+}
+
+func TestRejectsInvalidHostname(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	resp := doRequest(t, server, http.MethodPost, "/api/v1/namespaces/gitlab-system/gitlabs", GitLabResource{
+		Name:      "gitlab",
+		Namespace: "gitlab-system",
+		Hostname:  "Not A Hostname",
+	})
+
+	require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+}
+
 func TestRequiresBearerToken(t *testing.T) {
-	server := newTestServer(t)
+	server, _ := newTestServer(t)
 
 	get := func(path string) *http.Response {
 		req, err := http.NewRequest(http.MethodGet, server.URL+path, nil)
@@ -165,7 +268,7 @@ func TestRequiresBearerToken(t *testing.T) {
 }
 
 func TestServesOpenAPIAndSPA(t *testing.T) {
-	server := newTestServer(t)
+	server, _ := newTestServer(t)
 
 	resp := doRequest(t, server, http.MethodGet, "/openapi.yaml", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)

@@ -239,7 +239,7 @@ tasks:
     desc: Generates the backend-for-frontend OpenAPI document from the Huma API.
     sources:
       - internal/bridge/**/*.go
-      - api/v1beta1/*.go
+      - api/v2alpha1/*.go
     generates:
       - internal/bridge/web/openapi.yaml
     cmds:
@@ -273,6 +273,8 @@ tasks:
       - internal/bridge/web/index.html
       - internal/bridge/web/*.ts
       - internal/bridge/web/*.json
+      # The SPA bakes these in at build time; see internal/bridge/web/vite.config.ts.
+      - CHART_VERSIONS
     generates:
       - internal/bridge/web/dist/index.html
     cmds:

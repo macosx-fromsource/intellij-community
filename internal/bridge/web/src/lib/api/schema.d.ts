@@ -63,7 +63,7 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         ChartDTO: {
-            /** @description Free-form Helm values used to render the GitLab Chart. */
+            /** @description Free-form Helm values used to render the GitLab Chart. They are merged over the values derived from the structured fields and win on conflict. */
             values?: {
                 [key: string]: unknown;
             };
@@ -145,16 +145,67 @@ export interface components {
             readonly $schema?: string;
             /** @description GitLab Chart configuration. */
             chart: components["schemas"]["ChartDTO"];
+            /**
+             * @description GitLab edition to deploy: 'ee' for Enterprise Edition, which runs unlicensed with the Free feature set, or 'ce' for Community Edition.
+             * @example ee
+             * @enum {string}
+             */
+            edition?: "ce" | "ee";
+            /**
+             * @description Fully qualified domain name the GitLab instance is reached at.
+             * @example gitlab.example.com
+             */
+            hostname?: string;
             /** @description Labels applied to the GitLab resource. */
             labels?: {
                 [key: string]: string;
             };
+            /** @description Reference to the GitLab license to activate the instance with. */
+            license?: components["schemas"]["LicenseDTO"];
             /** @description Name of the GitLab resource. */
             name: string;
             /** @description Namespace the GitLab resource lives in. */
             namespace: string;
+            /** @description S3 compatible object storage the instance keeps its artifacts, uploads, and other blobs in. The chart needs one: it enables object storage for these with no connection of its own. See https://docs.gitlab.com/charts/charts/globals/#connection. */
+            objectStorage?: components["schemas"]["ObjectStorageDTO"];
+            /** @description PostgreSQL server the instance stores its data in. The chart bundles no database. See https://docs.gitlab.com/install/requirements/#postgresql. */
+            postgresql?: components["schemas"]["PostgreSQLDTO"];
+            /** @description Redis server the instance uses for caching, queues, and shared state; Valkey serves as a drop-in replacement. The chart bundles no server. See https://docs.gitlab.com/install/requirements/#redis. */
+            redis?: components["schemas"]["RedisDTO"];
             /** @description Most recently observed status. Read-only. */
             readonly status?: components["schemas"]["StatusDTO"];
+        };
+        LicenseDTO: {
+            /** @description Key of the Secret that holds the license. */
+            secretRef: components["schemas"]["SecretRefDTO"];
+        };
+        ObjectStorageDTO: {
+            /** @description Key of the Secret that holds the connection settings. */
+            connectionSecretRef: components["schemas"]["SecretRefDTO"];
+        };
+        PostgreSQLDTO: {
+            /**
+             * @description Hostname of the PostgreSQL server.
+             * @example gitlab-postgresql.databases.svc.cluster.local
+             */
+            host: string;
+            /** @description Key of the Secret that holds the password of the database user. */
+            passwordSecretRef: components["schemas"]["SecretRefDTO"];
+        };
+        RedisDTO: {
+            /**
+             * @description Hostname of the Redis server.
+             * @example gitlab-valkey.databases.svc.cluster.local
+             */
+            host: string;
+            /** @description Key of the Secret that holds the password of the server. */
+            passwordSecretRef: components["schemas"]["SecretRefDTO"];
+        };
+        SecretRefDTO: {
+            /** @description Key of the Secret to read. */
+            key: string;
+            /** @description Name of the Secret. */
+            name: string;
         };
         StatusDTO: {
             /** @description Detailed status conditions. */

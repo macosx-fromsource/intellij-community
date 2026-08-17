@@ -117,8 +117,9 @@ EOF
 
 # cmd_generate_gitlabcore writes a complete v2alpha1 GitLabCore that points at
 # the external dependencies this script deployed. Unlike the v1beta1 output, it
-# is applied as it is: the hostname and the license are structured fields, and
-# everything else stays in the free-form chart values.
+# is applied as it is: the hostname, the edition, and the PostgreSQL, Redis, and
+# object storage connections are structured fields, and everything else stays in
+# the free-form chart values.
 function cmd_generate_gitlabcore() {
   cat > "${V2ALPHA1_OUTPUT_FILE}" <<EOF
 # An example GitLabCore for local development, wired to the external
@@ -139,6 +140,21 @@ metadata:
   name: gitlab
 spec:
   hostname: ${GITLAB_HOSTNAME}
+  edition: ee
+  postgresql:
+    host: $(cnpg_cluster_host)
+    passwordSecretRef:
+      name: $(cnpg_cluster_secret)
+      key: password
+  redis:
+    host: $(valkey_release_name)
+    passwordSecretRef:
+      name: $(valkey_auth_secret)
+      key: $(valkey_auth_secret_key)
+  objectStorage:
+    connectionSecretRef:
+      name: $(garage_release_name)-gitlab-object-storage
+      key: config
   chart:
     version: "${CHART_VERSION}"
     values:
@@ -157,24 +173,8 @@ spec:
           class: nginx
           tls:
             enabled: false
-        redis:
-          host: $(valkey_release_name)
-          auth:
-            secret: $(valkey_auth_secret)
-            key: $(valkey_auth_secret_key)
-        psql:
-          host: $(cnpg_cluster_host)
-          password:
-            secret: $(cnpg_cluster_secret)
-            key: password
         pages:
           objectStore:
-            connection:
-              secret: $(garage_release_name)-gitlab-object-storage
-              key: config
-        appConfig:
-          object_store:
-            enabled: true
             connection:
               secret: $(garage_release_name)-gitlab-object-storage
               key: config
@@ -185,7 +185,11 @@ spec:
               config:
                 secret: $(garage_release_name)-gitlab-object-storage-s3cmd
                 key: config
+      # The reconciler defaults the container registry off, because its storage
+      # is not a structured field. This dev setup has a bucket for it, so it is
+      # turned back on here, next to the storage it needs.
       registry:
+        enabled: true
         storage:
           secret: $(garage_release_name)-gitlab-registry-storage
           key: config

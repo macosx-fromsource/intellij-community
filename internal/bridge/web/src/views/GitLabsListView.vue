@@ -44,6 +44,8 @@ async function deleteResource(item: GitLabResource) {
         <tr>
           <th>Namespace</th>
           <th>Name</th>
+          <th>Hostname</th>
+          <th>Edition</th>
           <th>Chart version</th>
           <th>Phase</th>
           <th>Actions</th>
@@ -53,6 +55,8 @@ async function deleteResource(item: GitLabResource) {
         <tr v-for="item in store.items" :key="`${item.namespace}/${item.name}`">
           <td>{{ item.namespace }}</td>
           <td>{{ item.name }}</td>
+          <td>{{ item.hostname || '—' }}</td>
+          <td>{{ item.edition?.toUpperCase() ?? '—' }}</td>
           <td>{{ item.chart.version ?? '—' }}</td>
           <td>{{ item.status?.phase ?? '—' }}</td>
           <td class="row-actions">

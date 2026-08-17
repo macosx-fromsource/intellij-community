@@ -124,7 +124,7 @@ var _ = Describe("Component", func() {
 ## Bridge (Backend for Frontend)
 
 `internal/bridge/` hosts a bridge (backend-for-frontend) HTTP server that exposes CRUD over the
-GitLab CR so a SPA can configure GitLab instances.
+`GitLabCore` CR (`apps.gitlab.com/v2alpha1`) so a SPA can configure GitLab instances.
 
 - **Stack:** [Huma](https://github.com/danielgtaylor/huma) (code-first, `net/http` via the
   `humago` adapter) emits **OpenAPI 3.1**; the TypeScript client is generated with
@@ -135,9 +135,16 @@ GitLab CR so a SPA can configure GitLab instances.
   Registered via `mgr.Add` in [cmd/manager/main.go](cmd/manager/main.go) as a non-leader-elected `manager.Runnable`;
   reuses `mgr.GetClient()`. Binds `BRIDGE_BIND_ADDRESS` (default `:8090`, set in
   [controllers/settings/settings.go](controllers/settings/settings.go)). Logs via stdlib `slog`.
-- **Endpoints:** CRUD under `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]`, OpenAPI at
-  `/openapi.yaml` (+ `/openapi.json`), docs UI at `/docs`, SPA embedded via `go:embed`
-  (`internal/bridge/web/dist`).
+- **Resource:** `GitLabCore` only; the deprecated `v1beta1` `GitLab` is a separate definition that
+  nothing converts from, so no dual-version mode. The wire type mirrors the spec — `hostname`,
+  `edition`, `license.secretRef`, `postgresql`, `redis`, `objectStorage`, `chart.version`/
+  `chart.values` — and repeats the CRD constraints as Huma validation tags. Free-form `chart.values` remain the escape
+  hatch and win over the values derived from the structured fields (ADR 26); the mapping to chart
+  values lives in `internal/controller/gitlabcore/values.go`.
+- **Endpoints:** CRUD under `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]` (`/api/v1` versions
+  the bridge API, not the CR), OpenAPI at `/openapi.yaml` (+ `/openapi.json`), docs UI at `/docs`,
+  SPA embedded via `go:embed` (`internal/bridge/web/dist`). The chart version the form prefills is
+  compiled into the SPA from `CHART_VERSIONS` (Vite `define`), not served.
 - **SPA:** `internal/bridge/web/` is a Vue 3 + TypeScript app (Vite, Vue Router, Pinia) built into
   `web/dist`; the operator image builds it in a Node stage. `task frontend-dev` / `frontend-build`;
   details in [internal/bridge/CLAUDE.md](internal/bridge/CLAUDE.md).
@@ -160,7 +167,10 @@ GitLab CR so a SPA can configure GitLab instances.
   (`--accept-hosts` widens the host allowlist).
   `task build-kubectl-plugin` / `install-kubectl-plugin`.
 - **PoC caveats:** the SPA keeps the token in `localStorage` (XSS-exposed; use short-lived tokens);
-  `spec.chart.values` is a free-form object (no schema until the structured CRD lands).
+  `spec.chart.values` is a free-form object (no schema until the chart's `values.schema.json` is
+  wired in), and the structured layer covers only hostname, edition, license, PostgreSQL, Redis, and
+  object storage so far. The reconciler defaults `registry.enabled` off, because the registry storage
+  has no structured field yet.
 
 ## Key Directories
 

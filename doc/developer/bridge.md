@@ -6,8 +6,8 @@ title: Bridge UI
 ---
 
 The bridge is a backend-for-frontend HTTP server embedded in the operator. It exposes CRUD over the
-GitLab custom resource and serves a single-page application (SPA) to configure GitLab instances. The
-bridge is disabled by default.
+`GitLabCore` custom resource (`apps.gitlab.com/v2alpha1`) and serves a single-page application (SPA)
+to configure GitLab instances. The bridge is disabled by default.
 
 This page describes how to enable the bridge, create a service account for a caller, mint a token,
 and reach the UI. For the internal architecture and how to work on the code, see
@@ -33,9 +33,9 @@ Kubernetes API server, so the API server handles authentication and authorizatio
 RBAC decides what the caller can do. A caller with no token receives a `401` response. An action the
 caller cannot perform receives a `403` response.
 
-As a result, each caller needs their own RBAC on the GitLab custom resource
-(`gitlabs.apps.gitlab.com`). The following sections create a service account with those permissions
-and mint a token for it.
+As a result, each caller needs their own RBAC on the `GitLabCore` custom resource
+(`gitlabcores.apps.gitlab.com`). The following sections create a service account with those
+permissions and mint a token for it.
 
 ## Build the bridge
 
@@ -127,14 +127,18 @@ definition, so an instance created through `GitLab` stays there. To work with th
 start from the
 [GitLabCore sample](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/config/samples/gitlabcore_v2alpha1.yaml).
 
+The bridge reads and writes `GitLabCore` only, so install the definitions before you use it. Without
+them, every API call returns an error from the Kubernetes API server.
+
 > [!note]
-> No controller reconciles `GitLabCore`, `Orbit`, or `DataInsightPlatform` yet. Creating one stores
-> the object and nothing else happens.
+> Only `GitLabCore` is reconciled, and only in a build with the `bridge` tag and `ENABLE_BRIDGE=true`.
+> For more information, see [the GitLabCore reconciler](gitlabcore.md). Creating an `Orbit` or a
+> `DataInsightPlatform` stores the object and nothing else happens.
 
 ## Create a service account and grant access
 
-Create a service account and bind it to a role with the verbs the caller needs on GitLab resources.
-This example grants full CRUD. For a read-only caller, drop `create`, `update`, `patch`, and
+Create a service account and bind it to a role with the verbs the caller needs on `GitLabCore`
+resources. This example grants full CRUD. For a read-only caller, drop `create`, `update`, `patch`, and
 `delete`.
 
 ```shell
@@ -142,7 +146,7 @@ kubectl -n gitlab-system create serviceaccount bridge-user
 
 kubectl create clusterrole gitlab-editor \
   --verb=get,list,watch,create,update,patch,delete \
-  --resource=gitlabs.apps.gitlab.com
+  --resource=gitlabcores.apps.gitlab.com
 
 kubectl create clusterrolebinding bridge-user \
   --clusterrole=gitlab-editor \
@@ -189,6 +193,52 @@ kubectl -n gitlab-system port-forward deploy/gitlab-controller-manager 8090:8090
 > The SPA stores the token in `localStorage`, which any script on the page can read. This is
 > acceptable for the current proof of concept with short-lived tokens. Do not treat it as a
 > production credential store.
+
+## Configure a GitLab instance
+
+The chart version field is prefilled with the latest version in the `CHART_VERSIONS` file, which the
+SPA reads when it is built (see `internal/bridge/web/vite.config.ts`). The operator image builds the
+SPA from the same file it fetches its charts with, so the prefilled version is one the image carries,
+and the form needs no request to know it. The field stays free-form for every other version.
+
+The form in the SPA writes one `GitLabCore` resource, in three steps:
+
+1. **Basics**: what the instance is, and which chart deploys it.
+1. **Dependencies**: the data stores the instance connects to.
+1. **Overrides**: the chart values, for everything the steps above do not cover.
+
+Moving forward checks the steps you leave and stops at the first one that does not hold up. Moving
+back checks nothing, so you can look at an earlier step with a half-filled one behind you. Select a
+step in the header to jump to it. **Create** and **Save** are on the last step, and they check every
+step again.
+
+Each field maps to the specification:
+
+| Field | Resource field | Description |
+|---|---|---|
+| **Name** | `metadata` | Name of the resource, fixed after creation. The form creates in the `gitlab-system` namespace and offers no choice of it; a resource in another namespace is still edited where it is. |
+| **Hostname** | `spec.hostname` | Fully qualified domain name the instance is reached at, such as `gitlab.example.com`. The reconciler derives the chart host values from it. |
+| **Edition** | `spec.edition` | `ee` for Enterprise Edition, which runs the Free feature set until a license activates more, or `ce` for Community Edition. Defaults to `ee`. |
+| **License** | `spec.license.secretRef` | Name and key of the Secret that holds the license. The license key itself never reaches the bridge or the resource. Leave both empty to run without a license. The form shows this group for Enterprise Edition only, and sends no license for Community Edition. |
+| **PostgreSQL** | `spec.postgresql` | Hostname of the database server, and the Secret that holds the password of the database user. For the versions and extensions GitLab requires, see [the PostgreSQL requirements](https://docs.gitlab.com/install/requirements/#postgresql). |
+| **Valkey** | `spec.redis` | Hostname of the Valkey server, and the Secret that holds its password. Redis works in its place, and the resource and the chart values both still call the field `redis`. For the versions GitLab requires, see [the Redis requirements](https://docs.gitlab.com/install/requirements/#redis). |
+| **Object storage** | `spec.objectStorage` | Name and key of the Secret that holds the object storage connection. Setting it turns the consolidated object storage on, which the chart needs: artifacts, LFS, uploads, and packages are enabled with no connection of their own. The registry, Pages, and backups keep their own settings in the chart values. |
+| **Chart version** | `spec.chart.version` | Prefilled with the latest version the SPA was built with. Free-form, because what renders is what the Operator image carries. Required: nothing renders without a version. An upgrade is a change of this field. |
+| **Chart values** | `spec.chart.values` | Free-form YAML for everything the fields above do not cover. |
+
+All three connections are required. The chart bundles neither PostgreSQL nor Redis, and it enables
+object storage for artifacts, LFS, uploads, and packages with no connection of its own, so an
+instance that leaves a group empty and does not configure it in the chart values fails to render.
+
+The chart values are merged over the values the reconciler derives from the structured fields, and
+win on conflict. Use them as an escape hatch, and prefer a structured field when one exists.
+
+A group is all or nothing: fill every field of PostgreSQL, Redis, or the license, or leave the group
+empty. The form reports an incomplete group before it sends the request.
+
+The bridge rejects a value the definition would reject, such as a hostname that is not a domain
+name, with a `422` response that names the field. The constraints are part of the OpenAPI document,
+so the generated client carries them too.
 
 ## Verify the RBAC delegation
 

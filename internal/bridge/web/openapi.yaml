@@ -5,7 +5,7 @@ components:
       properties:
         values:
           additionalProperties: {}
-          description: Free-form Helm values used to render the GitLab Chart.
+          description: Free-form Helm values used to render the GitLab Chart. They are merged over the values derived from the structured fields and win on conflict.
           type: object
         version:
           description: Semantic version of the GitLab Chart.
@@ -126,17 +126,44 @@ components:
         chart:
           $ref: "#/components/schemas/ChartDTO"
           description: GitLab Chart configuration.
+        edition:
+          description: "GitLab edition to deploy: 'ee' for Enterprise Edition, which runs unlicensed with the Free feature set, or 'ce' for Community Edition."
+          enum:
+            - ce
+            - ee
+          examples:
+            - ee
+          type: string
+        hostname:
+          description: Fully qualified domain name the GitLab instance is reached at.
+          examples:
+            - gitlab.example.com
+          maxLength: 253
+          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$
+          type: string
         labels:
           additionalProperties:
             type: string
           description: Labels applied to the GitLab resource.
           type: object
+        license:
+          $ref: "#/components/schemas/LicenseDTO"
+          description: Reference to the GitLab license to activate the instance with.
         name:
           description: Name of the GitLab resource.
           type: string
         namespace:
           description: Namespace the GitLab resource lives in.
           type: string
+        objectStorage:
+          $ref: "#/components/schemas/ObjectStorageDTO"
+          description: "S3 compatible object storage the instance keeps its artifacts, uploads, and other blobs in. The chart needs one: it enables object storage for these with no connection of its own. See https://docs.gitlab.com/charts/charts/globals/#connection."
+        postgresql:
+          $ref: "#/components/schemas/PostgreSQLDTO"
+          description: PostgreSQL server the instance stores its data in. The chart bundles no database. See https://docs.gitlab.com/install/requirements/#postgresql.
+        redis:
+          $ref: "#/components/schemas/RedisDTO"
+          description: Redis server the instance uses for caching, queues, and shared state; Valkey serves as a drop-in replacement. The chart bundles no server. See https://docs.gitlab.com/install/requirements/#redis.
         status:
           $ref: "#/components/schemas/StatusDTO"
           description: Most recently observed status. Read-only.
@@ -145,6 +172,75 @@ components:
         - name
         - namespace
         - chart
+      type: object
+    LicenseDTO:
+      additionalProperties: false
+      properties:
+        secretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the license.
+      required:
+        - secretRef
+      type: object
+    ObjectStorageDTO:
+      additionalProperties: false
+      properties:
+        connectionSecretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the connection settings.
+      required:
+        - connectionSecretRef
+      type: object
+    PostgreSQLDTO:
+      additionalProperties: false
+      properties:
+        host:
+          description: Hostname of the PostgreSQL server.
+          examples:
+            - gitlab-postgresql.databases.svc.cluster.local
+          maxLength: 253
+          minLength: 1
+          type: string
+        passwordSecretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the password of the database user.
+      required:
+        - host
+        - passwordSecretRef
+      type: object
+    RedisDTO:
+      additionalProperties: false
+      properties:
+        host:
+          description: Hostname of the Redis server.
+          examples:
+            - gitlab-valkey.databases.svc.cluster.local
+          maxLength: 253
+          minLength: 1
+          type: string
+        passwordSecretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the password of the server.
+      required:
+        - host
+        - passwordSecretRef
+      type: object
+    SecretRefDTO:
+      additionalProperties: false
+      properties:
+        key:
+          description: Key of the Secret to read.
+          maxLength: 253
+          minLength: 1
+          type: string
+        name:
+          description: Name of the Secret.
+          maxLength: 253
+          minLength: 1
+          type: string
+      required:
+        - name
+        - key
       type: object
     StatusDTO:
       additionalProperties: false

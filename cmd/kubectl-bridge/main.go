@@ -39,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	appsv1beta1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v1beta1"
+	appsv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/internal/bridge"
 )
 
@@ -172,8 +172,8 @@ func buildClient(kubeconfig, kubeContext string) (client.Client, string, string,
 	}
 
 	scheme := kubectlscheme.Scheme
-	if err := appsv1beta1.AddToScheme(scheme); err != nil {
-		return nil, "", "", fmt.Errorf("registering v1beta1 scheme: %w", err)
+	if err := appsv2alpha1.AddToScheme(scheme); err != nil {
+		return nil, "", "", fmt.Errorf("registering v2alpha1 scheme: %w", err)
 	}
 
 	httpClient, err := rest.HTTPClientFor(cfg)

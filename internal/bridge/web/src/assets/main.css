@@ -24,7 +24,8 @@ button:disabled {
 }
 
 input,
-textarea {
+textarea,
+select {
   font: inherit;
   width: 100%;
   padding: 0.4rem 0.6rem;
@@ -35,7 +36,15 @@ textarea {
   box-sizing: border-box;
 }
 
-input:disabled {
+/* The dropdown list is painted by the platform, which does not inherit the
+   colors of the select on every browser. */
+option {
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+input:disabled,
+select:disabled {
   opacity: 0.6;
 }
 

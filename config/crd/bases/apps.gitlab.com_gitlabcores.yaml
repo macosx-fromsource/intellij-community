@@ -30,7 +30,7 @@ spec:
           GitLabCore is a complete DevOps platform, delivered in a single application.
 
           It is a definition of its own, separate from the `v1beta1` GitLab resource, and the two do not
-          convert into each other. It reaches no released installation.
+          convert into each other.
         properties:
           apiVersion:
             description: |-
@@ -67,6 +67,16 @@ spec:
                     pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
                     type: string
                 type: object
+              edition:
+                default: ee
+                description: |-
+                  Edition is the GitLab edition to deploy: `ee` for Enterprise Edition, `ce` for Community
+                  Edition. Enterprise Edition runs unlicensed with the Free feature set, so it is the default
+                  and the edition to pick unless the instance has to carry no proprietary code at all.
+                enum:
+                - ce
+                - ee
+                type: string
               hostname:
                 description: |-
                   Hostname is the fully qualified domain name that the GitLab instance is reached at, for
@@ -99,6 +109,107 @@ spec:
                     type: object
                 required:
                 - secretRef
+                type: object
+              objectStorage:
+                description: |-
+                  ObjectStorage is the S3 compatible object storage the instance keeps its artifacts,
+                  uploads, and other blobs in. The chart enables object storage for these with no connection
+                  of its own, so an instance without this field, or without the equivalent free-form chart
+                  values, does not render.
+                properties:
+                  connectionSecretRef:
+                    description: ConnectionSecretRef selects the key of the Secret
+                      that holds the connection settings.
+                    properties:
+                      key:
+                        description: Key is the key of the Secret to read.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name is the name of the Secret.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                required:
+                - connectionSecretRef
+                type: object
+              postgresql:
+                description: |-
+                  PostgreSQL is the PostgreSQL server the instance stores its data in. The chart bundles no
+                  database, so an instance without this field, or without the equivalent free-form chart
+                  values, does not render.
+                properties:
+                  host:
+                    description: |-
+                      Host is the hostname of the PostgreSQL server, for example
+                      `gitlab-postgresql.databases.svc.cluster.local`.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  passwordSecretRef:
+                    description: |-
+                      PasswordSecretRef selects the key of the Secret that holds the password of the database
+                      user. The password is a reference to a Secret, so no password is stored in the custom
+                      resource.
+                    properties:
+                      key:
+                        description: Key is the key of the Secret to read.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name is the name of the Secret.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                required:
+                - host
+                - passwordSecretRef
+                type: object
+              redis:
+                description: |-
+                  Redis is the Redis server the instance uses for caching, queues, and shared state. Valkey
+                  serves as a drop-in replacement. The chart bundles no server, so an instance without this
+                  field, or without the equivalent free-form chart values, does not render.
+                properties:
+                  host:
+                    description: |-
+                      Host is the hostname of the Redis server, for example
+                      `gitlab-valkey.databases.svc.cluster.local`.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  passwordSecretRef:
+                    description: |-
+                      PasswordSecretRef selects the key of the Secret that holds the password of the server. The
+                      password is a reference to a Secret, so no password is stored in the custom resource.
+                    properties:
+                      key:
+                        description: Key is the key of the Secret to read.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name is the name of the Secret.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                required:
+                - host
+                - passwordSecretRef
                 type: object
             type: object
           status:
