@@ -12,8 +12,6 @@ variables:
   AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
   AGENT_OPENSHIFT: "ocp421-ci-cluster"
   DOMAIN_OPENSHIFT: "ocp-ci-421.k8s-ft.win"
-  DOMAIN_GKE133: "gitlab-operator-v133.k8s-ft.win"
-  DOMAIN_GKE135: "gitlab-operator-v135.k8s-ft.win"
   DOMAIN_VCLUSTER134: "gitlab-operator-vc134.k8s-ft.win"
   DOMAIN_VCLUSTER135: "gitlab-operator-vc135.k8s-ft.win"
   DOMAIN_VCLUSTER_FLUX: "gitlab-operator-vcflux.k8s-ft.win"
@@ -138,6 +136,7 @@ include:
       - if: '$PIPELINE_TYPE != "chart_version"'
   - local: .gitlab/ci/rules.gitlab-ci.yml
   - local: .gitlab/ci/templates.gitlab-ci.yml
+  - local: .gitlab/ci/k3d-templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
   - local: .gitlab/ci/review-*.gitlab-ci.yml
 
@@ -469,16 +468,6 @@ bridge_unit_tests:
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_chart_version_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
-
-.dind:
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_MIRROR: https://mirror.gcr.io
-    DOCKER_OPTIONS: "--registry-mirror ${DOCKER_MIRROR}"
-  services:
-    - name: ${DOCKER_DIND_IMAGE}
-      alias: docker
-      entrypoint: [ "sh", "-c", "dockerd-entrypoint.sh $DOCKER_OPTIONS" ]
 
 .docker_build_job:
   extends:

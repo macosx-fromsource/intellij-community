@@ -1,0 +1,39 @@
+# k3d per-job cluster test — child pipeline for a single Kubernetes version.
+#
+# Triggered exclusively by the `k3d` bridge job in .gitlab/ci/review-k3d.gitlab-ci.yml,
+# once per parallel:matrix row. The main pipeline never includes this file
+# (it only includes .gitlab/ci/review-*.gitlab-ci.yml), so it cannot recurse.
+#
+# Everything the job needs arrives as forwarded variables from the bridge:
+#   - matrix row: K3D_K8S_IMAGE, K3D_K8S_VERSION_SLUG, CLUSTER_MODE, and for
+#     the Gateway API variant TEST_CR_FILES_DIR and INSTALL_ENVOY_GATEWAY
+#   - inherited globals: GO_MINOR, TESTS_NAMESPACE, HOSTSUFFIX, ... (see the
+#     bridge's inherit:variables list)
+#   - pipeline variables: GITLAB_CHART_VERSION, TESTS_NAMESPACE, and
+#     HOSTSUFFIX overrides when nested inside a chart-version pipeline
+
+workflow:
+  name: "k3d $K3D_K8S_VERSION_SLUG $GITLAB_CHART_VERSION"
+
+include:
+  - local: .gitlab/ci/rules.gitlab-ci.yml
+  - local: .gitlab/ci/templates.gitlab-ci.yml
+  - local: .gitlab/ci/k3d-templates.gitlab-ci.yml
+
+image: "registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build-base-golang-${GO_MINOR}"
+
+default:
+  interruptible: true
+
+stages:
+  - review
+
+# Gating happens on the bridge job: once this child pipeline exists, its job
+# always runs. The explicit rule is required: without rules the job falls
+# back to the legacy `only: branches, tags` default, which does not match
+# the merge-request ref the child pipeline runs on, leaving the pipeline
+# empty and failing the bridge.
+review_k3d:
+  extends: .review_k3d_template
+  rules:
+    - when: on_success

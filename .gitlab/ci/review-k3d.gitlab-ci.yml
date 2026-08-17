@@ -1,0 +1,129 @@
+# k3d per-job cluster tests — one child pipeline per Kubernetes version.
+#
+# The `k3d` trigger job holds a parallel:matrix with one row per Kubernetes
+# version and spawns a child pipeline (.gitlab/ci/k3d-version-pipeline.gitlab-ci.yml)
+# per row. Each child pipeline creates its own single-use k3d cluster inside
+# the job's Docker-in-Docker environment, deploys the operator and a GitLab
+# custom resource, runs the QA smoke suite against it over a nip.io domain,
+# and destroys the cluster when the job ends. No GitLab environment, resource
+# group, or stop job is needed — nothing outlives the job.
+#
+# Adding or removing a Kubernetes version test = adding or removing a matrix
+# row below.
+#
+# Chart-version pipelines (PIPELINE_TYPE=chart_version) are already at
+# GitLab's maximum descendant-pipeline depth (parent → other_chart_versions →
+# chart-version pipeline), so the bridge cannot spawn another child there
+# (reached_max_descendant_pipelines_depth). They run the same test as the
+# direct job review_k3d_chart_version instead, exactly like they ran the GKE
+# review jobs directly before.
+#
+# See https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/98
+
+# k3d version matrix — one row per tested Kubernetes version, shared by the
+# `k3d` bridge and the direct `review_k3d_chart_version` job below. Add or
+# remove a version = add or remove a row. Each row sets:
+#   - K3D_K8S_IMAGE (required): rancher/k3s tag pinning the version.
+#   - K3D_K8S_VERSION_SLUG (required): short label used in the child
+#     pipeline name, e.g. v135.
+#   - K3D_PRIMARY: "primary" (optional): rows marked primary run automatically
+#     on MR pipelines; unmarked rows are manual there.
+#   - CLUSTER_MODE (required): "true" = cluster-wide operator + bundled NGINX
+#     controller; "false" = namespaced operator.
+#   - Any other variable set on a row is forwarded to the child job and
+#     overrides the .review_k3d_template default of the same name.
+.k3d_matrix: &k3d_matrix
+  - K3D_K8S_IMAGE: "rancher/k3s:v1.33.3-k3s1"
+    K3D_K8S_VERSION_SLUG: "v133"
+    CLUSTER_MODE: "true"
+  - K3D_K8S_IMAGE: "rancher/k3s:v1.34.1-k3s1"
+    K3D_K8S_VERSION_SLUG: "v134"
+    CLUSTER_MODE: "true"
+  - K3D_K8S_IMAGE: "rancher/k3s:v1.35.0-k3s1"
+    K3D_K8S_VERSION_SLUG: "v135"
+    K3D_PRIMARY: "primary"
+    CLUSTER_MODE: "false"
+    TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi-external"
+    INSTALL_ENVOY_GATEWAY: "true"
+
+k3d:
+  stage: review
+  # Wait only for the operator image build, bypassing the approve_cluster_tests
+  # gate: the manual approval protects the shared always-on clusters from
+  # concurrent-pipeline contention, which does not apply to per-job disposable
+  # clusters.
+  needs:
+    - job: build_branch_image
+      optional: true
+      artifacts: false
+    - job: build_latest_image
+      optional: true
+      artifacts: false
+  trigger:
+    include:
+      - local: .gitlab/ci/k3d-version-pipeline.gitlab-ci.yml
+    strategy: depend
+    # Forward pipeline (trigger) variables so that variables like
+    # GITLAB_CHART_VERSION reach the k3d layer when set on the pipeline.
+    forward:
+      pipeline_variables: true
+  # Only the global variables listed here reach the child pipeline, where they
+  # become pipeline variables and override any job-level YAML defaults. Keep
+  # the list minimal: forwarding all globals would, for example, override the
+  # k3d job's DOCKER_OPTIONS (which needs --insecure-registry) with the global
+  # default.
+  inherit:
+    variables:
+      - GO_MINOR
+      - DOCKERHUB_PREFIX
+      - DOCKER_DRIVER
+      - DOCKER_VERSION
+      - DOCKER_DIND_IMAGE
+      - TESTS_NAMESPACE
+      - HOSTSUFFIX
+      - NAMESPACE
+      - TAG
+      - BUILD_DIR
+      - INSTALL_DIR
+      - TLS_SECRET
+      - PIPELINE_TYPE
+      - CHART_CI_LIB_REF
+      - CNPG_POSTGRESQL_TAG
+  parallel:
+    matrix: *k3d_matrix
+  rules:
+    - !reference [.skip_if_not_canonical]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
+    # Chart-version pipelines cannot nest another child pipeline (see the
+    # note at the top of this file); review_k3d_chart_version runs there.
+    - !reference [.skip_if_chart_version_pipeline]
+    # All versions run automatically on nightly (scheduled), stable-branch,
+    # and default-branch pipelines.
+    - !reference [.if_scheduled_pipeline]
+    - !reference [.if_stable_branch]
+    - !reference [.if_default_branch]
+    # The primary version runs automatically on MR and branch pipelines.
+    - if: '$K3D_PRIMARY == "primary" && ($CI_COMMIT_BRANCH || $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME)'
+    # Other versions are manual (non-blocking) on MR and branch pipelines.
+    - !reference [.manual_allow_failure_if_commit_branch_or_mr_branch]
+
+# The k3d test as a direct job for chart-version pipelines, which cannot
+# nest another child pipeline. Same matrix, same template, same
+# primary-automatic/others-manual split as the bridge.
+review_k3d_chart_version:
+  extends: .review_k3d_template
+  # Start immediately: the operator image was built by the parent pipeline,
+  # and the approve_cluster_tests gate only protects the shared always-on
+  # clusters.
+  needs: []
+  parallel:
+    matrix: *k3d_matrix
+  rules:
+    - !reference [.skip_if_not_canonical]
+    - if: '$PIPELINE_TYPE != "chart_version"'
+      when: never
+    - if: '$K3D_PRIMARY == "primary"'
+    - when: manual
+      allow_failure: true

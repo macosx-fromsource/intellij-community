@@ -7,6 +7,16 @@
       - .go/pkg/mod/
     when: 'always'
 
+.dind:
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_MIRROR: https://mirror.gcr.io
+    DOCKER_OPTIONS: "--registry-mirror ${DOCKER_MIRROR}"
+  services:
+    - name: ${DOCKER_DIND_IMAGE}
+      alias: docker
+      entrypoint: [ "sh", "-c", "dockerd-entrypoint.sh $DOCKER_OPTIONS" ]
+
 .vars_on_dev_gitlab_org:
   script:
     - |

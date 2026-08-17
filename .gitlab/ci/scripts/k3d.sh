@@ -95,6 +95,20 @@ function k3d_create() {
   export DOMAIN="${docker_ip}.nip.io"
   echo "Using domain: ${DOMAIN}"
 
+  # nip.io also parses dash-separated digit groups anywhere in the name as an
+  # IP in dash notation: gitlab-98736478--10-1-2.172.17.0.2.nip.io resolves
+  # to 2.172.17.0, not 172.17.0.2. Chart-version pipelines append the chart
+  # version to HOSTSUFFIX, producing exactly that pattern. Neutralize every
+  # dash directly followed by a digit so hostnames resolve to the intended
+  # IP. HOSTSUFFIX only feeds hostnames and manifest file names, so the
+  # rewrite is safe.
+  if echo "${HOSTSUFFIX:-}" | grep -qE -- '-[0-9]'; then
+    local safe_hostsuffix
+    safe_hostsuffix=$(echo "${HOSTSUFFIX}" | sed -E 's/-([0-9])/x\1/g')
+    echo "Sanitizing HOSTSUFFIX for nip.io: ${HOSTSUFFIX} -> ${safe_hostsuffix}"
+    export HOSTSUFFIX="${safe_hostsuffix}"
+  fi
+
   kubectl wait --for=condition=Ready nodes --all --timeout=120s
 }
 
