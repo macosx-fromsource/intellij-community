@@ -27,9 +27,11 @@ The GitLab Operator does not bundle a Gateway API controller like GitLab chart d
 a GitLab instance managed by the Operator through Gateway API, you must first install a Gateway API
 implementation such as [Envoy Gateway](https://gateway.envoyproxy.io/).
 
-If you want to use Envoy Gateway and you use the official Envoy Gateway Helm chart, make sure support
-for EnvoyPatchPolicies is enabled by setting `config.envoyGateway.extensionsApi.enableEnvoyPatchPolicy=true`
-in your Envoy Gateway values.
+If you use the GitLab chart 10.3 or newer and the official Envoy Gateway Helm chart, deploy Envoy
+Gateway 1.9 for compatibility with the TCPRoute v1 API. If your Gateway API implementation does not
+support TCPRoute v1 yet, override the rendered API version by setting
+`gitlab.gitlab-shell.gatewayRoute.apiVersion=gateway.networking.k8s.io/v1alpha2` in the chart
+values.
 
 If you intend to manage TLS certificates with certmanager, make sure to configure it for
 [Gateway API](https://cert-manager.io/docs/usage/gateway/).

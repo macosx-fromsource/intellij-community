@@ -138,7 +138,7 @@
           # (the operator manages the Gateway API *resources* but not the
           # controller). Pinned to the version the bundled chart's gateway-helm
           # dependency uses, so the CRDs/controller match the operator's CRs.
-          envoyGatewayVersion = "1.8.1";
+          envoyGatewayVersion = "1.9.0";
           # Namespace the Envoy Gateway controller installs into (gateway-deps).
           envoyGatewayNamespace = "envoy-gateway-system";
           # Front-door wiring shared by the CR overlays. The VALUES are owned by
