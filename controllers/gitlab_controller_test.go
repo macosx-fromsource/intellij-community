@@ -487,8 +487,10 @@ global:
 				processSharedSecretsJob(releaseName)
 			})
 
-			It("Should reconcile TCPRoute resource", func() {
+			It("Should reconcile TCPRoute resource through both served API versions", func() {
 				Eventually(listObjectsPromise("app=shell", &gatewayalpha2.TCPRouteList{}, 1),
+					PollTimeout, PollInterval).Should(Succeed())
+				Eventually(listObjectsPromise("app=shell", &gatewayv1.TCPRouteList{}, 1),
 					PollTimeout, PollInterval).Should(Succeed())
 			})
 
