@@ -2,6 +2,12 @@
 
 No changes.
 
+## 3.2.3 (2026-08-14)
+
+### fixed (1 change)
+
+- [Do not own cluster-scoped resources](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/2daffefcdb050defc132f083dbf4ae6ba0ad7ba4)
+
 ## 3.2.2 (2026-08-12)
 
 ### changed (1 change)
