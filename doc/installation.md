@@ -355,7 +355,7 @@ PLATFORM=kubernetes # or "openshift"
 kubectl delete -f https://gitlab.com/api/v4/projects/18899486/packages/generic/gitlab-operator/${GL_OPERATOR_VERSION}/gitlab-operator-${PLATFORM}-${GL_OPERATOR_VERSION}.yaml
 ```
 
-This deletes the Operator's resources, including the running Deployment of the Operator. This **does not** delete objects associated with a GitLab instance.
+This deletes the Operator's resources, including the running Deployment of the Operator. This does not delete objects associated with a GitLab instance.
 
 ## Troubleshoot the GitLab Operator
 
