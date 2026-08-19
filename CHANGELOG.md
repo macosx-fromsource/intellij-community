@@ -1,3 +1,7 @@
+## 3.1.3 (2026-08-19)
+
+Update bundled 9.11.8 Chart to 9.11.12 to include security fixes.
+
 ## 3.1.2 (2026-07-08)
 
 No changes.
