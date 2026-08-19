@@ -25,7 +25,7 @@ env:
   METRICS_SERVER_MANIFEST: https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
   ## Envoy Gateway
-  ENVOY_GATEWAY_VERSION: 1.6.1
+  ENVOY_GATEWAY_VERSION: 1.9.0
 
   # Directories
   BUILD_DIR: .build
@@ -160,7 +160,6 @@ tasks:
         --version {{ .ENVOY_GATEWAY_VERSION }}
         -n envoy-gateway-system
         --create-namespace
-        --set config.envoyGateway.extensionsApi.enableEnvoyPatchPolicy=true
 
   uninstall_envoy_gateway:
     desc: Uninstalls Envoy Gateway
