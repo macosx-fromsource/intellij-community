@@ -9,9 +9,6 @@ variables:
   TESTS_NAMESPACE: "${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_SLUG}"
   BUILD_DIR: ".build"
   INSTALL_DIR: ".install"
-  DOMAIN_OPENSHIFT_4_18: "apps.ocp-ci-418.k8s-ft.win"
-  DOMAIN_OPENSHIFT_4_19: "ocp-ci-419.k8s-ft.win"
-  DOMAIN_OPENSHIFT_4_20: "ocp-ci-420.k8s-ft.win"
   DOMAIN_OPENSHIFT_4_21: "ocp-ci-421.k8s-ft.win"
   DOMAIN_GKE133: "gitlab-operator-v133.k8s-ft.win"
   DOMAIN_GKE134: "gitlab-operator-v134.k8s-ft.win"
@@ -814,7 +811,7 @@ create_followup_issue:
     reports:
       dotenv: followup_issue.env
 
-# Validate a operator release. Currently uses ocp 4.19 cluster.
+# Validate a operator release. Currently uses ocp 4.21 cluster.
 # When trigerred manually, it needs:
 # - OPERATOR_RELEASE_ISSUE_ID: the issue id of the followup issue
 # - OPERATOR_RELEASE_VERSION: the version of the operator release
@@ -829,7 +826,7 @@ validate_olm_release:
     OPERATOR_RELEASE_VERSION: $CI_COMMIT_TAG
     OPERATOR_RELEASE_TOKEN: $OPERATOR_RELEASE_ISSUE_TOKEN # The issue bot
     OPERATOR_RELEASE_COMMENT: "true"
-    AGENT_NAME: ocp418-ci-cluster # When updating this, also update the environment name below
+    AGENT_NAME: ocp421-ci-cluster # When updating this, also update the environment name below
     AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
   before_script:
     - apk add -U kubectl # Note: consider to bundle kubectl in the image
@@ -838,7 +835,7 @@ validate_olm_release:
   script:
     - ./scripts/release_validate.sh "${OPERATOR_RELEASE_VERSION}"
   environment:
-    name: openshift_4_18/olm-validation
+    name: openshift_4_21/olm-validation
   rules:
     - if: !reference [.if_release_tag_on_canonical, if]
       when: delayed
