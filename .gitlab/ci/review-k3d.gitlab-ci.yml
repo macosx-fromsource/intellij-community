@@ -89,6 +89,7 @@ k3d:
       - PIPELINE_TYPE
       - CHART_CI_LIB_REF
       - CNPG_POSTGRESQL_TAG
+      - QA_FULL_SUITE_OPTIONS
   parallel:
     matrix: *k3d_matrix
   rules:

@@ -90,3 +90,13 @@
   retry: 1
   allow_failure:
     exit_codes: 42
+
+# Manual full E2E suite variant of .review_k3d_template: same self-contained
+# deploy-then-QA job, but running the full suite (QA_FULL_SUITE_OPTIONS)
+# instead of the smoke tags. Retried automatically nowhere — the full suite
+# is expensive, so a flaky run should surface rather than silently re-run.
+.review_k3d_full_template:
+  extends: .review_k3d_template
+  variables:
+    QA_OPTIONS: $QA_FULL_SUITE_OPTIONS
+  retry: 0
