@@ -42,8 +42,11 @@
     # (manager.webhook.selfSignedCert); a fresh k3d cluster has nothing
     # pre-installed. The GitLab instance itself is served over plain HTTP.
     # The Gateway API rows additionally install Envoy Gateway (Gateway API
-    # CRDs + controller) and enable cert-manager's Gateway API support,
-    # mirroring the vcluster-flux path.
+    # CRDs + controller) and enable cert-manager's Gateway API support. The
+    # operator applies no CRD and does not deploy the chart's envoy-gateway
+    # dependency, so the controller always has to be installed out of band —
+    # global.gatewayApi.installEnvoy only makes the chart render the
+    # GatewayClass and EnvoyProxy resources.
     - |
       if [ "$INSTALL_ENVOY_GATEWAY" = "true" ]; then
         task install_envoy_gateway

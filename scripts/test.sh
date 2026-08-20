@@ -137,9 +137,8 @@ setup_chart_ci_scripts() {
 
 # provision_external_services deploys the external PostgreSQL (CloudNativePG),
 # Redis (Valkey), and object storage (Garage) instances required by the GitLab CR.
-# For vcluster environments the CNPG operator is installed per-namespace; for
-# native clusters (GKE, OpenShift) the CNPG operator must be pre-installed
-# cluster-wide.
+# On the single-use k3d clusters the CNPG operator is installed per deployment;
+# on the shared OpenShift cluster it must be pre-installed cluster-wide.
 provision_external_services() {
   setup_chart_ci_scripts
 
