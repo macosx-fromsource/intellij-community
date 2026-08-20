@@ -1,6 +1,6 @@
 [tools]
 github-cli =  "2.95.0"
-golang =  "1.26.5"
+golang =  "1.26.6"
 golangci-lint =  "2.9.0"
 node =  "26"
 helm =  "4.2.2"
