@@ -1,3 +1,38 @@
+## 3.3.0 (2026-08-20)
+
+### changed (16 changes)
+
+- [Update github.com/cert-manager/cert-manager to v1.21.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/8f42c7e57099f4224533727db90ee3d87340ee38) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1529))
+- [Update golang.org/x/mod to v0.39.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/8ac57181f0d4c855c9441a6ea1e1a61b482996e6) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1626))
+- [Update prom-op-api/monitoring to v0.93.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1ed6c57b9d9956a33d6e8de327d7c20481064285) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1625))
+- [Update github.com/stretchr/testify to v1.12.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/6075c28fc3e834f85f41b1302d879df2ba2504d0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1622))
+- [Update k8s.io dependencies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/ff83ac61bff20765bdfe08a276fbc635b27d65b8) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1513))
+- [Update ubi9-micro to 7e7f79a](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/36c94535492b898a0fd3f2a94efc6937ad68ddfd) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1609))
+- [Update docker.io/node to aadf416](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/cdd72e9db58032cd65d2bab696e33b4c61c6e863) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1597))
+- [Update github.com/danielgtaylor/huma/v2 to v2.39.1](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/a3516e43f94ea643f45ea74fb8bcff06ea94fe51) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1596))
+- [Update github.com/danielgtaylor/huma/v2 to v2.39.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/bf5126ad68cb9367051f0d10461b3d69da1b9aa0) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1577))
+- [Update helm.sh/helm/v4 to v4.2.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/bedae9b45c510069c5593566423dab5824c0b391) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1559))
+- [Update github.com/envoyproxy/gateway to v1.8.3](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4f6b62e00c04557e1302c214e8a9e305a4576c21) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1586))
+- [Update prom-op-api/monitoring to v0.93.0](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/5223669b0d33b98e5c402e2f7d82a36b1f059678) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1592))
+- [Update docker.io/node to 2337615](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/eacab2efb8714c1837a1f32d7fe6a4d44114b335) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1590))
+- [Bump default memory requests and limits](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/60b3b9c54d331b83ca61463d15bce251e5b99c76) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1581))
+- [Update ubi9-micro to b1e86b9](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/b0914c333cfe9d710918b6b7fa75f17419a3447a) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1571))
+- [Update docker.io/node to v26](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4f15eb057e9e96a01ee21da0977a25037cf5caf2) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1556))
+
+### added (2 changes)
+
+- [Own and reconcile BackendTrafficPolicies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/84a092b0a3d888f25a8035fe2f306f0789e5ad7f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1610))
+- [Own and reconcile BackendTlsPolicies](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/1525391b709dbafdc61b7a75404b84c4bca84c0f) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1610))
+
+### removed (2 changes)
+
+- [Remove PostgreSQL, Redis and MinIO reconciliation logic](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/7bd15239c8c98177d56df8c4c8c6b4a17457949d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1578))
+- [Remove Spamcheck reconciliation logic and tests](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/01ed09ca666fb5db96507981ffadfbdc4b1db096) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1546))
+
+### fixed (1 change)
+
+- [Fix registry migrations Job recreation loop](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/commit/4bb690d75e6329c7956be192fb1da6e6ac955b3d) ([merge request](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/merge_requests/1573))
+
 ## 3.2.4 (2026-08-17)
 
 No changes.
