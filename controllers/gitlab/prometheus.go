@@ -10,7 +10,7 @@ var prometheusSubcharts = []string{"prometheus", "alertmanager", "prometheus-nod
 
 func prometheusObjectsByKind(template helm.Template, kind string) []client.Object {
 	objects := template.Query().ObjectsByKindAndLabels(kind, map[string]string{
-		"app": PrometheusComponentName,
+		AppLabel: PrometheusComponentName,
 	})
 
 	if len(objects) == 0 {

@@ -28,7 +28,7 @@ func KasGRPCIngress(adapter gitlab.Adapter, template helm.Template) client.Objec
 // KasRoutes returns the default KAS HttpRoute and the KAS Workspaces HTTPRoute if enabled.
 func KasRoutes(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(HttpRouteKind, map[string]string{
-		"app": KasComponentName,
+		AppLabel: KasComponentName,
 	})
 }
 

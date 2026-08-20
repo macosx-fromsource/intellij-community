@@ -10,7 +10,7 @@ import (
 // NGINXConfigMaps returns the ConfigMaps of the NGINX component.
 func NGINXConfigMaps(adapter gitlab.Adapter, template helm.Template, isGeo bool) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{
-		"app": nginxComponentName(isGeo),
+		AppLabel: nginxComponentName(isGeo),
 	})
 
 	// Namespaces are properly set on NGINX objects in Chart version 5.6.0.
@@ -26,7 +26,7 @@ func NGINXConfigMaps(adapter gitlab.Adapter, template helm.Template, isGeo bool)
 // NGINXServices returns the Services of the NGINX Component.
 func NGINXServices(adapter gitlab.Adapter, template helm.Template, isGeo bool) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
-		"app": nginxComponentName(isGeo),
+		AppLabel: nginxComponentName(isGeo),
 	})
 
 	// Namespaces are properly set on NGINX objects in Chart version 5.6.0.
@@ -53,7 +53,7 @@ func NGINXServiceMonitor(template helm.Template, isGeo bool) client.Object {
 // NGINXDeployments returns the Deployments of the NGINX Component.
 func NGINXDeployments(adapter gitlab.Adapter, template helm.Template, isGeo bool) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(DeploymentKind, map[string]string{
-		"app": nginxComponentName(isGeo),
+		AppLabel: nginxComponentName(isGeo),
 	})
 
 	// Namespaces are properly set on NGINX objects in Chart version 5.6.0.
@@ -69,7 +69,7 @@ func NGINXDeployments(adapter gitlab.Adapter, template helm.Template, isGeo bool
 // NGINXDaemonSets returns the Deployments of the NGINX Component.
 func NGINXDaemonSets(adapter gitlab.Adapter, template helm.Template) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(DaemonSetKind, map[string]string{
-		"app": NGINXComponentName,
+		AppLabel: NGINXComponentName,
 	})
 
 	// Namespaces are properly set on NGINX objects in Chart version 5.6.0.

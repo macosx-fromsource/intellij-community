@@ -21,12 +21,12 @@ func ZoektStatefulSet(template helm.Template) client.Object {
 	sts = sts.DeepCopy()
 
 	name := sts.Spec.Selector.MatchLabels["app.kubernetes.io/name"]
-	sts.Labels["app"] = name
+	sts.Labels[AppLabel] = name
 	sts.Spec.Selector.MatchLabels = map[string]string{
-		"app":     name,
+		AppLabel:  name,
 		"release": sts.Labels["release"],
 	}
-	sts.Spec.Template.Labels["app"] = name
+	sts.Spec.Template.Labels[AppLabel] = name
 	sts.Spec.Template.Labels["release"] = sts.Labels["release"]
 	sts.Spec.Template.Labels["app.kubernetes.io/name"] = name
 
@@ -47,12 +47,12 @@ func ZoektDeployment(template helm.Template) client.Object {
 	deployment = deployment.DeepCopy()
 
 	name := deployment.Spec.Selector.MatchLabels["app.kubernetes.io/name"]
-	deployment.Labels["app"] = name
+	deployment.Labels[AppLabel] = name
 	deployment.Spec.Selector.MatchLabels = map[string]string{
-		"app":     name,
+		AppLabel:  name,
 		"release": deployment.Labels["release"],
 	}
-	deployment.Spec.Template.Labels["app"] = name
+	deployment.Spec.Template.Labels[AppLabel] = name
 	deployment.Spec.Template.Labels["release"] = deployment.Labels["release"]
 	deployment.Spec.Template.Labels["app.kubernetes.io/name"] = name
 
@@ -61,7 +61,7 @@ func ZoektDeployment(template helm.Template) client.Object {
 
 // ZoektConfigMaps returns the ConfigMap for the Zoekt component.
 func ZoektConfigMaps(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{"app": ZoektComponentName})
+	return template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{AppLabel: ZoektComponentName})
 }
 
 // ZoektIngress returns the Ingress for the Zoekt component.
@@ -71,7 +71,7 @@ func ZoektIngress(template helm.Template) client.Object {
 
 // ZoektServices returns the Services for the Zoekt component.
 func ZoektServices(template helm.Template) []client.Object {
-	return template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{"app": ZoektComponentName})
+	return template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{AppLabel: ZoektComponentName})
 }
 
 // ZoektCertificate returns the Certificate for the Zoekt component.

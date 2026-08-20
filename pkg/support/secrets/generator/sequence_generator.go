@@ -2,6 +2,7 @@ package generator
 
 import (
 	"crypto/rand"
+	"fmt"
 )
 
 const randomReadOverhead = 4
@@ -46,9 +47,14 @@ func (g SequenceGenerator) allowedCharacters() string {
 func (g SequenceGenerator) Generate(contentKey string) (Content, error) {
 	allowedCharacters := g.allowedCharacters()
 
+	allowedLen := len(allowedCharacters)
+	if allowedLen == 0 || allowedLen > 255 {
+		return nil, fmt.Errorf("allowed character set length %d is out of range (1-255)", allowedLen)
+	}
+
 	var (
 		seq    = make([]byte, g.length)
-		mod    = byte(len(allowedCharacters))
+		mod    = byte(allowedLen)
 		reject = 255 - (255 % mod)
 		bytes  = make([]byte, g.length*randomReadOverhead)
 	)

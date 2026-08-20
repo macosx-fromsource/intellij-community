@@ -10,7 +10,7 @@ import (
 
 // GitalyStatefulSet returns the StatefulSet of Gitaly component.
 func GitalyStatefulSet(template helm.Template) client.Object {
-	results := template.Query().ObjectsByKindAndLabels(StatefulSetKind, map[string]string{"app": GitalyComponentName})
+	results := template.Query().ObjectsByKindAndLabels(StatefulSetKind, map[string]string{AppLabel: GitalyComponentName})
 
 	for _, result := range results {
 		if _, hasStorageLabel := result.GetLabels()["storage"]; !hasStorageLabel {
@@ -23,7 +23,7 @@ func GitalyStatefulSet(template helm.Template) client.Object {
 
 // GitalyConfigMap returns the ConfigMap of Gitaly component.
 func GitalyConfigMap(template helm.Template) client.Object {
-	results := template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{"app": GitalyComponentName})
+	results := template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{AppLabel: GitalyComponentName})
 
 	for _, result := range results {
 		if hasPraefectSuffix := strings.HasSuffix(result.GetName(), "-praefect"); !hasPraefectSuffix {
@@ -36,7 +36,7 @@ func GitalyConfigMap(template helm.Template) client.Object {
 
 // GitalyService returns the Service of Gitaly component.
 func GitalyService(template helm.Template) client.Object {
-	results := template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{"app": GitalyComponentName})
+	results := template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{AppLabel: GitalyComponentName})
 
 	for _, result := range results {
 		if _, hasStorageLabel := result.GetLabels()["storage"]; !hasStorageLabel {
@@ -49,7 +49,7 @@ func GitalyService(template helm.Template) client.Object {
 
 // GitalyServiceMonitor returns the Service of Gitaly component.
 func GitalyServiceMonitor(template helm.Template) client.Object {
-	results := template.Query().ObjectsByKindAndLabels(ServiceMonitorKind, map[string]string{"app": GitalyComponentName})
+	results := template.Query().ObjectsByKindAndLabels(ServiceMonitorKind, map[string]string{AppLabel: GitalyComponentName})
 
 	for _, result := range results {
 		if _, hasStorageLabel := result.GetLabels()["storage"]; !hasStorageLabel {
