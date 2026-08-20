@@ -45,6 +45,12 @@ nightly (scheduled), stable-branch, and default-branch pipelines.
 Chart-version pipelines are already at the maximum descendant-pipeline depth, so they run the same
 test as the direct `review_k3d_chart_version` job with the same matrix instead of the trigger job.
 
+Each child pipeline also has a manual `qa_k3d_full` job, with one parallel worker per full-suite
+shard. Like `review_k3d`, each worker is self-contained: it provisions its own k3d cluster,
+operator, and GitLab instance, then runs its shard of the full suite against it. Trigger it from
+any merge request or branch pipeline to run the full suite for that Kubernetes version. Nightly
+pipelines also run it automatically.
+
 ### Tested configurations
 
 The review jobs cover these combinations of operator scope and Ingress path:
@@ -81,9 +87,10 @@ See [epic &98](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/98) for
 
 ## QA pipelines
 
-By default, QA pipelines will include Smoke suite - a [small subset of fast end-to-end functional tests](https://docs.gitlab.com/development/testing_guide/smoke/)
-to quickly ensure that basic functionality is working. If additional testing is required, it's possible to trigger manual
-QA pipeline with Full suite of end-to-end tests using `qa_<cluster>_full_suite_manual_trigger` job for the specific cluster.
+By default, QA pipelines run the smoke suite, a [small subset of fast end-to-end functional tests](https://docs.gitlab.com/development/testing_guide/smoke/) that quickly checks basic
+functionality. To run the full suite of end-to-end tests instead, trigger the manual full-suite job
+for the cluster: `qa_k3d_full` for k3d (see [k3d cluster tests](#k3d-cluster-tests)), or
+`qa_ocp_full_suite_trigger` followed by `qa_ocp_full` for OpenShift.
 
 To debug failures in tests, please follow [investigate QA failures](https://handbook.gitlab.com/handbook/engineering/testing/distribution/#investigate-qa-failures) guide.
 

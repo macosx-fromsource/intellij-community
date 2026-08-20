@@ -37,3 +37,21 @@ review_k3d:
   extends: .review_k3d_template
   rules:
     - when: on_success
+
+# Manual full E2E suite, replacing the old per-environment
+# qa_*_full_suite_trigger + qa_*_full job pair for this environment (see
+# gitlab-org/charts/gitlab!4983 for the chart's equivalent
+# qa_k3d_*_manual_full_suite jobs). Each of the 7 parallel workers is
+# self-contained like review_k3d above: it provisions its own k3d cluster,
+# operator, and GitLab instance, then runs its slice of the full suite
+# against it. No shared resource to gate behind a separate trigger job, so
+# unlike .qa_full_suite_trigger this needs no manual "unlock" job first.
+qa_k3d_full:
+  extends: .review_k3d_full_template
+  parallel: 7
+  rules:
+    # Nightly pipelines run the full suite automatically, same as the old
+    # .qa_full_suite_trigger.
+    - !reference [.if_scheduled_pipeline]
+    - when: manual
+      allow_failure: true
