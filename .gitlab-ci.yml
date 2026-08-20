@@ -2,8 +2,6 @@ image: "registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-operator-build
 
 variables:
   DOCKER_VERSION: "28.0.1"
-  VCLUSTER_AGENT_NAME: "operatorvc-ci-cluster"
-  VCLUSTER_ENVIRONMENT_PREFIX: "operatorvc_"
   # Configuration of K8s
   # Namespace within which to run tests
   TESTS_NAMESPACE: "${CI_COMMIT_SHORT_SHA}-${CI_COMMIT_REF_SLUG}"
@@ -12,9 +10,6 @@ variables:
   AGENT_PROJECT_PATH: gitlab-org/distribution/infrastructure/kube-agents
   AGENT_OPENSHIFT: "ocp421-ci-cluster"
   DOMAIN_OPENSHIFT: "ocp-ci-421.k8s-ft.win"
-  DOMAIN_VCLUSTER134: "gitlab-operator-vc134.k8s-ft.win"
-  DOMAIN_VCLUSTER135: "gitlab-operator-vc135.k8s-ft.win"
-  DOMAIN_VCLUSTER_FLUX: "gitlab-operator-vcflux.k8s-ft.win"
 
   # Namespace built into default manifest
   NAMESPACE: "gitlab-system"

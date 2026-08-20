@@ -8,7 +8,12 @@ spec:
     values:
       global:
         gatewayApi:
+          # The GatewayClass and the Envoy Gateway installation are provisioned
+          # on the cluster, outside the release: the chart renders neither.
           installEnvoy: false
+      gatewayApiResources:
+        class:
+          name: ci-stack
       gitlab:
         gitlab-shell:
           enabled: false

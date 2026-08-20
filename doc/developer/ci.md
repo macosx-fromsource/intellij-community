@@ -7,11 +7,16 @@ title: CI
 
 ## Review environments
 
-The review environments are automatically uninstalled after 1 hour. If you need the review environment to stay up longer, you can pin the environment
-on the [Environments page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/environments). However, make sure to manually trigger the jobs
-in the `Cleanup` stage when you're done. This helps to ensure that the clusters have enough resources to run review apps for other merge requests.
+`review_ocp` is the only review job with an externally accessible GitLab environment.
+It deploys to the shared OpenShift CI cluster and is uninstalled automatically after
+1 hour. To keep it up longer, pin the environment on the [Environments page](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/environments).
+When you are done, manually trigger the job in the `Cleanup` stage, so that the cluster has enough
+resources to run review apps for other merge requests.
 
-See the [environments documentation](https://docs.gitlab.com/ci/environments/) for more information.
+The [k3d cluster tests](#k3d-cluster-tests) have no environment and no cleanup job. Each job creates
+and destroys its own cluster.
+
+For more information, see the [environments documentation](https://docs.gitlab.com/ci/environments/).
 
 ## Token Management
 
@@ -59,15 +64,28 @@ The review jobs cover these combinations of operator scope and Ingress path:
 |---|---|---|---|
 | `k3d: [v133]` | 1.33 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
 | `k3d: [v134]` | 1.34 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
-| `k3d: [v135]` (primary) | 1.35 | Namespaced | Chart-managed Envoy Gateway, HTTP |
-| `review_vcluster135` | 1.35 | Cluster-wide | Chart-bundled NGINX controller, TLS |
-| `review_vcluster_flux` | 1.35 | Cluster-wide | Chart-managed Envoy Gateway, TLS |
+| `k3d: [v135]` (primary) | 1.35 | Namespaced | In-job Envoy Gateway, chart-rendered GatewayClass, HTTP |
 | `review_ocp` | OpenShift | Cluster-wide | Pre-provisioned external gateway, TLS |
 
 The namespaced operator (`CLUSTER_MODE: "false"`) deploys with `nginx-ingress.create=false`, so it
 does not create the cluster-scoped resources (IngressClass, RBAC) that the chart-bundled NGINX
 controller requires to start. Namespaced rows therefore pair with Gateway API instead. The k3d jobs
 serve plain HTTP because a single-use cluster has no pre-provisioned wildcard TLS certificate.
+
+The operator never installs Envoy Gateway. It applies no CustomResourceDefinition and does not deploy
+the chart's subchart dependencies, so the Gateway API CRDs and the Envoy Gateway controller must
+already be in the cluster. The `v135` row therefore installs them in the job through
+`INSTALL_ENVOY_GATEWAY: "true"`, which runs `task install_envoy_gateway`. The
+`global.gatewayApi.installEnvoy: true` of the `gatewayapi` overlay only makes the chart render the
+GatewayClass and EnvoyProxy resources that the reconciler applies.
+
+`review_ocp` covers the opposite arrangement. Its `gatewayapi-external-ocp` overlay sets
+`installEnvoy: false`, so the chart renders no GatewayClass and no EnvoyProxy, and the Gateway
+attaches to the GatewayClass and OpenShift Gateway API controller that the cluster already provides.
+
+`TEST_CR_FILES_DIR` selects the test CR from `config/test`. Three directories remain: `base` routes
+through the chart-bundled NGINX controller and is the default, `overlays/gatewayapi` switches to the
+Gateway API, and `overlays/gatewayapi-external-ocp` adds the OpenShift specifics on top of it.
 
 ### Add or remove a Kubernetes version
 
@@ -81,9 +99,6 @@ Edit the `parallel:matrix` in `.gitlab/ci/review-k3d.gitlab-ci.yml`. Each row se
   merge request pipelines.
 - Optional. `TEST_CR_FILES_DIR` and `INSTALL_ENVOY_GATEWAY: "true"` for the Gateway API/Envoy
   variant instead of the default NGINX Ingress overlay.
-
-The shared vcluster environments are also being migrated to k3d.
-See [epic &98](https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/98) for the migration plan.
 
 ## QA pipelines
 

@@ -60,7 +60,6 @@
   stage: review
   variables:
     CLEANUP: "no"
-    TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi-external"
   script:
     - ls -l ${BUILD_DIR} || true
     # Trim HOSTSUFFIX and TESTS_NAMESPACE to acceptable length (63 char)
@@ -124,7 +123,6 @@
   stage: review
   variables:
     CLEANUP: "no"
-    TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi-external"
   script:
     # Debug info:
     - ls -l ${BUILD_DIR} || true
@@ -163,45 +161,6 @@
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_gitlab_chart_child_pipeline]
     - !reference [.if_commit_branch_or_mr_branch]
-
-.review_vcluster_template:
-  extends: .review_template
-  before_script:
-    - source .gitlab/ci/scripts/vcluster.sh
-    - kas_cluster_connect
-    - kubectl version
-  script:
-    # Debug info:
-    - ls -l ${BUILD_DIR} || true
-    - ls -l ${INSTALL_DIR} || true
-    - .gitlab/ci/scripts/debug_trimmed_env.sh
-    # -- End of Debug
-    - !reference [.vars_on_dev_gitlab_org, script]
-    # Restore short-named deployment files first (because artifact paths won't accept dynamic vars)
-    - !reference [.restore_build_artifacts, script]
-    # Create vcluster and install cert-manager
-    - export VCLUSTER_NAME=$(vcluster_name)
-    - vcluster_create
-    - vcluster_run kubectl version
-    - |
-      if [ "$INSTALL_ENVOY_GATEWAY" = "true" ]
-      then
-        vcluster_run task install_envoy_gateway
-        vcluster_run task install_certmanager_envoy
-      else
-        vcluster_run task install_certmanager
-      fi
-    - vcluster_run task wait_certmanager
-    # Run deployment
-    - vcluster_run ./scripts/test.sh create_namespace
-    - vcluster_run ./scripts/test.sh prepare_build_directories
-    - vcluster_run ./scripts/test.sh install_gitlab_operator
-    - vcluster_run ./scripts/test.sh verify_operator_is_running
-    # And we need to copy things around, again
-    - !reference [.copy_install_artifacts, script]
-  artifacts:
-    paths:
-      - ${INSTALL_DIR}/glop-${HOSTSUFFIX}.${DOMAIN}.yaml
 
 .qa:
   # We `need:` "review" to inherit `artifacts.paths.reports.dotenv`
@@ -291,18 +250,3 @@
     - !reference [.manual_if_stable_branch]
     - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
       when: manual
-
-.stop_review_vcluster_template:
-  extends: .stop_review_template
-  before_script:
-    - source .gitlab/ci/scripts/vcluster.sh
-    - kas_cluster_connect
-    - kubectl version
-  script:
-    - ls -l ${BUILD_DIR} || true
-    - ls -l ${INSTALL_DIR} || true
-    # Restore short-named deployment files first (because artifact paths won't accept dynamic vars)
-    - !reference [.restore_build_artifacts, script]
-    # Run environment cleanup
-    - export VCLUSTER_NAME=$(vcluster_name)
-    - vcluster_delete
