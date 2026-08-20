@@ -14,8 +14,8 @@ maintainers:
 sources:
 - https://gitlab.com/gitlab-org/cloud-native/gitlab-operator
 type: application
-version: 3.2.4
-appVersion: 3.2.4
+version: 3.3.0
+appVersion: 3.3.0
 dependencies:
 - name: cert-manager
   version: 1.6.1
