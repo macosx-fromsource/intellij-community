@@ -62,9 +62,9 @@ The review jobs cover these combinations of operator scope and Ingress path:
 
 | Job | Kubernetes | Operator scope | Ingress path |
 |---|---|---|---|
-| `k3d: [v133]` | 1.33 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
 | `k3d: [v134]` | 1.34 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
-| `k3d: [v135]` (primary) | 1.35 | Namespaced | In-job Envoy Gateway, chart-rendered GatewayClass, HTTP |
+| `k3d: [v135]` | 1.35 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
+| `k3d: [v136]` (primary) | 1.36 | Namespaced | In-job Envoy Gateway, chart-rendered GatewayClass, HTTP |
 | `review_ocp` | OpenShift | Cluster-wide | Pre-provisioned external gateway, TLS |
 
 The namespaced operator (`CLUSTER_MODE: "false"`) deploys with `nginx-ingress.create=false`, so it
@@ -74,7 +74,7 @@ serve plain HTTP because a single-use cluster has no pre-provisioned wildcard TL
 
 The operator never installs Envoy Gateway. It applies no CustomResourceDefinition and does not deploy
 the chart's subchart dependencies, so the Gateway API CRDs and the Envoy Gateway controller must
-already be in the cluster. The `v135` row therefore installs them in the job through
+already be in the cluster. The `v136` row therefore installs them in the job through
 `INSTALL_ENVOY_GATEWAY: "true"`, which runs `task install_envoy_gateway`. The
 `global.gatewayApi.installEnvoy: true` of the `gatewayapi` overlay only makes the chart render the
 GatewayClass and EnvoyProxy resources that the reconciler applies.

@@ -33,14 +33,14 @@
 #   - Any other variable set on a row is forwarded to the child job and
 #     overrides the .review_k3d_template default of the same name.
 .k3d_matrix: &k3d_matrix
-  - K3D_K8S_IMAGE: "rancher/k3s:v1.33.3-k3s1"
-    K3D_K8S_VERSION_SLUG: "v133"
-    CLUSTER_MODE: "true"
   - K3D_K8S_IMAGE: "rancher/k3s:v1.34.1-k3s1"
     K3D_K8S_VERSION_SLUG: "v134"
     CLUSTER_MODE: "true"
   - K3D_K8S_IMAGE: "rancher/k3s:v1.35.0-k3s1"
     K3D_K8S_VERSION_SLUG: "v135"
+    CLUSTER_MODE: "true"
+  - K3D_K8S_IMAGE: "rancher/k3s:v1.36.1-k3s1"
+    K3D_K8S_VERSION_SLUG: "v136"
     K3D_PRIMARY: "primary"
     CLUSTER_MODE: "false"
     TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi"
