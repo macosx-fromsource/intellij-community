@@ -48,6 +48,14 @@ let
     version = "dev";
     src = repoSrc + "/internal/bridge/web";
     npmDepsHash = "sha256-48eV3eGDe0ctyAMif1ODtlud3NXxY1ClLp6Ze7C2FMQ=";
+    # vite.config.ts reads CHART_VERSIONS at build time and bakes it into the
+    # bundle, failing the build if it is absent. The SPA src is the only input
+    # here, so stage the repo-root file beside it (the `./CHART_VERSIONS`
+    # candidate), the way the Dockerfile's webbuilder stage copies it next to the
+    # SPA. chartVersionsFile is already passed into this module for gitlabCharts.
+    postPatch = ''
+      cp ${chartVersionsFile} CHART_VERSIONS
+    '';
     installPhase = ''
       runHook preInstall
       cp -r dist "$out"
@@ -75,7 +83,7 @@ let
       pname = "gitlab-operator${lib.optionalString bridge "-bridge"}";
       version = "dev";
       src = goSrc;
-      vendorHash = "sha256-X+o2I3AvOLtOhQPyzrb52vMo5ueBXeDePgTfug7kOiA=";
+      vendorHash = "sha256-Oa8uNl8fPOzeXMhKjhE7w/4Byb4KXxYROHWPKrLtS/w=";
       # main lives in cmd/manager (moved there in 6e4d37ca); building "." would
       # compile the non-main module root and install NO binary → empty $out.
       subPackages = [ "cmd/manager" ];
@@ -144,7 +152,7 @@ let
     dontInstall = true;
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-cVV6IPy3vAKgSLcZXh/B1stnxx7NeiH5lWJHq6d2GL8=";
+    outputHash = "sha256-poXpyZfGnS8isXl/cPMlbRttAwtNzkrfViWcEYurBho=";
   };
 
   # Image filesystem laid out to match the upstream Dockerfile contract:

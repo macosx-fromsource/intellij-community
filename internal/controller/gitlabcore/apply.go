@@ -65,7 +65,19 @@ func (r *Reconciler) applyObjects(ctx context.Context, core *apiv2alpha1.GitLabC
 			"hint", "have the cluster administrator provision them")
 	}
 
-	for _, obj := range applicable {
+	return r.applyObjectList(ctx, core, applicable, log)
+}
+
+// applyObjectList applies a set of rendered objects in order, skipping what
+// neverApplied matches. A zero-downtime upgrade applies the release in phases
+// and calls it with a subset, for example everything but the workloads it holds
+// back to roll out after the migrations.
+func (r *Reconciler) applyObjectList(ctx context.Context, core *apiv2alpha1.GitLabCore, objs []*unstructured.Unstructured, log logr.Logger) error {
+	for _, obj := range objs {
+		if neverApplied(obj) {
+			continue
+		}
+
 		if err := r.applyObject(ctx, core, obj, log); err != nil {
 			return err
 		}

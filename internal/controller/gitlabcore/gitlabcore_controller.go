@@ -54,6 +54,7 @@ import (
 
 	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/settings"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support/charts"
 )
 
 const (
@@ -159,7 +160,35 @@ func (r *Reconciler) reconcile(ctx context.Context, core *apiv2alpha1.GitLabCore
 		return ctrl.Result{}, err
 	}
 
-	release, err := renderRelease(core, settings.HelmChartsDirectory, discovered)
+	// An upgrade renders and converges toward the next minor version rather than
+	// straight to the target, which is what keeps a multi-minor upgrade a
+	// sequence of zero-downtime single-minor ones. A required intermediate the
+	// Operator does not carry blocks the upgrade: nothing self-heals until the
+	// chart is added or the spec changes, so it does not requeue.
+	renderVersion := core.Spec.Chart.Version
+	upgrading := isUpgrade(core)
+
+	if upgrading {
+		next, err := nextChartVersion(charts.GlobalCatalog(), core.Status.Version, core.Spec.Chart.Version)
+		if err != nil {
+			r.Recorder.Eventf(core, nil, corev1.EventTypeWarning, "UpgradeBlocked", "Upgrade",
+				"Upgrade cannot proceed: %v", err)
+
+			log.Error(err, "the upgrade cannot proceed, check the GitLabCore events")
+
+			core.Status.Phase = PhaseFailed
+			setCondition(core, ConditionUpgradeable, metav1.ConditionFalse, reasonMissingIntermediateChart, err.Error())
+
+			return doNotRequeue()
+		}
+
+		renderVersion = next
+
+		setCondition(core, ConditionUpgradeable, metav1.ConditionTrue, reasonUpgradePathValid,
+			fmt.Sprintf("upgrading toward %s, next %s", core.Spec.Chart.Version, renderVersion))
+	}
+
+	release, err := renderReleaseAt(core, settings.HelmChartsDirectory, renderVersion, discovered)
 	if err != nil {
 		// The specification cannot produce a release. Nothing changes until the
 		// resource does, and a resource change triggers a new reconcile, so
@@ -195,7 +224,14 @@ func (r *Reconciler) reconcile(ctx context.Context, core *apiv2alpha1.GitLabCore
 	// recorded before the apply: an apply that fails is retried without the
 	// hooks, which have nothing to do with it.
 	setCondition(core, ConditionInitialized, metav1.ConditionTrue, reasonChartRendered,
-		fmt.Sprintf("the GitLab chart %s is rendered and its hooks ran", core.Spec.Chart.Version))
+		fmt.Sprintf("the GitLab chart %s is rendered and its hooks ran", renderVersion))
+
+	// An upgrade applies the release in the zero-downtime order rather than all
+	// at once: pre-migrations, roll out, post-migrations, drop the schema bypass.
+	// It records the version and drives the next minor step itself.
+	if upgrading {
+		return r.reconcileUpgrade(ctx, core, release, renderVersion, log)
+	}
 
 	if err := r.applyObjects(ctx, core, release, log); err != nil {
 		setCondition(core, ConditionAvailable, metav1.ConditionFalse, reasonApplyFailed, err.Error())
@@ -205,7 +241,7 @@ func (r *Reconciler) reconcile(ctx context.Context, core *apiv2alpha1.GitLabCore
 
 	// The version is recorded once the objects are applied, whether or not they
 	// are ready, because it describes what was deployed rather than its health.
-	core.Status.Version = core.Spec.Chart.Version
+	core.Status.Version = renderVersion
 
 	ready, pending, err := r.workloadsReady(ctx, core, release)
 	if err != nil {
