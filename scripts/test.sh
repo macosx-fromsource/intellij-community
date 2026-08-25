@@ -11,6 +11,11 @@ DEBUG_CLEANUP="${DEBUG_CLEANUP:-off}"
 # pre-provisioned wildcard TLS secret or ExternalDNS; the instance is served
 # over plain HTTP on a nip.io domain.
 K3D_MODE="${K3D_MODE:-false}"
+# V2ALPHA1_MODE: deploy GitLab through the apps.gitlab.com/v2alpha1 GitLabCore
+# CR instead of the v1beta1 GitLab CR, against an operator built with the
+# `bridge` build tag and running with ENABLE_BRIDGE=true. See
+# doc/developer/gitlabcore.md.
+V2ALPHA1_MODE="${V2ALPHA1_MODE:-false}"
 
 REGISTRY_AUTH_SECRET_NS=${REGISTRY_AUTH_SECRET_NS:-""}
 REGISTRY_AUTH_SECRET=${REGISTRY_AUTH_SECRET:-""}
@@ -72,6 +77,11 @@ main() {
 
   if [ "$K3D_MODE" != "true" ]; then
     copy_certificate
+  fi
+
+  if [ "$V2ALPHA1_MODE" = "true" ]; then
+    install_v2alpha1_crds
+    install_gateway_class
   fi
 
   provision_external_services
@@ -162,10 +172,20 @@ remove_external_services() {
 install_gitlab_operator() {
   echo 'Installing GitLab operator'
 
+  ARGS=""
   if [ -n "${REGISTRY_AUTH_SECRET}" ]
   then
-    export ARGS="--set image.pullSecrets[0].name=${REGISTRY_AUTH_SECRET}"
+    ARGS="${ARGS} --set image.pullSecrets[0].name=${REGISTRY_AUTH_SECRET}"
   fi
+  if [ "$V2ALPHA1_MODE" = "true" ]
+  then
+    # The GitLabCore reconciler rides with the bridge server: it needs an
+    # operator image built with the `bridge` build tag (task
+    # docker-build-bridge) and ENABLE_BRIDGE=true at runtime, which the chart
+    # sets automatically once bridge.enabled is on.
+    ARGS="${ARGS} --set bridge.enabled=true"
+  fi
+  export ARGS
 
   if [[ "$CI_SERVER_HOST" == 'dev.gitlab.org' ]]
   then
@@ -183,6 +203,40 @@ install_gitlab_operator() {
 verify_operator_is_running() {
   echo 'Verifying that operator is running'
   kubectl wait --for=condition=Available -n "$TESTS_NAMESPACE" "deployment/${NAME_OVERRIDE}-controller-manager" --timeout 120s
+}
+
+# install_v2alpha1_crds installs the apps.gitlab.com/v2alpha1 definitions
+# (GitLabCore, Orbit, DataInsightPlatform) and the RBAC the GitLabCore
+# reconciler needs beyond the chart's own grants. These ship outside the Helm
+# chart, so they are not reverted by `task deploy_operator`. See
+# doc/developer/gitlabcore.md.
+install_v2alpha1_crds() {
+  echo 'Installing apps.gitlab.com/v2alpha1 CRDs'
+  task install_v2alpha1_crds
+}
+
+# install_gateway_class applies the cluster-scoped GatewayClass GitLabCore's
+# rendered Gateway references. A GatewayClass is cluster-scoped, so the
+# GitLabCore reconciler never applies one (see doc/developer/gitlabcore.md);
+# for the same reason it never applies the chart's own bundled Envoy Gateway
+# controller (global.gatewayApi.installEnvoy stays forced off). This points
+# at the Envoy Gateway installed out of band by `task install_envoy_gateway`
+# instead, using its default controllerName, and the GatewayClass name the
+# chart defaults gatewayApiResources.class.name to ("gitlab-gw").
+install_gateway_class() {
+  echo 'Waiting for the externally installed Envoy Gateway'
+  kubectl wait --for=condition=established --timeout=60s crd/gatewayclasses.gateway.networking.k8s.io
+  kubectl -n envoy-gateway-system wait --for=condition=Available --timeout=120s deployment/envoy-gateway
+
+  echo 'Installing GatewayClass for the externally managed Envoy Gateway'
+  kubectl apply -f - <<EOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: gitlab-gw
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+EOF
 }
 
 build_gitlab_custom_resource() {
@@ -206,20 +260,42 @@ build_gitlab_custom_resource() {
   # Inject dynamic external service configuration derived from chart CI helpers.
   # The helper functions (valkey_release_name, cnpg_cluster_host, etc.) compute
   # deterministic names from CI_PIPELINE_ID so that build and review jobs agree.
-  ${YQ} -i eval ".spec.chart.values.global.redis.host = \"$(valkey_release_name)\"" "${cr_file}"
-  ${YQ} -i eval ".spec.chart.values.global.redis.auth.secret = \"$(valkey_auth_secret)\"" "${cr_file}"
-  ${YQ} -i eval ".spec.chart.values.global.redis.auth.key = \"$(valkey_auth_secret_key)\"" "${cr_file}"
+  if [ "$V2ALPHA1_MODE" = "true" ]; then
+    # GitLabCore wires PostgreSQL, Redis, and object storage through
+    # structured spec fields rather than free-form chart values; they map onto
+    # the same chart value paths set in the else branch below. See
+    # doc/developer/gitlabcore.md.
+    ${YQ} -i eval ".spec.hostname = \"gitlab-${HOSTSUFFIX}.${DOMAIN}\"" "${cr_file}"
 
-  ${YQ} -i eval ".spec.chart.values.global.psql.host = \"$(cnpg_cluster_host)\"" "${cr_file}"
-  ${YQ} -i eval ".spec.chart.values.global.psql.password.secret = \"$(cnpg_cluster_secret)\"" "${cr_file}"
+    ${YQ} -i eval ".spec.redis.host = \"$(valkey_release_name)\"" "${cr_file}"
+    ${YQ} -i eval ".spec.redis.passwordSecretRef.name = \"$(valkey_auth_secret)\"" "${cr_file}"
+    ${YQ} -i eval ".spec.redis.passwordSecretRef.key = \"$(valkey_auth_secret_key)\"" "${cr_file}"
 
-  ${YQ} -i eval ".spec.chart.values.global.psql.host = \"$(cnpg_cluster_host)\"" "${cr_file}"
-  ${YQ} -i eval ".spec.chart.values.global.psql.password.secret = \"$(cnpg_cluster_secret)\"" "${cr_file}"
-  
-  ${YQ} -i eval ".spec.chart.values.global.appConfig.object_store.connection.secret = \"$(garage_release_name)-gitlab-object-storage\"" "${cr_file}"
+    ${YQ} -i eval ".spec.postgresql.host = \"$(cnpg_cluster_host)\"" "${cr_file}"
+    ${YQ} -i eval ".spec.postgresql.passwordSecretRef.name = \"$(cnpg_cluster_secret)\"" "${cr_file}"
+    ${YQ} -i eval ".spec.postgresql.passwordSecretRef.key = \"password\"" "${cr_file}"
+
+    ${YQ} -i eval ".spec.objectStorage.connectionSecretRef.name = \"$(garage_release_name)-gitlab-object-storage\"" "${cr_file}"
+    ${YQ} -i eval ".spec.objectStorage.connectionSecretRef.key = \"config\"" "${cr_file}"
+  else
+    ${YQ} -i eval ".spec.chart.values.global.redis.host = \"$(valkey_release_name)\"" "${cr_file}"
+    ${YQ} -i eval ".spec.chart.values.global.redis.auth.secret = \"$(valkey_auth_secret)\"" "${cr_file}"
+    ${YQ} -i eval ".spec.chart.values.global.redis.auth.key = \"$(valkey_auth_secret_key)\"" "${cr_file}"
+
+    ${YQ} -i eval ".spec.chart.values.global.psql.host = \"$(cnpg_cluster_host)\"" "${cr_file}"
+    ${YQ} -i eval ".spec.chart.values.global.psql.password.secret = \"$(cnpg_cluster_secret)\"" "${cr_file}"
+
+    # The consolidated object storage connection has a structured field on
+    # GitLabCore (set above); v1beta1 has none, so it stays free-form here.
+    ${YQ} -i eval ".spec.chart.values.global.appConfig.object_store.connection.secret = \"$(garage_release_name)-gitlab-object-storage\"" "${cr_file}"
+    ${YQ} -i eval ".spec.chart.values.registry.storage.secret = \"$(garage_release_name)-gitlab-registry-storage\"" "${cr_file}"
+  fi
+
+  # Pages and toolbox backups read their object storage settings from the
+  # free-form chart values regardless of CR kind: neither has a structured
+  # field of its own.
   ${YQ} -i eval ".spec.chart.values.gitlab.toolbox.backups.objectStorage.config.secret = \"$(garage_release_name)-gitlab-object-storage-s3cmd\"" "${cr_file}"
   ${YQ} -i eval ".spec.chart.values.global.pages.objectStore.connection.secret = \"$(garage_release_name)-gitlab-object-storage\"" "${cr_file}"
-  ${YQ} -i eval ".spec.chart.values.registry.storage.secret = \"$(garage_release_name)-gitlab-registry-storage\"" "${cr_file}"
 
   if [ "$K3D_MODE" = "true" ]; then
     # nip.io already resolves to the job's Docker host and there is no
@@ -353,11 +429,13 @@ wait_until_gitlab_running() {
   local attempts=0
   local exitcode
   local output
+  local resource="gitlab/gitlab"
+  [ "$V2ALPHA1_MODE" = "true" ] && resource="gitlabcore/gitlab"
 
   echo 'Verifying that GitLab is running'
 
   while true; do
-    output="$(kubectl -n "$TESTS_NAMESPACE" get gitlab/gitlab -ojsonpath='{.status.phase}' 2>&1)"
+    output="$(kubectl -n "$TESTS_NAMESPACE" get "$resource" -ojsonpath='{.status.phase}' 2>&1)"
     exitcode=$?
 
     if [ $exitcode -ne 0 ]; then
@@ -384,7 +462,7 @@ test_gitlab_endpoint() {
 
   echo "Testing GitLab endpoint: $endpoint"
   sleep 5
-  curl --retry 5 --retry-delay 10 --retry-connrefused -fIL "$endpoint"
+  curl --retry 5 --retry-delay 10 --retry-connrefused --retry-all-errors -fIL "$endpoint"
 }
 
 # main

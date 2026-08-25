@@ -19,6 +19,10 @@
 # review jobs directly before.
 #
 # See https://gitlab.com/groups/gitlab-org/cloud-native/-/epics/98
+#
+# review_k3d_gitlabcore, below, is a separate direct job: it deploys through the
+# alpha apps.gitlab.com/v2alpha1 GitLabCore CR instead, against the bridge-tagged
+# operator image, and follows a rule set of its own rather than the k3d_matrix.
 
 # k3d version matrix — one row per tested Kubernetes version, shared by the
 # `k3d` bridge and the direct `review_k3d_chart_version` job below. Add or
@@ -128,3 +132,52 @@ review_k3d_chart_version:
     - if: '$K3D_PRIMARY == "primary"'
     - when: manual
       allow_failure: true
+
+# k3d test that deploys GitLab through the apps.gitlab.com/v2alpha1 GitLabCore
+# CR (see doc/developer/gitlabcore.md) instead of the v1beta1 GitLab CR the
+# rows above use. A direct job of its own rather than a matrix row: it needs
+# the bridge-tagged operator image (build_bridge_image), which chart-version
+# pipelines never build, so it cannot share the k3d_matrix/review_k3d_chart_version
+# pair those rows do.
+#
+# Routes through the Gateway API (INSTALL_ENVOY_GATEWAY, same as the
+# CLUSTER_MODE=false row above), not NGINX: the GitLabCore reconciler never
+# applies cluster-scoped objects, so it can neither create the IngressClass
+# nor run the chart's own bundled nginx-ingress-controller the CLUSTER_MODE=true
+# rows rely on. scripts/test.sh's install_gateway_class applies the matching
+# GatewayClass against the externally installed Envoy Gateway instead.
+#
+# SKIP_QA: the GitLabCore reconciler is alpha and gitlab-qa has never run
+# against an instance it deployed. For now, ./scripts/test.sh reaching a
+# successful curl of the GitLab endpoint is validation enough; the QA smoke
+# suite can follow once that is proven stable.
+review_k3d_gitlabcore:
+  extends: .review_k3d_template
+  needs:
+    - job: build_bridge_image
+      optional: true
+      artifacts: false
+  variables:
+    K3D_K8S_IMAGE: "rancher/k3s:v1.35.0-k3s1"
+    K3D_K8S_VERSION_SLUG: "v135-gitlabcore"
+    CLUSTER_MODE: "false"
+    INSTALL_ENVOY_GATEWAY: "true"
+    TEST_CR_FILES_DIR: "config/test/v2alpha1/base"
+    V2ALPHA1_MODE: "true"
+    SKIP_QA: "true"
+    # The GitLabCore reconciler ships only in the bridge-tagged image.
+    TAG: "${CI_COMMIT_SHORT_SHA}-bridge"
+  rules:
+    - !reference [.skip_if_not_canonical]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
+    # build_bridge_image skips chart-version pipelines, so no bridge image
+    # would exist there.
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.if_scheduled_pipeline]
+    - !reference [.if_stable_branch]
+    - !reference [.if_default_branch]
+    # The reconciler is alpha: run on MR/branch pipelines manually and
+    # non-blocking rather than gating merges on it.
+    - !reference [.manual_allow_failure_if_commit_branch_or_mr_branch]

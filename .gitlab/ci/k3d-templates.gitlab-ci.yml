@@ -27,6 +27,11 @@
     # License is activated via QA_EE_ACTIVATION_CODE, a project CI/CD variable
     # picked up automatically by gitlab-qa (no explicit mapping needed).
     QA_OPTIONS: "--tag smoke"
+    # Skips the QA smoke suite below, keeping ./scripts/test.sh's own
+    # curl of the GitLab endpoint as the only pass/fail signal. Used by
+    # review_k3d_gitlabcore, whose GitLabCore reconciler is alpha and not
+    # yet exercised by gitlab-qa.
+    SKIP_QA: "false"
   before_script:
     - source .gitlab/ci/scripts/k3d.sh
     - k3d_install
@@ -60,25 +65,31 @@
     - ./scripts/test.sh
     # Run the QA smoke suite against the deployed instance (same cluster,
     # same job). Exit code 42 marks QA failures as warnings while deployment
-    # failures still fail the job hard.
-    - export ROOT_PASSWORD=$(kubectl -n $TESTS_NAMESPACE get secret gitlab-gitlab-initial-root-password -ojsonpath='{.data.password}' | base64 --decode)
-    - export GITLAB_VERSION=$(kubectl -n $TESTS_NAMESPACE exec -i $(kubectl -n $TESTS_NAMESPACE get pods | grep sidekiq | awk '{print $1}') -c sidekiq -- cat /srv/gitlab/VERSION)
-    - export QA_ENVIRONMENT_URL="http://gitlab-${HOSTSUFFIX}.${DOMAIN}"
-    # Mint a fresh admin PAT so gitlab-qa builds its admin API client from a
-    # token instead of signing in as root through the UI — the first UI login
-    # on a fresh instance lands on the onboarding page and fails page
-    # validation before any example runs.
-    - export GITLAB_QA_ADMIN_ACCESS_TOKEN=$(NO_TRAP=1 ./scripts/test.sh create_qa_admin_token)
+    # failures still fail the job hard. Skipped entirely when SKIP_QA is set:
+    # ./scripts/test.sh above already curled the endpoint, which is the only
+    # signal review_k3d_gitlabcore wants for now.
     - |
-      http_code=$(curl -sSo /dev/null -w "%{http_code}" \
-        --header "PRIVATE-TOKEN: ${GITLAB_QA_ADMIN_ACCESS_TOKEN}" \
-        "${QA_ENVIRONMENT_URL}/api/v4/user")
-      if [ "${http_code}" != "200" ]; then
-        echo "Pre-flight check failed: GET /api/v4/user returned HTTP ${http_code} (expected 200)"
-        exit 1
+      if [ "$SKIP_QA" = "true" ]; then
+        echo "SKIP_QA is true: skipping the QA smoke suite."
+      else
+        export ROOT_PASSWORD=$(kubectl -n $TESTS_NAMESPACE get secret gitlab-gitlab-initial-root-password -ojsonpath='{.data.password}' | base64 --decode)
+        export GITLAB_VERSION=$(kubectl -n $TESTS_NAMESPACE exec -i $(kubectl -n $TESTS_NAMESPACE get pods | grep sidekiq | awk '{print $1}') -c sidekiq -- cat /srv/gitlab/VERSION)
+        export QA_ENVIRONMENT_URL="http://gitlab-${HOSTSUFFIX}.${DOMAIN}"
+        # Mint a fresh admin PAT so gitlab-qa builds its admin API client from a
+        # token instead of signing in as root through the UI — the first UI login
+        # on a fresh instance lands on the onboarding page and fails page
+        # validation before any example runs.
+        export GITLAB_QA_ADMIN_ACCESS_TOKEN=$(NO_TRAP=1 ./scripts/test.sh create_qa_admin_token)
+        http_code=$(curl -sSo /dev/null -w "%{http_code}" \
+          --header "PRIVATE-TOKEN: ${GITLAB_QA_ADMIN_ACCESS_TOKEN}" \
+          "${QA_ENVIRONMENT_URL}/api/v4/user")
+        if [ "${http_code}" != "200" ]; then
+          echo "Pre-flight check failed: GET /api/v4/user returned HTTP ${http_code} (expected 200)"
+          exit 1
+        fi
+        echo "Running - 'gitlab-qa Test::Instance::Any EE:$GITLAB_VERSION $QA_ENVIRONMENT_URL -- $QA_OPTIONS'"
+        SIGNUP_DISABLED=true QA_DEBUG=true GITLAB_USERNAME=root GITLAB_PASSWORD=$ROOT_PASSWORD GITLAB_ADMIN_USERNAME=root GITLAB_ADMIN_PASSWORD=$ROOT_PASSWORD gitlab-qa Test::Instance::Any EE:$GITLAB_VERSION $QA_ENVIRONMENT_URL -- $QA_OPTIONS || exit 42
       fi
-    - echo "Running - 'gitlab-qa Test::Instance::Any EE:$GITLAB_VERSION $QA_ENVIRONMENT_URL -- $QA_OPTIONS'"
-    - SIGNUP_DISABLED=true QA_DEBUG=true GITLAB_USERNAME=root GITLAB_PASSWORD=$ROOT_PASSWORD GITLAB_ADMIN_USERNAME=root GITLAB_ADMIN_PASSWORD=$ROOT_PASSWORD gitlab-qa Test::Instance::Any EE:$GITLAB_VERSION $QA_ENVIRONMENT_URL -- $QA_OPTIONS || exit 42
   after_script:
     - source .gitlab/ci/scripts/trim_env.sh
     - source .gitlab/ci/scripts/k3d.sh

@@ -493,7 +493,7 @@ tasks:
   restore_kustomize_files:
     desc: Restores the state of the config/test directory using `git checkout`.
     cmds:
-      - git checkout -q config/test/base/kustomization.yaml config/test/overlays/*/kustomization.yaml
+      - git checkout -q config/test/base/kustomization.yaml config/test/overlays/*/kustomization.yaml config/test/v2alpha1/*/kustomization.yaml
 
   clean:
     desc: Clean up build and install directories.
