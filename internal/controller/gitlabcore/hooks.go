@@ -32,6 +32,16 @@ const hookEventPreInstall = "pre-install"
 // generation covers the whole specification. Capabilities are left out: they
 // change what the chart renders without changing the generation, but they do not
 // decide the secrets the hooks generate.
+//
+// A multi-minor upgrade holds one generation across every intermediate step, so
+// the hooks run once, for the first intermediate render, and are skipped for the
+// later ones. That is safe because the only pre-install hook the Operator runs
+// is the chart's shared-secrets Job, which is idempotent: it generates a secret
+// only when it is missing, so the secrets an instance already has carry across
+// the minors and no later minor's hooks add one the earlier run did not. The
+// RBAC hooks are never applied here in any case (see runHooks). Were a future
+// minor to require a brand-new secret, its hooks would have to run per render
+// version, keyed on the deployed version rather than the generation.
 func hooksAreCurrent(core *apiv2alpha1.GitLabCore) bool {
 	condition := apimeta.FindStatusCondition(core.Status.Conditions, ConditionInitialized)
 

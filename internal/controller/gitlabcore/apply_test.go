@@ -250,13 +250,27 @@ func mockObject(apiVersion, kind, name string) *unstructured.Unstructured {
 	return obj
 }
 
-// mockWorkload builds a live workload with a replica count and a ready count.
+// observedGenerationSentinel stands in for a controller that has observed the
+// current spec. The fake client does not maintain status.observedGeneration, so
+// a seeded workload would otherwise read as not-yet-observed under the
+// rollout-completion check; a value above any generation the fake client
+// assigns keeps that guard satisfied while the replica counts do the testing.
+const observedGenerationSentinel int64 = 1 << 40
+
+// mockWorkload builds a live workload with a desired replica count and a count
+// of replicas that have finished rolling out. Those replicas are modelled as
+// updated, available, and ready, with no old replicas lingering and the spec
+// observed, so the workload reads as ready exactly when ready == replicas.
 func mockWorkload(kind, name string, replicas, ready int64) *unstructured.Unstructured {
 	workload := mockObject("apps/v1", kind, name)
 	workload.SetNamespace(testNamespace)
 
 	Expect(unstructured.SetNestedField(workload.Object, replicas, "spec", "replicas")).To(Succeed())
-	Expect(unstructured.SetNestedField(workload.Object, ready, "status", "readyReplicas")).To(Succeed())
+	Expect(unstructured.SetNestedField(workload.Object, observedGenerationSentinel, "status", "observedGeneration")).To(Succeed())
+
+	for _, field := range []string{"readyReplicas", "updatedReplicas", "availableReplicas", "replicas"} {
+		Expect(unstructured.SetNestedField(workload.Object, ready, "status", field)).To(Succeed())
+	}
 
 	return workload
 }

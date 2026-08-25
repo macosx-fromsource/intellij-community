@@ -24,7 +24,15 @@ const chartName = "gitlab"
 // namespace, which is what makes a rendered object collide with the objects of
 // another GitLabCore only when the two share both.
 func renderRelease(core *apiv2alpha1.GitLabCore, chartsDir string, discovered *capabilities.Capabilities) (*render.Result, error) {
-	version := core.Spec.Chart.Version
+	return renderReleaseAt(core, chartsDir, core.Spec.Chart.Version, discovered)
+}
+
+// renderReleaseAt templates the chart at an explicit version, rather than the
+// one the spec asks for. A zero-downtime upgrade that steps through the minor
+// versions between the deployed one and the target renders each intermediate
+// version this way. The values are the same at every version: EffectiveValues
+// derives them from the spec, which carries no chart or image version.
+func renderReleaseAt(core *apiv2alpha1.GitLabCore, chartsDir, version string, discovered *capabilities.Capabilities) (*render.Result, error) {
 	if version == "" {
 		return nil, fmt.Errorf("spec.chart.version is required; the Operator carries %s", availableChartVersions())
 	}
