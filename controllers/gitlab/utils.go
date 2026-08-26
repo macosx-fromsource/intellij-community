@@ -20,6 +20,9 @@ const (
 	// Kind related to the app.k8s.io Application CRD (optional).
 	ApplicationKind = "Application"
 
+	// AppLabel is the label key used to select objects by component name.
+	AppLabel = "app"
+
 	// Kinds related to Gateway API.
 	HttpRouteKind        = "HTTPRoute"
 	TcpRouteKind         = "TCPRoute"

@@ -58,6 +58,13 @@ func initSupportedGVRs() {
 	}
 }
 
+const (
+	appsGroup                = "apps"
+	gatewayNetworkingGroup   = "gateway.networking.k8s.io"
+	gatewayEnvoyProxyGroup   = "gateway.envoyproxy.io"
+	gatewayEnvoyProxyVersion = "v1alpha1"
+)
+
 var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersionResource{
 	{
 		Version:  "v1",
@@ -66,15 +73,15 @@ var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersion
 		Version:  "v1",
 		Resource: "services",
 	}, {
-		Group:    "apps",
+		Group:    appsGroup,
 		Version:  "v1",
 		Resource: "deployments",
 	}, {
-		Group:    "apps",
+		Group:    appsGroup,
 		Version:  "v1",
 		Resource: "statefulsets",
 	}, {
-		Group:    "apps",
+		Group:    appsGroup,
 		Version:  "v1",
 		Resource: "daemonsets",
 	}, {
@@ -102,44 +109,44 @@ var potentialSupportedGVRs []schema.GroupVersionResource = []schema.GroupVersion
 		Version:  "v1",
 		Resource: "podmonitors",
 	}, {
-		Group:    "gateway.networking.k8s.io",
+		Group:    gatewayNetworkingGroup,
 		Version:  "v1",
 		Resource: "httproutes",
 	}, {
-		Group:    "gateway.networking.k8s.io",
+		Group:    gatewayNetworkingGroup,
 		Version:  "v1alpha2",
 		Resource: "tcproutes",
 	}, {
-		Group:    "gateway.networking.k8s.io",
+		Group:    gatewayNetworkingGroup,
 		Version:  "v1",
 		Resource: "gateways",
 	}, {
-		Group:    "gateway.networking.k8s.io",
+		Group:    gatewayNetworkingGroup,
 		Version:  "v1",
 		Resource: "gatewayclasses",
 	}, {
-		Group:    "gateway.networking.k8s.io",
+		Group:    gatewayNetworkingGroup,
 		Version:  "v1",
 		Resource: "backendtlspolicies",
 	}, {
-		Group:    "gateway.envoyproxy.io",
-		Version:  "v1alpha1",
+		Group:    gatewayEnvoyProxyGroup,
+		Version:  gatewayEnvoyProxyVersion,
 		Resource: "envoyproxies",
 	}, {
-		Group:    "gateway.envoyproxy.io",
-		Version:  "v1alpha1",
+		Group:    gatewayEnvoyProxyGroup,
+		Version:  gatewayEnvoyProxyVersion,
 		Resource: "envoypatchpolicies",
 	}, {
-		Group:    "gateway.envoyproxy.io",
-		Version:  "v1alpha1",
+		Group:    gatewayEnvoyProxyGroup,
+		Version:  gatewayEnvoyProxyVersion,
 		Resource: "clienttrafficpolicies",
 	}, {
-		Group:    "gateway.envoyproxy.io",
-		Version:  "v1alpha1",
+		Group:    gatewayEnvoyProxyGroup,
+		Version:  gatewayEnvoyProxyVersion,
 		Resource: "backendtrafficpolicies",
 	}, {
-		Group:    "gateway.envoyproxy.io",
-		Version:  "v1alpha1",
+		Group:    gatewayEnvoyProxyGroup,
+		Version:  gatewayEnvoyProxyVersion,
 		Resource: "securitypolicies",
 	},
 }

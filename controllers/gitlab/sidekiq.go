@@ -9,14 +9,14 @@ import (
 // SidekiqDeployments returns the Deployments of the Sidekiq component.
 func SidekiqDeployments(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(DeploymentKind, map[string]string{
-		"app": SidekiqComponentName,
+		AppLabel: SidekiqComponentName,
 	})
 }
 
 // SidekiqConfigMaps returns the ConfigMaps of the Sidekiq component.
 func SidekiqConfigMaps(template helm.Template) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{
-		"app": SidekiqComponentName,
+		AppLabel: SidekiqComponentName,
 	})
 
 	for _, cm := range result {

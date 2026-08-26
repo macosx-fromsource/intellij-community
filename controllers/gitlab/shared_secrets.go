@@ -21,7 +21,7 @@ func SharedSecretsConfigMap(adapter gitlab.Adapter, template helm.Template) (cli
 // SharedSecretsJob returns the Job for Shared Secret component.
 func SharedSecretsJob(adapter gitlab.Adapter, template helm.Template) (client.Object, error) {
 	jobs := template.Query().ObjectsByKindAndLabels(JobKind, map[string]string{
-		"app": GitLabComponentName,
+		AppLabel: GitLabComponentName,
 	})
 
 	namePrefix := fmt.Sprintf("%s-%s", adapter.ReleaseName(), SharedSecretsComponentName)
@@ -37,7 +37,7 @@ func SharedSecretsJob(adapter gitlab.Adapter, template helm.Template) (client.Ob
 // SelfSignedCertsJob returns the Job for Self Signed Certificates component.
 func SelfSignedCertsJob(adapter gitlab.Adapter, template helm.Template) (client.Object, error) {
 	jobs := template.Query().ObjectsByKindAndLabels(JobKind, map[string]string{
-		"app": GitLabComponentName,
+		AppLabel: GitLabComponentName,
 	})
 
 	namePrefix := fmt.Sprintf("%s-%s", adapter.ReleaseName(), SharedSecretsComponentName)

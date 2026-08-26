@@ -19,7 +19,7 @@ func PagesConfigMap(adapter gitlab.Adapter, template helm.Template) client.Objec
 // PagesServices returns the Services for the GitLab Pages component.
 func PagesServices(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
-		"app": PagesComponentName,
+		AppLabel: PagesComponentName,
 	})
 }
 

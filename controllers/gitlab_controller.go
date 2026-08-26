@@ -1012,7 +1012,7 @@ func doNotRequeue() (ctrl.Result, error) {
 }
 
 func requeue(err error) (ctrl.Result, error) {
-	return ctrl.Result{Requeue: true}, err
+	return ctrl.Result{}, err
 }
 
 func requeueWithDelay(delay time.Duration) (ctrl.Result, error) {

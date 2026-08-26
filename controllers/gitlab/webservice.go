@@ -11,14 +11,14 @@ import (
 // WebserviceDeployments returns the Deployments for the Webservice component.
 func WebserviceDeployments(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(DeploymentKind, map[string]string{
-		"app": WebserviceComponentName,
+		AppLabel: WebserviceComponentName,
 	})
 }
 
 // WebserviceConfigMaps returns the ConfigMaps for the Webservice component.
 func WebserviceConfigMaps(template helm.Template) []client.Object {
 	result := template.Query().ObjectsByKindAndLabels(ConfigMapKind, map[string]string{
-		"app": WebserviceComponentName,
+		AppLabel: WebserviceComponentName,
 	})
 
 	for _, cm := range result {
@@ -31,14 +31,14 @@ func WebserviceConfigMaps(template helm.Template) []client.Object {
 // WebserviceServices returns the Services for the Webservice component.
 func WebserviceServices(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(ServiceKind, map[string]string{
-		"app": WebserviceComponentName,
+		AppLabel: WebserviceComponentName,
 	})
 }
 
 // WebserviceServiceMonitor returns the ServiceMonitor for the Webservice component.
 func WebserviceServiceMonitor(template helm.Template) client.Object {
 	serviceMonitors := template.Query().ObjectsByKindAndLabels(ServiceMonitorKind, map[string]string{
-		"app": WebserviceComponentName,
+		AppLabel: WebserviceComponentName,
 	})
 
 	for _, result := range serviceMonitors {
@@ -53,7 +53,7 @@ func WebserviceServiceMonitor(template helm.Template) client.Object {
 // WebserviceWorkhorseServiceMonitor returns the ServiceMonitor for the Workhorse component.
 func WebserviceWorkhorseServiceMonitor(template helm.Template) client.Object {
 	serviceMonitors := template.Query().ObjectsByKindAndLabels(ServiceMonitorKind, map[string]string{
-		"app": WebserviceComponentName,
+		AppLabel: WebserviceComponentName,
 	})
 
 	for _, result := range serviceMonitors {
@@ -68,7 +68,7 @@ func WebserviceWorkhorseServiceMonitor(template helm.Template) client.Object {
 // WebserviceIngresses returns the Ingresses for the Webservice component.
 func WebserviceIngresses(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(IngressKind, map[string]string{
-		"app": WebserviceComponentName,
+		AppLabel: WebserviceComponentName,
 	})
 }
 
@@ -79,7 +79,7 @@ func WebserviceRoute(template helm.Template) client.Object {
 // WebserviceBackendTlsPolicies returns the BackendTLSPolicies for the Webservice component, one per Deployment.
 func WebserviceBackendTlsPolicies(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(BackendTlsPolicyKind, map[string]string{
-		"app": WebserviceComponentName,
+		AppLabel: WebserviceComponentName,
 	})
 }
 
@@ -91,7 +91,7 @@ func WebserviceBackendTrafficPolicy(template helm.Template) client.Object {
 // WebserviceClientTrafficPolicies returns the Envoy ClientTrafficPolicies for the Webservice component.
 func WebserviceClientTrafficPolicies(template helm.Template) []client.Object {
 	return template.Query().ObjectsByKindAndLabels(EnvoyClientTrafficPolicyKind, map[string]string{
-		"app": WebserviceComponentName,
+		AppLabel: WebserviceComponentName,
 	})
 }
 
