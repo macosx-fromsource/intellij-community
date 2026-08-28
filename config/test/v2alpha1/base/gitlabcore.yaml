@@ -1,0 +1,69 @@
+---
+apiVersion: apps.gitlab.com/v2alpha1
+kind: GitLabCore
+metadata:
+  name: gitlab
+spec:
+  chart:
+    version: CHART_VERSION
+    values:
+      global:
+        ingress:
+          enabled: false
+        gatewayApi:
+          enabled: true
+          # Always forced to false by the GitLabCore reconciler's Operator
+          # overrides: a GatewayClass is cluster-scoped, so the reconciler
+          # never renders the chart's own one (bundling a whole second Envoy
+          # Gateway controller besides). install_gateway_class in
+          # scripts/test.sh applies a GatewayClass of its own instead,
+          # pointing at the Envoy Gateway installed out of band by
+          # `task install_envoy_gateway`.
+          installEnvoy: false
+          # No TLS in K3D_MODE (plain HTTP on a nip.io domain, see
+          # scripts/test.sh), so no cert-manager Issuer either: the chart
+          # otherwise renders one unconditionally (default true) and fails to
+          # render at all without certmanager-issuer.email.
+          configureCertmanager: false
+        pages:
+          objectStore:
+            connection:
+              secret: OBJECT_STORE_SECRET
+              key: config
+        extraEnv:
+          GITLAB_LICENSE_MODE: "test"
+          CUSTOMER_PORTAL_URL: "https://customers.staging.gitlab.com"
+      gatewayApiResources:
+        class:
+          # Matches the controllerName the externally installed Envoy Gateway
+          # watches by default; the chart's own default
+          # ("gitlab-gatewayclass-controller") is for its bundled controller,
+          # which never runs here (global.gatewayApi.installEnvoy is forced
+          # off). install_gateway_class in scripts/test.sh applies a matching
+          # GatewayClass, named after gatewayApiResources.class.name's own
+          # default ("gitlab-gw").
+          controllerName: "gateway.envoyproxy.io/gatewayclass-controller"
+      gitlab:
+        webservice:
+          minReplicas: 1
+          maxReplicas: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1500M
+        sidekiq:
+          minReplicas: 1
+          maxReplicas: 2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1000M
+        gitlab-shell:
+          minReplicas: 1
+          maxReplicas: 2
+        toolbox:
+          backups:
+            objectStorage:
+              config:
+                secret: OBJECT_STORE_SECRET_S3CMD
+                key: config
