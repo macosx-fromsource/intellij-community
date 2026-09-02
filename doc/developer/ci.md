@@ -41,7 +41,8 @@ operator and a GitLab custom resource, runs the QA smoke suite against it over a
 [nip.io](https://nip.io) domain, and destroys the cluster when the job ends. The jobs have no
 GitLab environment or cleanup job because nothing outlives the job.
 
-These jobs run on the privileged `e2e` runner fleet.
+These jobs run on the privileged `e2e` runner fleet, except the arm64 row, which sets its own
+`RUNNER_TAG` (see [Tested configurations](#tested-configurations)).
 
 The primary version (matrix row with `K3D_PRIMARY: "primary"`) runs automatically on merge request
 and branch pipelines. The other versions are manual there, and all versions run automatically on
@@ -56,16 +57,29 @@ operator, and GitLab instance, then runs its shard of the full suite against it.
 any merge request or branch pipeline to run the full suite for that Kubernetes version. Nightly
 pipelines also run it automatically.
 
+`review_k3d_gitlabcore` is a separate direct job, not a matrix row: it deploys GitLab through the
+alpha `apps.gitlab.com/v2alpha1` `GitLabCore` CR (see [GitLabCore](gitlabcore.md)) instead of the
+`v1beta1` `GitLab` CR the matrix rows use, against the bridge-tagged operator image
+(`build_bridge_image`). Chart-version pipelines never build that image, so this job cannot share
+the `k3d_matrix`/`review_k3d_chart_version` pair the other rows do. The `GitLabCore` reconciler
+never applies cluster-scoped objects, so the job routes through the Gateway API instead of the
+chart-bundled NGINX controller, and `scripts/test.sh` applies the matching `GatewayClass` itself.
+Because `gitlab-qa` has never run against a `GitLabCore`-deployed instance, the job sets `SKIP_QA`
+and treats `scripts/test.sh` reaching a successful curl of the GitLab endpoint as its only
+pass/fail signal.
+
 ### Tested configurations
 
 The review jobs cover these combinations of operator scope and Ingress path:
 
-| Job | Kubernetes | Operator scope | Ingress path |
-|---|---|---|---|
-| `k3d: [v134]` | 1.34 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
-| `k3d: [v135]` | 1.35 | Cluster-wide | Chart-bundled NGINX controller, HTTP |
-| `k3d: [v136]` (primary) | 1.36 | Namespaced | In-job Envoy Gateway, chart-rendered GatewayClass, HTTP |
-| `review_ocp` | OpenShift | Cluster-wide | Pre-provisioned external gateway, TLS |
+| Job | Kubernetes | Architecture | Operator scope | Ingress path | GitLab CR |
+|---|---|---|---|---|---|
+| `k3d: [v134]` | 1.34 | amd64 | Cluster-wide | Chart-bundled NGINX controller, HTTP | `v1beta1` |
+| `k3d: [v135]` | 1.35 | amd64 | Cluster-wide | Chart-bundled NGINX controller, HTTP | `v1beta1` |
+| `k3d: [v136-arm]` | 1.36 | arm64 | Cluster-wide | Chart-bundled NGINX controller, HTTP | `v1beta1` |
+| `k3d: [v136]` (primary) | 1.36 | amd64 | Namespaced | In-job Envoy Gateway, chart-rendered GatewayClass, HTTP | `v1beta1` |
+| `review_k3d_gitlabcore` | 1.36 | amd64 | Namespaced | In-job Envoy Gateway, chart-rendered GatewayClass, HTTP | `v2alpha1` `GitLabCore` |
+| `review_ocp` | OpenShift | amd64 | Cluster-wide | Pre-provisioned external gateway, TLS | `v1beta1` |
 
 The namespaced operator (`CLUSTER_MODE: "false"`) deploys with `nginx-ingress.create=false`, so it
 does not create the cluster-scoped resources (IngressClass, RBAC) that the chart-bundled NGINX
@@ -74,8 +88,8 @@ serve plain HTTP because a single-use cluster has no pre-provisioned wildcard TL
 
 The operator never installs Envoy Gateway. It applies no CustomResourceDefinition and does not deploy
 the chart's subchart dependencies, so the Gateway API CRDs and the Envoy Gateway controller must
-already be in the cluster. The `v136` row therefore installs them in the job through
-`INSTALL_ENVOY_GATEWAY: "true"`, which runs `task install_envoy_gateway`. The
+already be in the cluster. The `v136` row and `review_k3d_gitlabcore` therefore install them in the
+job through `INSTALL_ENVOY_GATEWAY: "true"`, which runs `task install_envoy_gateway`. The
 `global.gatewayApi.installEnvoy: true` of the `gatewayapi` overlay only makes the chart render the
 GatewayClass and EnvoyProxy resources that the reconciler applies.
 
@@ -83,9 +97,10 @@ GatewayClass and EnvoyProxy resources that the reconciler applies.
 `installEnvoy: false`, so the chart renders no GatewayClass and no EnvoyProxy, and the Gateway
 attaches to the GatewayClass and OpenShift Gateway API controller that the cluster already provides.
 
-`TEST_CR_FILES_DIR` selects the test CR from `config/test`. Three directories remain: `base` routes
-through the chart-bundled NGINX controller and is the default, `overlays/gatewayapi` switches to the
-Gateway API, and `overlays/gatewayapi-external-ocp` adds the OpenShift specifics on top of it.
+`TEST_CR_FILES_DIR` selects the test CR from `config/test`. `base` routes through the chart-bundled
+NGINX controller and is the default, `overlays/gatewayapi` switches to the Gateway API,
+`overlays/gatewayapi-external-ocp` adds the OpenShift specifics on top of it, and
+`v2alpha1/base` is the `GitLabCore` CR that `review_k3d_gitlabcore` uses.
 
 ### Add or remove a Kubernetes version
 
@@ -99,6 +114,12 @@ Edit the `parallel:matrix` in `.gitlab/ci/review-k3d.gitlab-ci.yml`. Each row se
   merge request pipelines.
 - Optional. `TEST_CR_FILES_DIR` and `INSTALL_ENVOY_GATEWAY: "true"` for the Gateway API/Envoy
   variant instead of the default NGINX Ingress overlay.
+- Optional. `RUNNER_TAG` to run the row on a runner fleet other than the default `e2e`, for example
+  `saas-linux-large-arm64` for the arm64 row.
+
+`review_k3d_gitlabcore` is not part of this matrix (see [k3d cluster tests](#k3d-cluster-tests)), so
+adding a Kubernetes version there means editing its job definition directly instead of adding a
+matrix row.
 
 ## QA pipelines
 
