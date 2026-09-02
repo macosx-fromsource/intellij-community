@@ -58,9 +58,12 @@ function k3d_install() {
 function k3d_docker_host_ip() {
   # When running with the .dind service, Docker is at tcp://docker:2375. The
   # DinD host's IP is what we need: k3d exposes ports on it, and nip.io
-  # routes back to it from the CI job container.
+  # routes back to it from the CI job container. Restrict to IPv4: k3d's
+  # --api-port parsing and the nip.io/HOSTSUFFIX handling below both assume a
+  # dotted-quad address, and some runners (e.g. arm64) resolve the alias to
+  # an IPv6 address first otherwise.
   if echo "${DOCKER_HOST:-}" | grep -q "docker"; then
-    getent hosts docker | awk '{print $1; exit}'
+    getent ahostsv4 docker | awk '{print $1; exit}'
   else
     # Parse by the "src" keyword: field position varies with routing topology.
     ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}'

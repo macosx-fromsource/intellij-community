@@ -10,7 +10,7 @@
   extends: .dind
   stage: review
   tags:
-    - e2e
+    - $RUNNER_TAG
   variables:
     K3D_MODE: "true"
     # The whole cluster is destroyed in after_script; per-resource cleanup
@@ -32,6 +32,7 @@
     # review_k3d_gitlabcore, whose GitLabCore reconciler is alpha and not
     # yet exercised by gitlab-qa.
     SKIP_QA: "false"
+    RUNNER_TAG: "e2e"
   before_script:
     - source .gitlab/ci/scripts/k3d.sh
     - k3d_install
