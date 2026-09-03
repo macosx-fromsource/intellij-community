@@ -59,7 +59,7 @@ variables:
   # Used to provision Valkey, PostgreSQL, and Garage in CI.
   # Must include is_k3d_deployment support (charts master 2026-07) so the
   # CNPG operator is installed per-namespace on k3d clusters.
-  CHART_CI_LIB_REF: "f0c6b1cbb50ccf2d08737a363f36efd3b3dff550"
+  CHART_CI_LIB_REF: "dce81c0c4f3e6557c7422853b9bc73460d0b2613"
 
   # Pull DockerHub images through dependency proxy to not hit rate limits.
   DOCKERHUB_PREFIX: "docker.io"
