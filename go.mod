@@ -15,7 +15,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.1
 	github.com/stretchr/testify v1.12.0
-	golang.org/x/mod v0.40.0
+	golang.org/x/mod v0.41.0
 	helm.sh/helm/v4 v4.2.4
 	k8s.io/api v0.36.4
 	k8s.io/apimachinery v0.36.4
