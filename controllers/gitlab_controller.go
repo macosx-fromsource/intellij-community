@@ -502,83 +502,45 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&networkingv1.Ingress{}).
 		WithEventFilter(predicate.GenerationChangedPredicate{})
 
-	if settings.IsGroupVersionKindSupported("batch/v1", "CronJob") {
-		r.Log.Info("using batch/v1 for CronJob")
-		builder.Owns(&batchv1.CronJob{})
-	}
-
-	if settings.IsGroupVersionKindSupported("batch/v1beta1", "CronJob") {
-		r.Log.Info("using batch/v1beta1 for CronJob")
-		builder.Owns(&batchv1beta1.CronJob{})
-	}
-
-	// Create client to check service account permissions on optional resources.
-	// Permissions on such resources can be omitted intentionally, if it is known that
-	// no GitLab resource exists that results in the resource to be rendered/applied at
-	// runtime.
+	// Create client to check service account permissions on conditional resources.
 	authClient, err := settings.KubernetesConfig().NewKubernetesClient()
 	if err != nil {
-		r.Log.Error(err, "unable to create Kubernetes client for RBAC checks; optional resources will not be watched")
+		r.Log.Error(err, "unable to create Kubernetes client for RBAC checks; conditional resources will not be watched")
 
 		return builder.Complete(r)
 	}
 
-	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "ServiceMonitor") {
-		r.Log.Info("using monitoring.coreos.com/v1 for ServiceMonitor")
-		r.ownIfPermitted(builder, authClient, "monitoring.coreos.com", "servicemonitors", &monitoringv1.ServiceMonitor{})
+	// Every optional resource below is checked by Kind, not just by group version: a cluster can
+	// serve a group version while only some of its Kinds are actually installed.
+	r.ownIfPermittedAndAvailable(builder, authClient, "batch", "v1", "CronJob", "cronjobs", &batchv1.CronJob{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "batch", "v1beta1", "CronJob", "cronjobs", &batchv1beta1.CronJob{})
+
+	r.ownIfPermittedAndAvailable(builder, authClient, "monitoring.coreos.com", "v1", "ServiceMonitor", "servicemonitors", &monitoringv1.ServiceMonitor{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "monitoring.coreos.com", "v1", "PodMonitor", "podmonitors", &monitoringv1.PodMonitor{})
+
+	r.ownIfPermittedAndAvailable(builder, authClient, "cert-manager.io", "v1", "Issuer", "issuers", &certmanagerv1.Issuer{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "cert-manager.io", "v1", "Certificate", "certificates", &certmanagerv1.Certificate{})
+
+	r.ownIfPermittedAndAvailable(builder, authClient, "app.k8s.io", "v1beta1", "Application", "applications", &applicationv1beta1.Application{})
+
+	// GatewayClasses are never owned because they are cluster-scoped, and can't be owned by a
+	// namespaced controller. Therefore they are only reconciled when another owned resource
+	// changes. We are still checking RBAC permissions on startup but never register a watch.
+	if r.isKindAvailable("gateway.networking.k8s.io", "v1", "GatewayClass") {
+		r.checkPermission(authClient, "gateway.networking.k8s.io", "GatewayClass", "gatewayclasses", "")
 	}
 
-	if settings.IsGroupVersionKindSupported("monitoring.coreos.com/v1", "PodMonitor") {
-		r.Log.Info("using monitoring.coreos.com/v1 for PodMonitor")
-		r.ownIfPermitted(builder, authClient, "monitoring.coreos.com", "podmonitors", &monitoringv1.PodMonitor{})
-	}
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.networking.k8s.io", "v1", "Gateway", "gateways", &gatewayv1.Gateway{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.networking.k8s.io", "v1", "HTTPRoute", "httproutes", &gatewayv1.HTTPRoute{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.networking.k8s.io", "v1", "BackendTLSPolicy", "backendtlspolicies", &gatewayv1.BackendTLSPolicy{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.networking.k8s.io", "v1", "TCPRoute", "tcproutes", &gatewayv1.TCPRoute{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.networking.k8s.io", "v1alpha2", "TCPRoute", "tcproutes", &gatewayalpha2.TCPRoute{})
 
-	if settings.IsGroupVersionSupported("cert-manager.io", "v1") {
-		r.Log.Info("using cert-manager.io/v1")
-		r.ownIfPermitted(builder, authClient, "cert-manager.io", "issuers", &certmanagerv1.Issuer{})
-		r.ownIfPermitted(builder, authClient, "cert-manager.io", "certificates", &certmanagerv1.Certificate{})
-	}
-
-	if settings.IsGroupVersionSupported("gateway.networking.k8s.io", "v1") {
-		r.Log.Info("using gateway.networking.k8s.io/v1")
-		// GatewayClasses are never owned because they are cluster-scoped, and can't be owned by
-		// a namespaced controller. Therefore they are only reconciled when another owned resource
-		// changes.
-		// We are still checking RBAC permissions on startup but never register a watch.
-		r.checkPermission(authClient, "gateway.networking.k8s.io", "gatewayclasses", "")
-
-		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "gateways", &gatewayv1.Gateway{})
-		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "httproutes", &gatewayv1.HTTPRoute{})
-
-		// BackendTLSPolicy only graduated to gateway.networking.k8s.io/v1 in Gateway API 1.4,
-		// so the kind can be missing even though the group version itself is served.
-		if settings.IsGroupVersionKindSupported("gateway.networking.k8s.io/v1", "BackendTLSPolicy") {
-			r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "backendtlspolicies", &gatewayv1.BackendTLSPolicy{})
-		}
-
-		if settings.IsGroupVersionKindSupported("gateway.networking.k8s.io/v1", "TCPRoute") {
-			r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "tcproutes", &gatewayv1.TCPRoute{})
-		}
-	}
-
-	if settings.IsGroupVersionKindSupported("gateway.networking.k8s.io/v1alpha2", "TCPRoute") {
-		r.Log.Info("using gateway.networking.k8s.io/v1alpha2")
-		r.ownIfPermitted(builder, authClient, "gateway.networking.k8s.io", "tcproutes", &gatewayalpha2.TCPRoute{})
-	}
-
-	if settings.IsGroupVersionSupported("app.k8s.io", "v1beta1") {
-		r.Log.Info("using app.k8s.io/v1beta1")
-		r.ownIfPermitted(builder, authClient, "app.k8s.io", "applications", &applicationv1beta1.Application{})
-	}
-
-	if settings.IsGroupVersionSupported("gateway.envoyproxy.io", "v1alpha1") {
-		r.Log.Info("using gateway.envoyproxy.io/v1alpha1")
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoypatchpolicies", &envoy.EnvoyPatchPolicy{})
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "securitypolicies", &envoy.SecurityPolicy{})
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "clienttrafficpolicies", &envoy.ClientTrafficPolicy{})
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "backendtrafficpolicies", &envoy.BackendTrafficPolicy{})
-		r.ownIfPermitted(builder, authClient, "gateway.envoyproxy.io", "envoyproxies", &envoy.EnvoyProxy{})
-	}
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.envoyproxy.io", "v1alpha1", "EnvoyPatchPolicy", "envoypatchpolicies", &envoy.EnvoyPatchPolicy{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.envoyproxy.io", "v1alpha1", "SecurityPolicy", "securitypolicies", &envoy.SecurityPolicy{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.envoyproxy.io", "v1alpha1", "ClientTrafficPolicy", "clienttrafficpolicies", &envoy.ClientTrafficPolicy{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.envoyproxy.io", "v1alpha1", "BackendTrafficPolicy", "backendtrafficpolicies", &envoy.BackendTrafficPolicy{})
+	r.ownIfPermittedAndAvailable(builder, authClient, "gateway.envoyproxy.io", "v1alpha1", "EnvoyProxy", "envoyproxies", &envoy.EnvoyProxy{})
 
 	return builder.Complete(r)
 }
@@ -591,27 +553,58 @@ func (r *GitLabReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // Only namespaced resources can be owned: builder.Owns() maps an event back to
 // its GitLab custom resource through an owner reference, and a cluster-scoped
 // resource must not have a namespace-scoped owner.
-func (r *GitLabReconciler) ownIfPermitted(builder *ctrlbuilder.Builder, authClient kubernetes.Interface, group, resource string, obj client.Object) {
-	if !r.checkPermission(authClient, group, resource, settings.WatchNamespace) {
+func (r *GitLabReconciler) ownIfPermitted(builder *ctrlbuilder.Builder, authClient kubernetes.Interface, group, kind, resource string, obj client.Object) {
+	if !r.checkPermission(authClient, group, kind, resource, settings.WatchNamespace) {
 		return
 	}
 
-	r.Log.Info("watching resource", "group", group, "resource", resource)
+	r.Log.Info("watching resource", "group", group, "kind", kind, "resource", resource)
 	builder.Owns(obj)
+}
+
+// ownIfPermittedAndAvailable is ownIfPermitted, plus a check that the Kind is actually served
+// by the cluster under the given group/version, not just its enclosing group version.
+//
+// A cluster can serve a group version while only some of its Kinds are actually installed (for
+// example, an ingress controller that ships CRDs for GatewayClass and Gateway but not
+// HTTPRoute). RBAC alone can't catch this: a SelfSubjectAccessReview is granted or denied by
+// policy regardless of whether the resource type actually exists on the server. Registering a
+// watch for a Kind that isn't installed leaves the controller's cache permanently unable to
+// sync, which eventually fails the manager outright once CacheSyncTimeout elapses.
+func (r *GitLabReconciler) ownIfPermittedAndAvailable(builder *ctrlbuilder.Builder, authClient kubernetes.Interface, group, version, kind, resource string, obj client.Object) {
+	if !r.isKindAvailable(group, version, kind) {
+		return
+	}
+
+	r.ownIfPermitted(builder, authClient, group, kind, resource, obj)
+}
+
+// isKindAvailable reports whether the cluster serves the given Kind under the given group and
+// version, and logs when it doesn't, so a deliberately narrow deployment (an ingress controller
+// that only ships some Kinds of a group) is as visible in the logs as a misconfiguration.
+func (r *GitLabReconciler) isKindAvailable(group, version, kind string) bool {
+	if settings.IsGroupVersionKindSupported(group+"/"+version, kind) {
+		return true
+	}
+
+	r.Log.Info("the Kind is not served by the cluster",
+		"group", group, "version", version, "kind", kind)
+
+	return false
 }
 
 // checkPermission reports whether the Operator's ServiceAccount has the RBAC
 // permissions to manage the given resource, and logs the consequences when it
 // does not. Pass an empty namespace to check at cluster scope.
-func (r *GitLabReconciler) checkPermission(authClient kubernetes.Interface, group, resource, namespace string) bool {
+func (r *GitLabReconciler) checkPermission(authClient kubernetes.Interface, group, kind, resource, namespace string) bool {
 	if settings.CanManageResource(authClient, group, resource, namespace) {
 		return true
 	}
 
-	r.Log.Info("the Operator's ServiceAccount lacks the RBAC permissions to manage this resource. "+
+	r.Log.Info("not watching resource: the Operator's ServiceAccount lacks the RBAC permissions to manage it. "+
 		"If a GitLab custom resource is reconciled that requires this resource, the Operator will be unable to "+
 		"create or update it and reconciliation will fail until the missing permissions are granted.",
-		"group", group, "resource", resource)
+		"group", group, "kind", kind, "resource", resource)
 
 	return false
 }
