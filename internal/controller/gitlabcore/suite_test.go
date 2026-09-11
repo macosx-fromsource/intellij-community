@@ -1,7 +1,10 @@
 package gitlabcore
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,6 +22,7 @@ import (
 	"k8s.io/kubectl/pkg/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/settings"
@@ -47,10 +51,51 @@ func TestGitLabCore(t *testing.T) {
 	_ = charts.PopulateGlobalCatalog(
 		populate.WithSearchPath(settings.HelmChartsDirectory))
 
+	// Dynamic chart pulling is on by default (settings.DynamicChartPullEnabled),
+	// and locateOrPullChart falls back to settings.DynamicChartRepository once
+	// HelmChartsDirectory misses a version. Pin the switch explicitly rather
+	// than ride on the default: settings.Load just read ENABLE_DYNAMIC_CHART_PULL
+	// from the actual process environment above, and a spec that does not set
+	// it itself (most do not) would otherwise silently take whichever branch
+	// the shell running the suite happens to have set. Point the suite at a
+	// repository that never leaves the machine, empty of every chart, so the
+	// fallback stays exercised and deterministic without reaching the real
+	// https://charts.gitlab.io/ over the network. Individual specs that need a
+	// chart to actually be pulled, or the switch off, set their own.
+	settings.DynamicChartPullEnabled = true
+	settings.DynamicChartRepository = newEmptyChartRepository(t).URL
+	settings.DynamicChartCacheDirectory = filepath.Join(t.TempDir(), "dynamic-charts")
+
+	// newEmptyChartRepository is a plain http:// test server, not https://.
+	settings.DynamicChartAllowHTTP = true
+
 	runtime.Must(apiv2alpha1.AddToScheme(scheme.Scheme))
+
+	// The fake client's ObjectTracker needs a registered GatewayClassList to
+	// back sweepUnowned's DeleteAllOf; the real client needs no such thing,
+	// since it never decodes an unstructured object through the scheme.
+	runtime.Must(gatewayv1.Install(scheme.Scheme))
 
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "GitLabCore Suite")
+}
+
+// newEmptyChartRepository serves a valid but empty Helm chart repository
+// index, so a lookup against it deterministically reports the chart as not
+// found rather than reaching the network. The server is closed when the test
+// binary exits.
+func newEmptyChartRepository(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/index.yaml", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("apiVersion: v1\nentries: {}\n"))
+	})
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	return server
 }
 
 // CreateMockGitLabCore builds a GitLabCore that renders the whole chart, with
@@ -144,6 +189,7 @@ func mockRESTMapper() meta.RESTMapper {
 	mapper.Add(batchv1.SchemeGroupVersion.WithKind("Job"), meta.RESTScopeNamespace)
 	mapper.Add(rbacv1.SchemeGroupVersion.WithKind("ClusterRole"), meta.RESTScopeRoot)
 	mapper.Add(admissionv1.SchemeGroupVersion.WithKind("ValidatingWebhookConfiguration"), meta.RESTScopeRoot)
+	mapper.Add(gatewayClassGVK, meta.RESTScopeRoot)
 
 	return mapper
 }

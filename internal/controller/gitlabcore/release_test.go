@@ -1,8 +1,10 @@
 package gitlabcore
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -18,7 +20,7 @@ var _ = Describe("renderRelease", func() {
 	When("the resource names a chart version the Operator carries", func() {
 		core := CreateMockGitLabCore(releaseName, testNamespace, support.Values{})
 
-		release, err := renderRelease(core, chartsDirectory(), mockCapabilities())
+		release, err := renderRelease(core, chartsDirectory(), mockCapabilities(), logr.Discard())
 
 		It("renders the objects of the GitLab chart", func() {
 			Expect(err).To(BeNil())
@@ -140,7 +142,7 @@ var _ = Describe("renderRelease", func() {
 		core := CreateMockGitLabCore(releaseName, testNamespace, support.Values{})
 		core.Spec.ObjectStorage = nil
 
-		_, err := renderRelease(core, chartsDirectory(), mockCapabilities())
+		_, err := renderRelease(core, chartsDirectory(), mockCapabilities(), logr.Discard())
 
 		It("reports the check of the chart", func() {
 			Expect(err).To(HaveOccurred())
@@ -153,7 +155,7 @@ var _ = Describe("renderRelease", func() {
 		core := CreateMockGitLabCore(releaseName, testNamespace, support.Values{})
 		core.Spec.Edition = apiv2alpha1.EditionCE
 
-		release, err := renderRelease(core, chartsDirectory(), mockCapabilities())
+		release, err := renderRelease(core, chartsDirectory(), mockCapabilities(), logr.Discard())
 
 		It("pulls the images of that edition", func() {
 			Expect(err).To(BeNil())
@@ -184,7 +186,7 @@ var _ = Describe("renderRelease", func() {
 		core := CreateMockGitLabCore(releaseName, testNamespace, support.Values{})
 		core.Spec.Chart.Version = ""
 
-		_, err := renderRelease(core, chartsDirectory(), mockCapabilities())
+		_, err := renderRelease(core, chartsDirectory(), mockCapabilities(), logr.Discard())
 
 		It("reports that the version is required", func() {
 			Expect(err).To(HaveOccurred())
@@ -192,16 +194,33 @@ var _ = Describe("renderRelease", func() {
 		})
 	})
 
-	When("the chart version is one the Operator does not carry", func() {
+	When("the chart version is neither bundled locally nor carried by the configured repository", func() {
 		core := CreateMockGitLabCore(releaseName, testNamespace, support.Values{})
 		core.Spec.Chart.Version = "0.0.1"
 
-		_, err := renderRelease(core, chartsDirectory(), mockCapabilities())
+		_, err := renderRelease(core, chartsDirectory(), mockCapabilities(), logr.Discard())
 
 		It("reports the versions that are available", func() {
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("chart gitlab version 0.0.1 not found"))
 			Expect(err.Error()).To(ContainSubstring(chartVersion()))
+		})
+
+		It("surfaces the repository's own not-found error, not just the local lookup's", func() {
+			Expect(err).To(HaveOccurred())
+
+			// Dynamic pulling is on for the whole suite (see TestGitLabCore), so
+			// this must have gone all the way to the (empty) test repository
+			// rather than stopping at the bundled charts directory: "not found
+			// at <path>" is what render.LocateChart itself says, and only the
+			// remote lookup adds "in repository". A looser assertion here (just
+			// "not found") would pass no matter which of the two produced it,
+			// which is what let this drift from what the name of this test says
+			// it covers.
+			Expect(err.Error()).To(ContainSubstring("not found in repository"))
+
+			var pullErr *render.PullError
+			Expect(errors.As(err, &pullErr)).To(BeTrue())
+			Expect(pullErr.Transient()).To(BeFalse())
 		})
 	})
 })

@@ -196,10 +196,9 @@ kubectl -n gitlab-system port-forward deploy/gitlab-controller-manager 8090:8090
 
 ## Configure a GitLab instance
 
-The chart version field is prefilled with the latest version in the `CHART_VERSIONS` file, which the
-SPA reads when it is built (see `internal/bridge/web/vite.config.ts`). The operator image builds the
-SPA from the same file it fetches its charts with, so the prefilled version is one the image carries,
-and the form needs no request to know it. The field stays free-form for every other version.
+The chart version field is free-form with no default: a version the Operator does not bundle is
+pulled from its chart repository (`https://charts.gitlab.io/` by default) when it starts
+reconciling, rather than failing outright, so the SPA has no fixed list of versions to prefill from.
 
 The form in the SPA writes one `GitLabCore` resource, in three steps:
 

@@ -28,15 +28,6 @@ vi.mock('@/components/YamlEditor.vue', () => ({
 
 const mockApi = api as unknown as { GET: Mock; POST: Mock }
 
-// The versions are baked into the bundle at build time, so the form reads them
-// from a module rather than the API. The spec pins them.
-const chartVersions = ['10.2.2', '10.1.4', '10.0.6']
-
-vi.mock('@/lib/chartVersions', () => ({
-  chartVersions: ['10.2.2', '10.1.4', '10.0.6'],
-  latestChartVersion: '10.2.2',
-}))
-
 /** Mounts the form and lets its mounted hook settle. */
 async function mountForm(): Promise<VueWrapper> {
   const wrapper = mount(GitLabFormView)
@@ -110,6 +101,8 @@ describe('GitLabFormView', () => {
   it('walks forward through the steps with Next', async () => {
     const wrapper = await mountForm()
 
+    await fill(wrapper, 'Chart version', '10.2.2')
+
     const next = () =>
       wrapper
         .findAll('.actions button')
@@ -149,21 +142,20 @@ describe('GitLabFormView', () => {
     expect(panel(wrapper).text()).toContain('Created in the gitlab-system namespace.')
   })
 
-  // The version is prefilled with the latest this build knows of, which is
-  // compiled in rather than fetched.
-  it('prefills the chart version with the latest of the build', async () => {
+  // Nothing about which versions the Operator can render is known here, so the
+  // field starts empty rather than guessing.
+  it('leaves the chart version empty by default', async () => {
     const wrapper = await mountForm()
 
     const input = panel(wrapper).get('input[name="chart-version"]')
 
-    expect((input.element as HTMLInputElement).value).toBe(chartVersions[0])
-    expect(panel(wrapper).text()).toContain(chartVersions.join(', '))
+    expect((input.element as HTMLInputElement).value).toBe('')
     expect(mockApi.GET).not.toHaveBeenCalled()
   })
 
-  // The field is free-form, because what renders is what the Operator image
-  // carries, which this build can only know as of its own time.
-  it('takes a version the build does not know of', async () => {
+  // The field is free-form: what renders is whatever the Operator bundles or
+  // can pull, which the SPA has no way to know.
+  it('takes any version', async () => {
     const wrapper = await mountForm()
 
     await fill(wrapper, 'Chart version', '11.0.0-rc1')
@@ -189,6 +181,7 @@ describe('GitLabFormView', () => {
   it('reports an incomplete dependency on the step that owns it', async () => {
     const wrapper = await mountForm()
 
+    await fill(wrapper, 'Chart version', '10.2.2')
     await selectStep(wrapper, 'Dependencies')
     await fill(wrapper, 'Hostname', 'gitlab-postgresql')
     await selectStep(wrapper, 'Overrides')
@@ -202,6 +195,7 @@ describe('GitLabFormView', () => {
   it('reports an incomplete object storage connection', async () => {
     const wrapper = await mountForm()
 
+    await fill(wrapper, 'Chart version', '10.2.2')
     await selectStep(wrapper, 'Dependencies')
     await group(wrapper, 'Object storage').findAll('input')[0]!.setValue('gitlab-object-storage')
     await selectStep(wrapper, 'Overrides')
@@ -215,6 +209,7 @@ describe('GitLabFormView', () => {
 
     const wrapper = await mountForm()
 
+    await fill(wrapper, 'Chart version', '10.2.2')
     await fill(wrapper, 'Hostname', 'gitlab.example.com')
     await selectStep(wrapper, 'Dependencies')
 
@@ -254,7 +249,7 @@ describe('GitLabFormView', () => {
         objectStorage: {
           connectionSecretRef: { name: 'gitlab-object-storage', key: 'connection' },
         },
-        chart: { version: chartVersions[0], values: {} },
+        chart: { version: '10.2.2', values: {} },
       },
     })
   })
@@ -264,6 +259,7 @@ describe('GitLabFormView', () => {
   it('advances rather than creates when an earlier step submits', async () => {
     const wrapper = await mountForm()
 
+    await fill(wrapper, 'Chart version', '10.2.2')
     await wrapper.get('form').trigger('submit')
 
     expect(currentStep(wrapper)).toBe('Dependencies')

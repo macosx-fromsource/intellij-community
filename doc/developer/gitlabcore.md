@@ -44,6 +44,20 @@ storage, run `bash scripts/dev_dependencies.sh setup`: it provisions them and wr
 `external-deps-v2alpha1.yaml` to apply as it is. For more information, see
 [External dependencies](installation.md#external-dependencies).
 
+### Reconciler settings
+
+These `controllers/settings` environment variables configure the dynamic chart pull (see
+[What one reconcile does](#what-one-reconcile-does)). None of them apply to the `v1beta1`
+controller, which never reaches out to a chart repository.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ENABLE_DYNAMIC_CHART_PULL` | `true` | Falls back to a pull when `HELM_CHARTS` does not carry `spec.chart.version`. Set to `false` for a cluster that must not reach out to the network. The version is then a configuration error instead. |
+| `DYNAMIC_CHART_REPOSITORY` | `https://charts.gitlab.io/` | The Helm chart repository (an `index.yaml` repository, not an OCI registry) a pull downloads from. Must be an `https://` URL unless `DYNAMIC_CHART_ALLOW_HTTP` overrides that. |
+| `DYNAMIC_CHART_ALLOW_HTTP` | `false` | Allows `DYNAMIC_CHART_REPOSITORY` to be a plain `http://` URL. Leave this off unless the repository is a disconnected cluster's own internal mirror that only serves plain HTTP. |
+| `DYNAMIC_CHART_CACHE_DIRECTORY` | `<os.TempDir()>/gitlab-operator-charts` | Where a pulled chart is cached on disk, so a repeated reconcile does not download it again. The manager container must be able to create and write to this directory. A `containerSecurityContext.readOnlyRootFilesystem: true` manager needs a writable volume mounted there; the chart mounts an `emptyDir` at the default path when `bridge.enabled`. A custom directory needs a volume of its own. |
+| `DYNAMIC_CHART_CACHE_TTL` | `30m` | How long a chart may sit in the cache directory, unused, before it is pruned. A Go duration, for example `72h`. `0` disables pruning. A value with no unit, such as `30`, fails to parse. `Load` logs that on stderr and keeps the previous value rather than silently taking it. |
+
 ## What one reconcile does
 
 1. Reads the capabilities of the cluster with `internal/render/capabilities`.
@@ -77,8 +91,12 @@ informer per kind and a full render on every status update they make. An object 
 edited by hand is restored on the next pass instead, within the requeue delay.
 
 The chart comes from the charts directory of the Operator, which `HELM_CHARTS` points at and the
-image bakes in. Nothing is pulled over the network, so a `spec.chart.version` the Operator does not
-carry is a configuration error. The error names the versions that are available.
+image bakes in. When that directory does not carry `spec.chart.version`, the reconciler falls back
+to pulling that version from a chart repository (`internal/render.PullChart`), rather than failing
+outright. `ENABLE_DYNAMIC_CHART_PULL` turns this off, for a cluster that must not reach out to the
+network; the version is then a configuration error, and the error names the versions the Operator
+does carry. See [Reconciler settings](#reconciler-settings) for the repository, cache, and protocol
+settings, and [Known limits](#known-limits) for what a pulled chart is not checked against.
 
 The cluster is the only source of capabilities. `GITLAB_OPERATOR_KUBERNETES_VERSION` and
 `GITLAB_OPERATOR_KUBERNETES_API_VERSIONS` configure the frozen renderer of the `v1beta1` path and do
@@ -199,19 +217,24 @@ ServiceAccount of the Operator.
 ## Deletion
 
 Objects in the namespace of the resource carry a controller reference to it, so Kubernetes deletes
-them. The rest cannot be owned, because the API server rejects an owner it cannot resolve: a
-namespaced resource may own neither a cluster-scoped object nor an object of another namespace. A
-finalizer deletes those by the release labels `internal/render` stamps:
+them. A `GatewayClass` cannot be, because it is cluster-scoped: the API server rejects an owner
+reference from a namespaced resource to a cluster-scoped object. A finalizer deletes it by the
+release labels `internal/render` stamps:
 
 ```plaintext
 operator.gitlab.com/release-name        the name of the resource
 operator.gitlab.com/release-namespace   its namespace
 ```
 
-The kinds to sweep come from rendering the release once more, because nothing records what was
-applied. The sweep is best effort and never blocks the deletion: a chart the Operator no longer
-carries, or values that no longer render, must not leave a resource that cannot be deleted. What is
-left behind is logged with the label selector that finds it.
+`GatewayClass` is a fixed target, not one a render discovers: it is the only cluster-scoped kind
+the chart ever applies through the normal object pipeline. Everything else cluster-scoped a
+subchart could render is RBAC or a `CustomResourceDefinition`, and the reconciler never applies
+either (see [The reconciler installs no definitions and no RBAC](#the-reconciler-installs-no-definitions-and-no-rbac)).
+Deleting a resource therefore never depends on resolving or rendering its chart, dynamic chart
+pull included.
+
+The sweep is best effort and never blocks the deletion: a cluster that does not serve the Gateway
+API at all has nothing to sweep, which is logged rather than treated as a failure to clean up.
 
 ## Known limits
 
@@ -227,6 +250,9 @@ left behind is logged with the label selector that finds it.
   is composed as revision 1 of an install.
 - The chart `values.schema.json` is not validated against the effective values yet. That is the job
   of the validating webhook ADR 26 describes.
+- A chart the dynamic pull downloads (see [Reconciler settings](#reconciler-settings)) is not
+  signature- or provenance-verified: the repository is trusted out of band, the same trust the
+  Operator already places in its bundled charts.
 
 ## Run the tests
 

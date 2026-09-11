@@ -7,7 +7,6 @@ import postgresqlLogo from '@/assets/icons/postgresql.svg'
 import valkeyLogo from '@/assets/icons/valkey.svg'
 import YamlEditor from '@/components/YamlEditor.vue'
 import type { GitLabResource } from '@/lib/api/client'
-import { chartVersions, latestChartVersion } from '@/lib/chartVersions'
 import { useGitLabsStore } from '@/stores/gitlabs'
 
 const props = defineProps<{
@@ -42,11 +41,11 @@ const valkeyError = ref<string | null>(null)
 const objectStorage = reactive({ secretName: '', secretKey: '' })
 const objectStorageError = ref<string | null>(null)
 /**
- * The chart version, prefilled with the latest one this build carries. It stays
- * a free-form field: what renders is what the Operator image carries, which the
- * SPA can only know as of its own build.
+ * The chart version, free-form: nothing about which ones the Operator can
+ * render is known here. A bundled version renders immediately; any other is
+ * pulled from the Operator's chart repository when it starts reconciling.
  */
-const version = ref(latestChartVersion ?? '')
+const version = ref('')
 
 const valuesText = ref('')
 const valuesError = ref<string | null>(null)
@@ -366,10 +365,8 @@ async function submit() {
           <span>Chart version</span>
           <input v-model="version" name="chart-version" placeholder="e.g. 10.2.2" />
           <span class="hint">
-            It renders the instance, and an upgrade is a change of this field. The Operator has to
-            carry the chart.<template v-if="chartVersions.length">
-              This build knows of {{ chartVersions.join(', ') }}.</template
-            >
+            It renders the instance, and changing it later triggers an upgrade. Any version GitLab
+            publishes works: the Operator pulls one it does not already carry.
           </span>
         </label>
 

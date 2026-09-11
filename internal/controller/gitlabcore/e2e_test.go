@@ -33,6 +33,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -128,10 +129,17 @@ global:
 // e2eClusterScopedKinds are the cluster-scoped kinds a release can carry. The
 // Operator overrides leave none of them rendered today, so the assertions on
 // them hold vacuously; they stay as the guard that catches a release which
-// starts writing outside its namespace again. The finalizer deletes them by the
-// release labels, and cleanup sweeps the same kinds after a run that failed
-// before the deletion.
+// starts writing outside its namespace again.
+//
+// GatewayClass is the only one the finalizer's sweepUnowned actually reaches
+// for, by the release labels; it is a fixed target, not one discovered by
+// rendering the release, so nothing here sweeps the other three. That is the
+// point of keeping them in this list rather than dropping them: if the chart
+// ever renders one of them again, this is what catches the leak, since the
+// finalizer no longer discovers cluster-scoped kinds generically. Cleanup
+// sweeps every kind in this list after a run that failed before the deletion.
 var e2eClusterScopedKinds = []schema.GroupVersionKind{
+	gatewayClassGVK,
 	{Group: "networking.k8s.io", Version: "v1", Kind: "IngressClass"},
 	{Group: "admissionregistration.k8s.io", Version: "v1", Kind: "ValidatingWebhookConfiguration"},
 	{Group: "admissionregistration.k8s.io", Version: "v1", Kind: "MutatingWebhookConfiguration"},
@@ -268,7 +276,7 @@ func TestGitLabCoreReconciler(t *testing.T) {
 		discovered, err := reconciler.capabilities()
 		require.NoError(t, err)
 
-		result, err := renderRelease(live, chartsDirectory(), discovered)
+		result, err := renderRelease(live, chartsDirectory(), discovered, logr.Discard())
 		require.NoError(t, err)
 
 		skipped := objects.Filter(result.Objects, neverApplied)
