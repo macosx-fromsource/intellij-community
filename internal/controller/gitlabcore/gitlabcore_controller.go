@@ -34,12 +34,13 @@ package gitlabcore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -54,6 +55,7 @@ import (
 
 	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/settings"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/internal/render"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support/charts"
 )
 
@@ -108,9 +110,15 @@ type Reconciler struct {
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("gitlabcore", req.NamespacedName)
 
+	// Chart cache maintenance rides every reconcile of every GitLabCore rather
+	// than a timer of its own; see pruneDynamicChartCache. A defer covers every
+	// return below, including the early ones for a deleted or unfinalized
+	// resource.
+	defer pruneDynamicChartCache(log)
+
 	core := &apiv2alpha1.GitLabCore{}
 	if err := r.Get(ctx, req.NamespacedName, core); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			log.V(1).Info("GitLabCore not found, nothing to reconcile")
 
 			return doNotRequeue()
@@ -162,14 +170,16 @@ func (r *Reconciler) reconcile(ctx context.Context, core *apiv2alpha1.GitLabCore
 
 	// An upgrade renders and converges toward the next minor version rather than
 	// straight to the target, which is what keeps a multi-minor upgrade a
-	// sequence of zero-downtime single-minor ones. A required intermediate the
-	// Operator does not carry blocks the upgrade: nothing self-heals until the
-	// chart is added or the spec changes, so it does not requeue.
+	// sequence of zero-downtime single-minor ones. A required intermediate
+	// neither the bundled catalog nor (when enabled) the chart repository
+	// carries blocks the upgrade: nothing self-heals until the chart is added,
+	// a repository that carries it is configured, or the spec changes, so it
+	// does not requeue.
 	renderVersion := core.Spec.Chart.Version
 	upgrading := isUpgrade(core)
 
 	if upgrading {
-		next, err := nextChartVersion(charts.GlobalCatalog(), core.Status.Version, core.Spec.Chart.Version)
+		next, err := nextChartVersion(charts.GlobalCatalog(), core.Status.Version, core.Spec.Chart.Version, remoteChartVersions(log))
 		if err != nil {
 			r.Recorder.Eventf(core, nil, corev1.EventTypeWarning, "UpgradeBlocked", "Upgrade",
 				"Upgrade cannot proceed: %v", err)
@@ -188,20 +198,9 @@ func (r *Reconciler) reconcile(ctx context.Context, core *apiv2alpha1.GitLabCore
 			fmt.Sprintf("upgrading toward %s, next %s", core.Spec.Chart.Version, renderVersion))
 	}
 
-	release, err := renderReleaseAt(core, settings.HelmChartsDirectory, renderVersion, discovered)
+	release, err := renderReleaseAt(core, settings.HelmChartsDirectory, renderVersion, discovered, log)
 	if err != nil {
-		// The specification cannot produce a release. Nothing changes until the
-		// resource does, and a resource change triggers a new reconcile, so
-		// retrying on a timer would only repeat the same error.
-		r.Recorder.Eventf(core, nil, corev1.EventTypeWarning, "ConfigError", "Render",
-			"Configuration error detected: %v", err)
-
-		log.Error(err, "unable to render the GitLab chart, check the GitLabCore events")
-
-		core.Status.Phase = PhaseFailed
-		setCondition(core, ConditionInitialized, metav1.ConditionFalse, reasonRenderFailed, err.Error())
-
-		return doNotRequeue()
+		return r.handleRenderError(core, err, log)
 	}
 
 	for _, warning := range release.Warnings {
@@ -266,6 +265,48 @@ func (r *Reconciler) reconcile(ctx context.Context, core *apiv2alpha1.GitLabCore
 	// A running instance is reconciled again anyway. Nothing watches the objects
 	// of the release, so the requeue is what repairs drift.
 	return requeueWithDefaultDelay()
+}
+
+// handleRenderError records why the release failed to render on core and
+// decides whether reconcile should retry.
+//
+// A *render.PullError is not the same thing as a bad specification: it comes
+// from the dynamic chart pull, not from core itself, and (see
+// render.PullError) may be Transient, e.g. the repository was unreachable or
+// timed out, in which case the very next reconcile might succeed against the
+// same configuration, and this requeues rather than giving up. Every other
+// render failure, including a permanent PullError such as a version the
+// repository does not carry, is treated like a bad specification: nothing
+// changes until core does, and a resource change triggers a new reconcile
+// anyway, so this does not requeue on its own.
+func (r *Reconciler) handleRenderError(core *apiv2alpha1.GitLabCore, err error, log logr.Logger) (ctrl.Result, error) {
+	var pullErr *render.PullError
+	if errors.As(err, &pullErr) {
+		r.Recorder.Eventf(core, nil, corev1.EventTypeWarning, "ChartPullFailed", "Render",
+			"Could not pull the GitLab chart: %v", err)
+
+		log.Error(err, "could not pull the GitLab chart, check the GitLabCore events")
+
+		setCondition(core, ConditionInitialized, metav1.ConditionFalse, reasonChartPullFailed, err.Error())
+
+		if pullErr.Transient() {
+			return requeueWithDefaultDelay()
+		}
+
+		core.Status.Phase = PhaseFailed
+
+		return doNotRequeue()
+	}
+
+	r.Recorder.Eventf(core, nil, corev1.EventTypeWarning, "ConfigError", "Render",
+		"Configuration error detected: %v", err)
+
+	log.Error(err, "unable to render the GitLab chart, check the GitLabCore events")
+
+	core.Status.Phase = PhaseFailed
+	setCondition(core, ConditionInitialized, metav1.ConditionFalse, reasonRenderFailed, err.Error())
+
+	return doNotRequeue()
 }
 
 // SetupWithManager registers the reconciler and the resources it watches.

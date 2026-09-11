@@ -93,6 +93,10 @@ spec:
         - mountPath: /tmp/k8s-webhook-server/serving-certs
           name: cert
           readOnly: true
+        {{- if .Values.bridge.enabled }}
+        - mountPath: /tmp/gitlab-operator-charts
+          name: dynamic-chart-cache
+        {{- end }}
       serviceAccountName: {{ include "manager.serviceAccount.name" . }}
       terminationGracePeriodSeconds: 10
       volumes:
@@ -100,6 +104,19 @@ spec:
         secret:
           defaultMode: 420
           secretName: webhook-server-cert
+      {{- if .Values.bridge.enabled }}
+      # The v2alpha1 GitLabCore reconciler's dynamic chart pull (see
+      # controllers/settings.DynamicChartCacheDirectory) caches a pulled chart
+      # under /tmp/gitlab-operator-charts by default. Without a volume of its
+      # own there, a manager whose containerSecurityContext sets
+      # readOnlyRootFilesystem: true cannot create that directory, and every
+      # pull fails. An emptyDir mount fixes that regardless of the security
+      # context, at the cost of nothing when dynamic pulling never runs. A
+      # DYNAMIC_CHART_CACHE_DIRECTORY override needs a writable mount of its
+      # own to match.
+      - name: dynamic-chart-cache
+        emptyDir: {}
+      {{- end }}
       {{- with .Values.affinity }}
       affinity: {{- toYaml . | nindent 8 }}
       {{- end }}

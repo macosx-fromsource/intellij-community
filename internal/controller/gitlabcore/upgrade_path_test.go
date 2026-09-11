@@ -1,6 +1,8 @@
 package gitlabcore
 
 import (
+	"errors"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -30,7 +32,7 @@ var _ = Describe("zeroDowntimePath", func() {
 var _ = Describe("nextChartVersion", func() {
 	DescribeTable("returns the version an upgrade converges to next",
 		func(deployed, target string, available []string, expected string) {
-			next, err := nextChartVersion(catalogWith(available...), deployed, target)
+			next, err := nextChartVersion(catalogWith(available...), deployed, target, nil)
 
 			Expect(err).To(BeNil())
 			Expect(next).To(Equal(expected))
@@ -47,12 +49,43 @@ var _ = Describe("nextChartVersion", func() {
 			"10.11.2", "11.1.0", []string{"10.11.2", "11.0.3", "11.1.0"}, "11.0.3"),
 	)
 
-	When("the required intermediate version is not on disk", func() {
-		It("fails loudly rather than skipping a minor", func() {
-			_, err := nextChartVersion(catalogWith("10.0.8", "10.2.4"), "10.0.8", "10.2.4")
+	When("remoteVersions is nil", func() {
+		It("fails loudly rather than skipping a minor the catalog does not have", func() {
+			_, err := nextChartVersion(catalogWith("10.0.8", "10.2.4"), "10.0.8", "10.2.4", nil)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("10.1"))
+		})
+	})
+
+	When("remoteVersions is set", func() {
+		// It is the sole source once set, not a fallback for a catalog miss: the
+		// chart repository is the more complete, more current one of the two.
+		It("prefers the highest matching patch remoteVersions reports over one the catalog also has", func() {
+			remote := func() ([]string, error) { return []string{"10.1.1", "10.1.9"}, nil }
+
+			next, err := nextChartVersion(catalogWith("10.0.8", "10.1.6", "10.2.4"), "10.0.8", "10.2.4", remote)
+
+			Expect(err).To(BeNil())
+			Expect(next).To(Equal("10.1.9"))
+		})
+
+		It("fails when remoteVersions has no match, even though the catalog does", func() {
+			remote := func() ([]string, error) { return []string{"10.0.8", "10.2.4"}, nil }
+
+			_, err := nextChartVersion(catalogWith("10.0.8", "10.1.6", "10.2.4"), "10.0.8", "10.2.4", remote)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("10.1"))
+		})
+
+		It("fails when remoteVersions errors, rather than falling back to the catalog", func() {
+			remote := func() ([]string, error) { return nil, errors.New("repository unreachable") }
+
+			_, err := nextChartVersion(catalogWith("10.0.8", "10.1.6", "10.2.4"), "10.0.8", "10.2.4", remote)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("repository unreachable"))
 		})
 	})
 })

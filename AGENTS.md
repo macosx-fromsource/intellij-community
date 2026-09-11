@@ -143,8 +143,10 @@ var _ = Describe("Component", func() {
   values lives in `internal/controller/gitlabcore/values.go`.
 - **Endpoints:** CRUD under `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]` (`/api/v1` versions
   the bridge API, not the CR), OpenAPI at `/openapi.yaml` (+ `/openapi.json`), docs UI at `/docs`,
-  SPA embedded via `go:embed` (`internal/bridge/web/dist`). The chart version the form prefills is
-  compiled into the SPA from `CHART_VERSIONS` (Vite `define`), not served.
+  SPA embedded via `go:embed` (`internal/bridge/web/dist`). The chart version field is free-form,
+  with no default: the Operator may pull a version it does not bundle from `DYNAMIC_CHART_REPOSITORY`
+  (default `https://charts.gitlab.io/`; `ENABLE_DYNAMIC_CHART_PULL=false` turns it off), see
+  `internal/render.PullChart` and the PoC caveats below.
 - **SPA:** `internal/bridge/web/` is a Vue 3 + TypeScript app (Vite, Vue Router, Pinia) built into
   `web/dist`; the operator image builds it in a Node stage. `task frontend-dev` / `frontend-build`;
   details in [internal/bridge/CLAUDE.md](internal/bridge/CLAUDE.md).
@@ -170,7 +172,8 @@ var _ = Describe("Component", func() {
   `spec.chart.values` is a free-form object (no schema until the chart's `values.schema.json` is
   wired in), and the structured layer covers only hostname, edition, license, PostgreSQL, Redis, and
   object storage so far. The reconciler defaults `registry.enabled` off, because the registry storage
-  has no structured field yet.
+  has no structured field yet. A dynamically pulled chart (see above) is not signature- or
+  provenance-verified.
 
 ## Key Directories
 

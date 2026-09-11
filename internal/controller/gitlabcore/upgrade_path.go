@@ -54,18 +54,25 @@ func nextMinor(version *semver.Version) (major, minor uint64) {
 
 // nextChartVersion returns the chart version an upgrade from deployed toward
 // target converges to next: target itself when the step is already a single
-// zero-downtime hop, or otherwise the highest patch of the next minor that the
-// Operator carries.
+// zero-downtime hop, or otherwise the highest patch of the next minor that
+// the Operator carries or can pull.
 //
 // It is what splits a multi-minor upgrade into the sequence of single-minor
 // upgrades zero-downtime requires. Each call advances one minor; the reconcile
 // records the intermediate version and calls it again until it reaches target.
 //
-// A required intermediate minor the Operator does not carry is a loud error, not
-// a skipped minor: skipping one would run migrations across a gap GitLab does not
-// support. The caller surfaces it and stops, leaving recovery to an operator who
-// adds the chart or changes the spec.
-func nextChartVersion(cat charts.Catalog, deployed, target string) (string, error) {
+// remoteVersions, when not nil, is called to list the versions a chart
+// repository advertises, and its answer is preferred over the bundled
+// catalog: the repository is the more complete, more current source, so the
+// catalog is consulted for an intermediate only when remoteVersions is nil,
+// e.g. dynamic chart pulling is disabled for a disconnected cluster.
+//
+// A required intermediate minor that the active source (repository or
+// catalog, never both) does not have is a loud error, not a skipped minor:
+// skipping one would run migrations across a gap GitLab does not support. The
+// caller surfaces it and stops, leaving recovery to an operator who adds the
+// chart, configures a repository that carries it, or changes the spec.
+func nextChartVersion(cat charts.Catalog, deployed, target string, remoteVersions func() ([]string, error)) (string, error) {
 	from, err := semver.NewVersion(deployed)
 	if err != nil {
 		return "", fmt.Errorf("parsing the deployed chart version %q: %w", deployed, err)
@@ -84,7 +91,7 @@ func nextChartVersion(cat charts.Catalog, deployed, target string) (string, erro
 
 	major, minor := nextMinor(from)
 
-	step, err := highestPatch(cat, major, minor, to)
+	step, err := highestPatch(cat, major, minor, to, remoteVersions)
 	if err != nil {
 		return "", err
 	}
@@ -92,24 +99,62 @@ func nextChartVersion(cat charts.Catalog, deployed, target string) (string, erro
 	return step, nil
 }
 
-// highestPatch returns the highest chart version the Operator carries whose
-// major and minor match and that does not exceed the target, or an error naming
-// the missing minor when it carries none.
-func highestPatch(cat charts.Catalog, major, minor uint64, target *semver.Version) (string, error) {
-	// Versions is sorted descending, so the first match is the highest patch.
-	for _, candidate := range cat.Versions(chartName) {
-		version, err := semver.NewVersion(candidate)
+// highestPatch returns the highest chart version whose major and minor match
+// and that does not exceed target, or an error naming the missing minor when
+// the active source has none.
+//
+// remoteVersions, when not nil, is the sole source: the bundled catalog is
+// not consulted at all, not even when the repository lookup comes back
+// empty. Pass nil to search the catalog instead.
+func highestPatch(cat charts.Catalog, major, minor uint64, target *semver.Version, remoteVersions func() ([]string, error)) (string, error) {
+	if remoteVersions != nil {
+		versions, err := remoteVersions()
 		if err != nil {
-			continue
+			return "", fmt.Errorf("listing the versions the chart repository carries: %w", err)
 		}
 
-		if version.Major() == major && version.Minor() == minor && !version.GreaterThan(target) {
-			return candidate, nil
+		if version, ok := highestPatchOf(versions, major, minor, target); ok {
+			return version, nil
 		}
+
+		return "", fmt.Errorf(
+			"the intermediate chart version %d.%d is required to upgrade to %s one minor at a time, "+
+				"but the chart repository carries none matching it",
+			major, minor, target)
+	}
+
+	if version, ok := highestPatchOf(cat.Versions(chartName), major, minor, target); ok {
+		return version, nil
 	}
 
 	return "", fmt.Errorf(
 		"the intermediate chart version %d.%d is required to upgrade to %s one minor at a time, "+
 			"but the Operator carries none matching it; it carries %s",
 		major, minor, target, availableChartVersions())
+}
+
+// highestPatchOf returns the highest version among candidates whose major and
+// minor match and that does not exceed target.
+func highestPatchOf(candidates []string, major, minor uint64, target *semver.Version) (string, bool) {
+	var best *semver.Version
+
+	var bestRaw string
+
+	for _, candidate := range candidates {
+		version, err := semver.NewVersion(candidate)
+		if err != nil {
+			continue
+		}
+
+		if version.Major() != major || version.Minor() != minor || version.GreaterThan(target) {
+			continue
+		}
+
+		if best == nil || version.GreaterThan(best) {
+			best = version
+			bestRaw = candidate
+		}
+	}
+
+	return bestRaw, best != nil
 }

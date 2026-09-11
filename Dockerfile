@@ -30,6 +30,9 @@ ARG TARGETARCH
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o manager ./cmd/manager
 
+# ubi9-micro carries no CA certificates; borrow them from ubi9-minimal.
+FROM registry.access.redhat.com/ubi9-minimal:9.8@sha256:7fbeae18dc9476399f565e68255f602a3374ea8614ba3d14843565131a13ff93 AS certs
+
 # Use ubi micro as base image to package the manager binary
 # Refer to https://www.redhat.com/en/blog/introduction-ubi-micro for more details
 FROM registry.access.redhat.com/ubi9-micro:9.8@sha256:f332c99eb8f798a8486821c91937f10ad64ee83d7e739303be2df051040918f6
@@ -49,6 +52,8 @@ ENV USER_UID=1001 \
 # ADD GITLAB LICENSE
 COPY LICENSE /licenses/GITLAB
 
+COPY --from=certs /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+COPY --from=certs /etc/pki/tls/certs/ca-bundle.crt /etc/pki/tls/certs/ca-bundle.crt
 # Add pre-packaged charts for the operator to deploy
 COPY charts ${CHART_DIR}
 

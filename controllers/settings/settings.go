@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"helm.sh/helm/v4/pkg/chart/common"
 )
@@ -72,6 +74,50 @@ var (
 
 	DefaultKubeVersion     *common.KubeVersion = nil
 	DefaultKubeAPIVersions common.VersionSet   = common.VersionSet{}
+
+	// DynamicChartPullEnabled lets the v2alpha1 GitLabCore controller pull a
+	// GitLab chart version that HelmChartsDirectory does not carry from
+	// DynamicChartRepository, rather than failing the render outright. It is
+	// enabled by default; set the ENABLE_DYNAMIC_CHART_PULL environment
+	// variable to a falsy value ("false", "0") to turn it off, e.g. for a
+	// disconnected cluster that must never reach out to a chart repository. A
+	// pulled chart is not signature- or provenance-verified (see
+	// internal/render.PullChart). No other controller reads this setting:
+	// v1beta1 always renders from HelmChartsDirectory and never reaches out to
+	// a chart repository.
+	DynamicChartPullEnabled = true
+
+	// DynamicChartRepository is the Helm chart repository a dynamic chart pull
+	// downloads from. The default value is "https://charts.gitlab.io/", the
+	// official GitLab chart repository. Use the DYNAMIC_CHART_REPOSITORY
+	// environment variable to change it.
+	DynamicChartRepository = "https://charts.gitlab.io/"
+
+	// DynamicChartCacheDirectory is where a dynamically pulled chart is cached
+	// on disk, so a repeated reconcile does not download it again. The default
+	// value is "<os.TempDir()>/gitlab-operator-charts". Use the
+	// DYNAMIC_CHART_CACHE_DIRECTORY environment variable to change it.
+	DynamicChartCacheDirectory = filepath.Join(os.TempDir(), "gitlab-operator-charts")
+
+	// DynamicChartCacheTTL is how long a chart may sit in
+	// DynamicChartCacheDirectory without being pulled or reused before
+	// internal/render.PullChart prunes it. This is what keeps the cache from
+	// growing forever as a long-lived controller renders more and more chart
+	// versions over its lifetime; a version pruned too early is simply pulled
+	// again on the next reconcile that needs it. The default value is 30
+	// minutes. Use the DYNAMIC_CHART_CACHE_TTL environment variable (Go duration
+	// syntax, e.g. "72h") to change it, or set it to "0" to disable pruning.
+	DynamicChartCacheTTL = 30 * time.Minute
+
+	// DynamicChartAllowHTTP overrides the default protocol restriction
+	// internal/render.PullChart and internal/render.RemoteChartVersions place
+	// on DynamicChartRepository, which otherwise accepts only an "https://"
+	// URL. It is disabled by default: a plain "http://" repository puts a
+	// chart archive on the wire unauthenticated and unencrypted. Set the
+	// DYNAMIC_CHART_ALLOW_HTTP environment variable to a truthy value ("true",
+	// "1") to allow it anyway, e.g. for a disconnected cluster whose only
+	// reachable mirror serves plain HTTP.
+	DynamicChartAllowHTTP = false
 )
 
 const (
@@ -85,6 +131,11 @@ const (
 	envWatchNamespace           = "WATCH_NAMESPACE"
 	envBridgeBindAddress        = "BRIDGE_BIND_ADDRESS"
 	envEnableBridge             = "ENABLE_BRIDGE"
+	envEnableDynamicChartPull   = "ENABLE_DYNAMIC_CHART_PULL"
+	envDynamicChartRepository   = "DYNAMIC_CHART_REPOSITORY"
+	envDynamicChartCacheDir     = "DYNAMIC_CHART_CACHE_DIRECTORY"
+	envDynamicChartCacheTTL     = "DYNAMIC_CHART_CACHE_TTL"
+	envDynamicChartAllowHTTP    = "DYNAMIC_CHART_ALLOW_HTTP"
 )
 
 // Load reads Operator settings from environment variables.
@@ -134,4 +185,49 @@ func Load() {
 	if enableBridge, err := strconv.ParseBool(os.Getenv(envEnableBridge)); err == nil {
 		EnableBridge = enableBridge
 	}
+
+	if enableDynamicChartPullStr := os.Getenv(envEnableDynamicChartPull); enableDynamicChartPullStr != "" {
+		if enableDynamicChartPull, err := strconv.ParseBool(enableDynamicChartPullStr); err == nil {
+			DynamicChartPullEnabled = enableDynamicChartPull
+		} else {
+			warnInvalidEnv(envEnableDynamicChartPull, enableDynamicChartPullStr, err, DynamicChartPullEnabled)
+		}
+	}
+
+	if dynamicChartRepository := os.Getenv(envDynamicChartRepository); dynamicChartRepository != "" {
+		DynamicChartRepository = dynamicChartRepository
+	}
+
+	if dynamicChartCacheDir := os.Getenv(envDynamicChartCacheDir); dynamicChartCacheDir != "" {
+		DynamicChartCacheDirectory = dynamicChartCacheDir
+	}
+
+	if dynamicChartCacheTTLStr := os.Getenv(envDynamicChartCacheTTL); dynamicChartCacheTTLStr != "" {
+		if dynamicChartCacheTTL, err := time.ParseDuration(dynamicChartCacheTTLStr); err == nil {
+			DynamicChartCacheTTL = dynamicChartCacheTTL
+		} else {
+			// A plausible typo, e.g. "30" for "30m": time.ParseDuration requires
+			// a unit, and silently keeping the default here would leave no sign
+			// anything was wrong.
+			warnInvalidEnv(envDynamicChartCacheTTL, dynamicChartCacheTTLStr, err, DynamicChartCacheTTL)
+		}
+	}
+
+	if dynamicChartAllowHTTPStr := os.Getenv(envDynamicChartAllowHTTP); dynamicChartAllowHTTPStr != "" {
+		if dynamicChartAllowHTTP, err := strconv.ParseBool(dynamicChartAllowHTTPStr); err == nil {
+			DynamicChartAllowHTTP = dynamicChartAllowHTTP
+		} else {
+			warnInvalidEnv(envDynamicChartAllowHTTP, dynamicChartAllowHTTPStr, err, DynamicChartAllowHTTP)
+		}
+	}
+}
+
+// warnInvalidEnv reports, on stderr, that the named environment variable
+// carried a value Load could not parse, so it kept the given default instead
+// of failing outright. Load runs before a structured logger exists (main's
+// init, ahead of ctrl.SetLogger), and this package takes no logging
+// dependency of its own, so stderr is what makes a bad setting visible in
+// the Pod's own logs rather than silently ignored.
+func warnInvalidEnv(name, value string, err error, kept any) {
+	fmt.Fprintf(os.Stderr, "settings: %s=%q is invalid (%v), keeping %v\n", name, value, err, kept)
 }

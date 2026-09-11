@@ -52,6 +52,7 @@ const (
 const (
 	reasonChartRendered     = "ChartRendered"
 	reasonRenderFailed      = "RenderFailed"
+	reasonChartPullFailed   = "ChartPullFailed"
 	reasonHooksFailed       = "HooksFailed"
 	reasonApplyFailed       = "ApplyFailed"
 	reasonWorkloadsReady    = "WorkloadsReady"

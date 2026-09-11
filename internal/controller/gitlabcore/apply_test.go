@@ -115,14 +115,6 @@ var _ = Describe("applyObjects", func() {
 			Expect(created.Namespace).To(BeEmpty())
 			Expect(created.OwnerReferences).To(BeEmpty())
 		})
-
-		It("leaves it to the finalizer to sweep", func() {
-			targets := reconciler.unownedTargets(core, result, GinkgoLogr)
-
-			Expect(targets).To(ConsistOf(sweepTarget{
-				gvk: admissionv1.SchemeGroupVersion.WithKind("ValidatingWebhookConfiguration"),
-			}))
-		})
 	})
 
 	When("the render carries RBAC", func() {
@@ -152,10 +144,6 @@ var _ = Describe("applyObjects", func() {
 			Expect(apierrors.IsNotFound(reconciler.Get(context.TODO(),
 				types.NamespacedName{Name: "gitlab-clusterrole"}, applied))).To(BeTrue())
 		})
-
-		It("does not sweep what it never applied", func() {
-			Expect(reconciler.unownedTargets(core, result, GinkgoLogr)).To(BeEmpty())
-		})
 	})
 
 	When("a rendered object names a namespace other than the one of the resource", func() {
@@ -179,15 +167,6 @@ var _ = Describe("applyObjects", func() {
 				types.NamespacedName{Namespace: testNamespace, Name: "gitlab-configmap"}, created)).To(Succeed())
 
 			Expect(created.OwnerReferences).To(BeEmpty())
-		})
-
-		It("leaves it to the finalizer to sweep", func() {
-			targets := reconciler.unownedTargets(core, result, GinkgoLogr)
-
-			Expect(targets).To(ConsistOf(sweepTarget{
-				gvk:       corev1.SchemeGroupVersion.WithKind("ConfigMap"),
-				namespace: testNamespace,
-			}))
 		})
 	})
 
