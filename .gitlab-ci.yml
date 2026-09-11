@@ -72,7 +72,7 @@ variables:
   DOCKER_DIND_IMAGE: ${DOCKERHUB_PREFIX}/docker:${DOCKER_VERSION}-dind
 
   DOCS_HUGO_IMAGE: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/docs-gitlab-com-builder:hugo-0.154.5
-  DOCS_LINT_IMAGE: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.24-vale-3.18.0-markdownlint2-0.23.2-lychee-0.24.2-rumdl-0.2.60
+  DOCS_LINT_IMAGE: registry.gitlab.com/gitlab-org/technical-writing/docs-gitlab-com/lint-markdown:alpine-3.24-vale-3.21.0-markdownlint2-0.23.2-lychee-0.24.2-rumdl-0.2.69
 
 stages:
   - check
