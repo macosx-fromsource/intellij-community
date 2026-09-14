@@ -164,6 +164,12 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "GitLabCore")
 		os.Exit(1)
 	}
+
+	// setupSiphon is gated the same way (see siphon.go / siphon_stub.go).
+	if err := setupSiphon(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Siphon")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	// setupBridge is a no-op unless the binary is built with the `bridge` build

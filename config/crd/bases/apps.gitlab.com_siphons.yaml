@@ -1,0 +1,507 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: siphons.apps.gitlab.com
+spec:
+  group: apps.gitlab.com
+  names:
+    kind: Siphon
+    listKind: SiphonList
+    plural: siphons
+    shortNames:
+    - sph
+    singular: siphon
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.gitlabRef.name
+      name: GITLAB
+      type: string
+    - jsonPath: .status.phase
+      name: STATUS
+      type: string
+    - jsonPath: .status.version
+      name: VERSION
+      type: string
+    - jsonPath: .status.tableCount
+      name: TABLES
+      priority: 1
+      type: integer
+    name: v2alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Siphon streams change data capture from the PostgreSQL database of a GitLab instance into
+          ClickHouse, through NATS JetStream.
+
+          It is a namespace-scoped peer of GitLabCore and Orbit, backed by the Siphon chart. See ADR 27.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Specification of the desired behavior of a Siphon deployment.
+            properties:
+              chart:
+                description: Chart is the specification of the Siphon chart that is
+                  used to deploy the pipeline.
+                properties:
+                  values:
+                    description: |-
+                      Values is the set of Helm values that is used to render the chart. A validating webhook
+                      checks the effective values against the `values.schema.json` of the chart.
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  version:
+                    description: Version is the semantic version of the Helm chart.
+                    pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
+                    type: string
+                type: object
+              gitlabRef:
+                description: |-
+                  GitLabRef names the GitLabCore instance whose database this deployment streams. It resolves
+                  the GitLab application version, which pins the table definitions to the deployed schema,
+                  and it gates the rollout: the release is not applied until that instance reports available.
+                properties:
+                  name:
+                    description: Name is the name of the GitLabCore resource in the
+                      same namespace.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+              queue:
+                description: Queue is the NATS JetStream server the stream passes
+                  through.
+                properties:
+                  auth:
+                    description: |-
+                      Auth is the user name and password the client authenticates with. Leave it unset for a
+                      server that accepts anonymous clients.
+                    properties:
+                      passwordSecretRef:
+                        description: PasswordSecretRef selects the key of the Secret
+                          that holds the password.
+                        properties:
+                          key:
+                            description: Key is the key of the Secret to read.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name is the name of the Secret.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      usernameSecretRef:
+                        description: UsernameSecretRef selects the key of the Secret
+                          that holds the user name.
+                        properties:
+                          key:
+                            description: Key is the key of the Secret to read.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name is the name of the Secret.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                    required:
+                    - passwordSecretRef
+                    - usernameSecretRef
+                    type: object
+                  tls:
+                    description: TLS is the client certificate the connection presents.
+                    properties:
+                      caCertKey:
+                        default: ca.crt
+                        description: CACertKey is the key holding the certificate
+                          authority bundle.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      clientCertKey:
+                        default: tls.crt
+                        description: ClientCertKey is the key holding the client certificate.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      clientKeyKey:
+                        default: tls.key
+                        description: ClientKeyKey is the key holding the client private
+                          key.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      secretName:
+                        description: SecretName is the name of the Secret in the namespace
+                          of the resource.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - secretName
+                    type: object
+                  url:
+                    description: URL is the NATS server URL, for example `nats://nats.nats.svc.cluster.local:4222`.
+                    maxLength: 2048
+                    minLength: 1
+                    pattern: ^nats://
+                    type: string
+                required:
+                - url
+                type: object
+              sink:
+                description: Sink is the ClickHouse server the stream is written to.
+                properties:
+                  database:
+                    description: |-
+                      Database is the database holding the target tables, for example
+                      `gitlab_clickhouse_main_production`.
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  host:
+                    description: Host is the hostname of the ClickHouse server.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  passwordSecretRef:
+                    description: PasswordSecretRef selects the key of the Secret that
+                      holds the password of that user.
+                    properties:
+                      key:
+                        description: Key is the key of the Secret to read.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name is the name of the Secret.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  port:
+                    default: 9000
+                    description: Port is the port of the ClickHouse native protocol,
+                      not of the HTTP interface.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  ssl:
+                    default: false
+                    description: SSL turns TLS on for the native protocol connection.
+                      The port changes with it, so set both.
+                    type: boolean
+                  username:
+                    description: |-
+                      Username is the ClickHouse user the consumer and the reconciler connect as. It needs INSERT
+                      and SELECT on the target tables.
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                required:
+                - database
+                - host
+                - passwordSecretRef
+                - username
+                type: object
+                x-kubernetes-validations:
+                - message: spec.sink.port is the ClickHouse native protocol port,
+                    not the HTTP interface; 8123 is the HTTP interface and Siphon
+                    does not speak it
+                  rule: self.port != 8123
+              source:
+                description: Source is the PostgreSQL server the change data capture
+                  stream reads.
+                properties:
+                  advisoryLockID:
+                    default: 1
+                    description: |-
+                      AdvisoryLockID is the PostgreSQL advisory lock the producer takes to elect itself. Every
+                      producer against this database must agree on it, and two Siphon deployments that share it
+                      serialize rather than run in parallel. Change it only to run a second, independent stream
+                      off the same database.
+                    format: int32
+                    maximum: 2147483647
+                    minimum: 1
+                    type: integer
+                  database:
+                    default: gitlabhq_production
+                    description: |-
+                      Database is the database to replicate. Changing it re-snapshots every table, so it is
+                      immutable; delete and recreate the resource to point the pipeline elsewhere.
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: spec.source.database is immutable
+                      rule: self == oldSelf
+                  host:
+                    description: |-
+                      Host is the hostname of the PostgreSQL server, for example
+                      `gitlab-postgresql-rw.databases.svc.cluster.local`. It must be the primary: a logical
+                      replication slot is not created on a standby.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  passwordSecretRef:
+                    description: |-
+                      PasswordSecretRef selects the key of the Secret that holds the password of that role. The
+                      chart creates no Secret and the Operator reads none: the value reaches the pod as an
+                      environment variable and is substituted into the configuration at startup.
+                    properties:
+                      key:
+                        description: Key is the key of the Secret to read.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      name:
+                        description: Name is the name of the Secret.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  port:
+                    default: 5432
+                    description: Port is the port of the PostgreSQL server.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  sslMode:
+                    default: require
+                    description: SSLMode is the libpq TLS mode of the connection.
+                    enum:
+                    - disable
+                    - allow
+                    - prefer
+                    - require
+                    - verify-ca
+                    - verify-full
+                    type: string
+                  user:
+                    default: siphon
+                    description: |-
+                      User is the login role the producer connects as. It needs REPLICATION, EXECUTE on
+                      `siphon_alter_publication`, and SELECT on the replicated tables.
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                required:
+                - host
+                - passwordSecretRef
+                type: object
+              tables:
+                default: {}
+                description: |-
+                  Tables selects how the table definitions of the deployed GitLab version reach the pods.
+                  It defaults to an empty object so that the defaults of its own fields apply, which a nested
+                  default does not do while the object itself is absent.
+                properties:
+                  image:
+                    description: |-
+                      Image overrides the table definitions image. Left unset, it is
+                      `registry.gitlab.com/gitlab-org/gitlab/gitlab-siphon-tables` tagged with the application
+                      version of the GitLab chart the referenced instance deploys. Set it only to pin a version
+                      the reference does not resolve to.
+                    maxLength: 512
+                    type: string
+                  pullSecretRef:
+                    description: |-
+                      PullSecretRef names a `kubernetes.io/dockerconfigjson` Secret the image is pulled with. It
+                      authenticates the pull the Operator performs on the `ConfigMap` path, and it becomes the pod
+                      image pull secret on the `ImageVolume` path. Leave it unset for the public image.
+                    properties:
+                      name:
+                        description: Name is the name of the Secret.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  source:
+                    default: Auto
+                    description: |-
+                      Source selects where the definitions come from. `ImageVolume` mounts the image into the pod,
+                      which needs both a cluster and a container runtime that serve native OCI image volumes.
+                      `ConfigMap` has the Operator pull the image, extract the definitions, and publish them to a
+                      ConfigMap it owns. `Auto`, the default, resolves to `ConfigMap`, which works everywhere:
+                      nothing in the Kubernetes API reports whether the runtime serves image volumes, and a pod
+                      that names one it cannot mount is admitted and then fails to create its container.
+                    enum:
+                    - Auto
+                    - ImageVolume
+                    - ConfigMap
+                    type: string
+                type: object
+            required:
+            - gitlabRef
+            - queue
+            - sink
+            - source
+            type: object
+          status:
+            description: |-
+              Most recently observed status of the Siphon deployment.
+              It is read-only to the user.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              gitlabVersion:
+                description: |-
+                  GitLabVersion is the application version of the referenced instance, the version the table
+                  definitions are pinned to.
+                type: string
+              phase:
+                type: string
+              publication:
+                description: |-
+                  Publication and ReplicationSlot are the PostgreSQL objects the producer uses. They are
+                  derived from the fixed topology rather than observed, and they are recorded because deleting
+                  this resource leaves both behind: a retained slot pins write-ahead log and will eventually
+                  fill the volume of the source server.
+                type: string
+              replicationSlot:
+                type: string
+              streamName:
+                description: |-
+                  StreamName is the NATS JetStream stream the events pass through. It is left behind on
+                  deletion too.
+                type: string
+              tableCount:
+                description: TableCount is how many table definitions that ConfigMap
+                  holds.
+                format: int32
+                type: integer
+              tablesCheckedAt:
+                description: |-
+                  TablesCheckedAt is when the digest was last resolved against the registry. It paces that
+                  lookup, which would otherwise run on every reconcile.
+                format: date-time
+                type: string
+              tablesConfigMap:
+                description: TablesConfigMap is the ConfigMap the Operator publishes
+                  the extracted definitions to.
+                type: string
+              tablesDigest:
+                description: |-
+                  TablesDigest is the digest that image resolved to. It is the change detector for a tag that
+                  moves, and it is empty while the definitions are mounted rather than extracted.
+                type: string
+              tablesImage:
+                description: TablesImage is the fully resolved table definitions image
+                  reference.
+                type: string
+              tablesSource:
+                description: TablesSource is what `spec.tables.source` resolved to,
+                  `ImageVolume` or `ConfigMap`.
+                type: string
+              version:
+                type: string
+            required:
+            - conditions
+            type: object
+        type: object
+        x-kubernetes-validations:
+        - message: 'the name must be at most 31 characters: the Operator derives Deployment,
+            ServiceAccount and pod selector names from it, and the longest of those
+            is <name>-siphon-reconciler-clickhouse-sa, which a 63 character label
+            value has to hold'
+          rule: size(self.metadata.name) <= 31
+    served: true
+    storage: true
+    subresources:
+      status: {}

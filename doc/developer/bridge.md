@@ -115,7 +115,7 @@ The task adds three definitions, each with `v2alpha1` as its only version:
 |---|---|
 | `gitlabcores.apps.gitlab.com` | `GitLabCore` |
 | `orbits.apps.gitlab.com` | `Orbit` |
-| `datainsightplatforms.apps.gitlab.com` | `DataInsightPlatform` |
+| `siphons.apps.gitlab.com` | `Siphon` |
 
 `GitLabCore` is a definition of its own, not a second version of `GitLab`. A definition carries one
 kind across all of its versions, so a differently named kind needs a definition of its own. The
@@ -132,8 +132,9 @@ them, every API call returns an error from the Kubernetes API server.
 
 > [!note]
 > Only `GitLabCore` is reconciled, and only in a build with the `bridge` tag and `ENABLE_BRIDGE=true`.
-> For more information, see [the GitLabCore reconciler](gitlabcore.md). Creating an `Orbit` or a
-> `DataInsightPlatform` stores the object and nothing else happens.
+> For more information, see [the GitLabCore reconciler](gitlabcore.md) and
+> [the Siphon reconciler](siphon.md). `Siphon` is reconciled under the same two gates. Creating an
+> `Orbit` stores the object and nothing else happens.
 
 ## Create a service account and grant access
 

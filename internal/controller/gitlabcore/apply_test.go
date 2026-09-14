@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/internal/controller/release"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/internal/render"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
@@ -174,7 +175,7 @@ var _ = Describe("applyObjects", func() {
 		core := CreateMockGitLabCore(releaseName, testNamespace, support.Values{})
 		reconciler := mockReconciler()
 
-		definition := mockObject("apiextensions.k8s.io/v1", crdKind, "gateways.gateway.networking.k8s.io")
+		definition := mockObject("apiextensions.k8s.io/v1", release.CRDKind, "gateways.gateway.networking.k8s.io")
 		configMap := mockObject("v1", "ConfigMap", "gitlab-configmap")
 
 		result := &render.Result{

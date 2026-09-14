@@ -178,8 +178,18 @@ it configures. Keep the list short: every entry is a value an administrator sets
 | `Initialized` | The chart resolved and rendered, and its hooks ran. |
 | `Available` | Every rendered workload has its desired replicas ready. |
 
-`status.phase` reports `Preparing`, `Running`, or `Failed`, and `status.version` records the chart
-version that was applied.
+`status.phase` reports `Preparing`, `Running`, or `Failed`, `status.version` records the chart
+version that was applied, and `status.gitlabVersion` the version of GitLab that chart deploys, such
+as `19.3.2`. Both versions describe what was applied rather than what the spec asks for, so a
+resource stepping through a multi-minor upgrade reports the version it has converged to so far.
+
+The application version is read off the render, not from the catalog of charts the Operator carries:
+a release can be rendered from a chart pulled at reconcile time, which the catalog knows nothing
+about. Chart 10.3 and later label the migrations Job `gitlab.com/target-version`, which is
+authoritative because the chart computes it and it accounts for a `global.gitlabVersion` override;
+earlier charts, and releases with the migrations component disabled, fall back to the `appVersion`
+the chart declares. This is the only place the application version is published, and `Siphon` reads
+it to pin its table definitions.
 
 ## The reconciler installs no definitions and no RBAC
 

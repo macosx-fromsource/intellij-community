@@ -252,11 +252,14 @@ components:
           type:
             - array
             - "null"
+        gitlabVersion:
+          description: Deployed GitLab version, such as 19.3.2.
+          type: string
         phase:
           description: Current lifecycle phase.
           type: string
         version:
-          description: Deployed GitLab version.
+          description: Deployed GitLab chart version, an unrelated number to the GitLab version it deploys.
           type: string
       type: object
   securitySchemes:

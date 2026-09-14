@@ -210,9 +210,11 @@ export interface components {
         StatusDTO: {
             /** @description Detailed status conditions. */
             conditions?: components["schemas"]["Condition"][] | null;
+            /** @description Deployed GitLab version, such as 19.3.2. */
+            gitlabVersion?: string;
             /** @description Current lifecycle phase. */
             phase?: string;
-            /** @description Deployed GitLab version. */
+            /** @description Deployed GitLab chart version, an unrelated number to the GitLab version it deploys. */
             version?: string;
         };
     };

@@ -24,6 +24,12 @@ const (
 	valueField = "value"
 )
 
+// The container lists of a pod template.
+const (
+	containersField     = "containers"
+	initContainersField = "initContainers"
+)
+
 // podTemplateKinds are the workload kinds whose pod template lives at
 // spec.template. CronJob keeps its template at spec.jobTemplate and is not
 // supported, like in the v1beta1 controller.
@@ -105,7 +111,7 @@ func SetPodTemplateAnnotation(obj *unstructured.Unstructured, key, value string)
 // container of a workload, replacing an existing entry with the same name. It
 // fails when the init container is absent.
 func UpsertInitContainerEnv(obj *unstructured.Unstructured, containerName, envName, envValue string) error {
-	container, err := findContainer(obj, "initContainers", containerName)
+	container, err := findContainer(obj, initContainersField, containerName)
 	if err != nil {
 		return err
 	}
@@ -117,7 +123,7 @@ func UpsertInitContainerEnv(obj *unstructured.Unstructured, containerName, envNa
 // name from the named init container of a workload. It fails when the init
 // container is absent.
 func RemoveInitContainerEnv(obj *unstructured.Unstructured, containerName, envName string) error {
-	container, err := findContainer(obj, "initContainers", containerName)
+	container, err := findContainer(obj, initContainersField, containerName)
 	if err != nil {
 		return err
 	}
@@ -129,7 +135,7 @@ func RemoveInitContainerEnv(obj *unstructured.Unstructured, containerName, envNa
 // the pod template, replacing existing entries with the same name. The
 // pre-migrations Job derivation uses it to skip post-deployment migrations.
 func UpsertEnvInAllContainers(obj *unstructured.Unstructured, envName, envValue string) error {
-	containers, err := containerList(obj, "containers")
+	containers, err := containerList(obj, containersField)
 	if err != nil {
 		return err
 	}
@@ -141,7 +147,7 @@ func UpsertEnvInAllContainers(obj *unstructured.Unstructured, envName, envValue 
 	for _, item := range containers {
 		container, ok := item.(map[string]interface{})
 		if !ok {
-			return malformedContainerError(obj, "containers")
+			return malformedContainerError(obj, containersField)
 		}
 
 		if err := upsertEnv(obj, container, envName, envValue); err != nil {

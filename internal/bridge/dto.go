@@ -76,9 +76,10 @@ type ChartDTO struct {
 
 // StatusDTO is the read-only observed state of a GitLab resource.
 type StatusDTO struct {
-	Phase      string             `json:"phase,omitempty" doc:"Current lifecycle phase."`
-	Version    string             `json:"version,omitempty" doc:"Deployed GitLab version."`
-	Conditions []metav1.Condition `json:"conditions,omitempty" doc:"Detailed status conditions."`
+	Phase         string             `json:"phase,omitempty" doc:"Current lifecycle phase."`
+	Version       string             `json:"version,omitempty" doc:"Deployed GitLab chart version, an unrelated number to the GitLab version it deploys."`
+	GitLabVersion string             `json:"gitlabVersion,omitempty" doc:"Deployed GitLab version, such as 19.3.2."`
+	Conditions    []metav1.Condition `json:"conditions,omitempty" doc:"Detailed status conditions."`
 }
 
 // toResource converts an internal GitLabCore object into its wire
@@ -121,9 +122,10 @@ func toResource(core *apiv2alpha1.GitLabCore) GitLabResource {
 	}
 
 	res.Status = &StatusDTO{
-		Phase:      core.Status.Phase,
-		Version:    core.Status.Version,
-		Conditions: core.Status.Conditions,
+		Phase:         core.Status.Phase,
+		Version:       core.Status.Version,
+		GitLabVersion: core.Status.GitLabVersion,
+		Conditions:    core.Status.Conditions,
 	}
 
 	return res

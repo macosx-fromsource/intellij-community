@@ -142,6 +142,16 @@ type Result struct {
 	// be parsed as Kubernetes objects or carried unusable hook
 	// annotations.
 	Warnings []Warning
+
+	// AppVersion is the appVersion the top-level chart declares, the version
+	// of the application it deploys, verbatim and so possibly prefixed with
+	// a "v". It is unrelated to the chart version, and a chart may declare
+	// none, in which case it is empty.
+	//
+	// Read it to answer what a render deploys without reaching for a chart
+	// catalog: it comes from the chart that was actually rendered, whether
+	// that came from disk or from a repository.
+	AppVersion string
 }
 
 // Hook is a rendered manifest that declares a "helm.sh/hook" annotation.
@@ -285,6 +295,10 @@ func Render(request Request) (*Result, error) {
 	}
 
 	result := &Result{}
+
+	if loadedChart.Metadata != nil {
+		result.AppVersion = loadedChart.Metadata.AppVersion
+	}
 
 	parseFiles(result, files, loadedChart.Name())
 	parseCRDs(result, loadedChart)

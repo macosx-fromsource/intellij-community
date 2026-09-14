@@ -18,9 +18,9 @@ Bridge, with one user-facing resource per chart. It records what the new API is 
 looks like. It does not define how the resources are shaped, how they reach the Helm charts, or how
 the Operator applies the rendered output.
 
-This ADR is the design behind that commitment. It outlines the new GitLab, Orbit, and
-DataInsightPlatform custom resources, covering the resource set, the API group and version, the
-shape of the specification, and how the specification is validated and converted. How the Operator
+This ADR is the design behind that commitment. It outlines the new GitLab, Orbit, and Siphon
+custom resources, covering the resource set, the API group and version, the shape of the
+specification, and how the specification is validated and converted. How the Operator
 applies the rendered chart output is not part of this decision.
 
 ## Decision
@@ -36,11 +36,11 @@ The `v2alpha1` API starts with three:
 |---|---|
 | `GitLabCore` | [GitLab umbrella chart](https://gitlab.com/gitlab-org/charts/gitlab) |
 | `Orbit` | [`orbit-helm-charts`](https://gitlab.com/gitlab-org/orbit/orbit-helm-charts) |
-| `DataInsightPlatform` | [dip-chart](https://gitlab.com/gitlab-org/cloud-native/charts/dip-chart) |
+| `Siphon` | [`siphon-helm-charts`](https://gitlab.com/gitlab-org/analytics-section/platform-insights/siphon-helm-charts) |
 
-Administrators and Bridge create and edit each resource directly. `Orbit` and
-`DataInsightPlatform` name the `GitLabCore` they belong to through a `spec.gitlabRef` field,
-which lets a namespace hold more than one GitLab instance.
+Administrators and Bridge create and edit each resource directly. `Orbit` and `Siphon` name the
+`GitLabCore` they belong to through a `spec.gitlabRef` field, which lets a namespace hold more than
+one GitLab instance.
 
 The set of resources grows as the GitLab umbrella chart is broken up and new components are
 introduced. Each new chart gains a resource of its own. For example:
@@ -118,8 +118,9 @@ spec:
         enabled: false
 ```
 
-`Orbit` and `DataInsightPlatform` carry no structured settings yet. They accept the reference to
-their GitLab instance, a chart version, and chart values.
+`Orbit` carries no structured settings yet. It accepts the reference to its GitLab instance, a
+chart version, and chart values. [ADR 27](0027-siphon-custom-resource.md) gives `Siphon`
+structured fields of its own.
 
 ```yaml
 apiVersion: apps.gitlab.com/v2alpha1
@@ -210,8 +211,8 @@ This ADR does not settle:
 - Validating the effective values against the chart schema catches bad configuration at admission
   time instead of at reconcile time. It also couples admission to chart availability. If the
   webhook cannot obtain a chart, writes to the resource fail, so the Operator needs the charts
-  cached or bundled. Neither `orbit-helm-charts` nor `dip-chart` ships a `values.schema.json`
-  today, so adding one to each is a prerequisite.
+  cached or bundled. `orbit-helm-charts` does not ship a `values.schema.json` today, so adding one
+  is a prerequisite.
 - Distributing no `v2alpha1` definition means a released Operator has no effect on existing
   installations. The version is absent from discovery, so no tool that reads without pinning a
   version changes behavior. The cost is that the definitions and the Operator that reconciles them

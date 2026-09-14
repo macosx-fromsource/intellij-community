@@ -183,15 +183,38 @@ tasks:
   install_v2alpha1_crds:
     desc: |
       Installs the apps.gitlab.com/v2alpha1 CRDs for Bridge development, and grants the manager
-      ServiceAccount what the GitLabCore reconciler needs on top of the chart permissions.
+      ServiceAccount what the GitLabCore and Siphon reconcilers need on top of the chart
+      permissions.
       These are not part of the Helm chart, so they reach no release manifest and no OLM bundle.
       Acts on the current kubectl context.
     vars:
       DRY_RUN: '{{ default "none" .DRY_RUN }}'
     cmds:
-      # Adds GitLabCore, Orbit, and DataInsightPlatform. Each is a definition of its own with
-      # v2alpha1 as its only version, so the existing GitLab definition is left alone.
-      - $KUBECTL apply --dry-run={{ .DRY_RUN }} -f config/crd/bases/
+      # Adds GitLabCore, Orbit, and Siphon. Each is a definition of its own with v2alpha1 as its
+      # only version, so the existing GitLab definition is left alone. This task only applies, so
+      # it never removes a definition a cluster already carries.
+      #
+      # The definitions deploy/chart/crds/ ships are skipped, which today is the v1beta1 GitLab
+      # one. Applying it here would make kubectl-client-side-apply the owner of `.spec.versions`,
+      # and the next `helm install`/`helm upgrade` of the Operator would then fail outright:
+      #
+      #   Error: failed to install CRD crds/gitlab.yaml: conflict occurred while applying object
+      #   /gitlabs.apps.gitlab.com … conflict with "kubectl-client-side-apply": .spec.versions
+      #
+      # Helm owns what it ships, so this task leaves those definitions to it.
+      - cmd: |
+          chart_owned=$(awk '/^  name:/ { print $2 }' deploy/chart/crds/*.yaml)
+          for manifest in config/crd/bases/*.yaml; do
+            name=$(awk '/^  name:/ { print $2; exit }' "$manifest")
+            case " $chart_owned " in
+              *" $name "*)
+                echo "skipping $name: deploy/chart/crds owns it"
+                continue
+                ;;
+            esac
+            $KUBECTL apply --dry-run={{ .DRY_RUN }} -f "$manifest"
+          done
+        silent: true
       # The chart grants the manager the v1beta1 GitLab permissions only, and no
       # PodDisruptionBudget permissions at all: the v1beta1 controller applies no PDB, while the
       # GitLabCore reconciler applies everything the chart renders.
@@ -217,6 +240,33 @@ tasks:
             verbs: [update]
           - apiGroups: [policy]
             resources: [poddisruptionbudgets]
+            verbs: [get, list, watch, create, update, patch, delete]
+          - apiGroups: [apps.gitlab.com]
+            resources: [siphons]
+            verbs: [get, list, watch, create, update, patch, delete]
+          - apiGroups: [apps.gitlab.com]
+            resources: [siphons/status]
+            verbs: [get, update, patch]
+          - apiGroups: [apps.gitlab.com]
+            resources: [siphons/finalizers]
+            verbs: [update]
+          # What the Siphon chart renders, plus the ConfigMap the Operator publishes the extracted
+          # table definitions to and the Secret it reads the registry credential from.
+          - apiGroups: [""]
+            resources: [configmaps, serviceaccounts]
+            verbs: [get, list, watch, create, update, patch, delete]
+          - apiGroups: [""]
+            resources: [secrets]
+            verbs: [get, list, watch]
+          # Read to report why a workload of a release is not ready. The chart-granted manager
+          # role has no pod permissions, because the v1beta1 controller reports a workload by
+          # name and never asks a pod why.
+          - apiGroups: [""]
+            resources: [pods]
+            verbs: [get, list]
+          # Rendered only on a cluster that serves the Prometheus operator API.
+          - apiGroups: [monitoring.coreos.com]
+            resources: [podmonitors]
             verbs: [get, list, watch, create, update, patch, delete]
           ---
           apiVersion: rbac.authorization.k8s.io/v1
@@ -499,12 +549,28 @@ tasks:
       - rm -rf $BUILD_DIR $INSTALL_DIR
 
   retrieve-charts:
+    desc: Retrieves every chart the Operator bakes in, at the pinned versions.
+    # Sequential, not `deps`: retrieve-gitlab-charts clears the charts directory before it
+    # writes, so anything else fetching into it has to run after, not alongside.
+    cmds:
+      - task: retrieve-gitlab-charts
+      - task: retrieve-siphon-charts
+
+  retrieve-gitlab-charts:
     desc: Retrieves GitLab charts at the versions in the CHART_VERSIONS file.
     sources:
       - ./scripts/retrieve_gitlab_charts.sh
       - ./CHART_VERSIONS
     cmds:
       - ./scripts/retrieve_gitlab_charts.sh
+
+  retrieve-siphon-charts:
+    desc: Retrieves Siphon charts at the versions in the SIPHON_CHART_VERSIONS file.
+    sources:
+      - ./scripts/retrieve_siphon_charts.sh
+      - ./SIPHON_CHART_VERSIONS
+    cmds:
+      - ./scripts/retrieve_siphon_charts.sh
 
   retrieve-charts-custom-ref:
     desc: Retrieves GitLab charts from a custom ref (defaults to master).

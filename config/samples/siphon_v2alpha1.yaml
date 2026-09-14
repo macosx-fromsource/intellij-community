@@ -1,0 +1,61 @@
+apiVersion: apps.gitlab.com/v2alpha1
+kind: Siphon
+metadata:
+  # At most 31 characters: the Operator derives the Deployment, ServiceAccount and pod selector
+  # names from it, and the longest of those is `<name>-siphon-reconciler-clickhouse-sa`, which has
+  # to fit the 63 characters a label value allows.
+  name: siphon
+spec:
+  gitlabRef:
+    name: gitlab # the GitLabCore resource in this namespace whose database is streamed
+  # The PostgreSQL server the change data capture stream reads. It must be the primary, run with
+  # `wal_level = logical`, and already carry the publication, the `siphon_alter_publication`
+  # function, the login role and the grants: the Operator creates none of them. See
+  # doc/developer/siphon.md for the DDL.
+  source:
+    host: gitlab-postgresql-rw.databases.svc.cluster.local # use a real host here
+    passwordSecretRef:
+      name: gitlab-siphon-postgresql
+      key: password
+    # `database` defaults to gitlabhq_production and is immutable: changing it re-snapshots every
+    # table. `user` defaults to siphon. `sslMode` defaults to require.
+    # `advisoryLockID` defaults to 1; change it only to run a second, independent stream off the
+    # same database, because two deployments that share it serialize rather than run in parallel.
+  # The NATS server, with JetStream enabled: Siphon uses streams, a key-value bucket to elect the
+  # active consumer, and an object store for oversized events.
+  queue:
+    url: nats://nats.nats.svc.cluster.local:4222 # use a real URL here
+    # auth:
+    #   usernameSecretRef: {name: nats-credentials, key: username}
+    #   passwordSecretRef: {name: nats-credentials, key: password}
+    # tls:
+    #   secretName: nats-client-certs # mounted whole, so each key becomes a file of that name
+  # The ClickHouse server, over the native protocol. `database` and `username` are required rather
+  # than defaulted: the target tables are created by GitLab's own ClickHouse migrations, so the
+  # Operator uses the reference it is given instead of guessing the schema layout.
+  sink:
+    host: clickhouse.databases.svc.cluster.local # use a real host here
+    database: gitlab_clickhouse_main_production
+    username: gitlab
+    passwordSecretRef:
+      name: gitlab-clickhouse-gitlab
+      key: password
+    # port defaults to 9000, the native protocol. 8123 is the HTTP interface, which Siphon does
+    # not speak, and is rejected.
+  # How the table definitions of the deployed GitLab version reach the pods. `Auto`, the default,
+  # mounts the OCI image directly on Kubernetes 1.35 and later, and has the Operator extract it
+  # into a ConfigMap otherwise. Force either with `ImageVolume` or `ConfigMap`.
+  tables:
+    source: Auto
+    # image: registry.gitlab.com/gitlab-org/gitlab/gitlab-siphon-tables:v19.2.0-ee
+    # pullSecretRef:
+    #   name: gitlab-registry-credentials
+  chart:
+    version: "X.Y.Z" # select a version from the SIPHON_CHART_VERSIONS file in the root of this project
+    values: {} # see https://gitlab.com/gitlab-org/analytics-section/platform-insights/siphon-helm-charts
+      # The topology is fixed: one producer, one ClickHouse consumer, one reconciler. Replicas buy
+      # active/standby failover, never parallelism, because the producer holds a PostgreSQL
+      # advisory lock and the consumer a NATS key-value lock. To shard, override
+      # `siphonLayoutConfigMap.data` here with more application identifiers -- using underscores,
+      # because the producer identifier becomes the replication slot name and a hyphen is a syntax
+      # error there.

@@ -95,8 +95,9 @@ $ tree -dL 2 .
   controllers. It is deprecated and frozen: it serves the `v1beta1` resources only, as does the
   `helm` directory that renders their charts. Fix bugs there, but add nothing new.
 - The `internal/controller` directory contains the controllers of the `v2alpha1` resources, one
-  package per resource. They render with `internal/render`. For more information, see
-  [The GitLabCore reconciler](gitlabcore.md) and
+  package per resource. They render with `internal/render`, and share the release mechanics through
+  `internal/controller/release`. For more information, see
+  [The GitLabCore reconciler](gitlabcore.md), [The Siphon reconciler](siphon.md), and
   [Helm rendering with internal/render](render.md).
 - The `api` directory contains the API resource definitions for the GitLab and GLBackup resources owned by the operator. The API definitions are grouped by their API version.
   The `*_types.go` file inside `api/<api_version>` contains spec definitions and markers used to generate the custom resource definitions and Cluster Service Version file used by OLM.
