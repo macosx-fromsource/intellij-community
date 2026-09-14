@@ -123,7 +123,7 @@ func (r *Reconciler) reconcileUpgrade(ctx context.Context, core *apiv2alpha1.Git
 			return ctrl.Result{}, err
 		}
 
-		return r.completeUpgradeStep(core, renderVersion), nil
+		return r.completeUpgradeStep(core, renderVersion, releaseGitLabVersion(release)), nil
 	}
 
 	migrationsJob := migrationsJobs[0]
@@ -151,7 +151,7 @@ func (r *Reconciler) reconcileUpgrade(ctx context.Context, core *apiv2alpha1.Git
 	}
 
 	if fullDone {
-		return r.finishUpgrade(ctx, core, gated, renderVersion, log)
+		return r.finishUpgrade(ctx, core, gated, renderVersion, releaseGitLabVersion(release), log)
 	}
 
 	// Gate 2: roll the new pods out with the schema check bypassed, and wait for
@@ -195,7 +195,7 @@ func (r *Reconciler) reconcileUpgrade(ctx context.Context, core *apiv2alpha1.Git
 // version. It is the last gate, reached once the post-deployment migrations have
 // run, and is idempotent: the bypass is already gone on later passes, so the
 // pristine template applies without another roll.
-func (r *Reconciler) finishUpgrade(ctx context.Context, core *apiv2alpha1.GitLabCore, gated []*unstructured.Unstructured, renderVersion string, log logr.Logger) (ctrl.Result, error) {
+func (r *Reconciler) finishUpgrade(ctx context.Context, core *apiv2alpha1.GitLabCore, gated []*unstructured.Unstructured, renderVersion, gitlabVersion string, log logr.Logger) (ctrl.Result, error) {
 	if err := r.applyGated(ctx, core, gated, finalizeGated, log); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -212,7 +212,7 @@ func (r *Reconciler) finishUpgrade(ctx context.Context, core *apiv2alpha1.GitLab
 		return requeueWithDefaultDelay()
 	}
 
-	return r.completeUpgradeStep(core, renderVersion), nil
+	return r.completeUpgradeStep(core, renderVersion, gitlabVersion), nil
 }
 
 // runPreMigrations pauses the gated workloads on their new template and runs the
@@ -241,10 +241,12 @@ func (r *Reconciler) runPreMigrations(ctx context.Context, core *apiv2alpha1.Git
 	return requeueWithDefaultDelay()
 }
 
-// completeUpgradeStep records the version this cycle converged to and reports
-// whether the target is reached or another minor step remains.
-func (r *Reconciler) completeUpgradeStep(core *apiv2alpha1.GitLabCore, renderVersion string) ctrl.Result {
+// completeUpgradeStep records the chart version this cycle converged to and the
+// application version behind it, and reports whether the target is reached or
+// another minor step remains.
+func (r *Reconciler) completeUpgradeStep(core *apiv2alpha1.GitLabCore, renderVersion, gitlabVersion string) ctrl.Result {
 	core.Status.Version = renderVersion
+	core.Status.GitLabVersion = gitlabVersion
 
 	if renderVersion == core.Spec.Chart.Version {
 		core.Status.Phase = PhaseRunning

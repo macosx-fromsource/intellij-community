@@ -3,11 +3,11 @@ package gitlabcore
 import (
 	"strings"
 
-	"github.com/mitchellh/copystructure"
 	"github.com/pkg/errors"
 
 	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/settings"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/internal/controller/release"
 	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support"
 )
 
@@ -112,25 +112,7 @@ func EffectiveValues(core *apiv2alpha1.GitLabCore) (support.Values, error) {
 
 // mergeUserValues merges spec.chart.values over the derived values.
 func mergeUserValues(values support.Values, core *apiv2alpha1.GitLabCore) error {
-	if core.Spec.Chart.Values.Object == nil {
-		return nil
-	}
-
-	userValues, err := copystructure.Copy(core.Spec.Chart.Values.Object)
-	if err != nil {
-		return errors.Wrap(err, "failed to copy spec.chart.values")
-	}
-
-	typedValues, ok := userValues.(map[string]interface{})
-	if !ok {
-		return errors.New("spec.chart.values is not an object")
-	}
-
-	if err := values.Merge(typedValues); err != nil {
-		return errors.Wrap(err, "failed to merge spec.chart.values")
-	}
-
-	return nil
+	return release.MergeUserValues(values, core.Spec.Chart.Values.Object)
 }
 
 // overrideValues are the settings an instance may not choose, because the

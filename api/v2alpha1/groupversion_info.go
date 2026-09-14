@@ -17,8 +17,8 @@ limitations under the License.
 // Package v2alpha1 contains API Schema definitions for the apps v2alpha1 API group.
 //
 // The group holds one custom resource per Helm chart that the Operator deploys, as decided in
-// ADR 24 and designed in ADR 26. All resources are namespace-scoped peers: GitLab, Orbit, and
-// DataInsightPlatform.
+// ADR 24 and designed in ADR 26. All resources are namespace-scoped peers: GitLabCore, Orbit, and
+// Siphon.
 //
 // +kubebuilder:object:generate=true
 // +groupName=apps.gitlab.com
@@ -39,9 +39,8 @@ var (
 	// OrbitGroupKind is the group kind of the Orbit resource, used in webhooks.
 	OrbitGroupKind = schema.GroupKind{Group: GroupVersion.Group, Kind: "Orbit"}
 
-	// DataInsightPlatformGroupKind is the group kind of the DataInsightPlatform resource, used in
-	// webhooks.
-	DataInsightPlatformGroupKind = schema.GroupKind{Group: GroupVersion.Group, Kind: "DataInsightPlatform"}
+	// SiphonGroupKind is the group kind of the Siphon resource, used in webhooks.
+	SiphonGroupKind = schema.GroupKind{Group: GroupVersion.Group, Kind: "Siphon"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

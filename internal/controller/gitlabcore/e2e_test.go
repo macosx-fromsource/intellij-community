@@ -148,11 +148,11 @@ var e2eClusterScopedKinds = []schema.GroupVersionKind{
 // e2eSkippedKinds are the kinds the reconciler never applies: the definitions
 // and the RBAC of the chart.
 var e2eSkippedKinds = []schema.GroupVersionKind{
-	{Group: "apiextensions.k8s.io", Version: "v1", Kind: crdKind},
-	{Group: rbacGroup, Version: "v1", Kind: "ClusterRole"},
-	{Group: rbacGroup, Version: "v1", Kind: "ClusterRoleBinding"},
-	{Group: rbacGroup, Version: "v1", Kind: "Role"},
-	{Group: rbacGroup, Version: "v1", Kind: "RoleBinding"},
+	{Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition"},
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole"},
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRoleBinding"},
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role"},
+	{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"},
 }
 
 func TestGitLabCoreReconciler(t *testing.T) {

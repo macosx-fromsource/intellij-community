@@ -96,6 +96,13 @@ type Reconciler struct {
 
 	// HookTimeout bounds one chart hook. It defaults to defaultHookTimeout.
 	HookTimeout time.Duration
+
+	// PodReader is asked why a workload of the release is not ready, and only
+	// then. It is the uncached reader of the manager, because nothing here
+	// watches pods and a cached read would start an informer for every pod in
+	// scope. Left unset, SetupWithManager takes it from the manager, and a
+	// not-ready workload is reported by name alone until it is set.
+	PodReader client.Reader
 }
 
 // +kubebuilder:rbac:groups=apps.gitlab.com,resources=gitlabcores,verbs=get;list;watch;create;update;patch;delete
@@ -105,6 +112,9 @@ type Reconciler struct {
 // The reconciler applies everything the chart renders, which the v1beta1
 // controller does not, so it needs permissions that controller never asked for.
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
+
+// Read to report why a workload of the release is not ready.
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list
 
 // Reconcile brings the cluster in line with one GitLabCore resource.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -238,9 +248,13 @@ func (r *Reconciler) reconcile(ctx context.Context, core *apiv2alpha1.GitLabCore
 		return ctrl.Result{}, err
 	}
 
-	// The version is recorded once the objects are applied, whether or not they
-	// are ready, because it describes what was deployed rather than its health.
+	// The versions are recorded once the objects are applied, whether or not
+	// they are ready, because they describe what was deployed rather than its
+	// health. The application version is read off the render, the only place it
+	// is available, and published for the resources that need it: Siphon pins
+	// the table definitions to it.
 	core.Status.Version = renderVersion
+	core.Status.GitLabVersion = releaseGitLabVersion(release)
 
 	ready, pending, err := r.workloadsReady(ctx, core, release)
 	if err != nil {
@@ -326,6 +340,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	if r.RESTClientGetter == nil {
 		r.RESTClientGetter = genericclioptions.NewConfigFlags(true)
+	}
+
+	if r.PodReader == nil {
+		r.PodReader = mgr.GetAPIReader()
 	}
 
 	// Nothing but the resource is watched. A release is hundreds of objects of

@@ -106,6 +106,15 @@ func MatchLabels(labels map[string]string) Predicate {
 	}
 }
 
+// HasLabel matches objects that carry the given label with a non-empty value.
+// Use it when the value is what is wanted rather than something to match on;
+// MatchLabels covers the other direction.
+func HasLabel(key string) Predicate {
+	return func(obj *unstructured.Unstructured) bool {
+		return obj.GetLabels()[key] != ""
+	}
+}
+
 // And matches objects that match every given predicate.
 func And(predicates ...Predicate) Predicate {
 	return func(obj *unstructured.Unstructured) bool {

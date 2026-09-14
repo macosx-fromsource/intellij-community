@@ -97,3 +97,14 @@ type SecretKeySelector struct {
 	// +kubebuilder:validation:MaxLength=253
 	Key string `json:"key"`
 }
+
+// LocalSecretReference names a Secret in the namespace of the resource, without selecting a key.
+// Use it where the whole Secret is consumed, for example a `kubernetes.io/dockerconfigjson`
+// registry credential.
+type LocalSecretReference struct {
+	// Name is the name of the Secret.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+}

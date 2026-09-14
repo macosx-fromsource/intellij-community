@@ -143,8 +143,24 @@ type ObjectStorageSpec struct {
 
 // GitLabCoreStatus defines the observed state of a GitLab instance.
 type GitLabCoreStatus struct {
-	Phase      string             `json:"phase,omitempty"`
-	Version    string             `json:"version,omitempty"`
+	Phase string `json:"phase,omitempty"`
+
+	// Version is the version of the GitLab chart the release was rendered from, which is an
+	// unrelated number to the version of the application it deploys. For that, read
+	// GitLabVersion.
+	Version string `json:"version,omitempty"`
+
+	// GitLabVersion is the version of the application the release deploys, without the leading
+	// `v`, such as `19.3.2`. It is recorded alongside Version, so it describes what is deployed
+	// rather than what the spec asks for, and a resource stepping through a multi-minor upgrade
+	// reports the version it has converged to so far.
+	//
+	// It is the only place the application version is published. Nothing else can derive it from
+	// the resource: the chart version in the spec does not imply it, and the chart the Operator
+	// renders may be one it does not carry on disk.
+	// +optional
+	GitLabVersion string `json:"gitlabVersion,omitempty"`
+
 	Conditions []metav1.Condition `json:"conditions"`
 }
 
@@ -153,6 +169,7 @@ type GitLabCoreStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="STATUS",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="VERSION",type=string,JSONPath=`.status.version`
+// +kubebuilder:printcolumn:name="GITLAB",type=string,JSONPath=`.status.gitlabVersion`
 // +operator-sdk:csv:customresourcedefinitions:displayName="GitLab Core"
 // +operator-sdk:csv:customresourcedefinitions:resources={{ConfigMap,v1,""},{Secret,v1,""},{Service,v1,""},{Pod,v1,""},{Deployment,v1,""},{StatefulSet,v1,""},{PersistentVolumeClaim,v1,""}}
 

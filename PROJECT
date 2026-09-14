@@ -34,7 +34,7 @@ resources:
     namespaced: true
   domain: gitlab.com
   group: apps
-  kind: DataInsightPlatform
+  kind: Siphon
   path: gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1
   version: v2alpha1
 version: "3"

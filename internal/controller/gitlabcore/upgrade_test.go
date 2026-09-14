@@ -295,6 +295,7 @@ var _ = Describe("reconcileUpgrade past the pre-migrations", func() {
 		It("records the version and reports the upgrade complete", func() {
 			Expect(result.RequeueAfter).To(Equal(defaultRequeueDelay))
 			Expect(core.Status.Version).To(Equal("10.1.6"))
+			Expect(core.Status.GitLabVersion).To(Equal("19.1.6"))
 			Expect(core.Status.Phase).To(Equal(PhaseRunning))
 
 			condition := apimeta.FindStatusCondition(core.Status.Conditions, ConditionProgressing)
@@ -343,10 +344,11 @@ var _ = Describe("completeUpgradeStep", func() {
 		core := &apiv2alpha1.GitLabCore{}
 		core.Spec.Chart.Version = "10.2.4"
 
-		result := reconciler.completeUpgradeStep(core, "10.1.6")
+		result := reconciler.completeUpgradeStep(core, "10.1.6", "19.1.6")
 
 		It("records the step and keeps progressing toward the target", func() {
 			Expect(core.Status.Version).To(Equal("10.1.6"))
+			Expect(core.Status.GitLabVersion).To(Equal("19.1.6"))
 			Expect(result.RequeueAfter).To(Equal(defaultRequeueDelay))
 
 			condition := apimeta.FindStatusCondition(core.Status.Conditions, ConditionProgressing)
@@ -360,10 +362,11 @@ var _ = Describe("completeUpgradeStep", func() {
 		core := &apiv2alpha1.GitLabCore{}
 		core.Spec.Chart.Version = "10.2.4"
 
-		result := reconciler.completeUpgradeStep(core, "10.2.4")
+		result := reconciler.completeUpgradeStep(core, "10.2.4", "19.2.4")
 
 		It("records the version, runs, and stops progressing", func() {
 			Expect(core.Status.Version).To(Equal("10.2.4"))
+			Expect(core.Status.GitLabVersion).To(Equal("19.2.4"))
 			Expect(core.Status.Phase).To(Equal(PhaseRunning))
 			Expect(result.RequeueAfter).To(Equal(defaultRequeueDelay))
 
@@ -481,7 +484,9 @@ const testMigrationsJobName = "gitlab-migrations"
 func mockMigrationsJob() *unstructured.Unstructured {
 	job := mockObject("batch/v1", "Job", testMigrationsJobName)
 	job.SetNamespace(testNamespace)
-	job.SetLabels(map[string]string{"app": "migrations"})
+	// The chart labels the migrations Job with the application version the
+	// release deploys, which is where the upgrade path reads it from.
+	job.SetLabels(map[string]string{"app": "migrations", targetVersionLabel: "v19.1.6"})
 
 	_ = unstructured.SetNestedSlice(job.Object, []interface{}{
 		map[string]interface{}{"name": "migrations", "image": "toolbox"},
