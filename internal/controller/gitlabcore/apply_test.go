@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/kubectl/pkg/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -209,9 +210,10 @@ func mockReconciler(objects ...client.Object) *Reconciler {
 		Build()
 
 	return &Reconciler{
-		Client: fakeClient,
-		Log:    GinkgoLogr,
-		Scheme: scheme.Scheme,
+		Client:   fakeClient,
+		Log:      GinkgoLogr,
+		Scheme:   scheme.Scheme,
+		Recorder: events.NewFakeRecorder(100),
 	}
 }
 

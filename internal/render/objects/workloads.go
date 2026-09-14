@@ -158,6 +158,40 @@ func UpsertEnvInAllContainers(obj *unstructured.Unstructured, envName, envValue 
 	return nil
 }
 
+// SetArgsInAllContainers overrides spec.args of every container of the pod
+// template with the given args, leaving spec.command untouched so the image
+// entrypoint still runs. The batched-background-migrations wait Job derivation
+// uses it to swap the migrations command for a poll loop while keeping the
+// entrypoint that activates the rendered configuration (database.yml and the
+// like); overriding command instead would bypass that setup and leave the
+// container on the image's built-in defaults.
+func SetArgsInAllContainers(obj *unstructured.Unstructured, args []string) error {
+	containers, err := containerList(obj, "containers")
+	if err != nil {
+		return err
+	}
+
+	if len(containers) == 0 {
+		return fmt.Errorf("objects: %s %q has no containers", obj.GetKind(), obj.GetName())
+	}
+
+	entries := make([]interface{}, len(args))
+	for i, arg := range args {
+		entries[i] = arg
+	}
+
+	for _, item := range containers {
+		container, ok := item.(map[string]interface{})
+		if !ok {
+			return malformedContainerError(obj, "containers")
+		}
+
+		container["args"] = entries
+	}
+
+	return nil
+}
+
 // expectKind fails when the object is not one of the expected kinds.
 func expectKind(obj *unstructured.Unstructured, kinds ...string) error {
 	if slices.Contains(kinds, obj.GetKind()) {
