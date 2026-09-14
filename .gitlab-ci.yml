@@ -153,6 +153,26 @@ pull_charts:
     - job: danger-review
       optional: true
 
+# Fetches only the Siphon chart, into the same charts/ path as pull_charts but
+# as a separate artifact. Only build_bridge_image needs this job, so the
+# public (non-bridge) images built from pull_charts' artifact alone never get
+# the Siphon chart baked in. Never runs on release tags: the bridge image
+# isn't built for those either.
+pull_siphon_charts:
+  stage: prepare
+  script: scripts/retrieve_siphon_charts.sh
+  artifacts:
+    paths:
+      - charts/
+  rules:
+    - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.if_commit_branch_or_mr_branch]
+  needs:
+    - job: danger-review
+      optional: true
+
 lint_code:
   extends: .cache
   stage: test
@@ -553,6 +573,9 @@ build_bridge_image:
   variables:
     DOCKERFILE: Dockerfile.bridge
     DOCKER_TAGS: ""
+  needs:
+    - !reference [.docker_build_job, needs]
+    - pull_siphon_charts
   rules:
     - !reference [.skip_if_docs_branch]
     - !reference [.skip_if_release_tag]
