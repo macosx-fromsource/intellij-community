@@ -49,6 +49,32 @@ const (
 
 	// preMigrationsSuffix marks the pre-migrations variant of the derived Job.
 	preMigrationsSuffix = "-pre"
+
+	// bbmCheckSuffix marks the batched-background-migrations wait variant of the
+	// derived Job. It is the same length as preMigrationsSuffix, so the name it
+	// makes fits within the 63-character limit migrationsJobNames budgets for.
+	bbmCheckSuffix = "-bbm"
+)
+
+const (
+	// batchedMigrationsPollSeconds is how long the wait Job sleeps between checks
+	// of the batched background migrations.
+	batchedMigrationsPollSeconds = 30
+
+	// batchedMigrationsMaxFailures is how many consecutive check failures the
+	// wait Job tolerates before it exits non-zero. It rides out transient
+	// database blips but still fails a real misconfiguration rather than
+	// polling forever; at batchedMigrationsPollSeconds apart, this is a few
+	// minutes of failing checks.
+	batchedMigrationsMaxFailures = 10
+
+	// batchedMigrationsCountExpr is the Ruby the wait Job runs to count the
+	// batched background migrations that are not yet done: the queued ones (active
+	// and paused) plus the ones being wound down (finalizing). A count of zero is
+	// when the next upgrade hop is safe to start, which is what the GitLab upgrade
+	// docs tell an administrator to check before upgrading to the next version.
+	batchedMigrationsCountExpr = "puts(Gitlab::Database::BackgroundMigration::BatchedMigration.queued.count + " +
+		"Gitlab::Database::BackgroundMigration::BatchedMigration.finalizing.count)"
 )
 
 // gatedWorkloads selects the Deployments a zero-downtime upgrade holds back: the
@@ -151,7 +177,7 @@ func (r *Reconciler) reconcileUpgrade(ctx context.Context, core *apiv2alpha1.Git
 	}
 
 	if fullDone {
-		return r.finishUpgrade(ctx, core, gated, renderVersion, releaseGitLabVersion(release), log)
+		return r.finishUpgrade(ctx, core, gated, migrationsJob, fullName, renderVersion, releaseGitLabVersion(release), log)
 	}
 
 	// Gate 2: roll the new pods out with the schema check bypassed, and wait for
@@ -191,11 +217,12 @@ func (r *Reconciler) reconcileUpgrade(ctx context.Context, core *apiv2alpha1.Git
 }
 
 // finishUpgrade drops the schema bypass, which rolls the pods once more so they
-// run with the check back on, waits for that roll to finish, and records the
+// run with the check back on, waits for that roll to finish, holds until the
+// batched background migrations of this version are done, and records the
 // version. It is the last gate, reached once the post-deployment migrations have
 // run, and is idempotent: the bypass is already gone on later passes, so the
 // pristine template applies without another roll.
-func (r *Reconciler) finishUpgrade(ctx context.Context, core *apiv2alpha1.GitLabCore, gated []*unstructured.Unstructured, renderVersion, gitlabVersion string, log logr.Logger) (ctrl.Result, error) {
+func (r *Reconciler) finishUpgrade(ctx context.Context, core *apiv2alpha1.GitLabCore, gated []*unstructured.Unstructured, migrationsJob *unstructured.Unstructured, fullName, renderVersion, gitlabVersion string, log logr.Logger) (ctrl.Result, error) {
 	if err := r.applyGated(ctx, core, gated, finalizeGated, log); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -212,7 +239,86 @@ func (r *Reconciler) finishUpgrade(ctx context.Context, core *apiv2alpha1.GitLab
 		return requeueWithDefaultDelay()
 	}
 
+	// Gate 4: hold before the next version until the batched background
+	// migrations of this one finish. GitLab enqueues them from the
+	// post-deployment migrations and runs them asynchronously, so the migrations
+	// Job completing does not mean they have; starting the next hop while they
+	// run risks data inconsistency and failed migrations. A slow backfill takes
+	// hours or days, so this waits rather than fails, and the spec can opt an
+	// instance out where that risk is acceptable.
+	if !core.Spec.Upgrade.SkipBatchedMigrationCheck {
+		done, failed, err := r.batchedMigrationsComplete(ctx, core, migrationsJob, fullName, log)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+
+		if failed {
+			return r.batchedMigrationsCheckFailed(core, bbmCheckJobName(fullName)), nil
+		}
+
+		if !done {
+			setCondition(core, ConditionProgressing, metav1.ConditionTrue, reasonWaitingForBatchedMigrations,
+				fmt.Sprintf("waiting for the batched background migrations of %s to finish before the next version", renderVersion))
+
+			return requeueWithDefaultDelay()
+		}
+	}
+
 	return r.completeUpgradeStep(core, renderVersion, gitlabVersion), nil
+}
+
+// batchedMigrationsComplete reports whether the batched background migrations of
+// the upgrade step are done, running a wait Job derived from the migrations Job
+// to find out. The Job is a poll loop that exits once none are pending, so the
+// reconciler gates on its completion the same way it does on the migrations
+// Jobs, reusing jobSucceeded. It returns failed when the wait Job itself failed,
+// which the caller turns into a terminal state rather than continuing to wait.
+func (r *Reconciler) batchedMigrationsComplete(ctx context.Context, core *apiv2alpha1.GitLabCore, migrationsJob *unstructured.Unstructured, fullName string, log logr.Logger) (done, failed bool, err error) {
+	name := bbmCheckJobName(fullName)
+
+	done, failed, err = r.jobSucceeded(ctx, core.Namespace, name)
+	if err != nil {
+		return false, false, err
+	}
+
+	if done {
+		return true, false, nil
+	}
+
+	if failed {
+		return false, true, nil
+	}
+
+	checkJob, err := deriveBatchedMigrationsJob(migrationsJob, name)
+	if err != nil {
+		return false, false, err
+	}
+
+	if err := r.applyObject(ctx, core, checkJob, log); err != nil {
+		return false, false, err
+	}
+
+	return false, false, nil
+}
+
+// batchedMigrationsCheckFailed records a failed batched-background-migrations
+// wait Job as a terminal state, the way migrationsFailed does for the migrations
+// Jobs. The wait Job loops over transient errors itself, so a failed one means
+// the check cannot run at all, for example the toolbox cannot reach the database;
+// waiting on it would never resolve. Its spec is immutable, so the poll keeps
+// surfacing it rather than hot-looping, and recovery is an operator changing the
+// resource, which bumps the generation and so the derived Job name.
+func (r *Reconciler) batchedMigrationsCheckFailed(core *apiv2alpha1.GitLabCore, jobName string) ctrl.Result {
+	message := fmt.Sprintf(
+		"the batched background migrations check Job %q failed; inspect its pods and, once fixed, retry the upgrade", jobName)
+
+	core.Status.Phase = PhaseFailed
+	setCondition(core, ConditionProgressing, metav1.ConditionFalse, reasonBatchedMigrationsCheckFailed, message)
+	r.Recorder.Eventf(core, nil, corev1.EventTypeWarning, "BatchedMigrationsCheckFailed", "Upgrade", "%s", message)
+
+	result, _ := requeueWithDefaultDelay()
+
+	return result
 }
 
 // runPreMigrations pauses the gated workloads on their new template and runs the
@@ -345,6 +451,59 @@ func deriveMigrationsJob(base *unstructured.Unstructured, name string) *unstruct
 	return job
 }
 
+// deriveBatchedMigrationsJob returns the batched-background-migrations wait
+// variant of the migrations Job: a renamed copy whose args are a poll loop that
+// exits once none are pending, in place of running migrations. It overrides only
+// the args, not the command, so the image entrypoint still activates the
+// rendered configuration (database.yml and the like) the way the migrations Job
+// relies on; it keeps the image, env, volumes, and init containers too, so it
+// connects to the database with the same configuration the migrations run
+// against.
+func deriveBatchedMigrationsJob(base *unstructured.Unstructured, name string) (*unstructured.Unstructured, error) {
+	job := deriveMigrationsJob(base, name)
+
+	if err := objects.SetArgsInAllContainers(job, batchedMigrationsWaitArgs()); err != nil {
+		return nil, err
+	}
+
+	return job, nil
+}
+
+// batchedMigrationsWaitArgs builds the args of the wait Job: the same
+// /scripts/wait-for-deps step the migrations Job runs (which waits for the data
+// stores and activates the rendered configuration), then a poll loop that asks
+// the instance how many batched background migrations are not yet done and exits
+// once none are, sleeping between checks. A single failed check does not end the
+// loop, since a database blip should be retried rather than fail the upgrade,
+// but a run of consecutive failures does, so a real misconfiguration surfaces
+// through jobSucceeded rather than spinning forever.
+func batchedMigrationsWaitArgs() []string {
+	script := fmt.Sprintf(`set -euo pipefail
+/scripts/wait-for-deps
+echo "waiting for the batched background migrations to finish"
+failures=0
+while true; do
+  if pending="$(gitlab-rails runner -e production %q | tail -n1)" && [[ "$pending" =~ ^[0-9]+$ ]]; then
+    failures=0
+    if [ "$pending" = "0" ]; then
+      echo "no batched background migrations pending"
+      exit 0
+    fi
+    echo "batched background migrations still pending: $pending"
+  else
+    failures=$((failures + 1))
+    echo "could not read a numeric batched background migrations count (consecutive failures: $failures)"
+    if [ "$failures" -ge %d ]; then
+      echo "giving up after $failures consecutive failures reading the batched background migrations"
+      exit 1
+    fi
+  fi
+  sleep %d
+done`, batchedMigrationsCountExpr, batchedMigrationsMaxFailures, batchedMigrationsPollSeconds)
+
+	return []string{"/bin/bash", "-c", script}
+}
+
 // jobSucceeded reads a live Job and reports whether it has completed and whether
 // it has a failed pod. A Job that does not exist yet has neither.
 func (r *Reconciler) jobSucceeded(ctx context.Context, namespace, name string) (done, failed bool, err error) {
@@ -394,6 +553,15 @@ func migrationsJobNames(base, hash string) (fullName, preName string) {
 	preName = fullName + preMigrationsSuffix
 
 	return fullName, preName
+}
+
+// bbmCheckJobName is the name of the batched-background-migrations wait Job of an
+// upgrade step. It hangs off the step's full migrations Job name, so the wait of
+// one step does not collide with the immutable one of another, and stays within
+// the 63-character limit because migrationsJobNames reserves room for a
+// four-character suffix and this one is as short.
+func bbmCheckJobName(fullName string) string {
+	return fullName + bbmCheckSuffix
 }
 
 // upgradeHash is a short, stable token for the Job names of one upgrade step. It

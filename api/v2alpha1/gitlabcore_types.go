@@ -68,6 +68,21 @@ type GitLabCoreSpec struct {
 	// Chart is the specification of the GitLab umbrella chart that is used to deploy the instance.
 	// +kubebuilder:validation:Optional
 	Chart ChartSpec `json:"chart,omitempty"`
+
+	// Upgrade tunes how the Operator carries out a zero-downtime upgrade.
+	// +kubebuilder:validation:Optional
+	Upgrade UpgradeSpec `json:"upgrade,omitempty"`
+}
+
+// UpgradeSpec tunes the zero-downtime upgrade choreography.
+type UpgradeSpec struct {
+	// SkipBatchedMigrationCheck lets an upgrade advance to the next version without waiting for the
+	// batched background migrations of the current one to finish. GitLab requires those complete
+	// before the next upgrade, so skipping the wait risks data inconsistency and failed migrations;
+	// leave it off except on instances (for example development or test ones) where that risk is
+	// acceptable in exchange for a faster upgrade.
+	// +kubebuilder:validation:Optional
+	SkipBatchedMigrationCheck bool `json:"skipBatchedMigrationCheck,omitempty"`
 }
 
 // Edition is the GitLab edition a instance is deployed from.

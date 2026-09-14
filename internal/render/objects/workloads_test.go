@@ -327,6 +327,37 @@ func TestUpsertEnvInAllContainers(t *testing.T) {
 	})
 }
 
+func TestSetArgsInAllContainers(t *testing.T) {
+	t.Run("overrides the args on every container and leaves the command entrypoint", func(t *testing.T) {
+		job := testJob()
+
+		container, err := findContainer(job, "containers", "migrations")
+		require.NoError(t, err)
+
+		container["args"] = []interface{}{"original", "args"}
+
+		require.NoError(t, SetArgsInAllContainers(job, []string{"/bin/bash", "-c", "echo waiting"}))
+
+		for _, name := range []string{"migrations", "helper"} {
+			c, err := findContainer(job, "containers", name)
+			require.NoError(t, err)
+
+			assert.Equal(t, []interface{}{"/bin/bash", "-c", "echo waiting"}, c["args"], "container %s", name)
+			_, hasCommand := c["command"]
+			assert.False(t, hasCommand, "container %s must not gain a command entrypoint", name)
+		}
+	})
+
+	t.Run("fails without containers", func(t *testing.T) {
+		deployment := &unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "apps/v1",
+			"kind":       "Deployment",
+		}}
+
+		require.Error(t, SetArgsInAllContainers(deployment, []string{"/bin/bash"}))
+	})
+}
+
 // testDeployment builds a Deployment with a "dependencies" init container,
 // mirroring the shape the GitLab chart renders for webservice and sidekiq.
 func testDeployment() *unstructured.Unstructured {

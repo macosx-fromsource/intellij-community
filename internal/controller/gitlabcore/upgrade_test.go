@@ -48,6 +48,39 @@ var _ = Describe("deriveMigrationsJob", func() {
 	})
 })
 
+var _ = Describe("deriveBatchedMigrationsJob", func() {
+	base := mockMigrationsJob()
+
+	wait, err := deriveBatchedMigrationsJob(base, bbmCheckJobName("gitlab-migrations-abc"))
+
+	It("renames the Job and replaces the args with a poll loop, keeping the entrypoint", func() {
+		Expect(err).To(BeNil())
+		Expect(wait.GetName()).To(Equal("gitlab-migrations-abc-bbm"))
+
+		containers, _, _ := unstructured.NestedSlice(wait.Object, "spec", "template", "spec", "containers")
+		Expect(containers).NotTo(BeEmpty())
+
+		container := containers[0].(map[string]interface{})
+		args, _, _ := unstructured.NestedStringSlice(container, "args")
+		Expect(args).To(ContainElement(ContainSubstring(batchedMigrationsCountExpr)))
+		Expect(args).To(ContainElement(ContainSubstring("/scripts/wait-for-deps")))
+
+		// The image entrypoint (command) must stay untouched so it can activate
+		// the rendered configuration; overriding it is what broke the check.
+		_, hasCommand := container["command"]
+		Expect(hasCommand).To(BeFalse())
+	})
+
+	It("leaves the rendered Job untouched", func() {
+		Expect(base.GetName()).To(Equal("gitlab-migrations"))
+
+		containers, _, _ := unstructured.NestedSlice(base.Object, "spec", "template", "spec", "containers")
+		container := containers[0].(map[string]interface{})
+		_, hasArgs := container["args"]
+		Expect(hasArgs).To(BeFalse())
+	})
+})
+
 var _ = Describe("upgradeHash", func() {
 	core := &apiv2alpha1.GitLabCore{ObjectMeta: metav1.ObjectMeta{UID: "uid-1", Generation: 3}}
 
@@ -260,6 +293,7 @@ var _ = Describe("reconcileUpgrade past the pre-migrations", func() {
 		reconciler := mockReconciler(
 			mockJobWithStatus(preName, 1, 0),
 			mockJobWithStatus(fullName, 1, 0),
+			mockJobWithStatus(bbmCheckJobName(fullName), 1, 0),
 			liveGatedDeployment("webservice", 2, true),
 			liveGatedDeployment("sidekiq", 1, true),
 		)
@@ -302,6 +336,143 @@ var _ = Describe("reconcileUpgrade past the pre-migrations", func() {
 			Expect(condition).NotTo(BeNil())
 			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 			Expect(condition.Reason).To(Equal(reasonUpgradeComplete))
+		})
+	})
+
+	When("the post-deployment migrations are done but the batched background migrations are still running", func() {
+		core := &apiv2alpha1.GitLabCore{
+			ObjectMeta: metav1.ObjectMeta{Name: releaseName, Namespace: testNamespace, UID: "uid-1", Generation: 2},
+		}
+		core.Spec.Chart.Version = "10.1.6"
+
+		migrations := mockMigrationsJob()
+		fullName, preName := migrationsJobNames(migrations.GetName(), upgradeHash(core, "10.1.6"))
+
+		// The pre and full migrations succeeded and the pods rolled out, but no
+		// batched-background-migrations wait Job has completed yet.
+		reconciler := mockReconciler(
+			mockJobWithStatus(preName, 1, 0),
+			mockJobWithStatus(fullName, 1, 0),
+			liveGatedDeployment("webservice", 2, true),
+			liveGatedDeployment("sidekiq", 1, true),
+		)
+
+		configMap := mockObject("v1", "ConfigMap", "gitlab-configmap")
+		configMap.SetNamespace(testNamespace)
+
+		release := &render.Result{Objects: []*unstructured.Unstructured{
+			mockGatedDeployment("webservice", 2),
+			mockGatedDeployment("sidekiq", 1),
+			migrations,
+			configMap,
+		}}
+
+		result, err := reconciler.reconcileUpgrade(context.TODO(), core, release, "10.1.6", GinkgoLogr)
+
+		It("holds before the next version, reporting the batched background migrations", func() {
+			Expect(err).To(BeNil())
+			Expect(result.RequeueAfter).To(Equal(defaultRequeueDelay))
+			Expect(core.Status.Version).To(BeEmpty())
+
+			condition := apimeta.FindStatusCondition(core.Status.Conditions, ConditionProgressing)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal(reasonWaitingForBatchedMigrations))
+		})
+
+		It("derives the wait Job from the migrations Job as a poll loop", func() {
+			live := &batchv1.Job{}
+			Expect(reconciler.Get(context.TODO(),
+				types.NamespacedName{Namespace: testNamespace, Name: bbmCheckJobName(fullName)}, live)).To(Succeed())
+
+			Expect(live.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+			Expect(live.Spec.Template.Spec.Containers[0].Args).To(
+				ContainElement(ContainSubstring("gitlab-rails runner")))
+			Expect(live.Spec.Template.Spec.Containers[0].Command).To(BeEmpty())
+		})
+	})
+
+	When("the upgrade opts out of the batched background migrations check", func() {
+		core := &apiv2alpha1.GitLabCore{
+			ObjectMeta: metav1.ObjectMeta{Name: releaseName, Namespace: testNamespace, UID: "uid-1", Generation: 2},
+		}
+		core.Spec.Chart.Version = "10.1.6"
+		core.Spec.Upgrade.SkipBatchedMigrationCheck = true
+
+		migrations := mockMigrationsJob()
+		fullName, preName := migrationsJobNames(migrations.GetName(), upgradeHash(core, "10.1.6"))
+
+		reconciler := mockReconciler(
+			mockJobWithStatus(preName, 1, 0),
+			mockJobWithStatus(fullName, 1, 0),
+			liveGatedDeployment("webservice", 2, true),
+			liveGatedDeployment("sidekiq", 1, true),
+		)
+
+		configMap := mockObject("v1", "ConfigMap", "gitlab-configmap")
+		configMap.SetNamespace(testNamespace)
+
+		release := &render.Result{Objects: []*unstructured.Unstructured{
+			mockGatedDeployment("webservice", 2),
+			mockGatedDeployment("sidekiq", 1),
+			migrations,
+			configMap,
+		}}
+
+		result, err := reconciler.reconcileUpgrade(context.TODO(), core, release, "10.1.6", GinkgoLogr)
+
+		It("records the version without waiting and runs no wait Job", func() {
+			Expect(err).To(BeNil())
+			Expect(result.RequeueAfter).To(Equal(defaultRequeueDelay))
+			Expect(core.Status.Version).To(Equal("10.1.6"))
+
+			live := &batchv1.Job{}
+			getErr := reconciler.Get(context.TODO(),
+				types.NamespacedName{Namespace: testNamespace, Name: bbmCheckJobName(fullName)}, live)
+			Expect(getErr).To(HaveOccurred())
+		})
+	})
+
+	When("the batched background migrations wait Job has failed", func() {
+		core := &apiv2alpha1.GitLabCore{
+			ObjectMeta: metav1.ObjectMeta{Name: releaseName, Namespace: testNamespace, UID: "uid-1", Generation: 2},
+		}
+		core.Spec.Chart.Version = "10.1.6"
+
+		migrations := mockMigrationsJob()
+		fullName, preName := migrationsJobNames(migrations.GetName(), upgradeHash(core, "10.1.6"))
+
+		// The pre and full migrations succeeded and the pods rolled out, but the
+		// wait Job itself failed: it cannot run the check at all.
+		reconciler := mockReconciler(
+			mockJobWithStatus(preName, 1, 0),
+			mockJobWithStatus(fullName, 1, 0),
+			mockJobWithStatus(bbmCheckJobName(fullName), 0, 1),
+			liveGatedDeployment("webservice", 2, true),
+			liveGatedDeployment("sidekiq", 1, true),
+		)
+
+		configMap := mockObject("v1", "ConfigMap", "gitlab-configmap")
+		configMap.SetNamespace(testNamespace)
+
+		release := &render.Result{Objects: []*unstructured.Unstructured{
+			mockGatedDeployment("webservice", 2),
+			mockGatedDeployment("sidekiq", 1),
+			migrations,
+			configMap,
+		}}
+
+		result, err := reconciler.reconcileUpgrade(context.TODO(), core, release, "10.1.6", GinkgoLogr)
+
+		It("marks the upgrade failed rather than reporting it as still waiting", func() {
+			Expect(err).To(BeNil())
+			Expect(result.RequeueAfter).To(Equal(defaultRequeueDelay))
+			Expect(core.Status.Version).To(BeEmpty())
+			Expect(core.Status.Phase).To(Equal(PhaseFailed))
+
+			condition := apimeta.FindStatusCondition(core.Status.Conditions, ConditionProgressing)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			Expect(condition.Reason).To(Equal(reasonBatchedMigrationsCheckFailed))
 		})
 	})
 })

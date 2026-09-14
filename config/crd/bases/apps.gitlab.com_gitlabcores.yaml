@@ -214,6 +214,19 @@ spec:
                 - host
                 - passwordSecretRef
                 type: object
+              upgrade:
+                description: Upgrade tunes how the Operator carries out a zero-downtime
+                  upgrade.
+                properties:
+                  skipBatchedMigrationCheck:
+                    description: |-
+                      SkipBatchedMigrationCheck lets an upgrade advance to the next version without waiting for the
+                      batched background migrations of the current one to finish. GitLab requires those complete
+                      before the next upgrade, so skipping the wait risks data inconsistency and failed migrations;
+                      leave it off except on instances (for example development or test ones) where that risk is
+                      acceptable in exchange for a faster upgrade.
+                    type: boolean
+                type: object
             type: object
           status:
             description: |-

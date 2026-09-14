@@ -57,16 +57,18 @@ const (
 	reasonWorkloadsNotReady = "WorkloadsNotReady"
 
 	// The reasons of the upgrade conditions.
-	reasonRunningPreMigrations  = "RunningPreMigrations"
-	reasonUpgradingRails        = "UpgradingRails"
-	reasonRollingOutWorkloads   = "RollingOutWorkloads"
-	reasonRunningPostMigrations = "RunningPostMigrations"
-	reasonAdvancingVersion      = "AdvancingVersion"
-	reasonUpgradeComplete       = "UpgradeComplete"
+	reasonRunningPreMigrations        = "RunningPreMigrations"
+	reasonUpgradingRails              = "UpgradingRails"
+	reasonRollingOutWorkloads         = "RollingOutWorkloads"
+	reasonRunningPostMigrations       = "RunningPostMigrations"
+	reasonWaitingForBatchedMigrations = "WaitingForBatchedMigrations"
+	reasonAdvancingVersion            = "AdvancingVersion"
+	reasonUpgradeComplete             = "UpgradeComplete"
 
-	reasonMissingIntermediateChart = "MissingIntermediateChart"
-	reasonUpgradePathValid         = "UpgradePathValid"
-	reasonMigrationsJobFailed      = "MigrationsJobFailed"
+	reasonMissingIntermediateChart     = "MissingIntermediateChart"
+	reasonUpgradePathValid             = "UpgradePathValid"
+	reasonMigrationsJobFailed          = "MigrationsJobFailed"
+	reasonBatchedMigrationsCheckFailed = "BatchedMigrationsCheckFailed"
 )
 
 // setCondition records a condition on the resource in memory. Reconcile writes
