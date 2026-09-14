@@ -1,0 +1,131 @@
+# Black-box end-to-end suites (test/e2e).
+#
+# Each job creates a single-use k3d cluster inside its own Docker-in-Docker
+# environment, imports the bridge image the pipeline already built, deploys the
+# Operator from deploy/chart, and runs one suite. One suite per job: a suite is the
+# unit of parallelism and the unit of a red pipeline.
+#
+# These are peers of the k3d cluster tests in review-k3d.gitlab-ci.yml, not part of
+# them. Those deploy a whole GitLab and run gitlab-qa; these deploy only the Operator
+# and drive custom resources through the API server. They share .dind, the `e2e`
+# runner tag, k3d.sh and k3d_collect_debug.
+#
+# The provider is `existing` rather than the harness's own k3s one: the k3d
+# lifecycle, the version matrix and the debug collection already exist here, and
+# running testcontainers inside Docker-in-Docker would mean a privileged container
+# inside a privileged container for no added signal. The k3s provider is the local
+# path, and a developer running it is what keeps it working.
+
+.e2e_suite_template:
+  extends: .dind
+  stage: review
+  tags:
+    - e2e
+  # Waiting only for the image build bypasses the approve_cluster_tests gate, as
+  # review_k3d_gitlabcore and review_k3d_chart_version already do: that approval
+  # protects the shared always-on clusters from concurrent-pipeline contention, and
+  # a cluster this job creates and deletes is not one of them.
+  #
+  # No artifacts: the image is pulled from the registry, and `task e2e-suite` stages
+  # the charts itself. Downloading the charts/ artifacts of pull_charts and
+  # pull_siphon_charts would only be overwritten a moment later, and the ordering
+  # after them is already transitive through the image build.
+  #
+  # Optional, so that a pipeline where the image build does not exist fails as a red
+  # job with a missing image rather than as a pipeline that cannot be created.
+  needs:
+    - job: build_bridge_image
+      optional: true
+      artifacts: false
+  variables:
+    K3D_MODE: "true"
+    K3D_K8S_IMAGE: "rancher/k3s:v1.36.1-k3s1"
+    # nip.io hostnames resolve into 172.16.0.0/12, which Docker refuses over HTTP
+    # without this.
+    DOCKER_OPTIONS: "--registry-mirror ${DOCKER_MIRROR} --insecure-registry 172.16.0.0/12"
+    HELM_CHARTS: "${CI_PROJECT_DIR}/charts"
+    # The harness. See test/e2e/README.md for every variable it reads.
+    E2E_CLUSTER_PROVIDER: "existing"
+    # Matches k3d_cluster_name in .gitlab/ci/scripts/k3d.sh, and is what makes the
+    # harness load the image with `k3d image import`.
+    E2E_K3D_CLUSTER: "gitlab"
+    E2E_OPERATOR_IMAGE: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}-bridge"
+    # The cluster is this job's own, so there is never a release worth adopting.
+    E2E_OPERATOR_REUSE: "0"
+    E2E_ADDONS: "install"
+    # A requirement the harness cannot satisfy is a red job, not a green one that
+    # tested nothing.
+    E2E_STRICT: "1"
+    E2E_ARTIFACTS_DIR: "${CI_PROJECT_DIR}/e2e-artifacts"
+  # The skips every suite job shares. Each job references this list and appends the
+  # rule that decides when it runs, because `extends` replaces `rules:` rather than
+  # merging into it.
+  rules:
+    - !reference [.skip_if_not_canonical]
+    - !reference [.skip_if_release_tag]
+    - !reference [.skip_if_docs_branch]
+    - !reference [.skip_if_chart_version_pipeline]
+    - !reference [.skip_if_gitlab_chart_child_pipeline]
+  before_script:
+    - source .gitlab/ci/scripts/k3d.sh
+    - k3d_install
+    - source .gitlab/ci/scripts/trim_env.sh
+  script:
+    - k3d_create
+    - k3d_info
+    - kubectl version --output=json
+    # Making the image available to the *host* Docker daemon is this job's business.
+    # Getting it from there into the cluster is the harness's, because only the
+    # harness knows whether the load succeeded, and that is what decides
+    # imagePullPolicy.
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - docker pull "$E2E_OPERATOR_IMAGE"
+    # E2E_K3D_CLUSTER makes the harness run `k3d image import` itself, so there is no
+    # import here. Importing rather than pulling in-cluster means no imagePullSecret to
+    # provision, and it lets the harness pin imagePullPolicy to Never, so a bad import
+    # fails at once instead of backing off for five minutes.
+    - task e2e-suite SUITE="$E2E_SUITE"
+  after_script:
+    - source .gitlab/ci/scripts/trim_env.sh
+    - source .gitlab/ci/scripts/k3d.sh
+    - k3d_collect_debug
+    - k3d_delete
+  artifacts:
+    when: always
+    expire_in: 7d
+    paths:
+      # k3d-debug is collected after the test binary exited, so the namespaces of the
+      # suites are gone by then. e2e-artifacts is written by the harness before it
+      # deletes them, and is the one that explains a failure.
+      - ./k3d-debug/
+      - ./e2e-artifacts/
+
+# The harness's own smoke suite: the Operator is bridge-enabled and reconciling.
+# Automatic, because when it is red every other suite is noise.
+e2e_operator:
+  extends: .e2e_suite_template
+  variables:
+    E2E_SUITE: "operator"
+  rules:
+    - !reference [.e2e_suite_template, rules]
+    - !reference [.if_commit_branch_or_mr_branch]
+
+# Manual to begin with, to keep the `e2e` runner fleet from filling up with jobs
+# nobody has watched yet. Promote it to automatic once the scheduled runs are green.
+e2e_siphon:
+  extends: .e2e_suite_template
+  parallel:
+    matrix:
+      # The oldest and newest supported Kubernetes versions (doc/installation.md).
+      # This suite asserts what the API server does, so that is the variable.
+      - E2E_SUITE: "siphon"
+        K3D_K8S_IMAGE: "rancher/k3s:v1.34.1-k3s1"
+      - E2E_SUITE: "siphon"
+        K3D_K8S_IMAGE: "rancher/k3s:v1.36.1-k3s1"
+  rules:
+    - !reference [.e2e_suite_template, rules]
+    # Automatic on nightly (scheduled) pipelines, manual and non-blocking on merge
+    # request and branch pipelines, which is the split review-k3d uses for its
+    # non-primary rows.
+    - !reference [.if_scheduled_pipeline]
+    - !reference [.manual_allow_failure_if_commit_branch_or_mr_branch]
