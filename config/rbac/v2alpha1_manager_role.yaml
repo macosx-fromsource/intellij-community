@@ -1,0 +1,67 @@
+# What the GitLabCore and Siphon reconcilers need on top of the manager role the
+# chart grants. This ships in no Helm release and no OLM bundle, which is why it
+# is a file of its own and is not listed in config/rbac/kustomization.yaml.
+#
+# NAME_OVERRIDE_PLACEHOLDER and NAMESPACE_PLACEHOLDER are substituted by both
+# consumers: `task install_v2alpha1_crds` with sed, and the end-to-end harness
+# with strings.Replacer. The file is therefore not directly appliable, on
+# purpose: a stale copy applied by hand against a differently named installation
+# would bind a role to a ServiceAccount that does not exist and silently grant
+# nothing.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: NAME_OVERRIDE_PLACEHOLDER-manager-v2alpha1-role
+rules:
+- apiGroups: [apps.gitlab.com]
+  resources: [gitlabcores]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [apps.gitlab.com]
+  resources: [gitlabcores/status]
+  verbs: [get, update, patch]
+- apiGroups: [apps.gitlab.com]
+  resources: [gitlabcores/finalizers]
+  verbs: [update]
+- apiGroups: [policy]
+  resources: [poddisruptionbudgets]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [apps.gitlab.com]
+  resources: [siphons]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [apps.gitlab.com]
+  resources: [siphons/status]
+  verbs: [get, update, patch]
+- apiGroups: [apps.gitlab.com]
+  resources: [siphons/finalizers]
+  verbs: [update]
+# What the Siphon chart renders, plus the ConfigMap the Operator publishes the extracted
+# table definitions to and the Secret it reads the registry credential from.
+- apiGroups: [""]
+  resources: [configmaps, serviceaccounts]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: [""]
+  resources: [secrets]
+  verbs: [get, list, watch]
+# Read to report why a workload of a release is not ready. The chart-granted
+# manager role has no pod permissions, because the v1beta1 controller reports a
+# workload by name and never asks a pod why.
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [get, list]
+# Rendered only on a cluster that serves the Prometheus operator API.
+- apiGroups: [monitoring.coreos.com]
+  resources: [podmonitors]
+  verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: NAME_OVERRIDE_PLACEHOLDER-manager-v2alpha1-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: NAME_OVERRIDE_PLACEHOLDER-manager-v2alpha1-role
+subjects:
+- kind: ServiceAccount
+  name: NAME_OVERRIDE_PLACEHOLDER-manager
+  namespace: NAMESPACE_PLACEHOLDER
