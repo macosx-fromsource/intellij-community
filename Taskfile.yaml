@@ -201,7 +201,8 @@ tasks:
       #   Error: failed to install CRD crds/gitlab.yaml: conflict occurred while applying object
       #   /gitlabs.apps.gitlab.com … conflict with "kubectl-client-side-apply": .spec.versions
       #
-      # Helm owns what it ships, so this task leaves those definitions to it.
+      # Helm owns what it ships, so this task leaves those definitions to it. The end-to-end
+      # harness skips the same set, in chartOwnedDefinitions (test/e2e/framework/operator.go).
       - cmd: |
           chart_owned=$(awk '/^  name:/ { print $2 }' deploy/chart/crds/*.yaml)
           for manifest in config/crd/bases/*.yaml; do
@@ -221,67 +222,15 @@ tasks:
       #
       # These go into a role of their own rather than into the chart-managed manager role, so that
       # `task deploy_operator` does not revert them and rerunning this task changes nothing.
+      #
+      # The rules live in config/rbac/v2alpha1_manager_role.yaml rather than here, because the
+      # end-to-end harness applies the same file: see test/e2e/README.md.
       # Silent: the manifest is not worth echoing on every run.
       - cmd: |
-          $KUBECTL apply --dry-run={{ .DRY_RUN }} -f - <<EOF
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRole
-          metadata:
-            name: $NAME_OVERRIDE-manager-v2alpha1-role
-          rules:
-          - apiGroups: [apps.gitlab.com]
-            resources: [gitlabcores]
-            verbs: [get, list, watch, create, update, patch, delete]
-          - apiGroups: [apps.gitlab.com]
-            resources: [gitlabcores/status]
-            verbs: [get, update, patch]
-          - apiGroups: [apps.gitlab.com]
-            resources: [gitlabcores/finalizers]
-            verbs: [update]
-          - apiGroups: [policy]
-            resources: [poddisruptionbudgets]
-            verbs: [get, list, watch, create, update, patch, delete]
-          - apiGroups: [apps.gitlab.com]
-            resources: [siphons]
-            verbs: [get, list, watch, create, update, patch, delete]
-          - apiGroups: [apps.gitlab.com]
-            resources: [siphons/status]
-            verbs: [get, update, patch]
-          - apiGroups: [apps.gitlab.com]
-            resources: [siphons/finalizers]
-            verbs: [update]
-          # What the Siphon chart renders, plus the ConfigMap the Operator publishes the extracted
-          # table definitions to and the Secret it reads the registry credential from.
-          - apiGroups: [""]
-            resources: [configmaps, serviceaccounts]
-            verbs: [get, list, watch, create, update, patch, delete]
-          - apiGroups: [""]
-            resources: [secrets]
-            verbs: [get, list, watch]
-          # Read to report why a workload of a release is not ready. The chart-granted manager
-          # role has no pod permissions, because the v1beta1 controller reports a workload by
-          # name and never asks a pod why.
-          - apiGroups: [""]
-            resources: [pods]
-            verbs: [get, list]
-          # Rendered only on a cluster that serves the Prometheus operator API.
-          - apiGroups: [monitoring.coreos.com]
-            resources: [podmonitors]
-            verbs: [get, list, watch, create, update, patch, delete]
-          ---
-          apiVersion: rbac.authorization.k8s.io/v1
-          kind: ClusterRoleBinding
-          metadata:
-            name: $NAME_OVERRIDE-manager-v2alpha1-rolebinding
-          roleRef:
-            apiGroup: rbac.authorization.k8s.io
-            kind: ClusterRole
-            name: $NAME_OVERRIDE-manager-v2alpha1-role
-          subjects:
-          - kind: ServiceAccount
-            name: $NAME_OVERRIDE-manager
-            namespace: $NAMESPACE
-          EOF
+          sed -e "s/NAME_OVERRIDE_PLACEHOLDER/$NAME_OVERRIDE/g" \
+              -e "s/NAMESPACE_PLACEHOLDER/$NAMESPACE/g" \
+              config/rbac/v2alpha1_manager_role.yaml \
+          | $KUBECTL apply --dry-run={{ .DRY_RUN }} -f -
         silent: true
 
   openapi:
@@ -640,12 +589,14 @@ tasks:
       # if skip operation test, skip the operation_test.go file
       EXTRA_FLAGS: '{{ if eq .SKIP_OPERATION_TESTS "yes" }}--skip-file=operation_test --skip-file=gitlab_webhook_test{{ end }}'
     cmds:
-      # --skip-package=bridge excludes internal/bridge: it is gated behind the
-      # `bridge` build tag and has its own job (see bridge-unit-tests).
+      # --skip-package excludes internal/bridge, which is gated behind the `bridge`
+      # build tag and has its own job (see bridge-unit-tests), and test/e2e, whose
+      # only test skips without E2E and which would otherwise be compiled here for
+      # nothing (see e2e-suite).
       - >-
         CHART_VERSION=$CHART_VERSION
         SKIP_ENVTEST={{ .SKIP_ENVTEST }}
-        go run github.com/onsi/ginkgo/v2/ginkgo -cover -output-dir=coverage --skip-package=bridge {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
+        go run github.com/onsi/ginkgo/v2/ginkgo -cover -output-dir=coverage --skip-package=bridge,e2e {{ .EXTRA_FLAGS }} {{ .TEST_PKGS }}
 
   slow-unit-tests:
     desc: |
@@ -696,6 +647,66 @@ tasks:
     cmds:
       - echo "Running e2e tests against $(kubectl config current-context)..."
       - go test -tags e2e -count=1 -timeout {{ .TIMEOUT }} -v {{ .TEST_PKGS }}
+
+  e2e-suite:
+    desc: |
+      Runs the black-box end-to-end harness in test/e2e. It deploys the
+      bridge-enabled Operator image into a cluster and drives it through the API
+      server, so nothing runs a reconciler in the test process.
+
+      Run one suite, which is how CI parallelizes:
+
+        task e2e-suite SUITE=operator
+        task e2e-suite SUITE=siphon
+
+      With no SUITE it runs all of them. List them with `task e2e-suites`.
+
+      It needs an image: `task docker-build-bridge`. Use `task e2e-suite-local` to
+      build it first.
+
+      By default it uses the cluster of the current kubeconfig context and adopts
+      an Operator release already installed there rather than upgrading over it.
+      Point it at a throwaway cluster.
+
+      The environment variables are documented in test/e2e/README.md.
+    deps:
+      # retrieve-charts stages what the Operator image renders from. build_chart
+      # vendors the cert-manager dependency of deploy/chart: it is gitignored, so a
+      # fresh clone carries none and `helm upgrade` refuses to install the release.
+      - retrieve-charts
+      - build_chart
+    vars:
+      SUITE: '{{ default "" .SUITE }}'
+      TIMEOUT: '{{ default "90m" .TIMEOUT }}'
+      RUN: '{{ if .SUITE }}-run TestE2E/^{{ .SUITE }}${{ end }}'
+    env:
+      # The gate. The harness carries no build tag, so that editors and the default
+      # golangci-lint run see it; this variable is what keeps it out of `go test ./...`.
+      E2E: "true"
+    cmds:
+      # The three defaults are expanded by the shell rather than templated, because
+      # NAMESPACE, NAME_OVERRIDE and the IMG_* variables live in the env: block at the
+      # top of this file, which templating does not read. An explicit E2E_ value still
+      # wins. The harness carries the same defaults, so a bare `go test` also works.
+      - >-
+        E2E_OPERATOR_IMAGE="${E2E_OPERATOR_IMAGE:-$IMG_REGISTRY/$IMG_REPOSITORY/$IMG_NAME:$TAG-bridge}"
+        E2E_OPERATOR_NAMESPACE="${E2E_OPERATOR_NAMESPACE:-$NAMESPACE}"
+        E2E_NAME_OVERRIDE="${E2E_NAME_OVERRIDE:-$NAME_OVERRIDE}"
+        go test -count=1 -timeout {{ .TIMEOUT }} -v {{ .RUN }} ./test/e2e/
+
+  e2e-suite-local:
+    desc: Builds the bridge image, then runs `e2e-suite`. The convenient local entry point.
+    deps:
+      - docker-build-bridge
+    cmds:
+      - task: e2e-suite
+        vars:
+          SUITE: '{{ .SUITE }}'
+
+  e2e-suites:
+    desc: Lists the registered end-to-end suites. Needs no cluster.
+    cmds:
+      - go test -count=1 -v -run XXX ./test/e2e/ -args -list-suites
 
   test-in-docker:
     desc: Runs tests in a Docker container.

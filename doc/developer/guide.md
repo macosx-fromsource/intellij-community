@@ -114,6 +114,11 @@ $ tree -dL 2 .
 
 - The `hack/assets` path contains resources that would need to be pushed inside the operator image when the container image is being built. This is where release files would go.
 
+## Tests
+
+See [Tests](testing.md) for the test tiers, how to run each, and why the black-box
+end-to-end suites deploy the Operator as an image.
+
 ## Deploying the Operator
 
 For instructions on deploying the operator, see the [installation docs](installation.md).
