@@ -25,7 +25,7 @@ runtime overrides.
 
 ## Front door: Gateway API (default) vs nginx-ingress
 
-`deploy` / `deploy-dev` / `up-dev` default to **Gateway API (Envoy Gateway)** —
+`deploy` / `deploy-dev` / `up` default to **Gateway API (Envoy Gateway)** —
 the chart's own default from 10.1.x — via `cr-overlay-gateway`. Set
 **`NGINX_INGRESS=1`** for the classic Ingress path (`cr-overlay`, bundled
 nginx-ingress). Both overlays are pure/buildable.
@@ -57,7 +57,7 @@ binary, `.#image-bridge` the image (tag `dev-bridge`), and
 
 | Command | Does |
 | --- | --- |
-| `BRIDGE=1 nix run .#up-dev` | Full local env, bridge variant: loads `dev-bridge` image + deploys with `bridge.enabled=true`. |
+| `BRIDGE=1 nix run .#up` | Full local env, bridge variant: loads `dev-bridge` image + deploys with `bridge.enabled=true`. |
 | `nix run .#deploy-bridge` | Deploy the bridge-enabled image (run `.#load-image-bridge` first). |
 | `nix run .#bridge-access` | Ensure caller RBAC → mint a token → print the token + UI/docs/API URLs → port-forward `:8090`. |
 
@@ -99,18 +99,18 @@ no aliases. `envMap` is the single table to read.
 
 The kind node must be **k8s ≥ 1.31** (chart 10.1.x Gateway API CRDs use the CEL
 `isIP()` function); cert-manager is bumped in lockstep. Changing the node
-version requires recreating the cluster (`nix run .#kind-down && nix run .#up-dev`).
+version requires recreating the cluster (`nix run .#down && nix run .#up`).
 
 ## Day-to-day
 
 | Command | Does |
 | --- | --- |
-| `nix run .#up-dev` | Full clean local env: kind cluster → dev deps (or a restored snapshot on a fresh cluster) → build+load dev image → deploy operator + GitLab CR. Uses the [prebaked node image + snapshot cache](#caching-up-dev-speedup) when present. |
+| `nix run .#up` | Full clean local env: kind cluster → dev deps (or a restored snapshot on a fresh cluster) → build+load dev image → deploy operator + GitLab CR. Uses the [prebaked node image + snapshot cache](#caching-up-speedup) when present. |
 | `nix run .#refresh-dev` | Inner loop: rebuild image → load into kind → restart the operator. |
 | `nix run .#deploy` | Deploy using the **published** manifest (registry image, `:latest`). |
 | `nix run .#deploy-dev` | Deploy using the **locally built** image (run `.#load-image-dev` first). |
 | `nix run .#deploy-bridge` / `.#bridge-access` | Bridge variant — see [Bridge](#bridge-backend-for-frontend). |
-| `nix run .#kind-up` / `.#kind-down` | Create / delete the kind cluster. |
+| `nix run .#kind-up` / `.#down` | Create / delete the kind cluster. |
 | `nix run .#deps-dev` | Provision external dev dependencies (writes `external-deps.yaml`). |
 | `nix run .#lint` / `.#test` / `.#fmt` / `.#vet` | Quality + tests. |
 | `nix run .#generate` / `.#manifests` | controller-gen codegen. |
@@ -119,9 +119,9 @@ version requires recreating the cluster (`nix run .#kind-down && nix run .#up-de
 `nix flake check` renders the manifest + CR overlay offline — the same check CI
 can run.
 
-## Caching (`up-dev` speedup)
+## Caching (`up` speedup)
 
-The first `up-dev` is slow: it pulls the full set of GitLab + dependency images
+The first `up` is slow: it pulls the full set of GitLab + dependency images
 over the network, then waits on the external-dep setup (`dev_dependencies.sh`)
 and the GitLab migration jobs. Two **opt-in, additive** caches make every later
 standup fast. Both are keyed by the canonical chart version, so cached state
@@ -129,31 +129,31 @@ always matches what you deploy:
 
 1. **Prebaked kind node image** — a copy of the base node with every cluster
    image already in containerd, committed as `kindest/node-gitlab:<chartver>`.
-   A fresh `up-dev` then does **zero** network image pulls. `up-dev` selects it
+   A fresh `up` then does **zero** network image pulls. `up` selects it
    automatically (`nodeImageResolver`); set `NO_BAKED_NODE=1` to ignore it.
 2. **Post-migration state snapshot** — a logical dump of the migrated CNPG DB +
    Garage object storage + the dep workloads/secrets. On a **freshly created**
-   cluster `up-dev` restores this instead of running `dev_dependencies.sh` + the
+   cluster `up` restores this instead of running `dev_dependencies.sh` + the
    migration jobs; set `NO_RESTORE=1` to force the slow path. Restore only runs
-   on a cluster `up-dev` just created — never against a live, already-migrated
+   on a cluster `up` just created — never against a live, already-migrated
    GitLab.
 
 ### Building + using the caches
 
 ```sh
-nix run .#up-dev        # 1. first standup (slow — nothing cached yet)
+nix run .#up        # 1. first standup (slow — nothing cached yet)
 nix run .#warm-cache    # 2. while it's up: capture → prewarm → bake → snapshot
-nix run .#kind-down
-nix run .#up-dev        # 3. fast standup: 0 image pulls + restored state
+nix run .#down
+nix run .#up        # 3. fast standup: 0 image pulls + restored state
 ```
 
 | Command | Does |
 | --- | --- |
-| `nix run .#warm-cache` | One shot: `capture-images → prewarm-images → bake-node-image → snapshot-dev`. Run once after the first `up-dev`. |
+| `nix run .#warm-cache` | One shot: `capture-images → prewarm-images → bake-node-image → snapshot-dev`. Run once after the first `up`. |
 | `nix run .#capture-images` | Record every image containerd pulled onto the node. |
 | `nix run .#prewarm-images` | skopeo-pull that set into the local archive cache (parallelism: `PREWARM_JOBS`, default 6). |
 | `nix run .#bake-node-image` | Commit `kindest/node-gitlab:<chartver>` with those images preloaded. |
-| `nix run .#snapshot-dev` / `.#restore-dev` | Capture / restore the migrated DB + Garage + deps (restore also runs automatically inside `up-dev`). |
+| `nix run .#snapshot-dev` / `.#restore-dev` | Capture / restore the migrated DB + Garage + deps (restore also runs automatically inside `up`). |
 | `nix run .#cache-clean [--node\|--snapshot\|--images\|--all]` | Invalidate caches for the **current** chart version (see below). |
 
 The archive cache lives under `$GITLAB_OPERATOR_CACHE` (default
