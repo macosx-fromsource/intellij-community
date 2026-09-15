@@ -42,7 +42,7 @@ E2E_CLUSTER_PROVIDER=k3s task e2e-suite SUITE=siphon
 | `E2E_STRICT` | `0` | Turn every skip into a failure. CI sets it, so a job whose requirements went unsatisfied is red rather than an empty green. |
 | `E2E_CLUSTER_PROVIDER` | `existing` | `existing` for the current kubeconfig, `k3s` for a disposable container. |
 | `E2E_KUBE_CONTEXT` | current | Context to use, for `existing`. |
-| `E2E_K3S_IMAGE` | `rancher/k3s:v1.36.1-k3s1` | Node image, for `k3s`. |
+| `E2E_K3S_IMAGE` | `rancher/k3s:v1.37.0-k3s1` | Node image, for `k3s`. |
 | `E2E_K3S_PLATFORM` | the host platform | Platform to import the image as, for example `linux/amd64`. |
 | `E2E_KEEP_CLUSTER` | `0` | Leave the k3s container running. |
 | `E2E_K3D_CLUSTER` | unset | k3d cluster name. Set it and the harness loads the image with `k3d image import`. |

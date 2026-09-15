@@ -78,9 +78,8 @@ function k3d_create() {
   echo "Creating k3d cluster '${cluster_name}' (image: ${K3D_K8S_IMAGE})"
   echo "DinD/Docker host IP for port mapping: ${docker_ip}"
 
-  # Traefik is disabled so the GitLab chart's bundled NGINX controller can
-  # bind ports 80/443 through the k3s service load balancer. Port 22 is
-  # mapped for Git-over-SSH.
+  # Networking controllers and Gateway API CRDs are provided by GitLab chart
+  # so we disable the ones bundled with k3s.
   k3d cluster create "${cluster_name}" \
     --image "${DOCKERHUB_PREFIX:-docker.io}/${K3D_K8S_IMAGE}" \
     --api-port "${docker_ip}:6443" \
@@ -88,6 +87,7 @@ function k3d_create() {
     --port "80:80@loadbalancer" \
     --port "443:443@loadbalancer" \
     --k3s-arg "--disable=traefik@server:0" \
+    --k3s-arg "--disable=gateway-api-crd@server:0" \
     --wait \
     --timeout 120s
 

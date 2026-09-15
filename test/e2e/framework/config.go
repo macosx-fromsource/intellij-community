@@ -26,7 +26,7 @@ const (
 
 	defaultOperatorNamespace = "gitlab-system"
 	defaultNameOverride      = "gitlab"
-	defaultK3sImage          = "rancher/k3s:v1.36.1-k3s1"
+	defaultK3sImage          = "rancher/k3s:v1.37.0-k3s1"
 	defaultCertManager       = "1.19.2"
 	defaultArtifactsDir      = ".build/e2e"
 	defaultHelmBinary        = "helm"
