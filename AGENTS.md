@@ -63,6 +63,23 @@ HELM_CHARTS=$(pwd)/charts CHART_VERSION=$(head -n1 CHART_VERSIONS) \
 
 **Other env vars:** `SKIP_ENVTEST=yes` (skip envtest setup for fast tests).
 
+### End-to-end tests
+
+Two kinds, and they are not interchangeable. See [doc/developer/testing.md](doc/developer/testing.md).
+
+- `task e2e-tests` — in-process, `//go:build e2e`, lives beside the code it tests
+  (`internal/controller/gitlabcore/e2e_test.go`). Needs a cluster and
+  `task install_v2alpha1_crds`.
+- `task e2e-suite SUITE=<name>` — black-box, `test/e2e/`, **no build tag** (gated on
+  `E2E=true`). Deploys the bridge image and drives the Operator through the API
+  server, so it covers the `bridge` tag, `ENABLE_BRIDGE` and the real RBAC. Suites:
+  `operator` and `siphon`. `task e2e-suites` lists them; `E2E_CLUSTER_PROVIDER=k3s`
+  gets a disposable cluster; every variable is in
+  [test/e2e/README.md](test/e2e/README.md).
+
+New suites go in `test/e2e/suite/<name>/`, register themselves from `init()`, and need
+a blank import in `test/e2e/suite/doc.go`.
+
 ## Code Style
 
 ### Imports
@@ -188,6 +205,7 @@ var _ = Describe("Component", func() {
 | `pkg/support/` | Utilities (values, secrets, charts, kube) |
 | `internal/bridge/` | Bridge (backend-for-frontend) HTTP API + embedded SPA |
 | `config/` | CRDs, RBAC, webhooks |
+| `test/e2e/` | Black-box end-to-end harness and suites (no build tag; gated on `E2E`) |
 | `doc/developer/` | Developer docs |
 
 Tool versions pinned in `mise.toml` (Go 1.26.0, golangci-lint 2.9.0, Helm 4.1.1, task 3.42.1).
