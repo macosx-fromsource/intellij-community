@@ -25,6 +25,15 @@ cluster instead:
 E2E_CLUSTER_PROVIDER=k3s task e2e-suite SUITE=siphon
 ```
 
+## Suites
+
+| Suite | Needs | Covers |
+|---|---|---|
+| `operator` | cert-manager | The Operator under test is bridge-enabled and reconciling, and the manager may write what it reconciles. Run this first: every other suite depends on all of it. |
+| `siphon` | cert-manager | The Siphon contract that holds before a GitLab is available: the schema, the wait reasons, that nothing renders early, and what deletion leaves behind. |
+| `siphon-release` | a running GitLab | Skipped. What a Siphon renders once its instance reports available. |
+| `siphon-datapath` | PostgreSQL, NATS, ClickHouse | Skipped. A row written in PostgreSQL arriving in ClickHouse. |
+
 ## Environment
 
 | Variable | Default | Meaning |
@@ -85,8 +94,8 @@ Ask for what the suite needs with the `Require` methods of `Env` rather than
 declaring it: each installs or adopts what it can, skips when it cannot, and is
 memoized, so two suites in one run share the work whatever order they ask in.
 
-A suite that is not runnable yet calls `t.Skip` on its first line, naming what it
-needs. See [suite/siphonrelease](suite/siphonrelease/siphonrelease.go).
+A suite that needs a fixture the harness cannot provide yet calls `t.Skip` on its
+first line, naming that fixture, rather than failing.
 
 ## Notes on the tree
 

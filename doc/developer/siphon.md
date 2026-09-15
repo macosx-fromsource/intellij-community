@@ -266,3 +266,29 @@ producer reads `ssl_mode`, which it ignores silently.
 
 Changing the identifier set reassigns tables across shards. For a producer that means a new
 publication and a new replication slot, so treat it as a migration rather than a tuning change.
+
+## End-to-end tests
+
+`task e2e-suite SUITE=siphon` deploys the Operator as an image and drives a real `Siphon` through
+the API server. It needs no GitLab. The reconciler takes the finalizer and records the topology
+before it resolves `gitlabRef`, so the schema, the wait reasons, that nothing renders early, and the
+warning that deletion retains the replication slot are all observable against an empty cluster.
+
+Nothing past `resolveGitLab` is covered yet. Both tiers that would cover it need a fixture the
+harness does not provide:
+
+- What a `Siphon` renders needs a `GitLabCore` reporting `Available`. That means every workload the
+  GitLab chart renders has ready replicas. Nothing can short-circuit the status, because the same
+  Operator reconciles the instance and overwrites what a test writes.
+- Whether a row arrives needs a PostgreSQL primary that carries the publication, the
+  `siphon_alter_publication` function and the grants, NATS with JetStream, and a ClickHouse that
+  holds the target tables. The Operator creates none of them, and the migrations of the instance
+  create the target tables.
+
+Assert the data path on the table the application reads, not on the `siphon_` table of the same
+name. Several of those tables use `ENGINE = Null`, among them `siphon_issues` and
+`siphon_merge_requests`. They are insert entry points for materialized views that write into
+`work_items` and `merge_requests`. A count on them returns 0 however well the pipeline runs, so read
+`system.tables.engine` first. `siphon_events` is a real `ReplacingMergeTree`.
+
+For more information, see [Tests](testing.md).
