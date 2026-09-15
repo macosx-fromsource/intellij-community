@@ -31,7 +31,7 @@ ARG TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GO111MODULE=on go build -a -o manager ./cmd/manager
 
 # ubi9-micro carries no CA certificates; borrow them from ubi9-minimal.
-FROM registry.access.redhat.com/ubi9-minimal:9.8@sha256:186a94b76e386782f576c9c49813b16dceb2ba63102af5a28405dcefec2806d0 AS certs
+FROM registry.access.redhat.com/ubi9-minimal:9.8@sha256:f9837da6236ba91733dc2db80696d8905966f585808c429c809633744ce53bb4 AS certs
 
 # Use ubi micro as base image to package the manager binary
 # Refer to https://www.redhat.com/en/blog/introduction-ubi-micro for more details
