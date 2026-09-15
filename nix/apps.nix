@@ -179,7 +179,7 @@ let
     ${envDefaults}
     exec bash ./scripts/provision_and_deploy.sh create_kind_cluster
   '';
-  kindDown = mkScript "kind-down" clusterTools ''
+  kindDown = mkScript "down" clusterTools ''
     ${envDefaults}
     exec kind delete cluster --name "$KIND_CLUSTER_NAME"
   '';
@@ -386,7 +386,7 @@ let
   # Set BRIDGE=1 to bring up the bridge-enabled variant instead: it loads the
   # dev-bridge image and deploys with bridge.enabled=true. Reach the bridge
   # afterwards with `nix run .#bridge-access` (mints a token + port-forwards).
-  up = mkScript "up-dev" clusterTools ''
+  up = mkScript "up" clusterTools ''
     ${envDefaults}
     ${nodeImageResolver}
     echo "==> kind cluster"
@@ -451,10 +451,10 @@ let
     "${cacheExes.bake}"
     echo "==> [4/4] snapshot-dev (capture the migrated cluster state)"
     "${cacheExes.snapshot}"
-    echo "==> warm-cache done — the next 'nix run .#up-dev' should be fast (0 pulls + restored state)."
+    echo "==> warm-cache done — the next 'nix run .#up' should be fast (0 pulls + restored state)."
   '';
 
-  # Invalidate cached state so the next up-dev rebuilds it. Caches are keyed by
+  # Invalidate cached state so the next up rebuilds it. Caches are keyed by
   # chart version, so this operates on the CURRENT version ($CHART_VER); to wipe
   # a different version's caches set GITLAB_CHART_VERSION, or `rm -rf` the cache
   # dir for a full cross-version reset.
@@ -538,11 +538,11 @@ in
     deploy-bridge = mkApp deployBridge;
     bridge-access = mkApp bridgeAccess;
     refresh-dev = mkApp devRefresh;
-    up-dev = mkApp up;
+    up = mkApp up;
     warm-cache = mkApp warmCache;
     cache-clean = mkApp cacheClean;
     kind-up = mkApp kindUp;
-    kind-down = mkApp kindDown;
+    down = mkApp kindDown;
     deps-dev = mkApp devDeps;
     gateway-deps = mkApp gatewayDeps;
     load-image-dev = mkApp loadImage;

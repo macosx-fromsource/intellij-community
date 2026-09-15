@@ -23,7 +23,7 @@ git add flake.nix nix/ scripts/deploy.sh
 | # | Command | Expected |
 |---|---------|----------|
 | 1.1 | `nix flake check` | No errors. |
-| 1.2 | `nix flake show` | Lists `packages` (chart-deps, gitlab-charts, operator-manifest, operator-manifest-dev, cr-overlay, manager, image, default) and `apps` (generate, manifests, fmt, vet, lint, build, test, retrieve-charts, build-operator, deploy, deploy-dev, refresh-dev, up-dev, kind-up, kind-down, deps-dev, load-image-dev). |
+| 1.2 | `nix flake show` | Lists `packages` (chart-deps, gitlab-charts, operator-manifest, operator-manifest-dev, cr-overlay, manager, image, default) and `apps` (generate, manifests, fmt, vet, lint, build, test, retrieve-charts, build-operator, deploy, deploy-dev, refresh-dev, up, kind-up, down, deps-dev, load-image-dev). |
 
 ---
 
@@ -94,7 +94,7 @@ Start your container runtime first (e.g. `colima start` or Docker Desktop).
 
 | # | Command | Expected |
 |---|---------|----------|
-| 5.1 | `nix run .#up-dev` | Runs: kind cluster (create if missing) → deps-dev → build+load image → deploy operator + GitLab CR (local dev image). Prints the `==>` step banners and the detected `KIND_LOCAL_IP`. |
+| 5.1 | `nix run .#up` | Runs: kind cluster (create if missing) → deps-dev → build+load image → deploy operator + GitLab CR (local dev image). Prints the `==>` step banners and the detected `KIND_LOCAL_IP`. |
 
 ### 5b. Step-by-step (equivalent to `up`, for isolating failures)
 
@@ -139,7 +139,7 @@ current kube context, which `kind-up` points at the new cluster.
 
 | # | Command | Expected |
 |---|---------|----------|
-| 6.1 | `nix run .#kind-down` | Deletes the kind cluster `gitlab`. |
+| 6.1 | `nix run .#down` | Deletes the kind cluster `gitlab`. |
 | 6.2 | `rm -rf result result-dev bin charts .build external-deps.yaml` | Clean working tree (these are all gitignored build artifacts). |
 
 ---
