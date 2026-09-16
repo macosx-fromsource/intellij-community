@@ -37,18 +37,18 @@
 #   - Any other variable set on a row is forwarded to the child job and
 #     overrides the .review_k3d_template default of the same name.
 .k3d_matrix: &k3d_matrix
-  - K3D_K8S_IMAGE: "rancher/k3s:v1.34.1-k3s1"
-    K3D_K8S_VERSION_SLUG: "v134"
-    CLUSTER_MODE: "true"
-  - K3D_K8S_IMAGE: "rancher/k3s:v1.35.0-k3s1"
+  - K3D_K8S_IMAGE: "rancher/k3s:v1.35.8-k3s1"
     K3D_K8S_VERSION_SLUG: "v135"
     CLUSTER_MODE: "true"
-  - K3D_K8S_IMAGE: "rancher/k3s:v1.36.1-k3s1"
-    K3D_K8S_VERSION_SLUG: "v136-arm"
+  - K3D_K8S_IMAGE: "rancher/k3s:v1.36.4-k3s1"
+    K3D_K8S_VERSION_SLUG: "v136"
+    CLUSTER_MODE: "true"
+  - K3D_K8S_IMAGE: "rancher/k3s:v1.37.0-k3s1"
+    K3D_K8S_VERSION_SLUG: "arm64"
     CLUSTER_MODE: "true"
     RUNNER_TAG: "saas-linux-large-arm64"
-  - K3D_K8S_IMAGE: "rancher/k3s:v1.36.1-k3s1"
-    K3D_K8S_VERSION_SLUG: "v136"
+  - K3D_K8S_IMAGE: "rancher/k3s:v1.37.0-k3s1"
+    K3D_K8S_VERSION_SLUG: "v137"
     K3D_PRIMARY: "primary"
     CLUSTER_MODE: "false"
     TEST_CR_FILES_DIR: "config/test/overlays/gatewayapi"
@@ -162,8 +162,8 @@ review_k3d_gitlabcore:
       optional: true
       artifacts: false
   variables:
-    K3D_K8S_IMAGE: "rancher/k3s:v1.36.1-k3s1"
-    K3D_K8S_VERSION_SLUG: "v136-gitlabcore"
+    K3D_K8S_IMAGE: "rancher/k3s:v1.37.0-k3s1"
+    K3D_K8S_VERSION_SLUG: "gitlabcore"
     CLUSTER_MODE: "false"
     INSTALL_ENVOY_GATEWAY: "true"
     TEST_CR_FILES_DIR: "config/test/v2alpha1/base"

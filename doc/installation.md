@@ -55,11 +55,11 @@ The GitLab Operator supports the following Kubernetes versions:
 
 | Kubernetes release | Status      | Minimum Operator version |
 |--------------------|-------------|--------------------------|
+| 1.37               | Supported   | 3.5.0                    |
 | 1.36               | Supported   | 3.4.0                    |
 | 1.35               | Supported   | 2.9.0                    |
-| 1.34               | Supported   | 2.5.0                    |
-| 1.33               | Deprecated  | 2.1.0                    |
-| 1.32               | Unsupported | 2.0.0                    |
+| 1.34               | Deprecated  | 2.5.0                    |
+| 1.33               | Unsupported | 2.1.0                    |
 
 {{< /tab >}}
 
