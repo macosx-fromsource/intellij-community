@@ -133,6 +133,7 @@ include:
   - local: .gitlab/ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/k3d-templates.gitlab-ci.yml
   - local: .gitlab/ci/buildx.gitlab-ci.yml
+  - local: .gitlab/ci/e2e.gitlab-ci.yml
   - local: .gitlab/ci/review-*.gitlab-ci.yml
 
 default:

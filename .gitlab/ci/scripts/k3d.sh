@@ -142,6 +142,10 @@ function k3d_collect_debug() {
   if command -v kubectl &>/dev/null; then
     kubectl get gitlab -n "${ns}" -o yaml > "${debug_dir}/gitlab-cr.yaml" 2>&1 || true
     kubectl get gitlabcore -n "${ns}" -o yaml > "${debug_dir}/gitlabcore-cr.yaml" 2>&1 || true
+    # The same kinds again, cluster-wide, because the end-to-end suites drive them in
+    # namespaces of their own rather than in ${ns}. The definitions are absent on the
+    # QA jobs, hence the `|| true` that every line here already carries.
+    kubectl get siphons,gitlabcores,orbits -A -o yaml > "${debug_dir}/v2alpha1-resources.yaml" 2>&1 || true
     kubectl get pods -A -o wide > "${debug_dir}/pods.txt" 2>&1 || true
     kubectl describe pods -n "${ns}" > "${debug_dir}/pods-describe.txt" 2>&1 || true
     kubectl get events -A --sort-by=.lastTimestamp > "${debug_dir}/events.txt" 2>&1 || true

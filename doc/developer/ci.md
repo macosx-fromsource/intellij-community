@@ -122,6 +122,23 @@ Edit the `parallel:matrix` in `.gitlab/ci/review-k3d.gitlab-ci.yml`. Each row se
 adding a Kubernetes version there means editing its job definition directly instead of adding a
 matrix row.
 
+## End-to-end suite jobs
+
+`.gitlab/ci/e2e.gitlab-ci.yml` runs the black-box suites in `test/e2e`, one suite per
+job, each in a single-use k3d cluster inside its own Docker-in-Docker environment.
+They reuse `.gitlab/ci/scripts/k3d.sh` and `k3d_collect_debug`, and they pull the
+`-bridge` image `build_bridge_image` already published rather than building their own.
+
+They are peers of the k3d cluster tests above, not part of them: those deploy a whole
+GitLab and run `gitlab-qa`, while these deploy only the Operator and drive custom
+resources. `e2e_siphon` runs on two Kubernetes versions to cover the CEL validation
+and the schema defaults of both API servers.
+
+Both `k3d-debug/` and `e2e-artifacts/` are uploaded whatever the outcome. The second
+is written by the harness itself, before it deletes the namespace, which is the one
+`k3d_collect_debug` cannot do. See
+[Tests](testing.md).
+
 ## QA pipelines
 
 By default, QA pipelines run the smoke suite, a [small subset of fast end-to-end functional tests](https://docs.gitlab.com/development/testing_guide/smoke/) that quickly checks basic
