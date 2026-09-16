@@ -41,6 +41,21 @@ To set up your system for development of the operator, follow the steps below:
    [`Taskfile.yaml`](https://gitlab.com/gitlab-org/cloud-native/gitlab-operator/-/blob/master/Taskfile.yaml?ref_type=heads)
    for our task definitions.
 
+## Nix
+
+Nix is an optional alternative to the `mise` and `task` setup described above.
+It gives you a reproducible dev shell and a one-command local GitLab deployment.
+
+With Nix and flakes enabled, you can:
+
+- Enter a dev shell with the required tools: `nix develop`.
+- Deploy a local GitLab in a single command: `nix run .#up`.
+- Tear the whole stack down: `nix run .#down`.
+
+The Nix workflow is additive. It does not change the `mise`, `task`, or CI workflow.
+
+For more information, see the [Nix workflow documentation](../../nix/README.md).
+
 ## Project structure
 
 The GitLab Operator is built using the Operator SDK v1.0.0 and consequently uses the Kubebuilder v2 layout format. This is necessary to know since there was a change in project directory and some of the tooling used by operator SDK.
