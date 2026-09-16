@@ -22,14 +22,15 @@ For more information, see the [environments documentation](https://docs.gitlab.c
 
 Read about our [IaC managed Project Access Tokens](https://gitlab.com/gitlab-org/distribution/runbooks/-/blob/main/iac-managed-project-access-tokens.md).
 
-## OpenShift CI clusters
+## OpenShift CI cluster
 
-We manage OpenShift clusters in Google Cloud that are used for acceptance tests, including QA suite.
+We manage one OpenShift cluster in Google Cloud that is used for acceptance tests, including the QA suite.
+`review_ocp`, the `qa_ocp` jobs, and `validate_olm_release` run against it.
 
-kubeconfig files for connecting to these clusters are stored in the 1Password cloud-native vault. Search for `ocp-ci`.
+The kubeconfig file for connecting to the cluster is stored in the 1Password cloud-native vault. Search for `ocp-ci`.
 
-The clusters are orchestrated using the [`openshift-provisioning`](https://gitlab.com/gitlab-org/distribution/infrastructure/openshift-provisioning)
-project. CI access is managed using [`kube-agents`](https://gitlab.com/gitlab-org/distribution/infrastructure/kube-agents) .
+The cluster is orchestrated using the [`openshift-provisioning`](https://gitlab.com/gitlab-org/distribution/infrastructure/openshift-provisioning)
+project. CI access is managed using [`kube-agents`](https://gitlab.com/gitlab-org/distribution/infrastructure/kube-agents).
 
 ## k3d cluster tests
 
