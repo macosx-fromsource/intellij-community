@@ -33,17 +33,10 @@ variables:
   GO_MINOR: "1.27"
   QA_FULL_SUITE_OPTIONS: '--tag ~smoke --tag ~skip_live_env --tag ~orchestrated --tag ~transient'
   CI_TOOLS_VERSION: "5.33.0"
-  # Buildx cluster connection settings are set at project level:
-  BUILDX_K8S_DISABLE: "true"
-  BUILDX_K8S_CLUSTER_NAME: ""
-  BUILDX_K8S_GCLOUD_PROJECT: ""
-  BUILDX_K8S_CLUSTER_ZONE: ""
-  BUILDX_K8S_SA_JSON: ""
-  BUILDX_K8S_REQUEST_CPU: '1'
-  BUILDX_K8S_REQUEST_MEMORY: '1G'
-  BUILDX_K8S_AUTO_STOP_IN: '2 hours'
-  # Architectures to build via buildx
-  BUILDX_ARCHS: amd64 # amd64,arm64 in project settings
+  # Platforms the Operator image is built for. Every stage that executes
+  # anything is pinned to the build platform, so both are produced on an
+  # amd64 runner with no emulation. See doc/developer/ci.md.
+  BUILD_PLATFORMS: linux/amd64,linux/arm64
   PREFLIGHT_VERSION: "1.19.1"
 
   # We need GITLAB_CHART_VERSION and ENVIRONMENT_SUFFIX to be fully unset for pipeline logic to work correctly
@@ -132,7 +125,6 @@ include:
   - local: .gitlab/ci/rules.gitlab-ci.yml
   - local: .gitlab/ci/templates.gitlab-ci.yml
   - local: .gitlab/ci/k3d-templates.gitlab-ci.yml
-  - local: .gitlab/ci/buildx.gitlab-ci.yml
   - local: .gitlab/ci/e2e.gitlab-ci.yml
   - local: .gitlab/ci/review-*.gitlab-ci.yml
 
@@ -487,7 +479,6 @@ bridge_unit_tests:
 
 .docker_build_job:
   extends:
-    - .cache
     - .dind
   stage: release
   needs: ["pull_charts"]
@@ -506,19 +497,14 @@ bridge_unit_tests:
       if [ $DEPENDENCY_PROXY_LOGIN == 'true' ]; then
         echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login $CI_DEPENDENCY_PROXY_SERVER -u $CI_DEPENDENCY_PROXY_USER --password-stdin
       fi
-    # Update module cache so it can be saved in CI cache (only the dependencies required to build)
-    - echo "Updating module cache using GO_IMAGE=${GO_IMAGE}"
-    - docker run -v "${GOPATH}:/go" -v "${CI_PROJECT_DIR}:/code" -w /code ${GO_IMAGE} go list ./...
-    - source .gitlab/ci/scripts/buildx/lib/build.sh
-    - source .gitlab/ci/scripts/buildx/lib/configure.sh
-    - .gitlab/ci/scripts/buildx/bootstrap.sh
+    - source .gitlab/ci/scripts/docker_build.sh
+    # The default `docker` driver cannot produce an image for a foreign
+    # platform, so create a `docker-container` driver in the job's own DinD.
+    - docker buildx create --name builder --driver docker-container --use --bootstrap
   script:
     - docker_build_and_push $DOCKER_TAGS
     - sign $DOCKER_TAGS
   interruptible: false
-  environment:
-    name: buildx_${CI_COMMIT_REF_SLUG}
-    action: stop
 
 .podman_build_job:
   stage: release-olm
@@ -670,7 +656,8 @@ image_certification:
       fi
     - CERTIFY_IMAGE="${CI_REGISTRY_IMAGE}:${CERTIFY_TAG}"
     - |
-      for arch in ${BUILDX_ARCHS//,/ }; do
+      for platform in ${BUILD_PLATFORMS//,/ }; do
+        arch="${platform##*/}"
         echo "Running preflight certification check for ${CERTIFY_IMAGE} (${arch})"
         preflight check container ${CERTIFY_IMAGE} ${SUBMIT} \
           --docker-config="${DOCKER_AUTH_FILE}" \

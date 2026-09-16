@@ -537,7 +537,6 @@ tasks:
     deps:
       - retrieve-charts
     cmds:
-      - mkdir -p .go/pkg/mod
       - $CONTAINER_CLI build . -t $IMG_REGISTRY/$IMG_REPOSITORY/$IMG_NAME:$TAG
 
   docker-push:
@@ -550,7 +549,6 @@ tasks:
     deps:
       - retrieve-charts
     cmds:
-      - mkdir -p .go/pkg/mod
       - $CONTAINER_CLI build -f Dockerfile.bridge . -t $IMG_REGISTRY/$IMG_REPOSITORY/$IMG_NAME:$TAG-bridge
 
   docker-push-bridge:

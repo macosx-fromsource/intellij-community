@@ -150,11 +150,50 @@ To debug failures in tests, please follow [investigate QA failures](https://hand
 
 ## Container builds
 
-The Operator image can be built for multiple architectures, by configuring a Kubernetes buildx driver using the `BUILDX_K8S_*`
-variables. Set the `BUILDX_ARCHS` to a comma-separated string of the target architectures (for example `amd64,arm64`).
-If `BUILDX_K8S_DISABLE` is set to `true` - automatically reduces number of platforms to build for down to `amd64`.
+The Operator image is built for every platform in `BUILD_PLATFORMS` (`linux/amd64` and `linux/arm64`),
+on a single amd64 runner, with no emulation. `.docker_build_job` creates a `docker-container` buildx
+driver in its own DinD service, because the default `docker` driver cannot produce an image for a
+foreign platform.
 
-If no Kubernetes driver is configured you can (cross-) compile only one architecture.
+The image is pushed with `--output type=image,push=true,oci-artifact=false`. BuildKit 0.32 began
+exporting attestation manifests as OCI artifacts, which name the image manifest in a `subject` field.
+The GitLab registry rejects a manifest whose `subject` is not present yet, and BuildKit pushes the
+attestation concurrently with the manifest it names, so a plain `--push` fails intermittently with
+`blob unknown to registry` naming that manifest. `oci-artifact=false` keeps the legacy attestation
+format, which has no `subject`, so there is nothing to race. The published index is unchanged: two
+platform manifests and two attestation manifests.
+
+Do not drop the flag for a newer BuildKit. The OCI distribution spec requires a registry to accept a
+manifest whose `subject` is absent, so the [v0.32.1 push-order workaround](https://github.com/moby/buildkit/pull/7012)
+was [reverted in v0.32.2](https://github.com/moby/buildkit/pull/7016) and v0.33.0 pushes like the
+version that failed. The fix belongs to the registry and is tracked in
+[container-registry#2375](https://gitlab.com/gitlab-org/container-registry/-/work_items/2375); the
+flag can go once that ships and its feature flag is enabled.
+
+The multi-node Kubernetes driver this replaced never hit it, because a node per architecture forces
+buildx to push each platform separately, committing every subject before the attestation that names
+it.
+
+`docker_build_and_push` writes the pushed index digest to `--metadata-file`, and `sign` reads it back
+from there. cosign stores a signature against the digest, at `<repo>:sha256-<digest>.sig`, and
+`cosign verify <repo>:<tag>` resolves the tag to its digest first — so one signature covers every tag
+the build pushed, and the digest never has to be re-resolved from a tag another pipeline could have
+moved.
+
+Every stage that executes anything is pinned to the build platform with `--platform=${BUILDPLATFORM}`.
+The Go stage cross-compiles through `GOOS`/`GOARCH`, and the SPA stage in `Dockerfile.bridge` runs
+`npm ci` and the Vite build once, because its output is architecture-independent. The `certs` and
+runtime stages are deliberately left unpinned so that the published image is the target architecture;
+they only `COPY`, so no foreign binary is ever executed.
+
+Adding a `RUN` to a runtime stage would make that stage need emulation. Build it on a native runner
+instead, for example with the `saas-linux-large-arm64` tag, and join the results with
+`docker buildx imagetools create`.
+
+`image_certification` certifies one architecture per entry in `BUILD_PLATFORMS`, so the platform list
+has a single definition in the repository.
+
+`build_bundle_image` is OLM metadata rather than a runnable workload, and stays single-arch on podman.
 
 ## DockerHub rate limits
 

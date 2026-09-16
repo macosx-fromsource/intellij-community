@@ -7,10 +7,9 @@ ARG BUILD_IMAGE=docker.io/golang:1.26
 FROM --platform=${BUILDPLATFORM} ${BUILD_IMAGE} AS builder
 WORKDIR /workspace
 
-# Copy in any existing Go cache, and download
-# any missing dependencies.
+# Download dependencies. This runs once for a multi-platform build: it sits
+# in the part of the stage that precedes TARGETARCH, so both targets share it.
 ENV GOPATH=/go
-COPY .go/pkg/mod/ /go/pkg/mod/
 COPY go.mod go.sum ./
 RUN go mod download
 

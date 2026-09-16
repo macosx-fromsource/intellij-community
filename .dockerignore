@@ -3,3 +3,11 @@
 
 # The SPA is built fresh in the webbuilder stage; don't ship host build output.
 internal/bridge/web/dist
+
+# The Go module cache is fetched inside the builder stage by `go mod download`.
+# Sending it as build context costs GBs and, in a multi-platform build, is
+# materialised once per target platform.
+.go
+
+# Nothing in the image is built from git metadata.
+.git
