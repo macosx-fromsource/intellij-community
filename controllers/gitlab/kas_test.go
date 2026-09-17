@@ -38,6 +38,11 @@ var _ = Describe("KAS", func() {
 		chartValues := IngressModeValues()
 		_ = chartValues.SetValue("global.kas.enabled", true)
 		_ = chartValues.SetValue("global.kas.service.apiExternalPort", 8153)
+		// The chart renders the gRPC ingress by default for the NGINX provider
+		// since chart 10.4 (https://gitlab.com/gitlab-org/charts/gitlab/-/merge_requests/5333).
+		// Disable it explicitly so this spec covers only the base KAS resources,
+		// independent of the chart version under test.
+		_ = chartValues.SetValue("gitlab.kas.ingress.grpc.enabled", false)
 
 		mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
 		adapter := CreateMockAdapter(mockGitLab)
