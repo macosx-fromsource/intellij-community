@@ -17,7 +17,7 @@
 - [ ] Merge Request Title and Description are up to date, accurate, and descriptive
 - [ ] MR targeting the appropriate branch
 - [ ] MR has a green pipeline on GitLab.com
-- [ ] When ready for review, MR is labeled "~workflow::ready for review" per the [Distribution MR workflow](https://about.gitlab.com/handbook/engineering/development/enablement/systems/distribution/merge_requests.html)
+- [ ] When ready for review, MR is marked as ready (not a draft) and assigned to a reviewer
 
 If you are only adding documentation, do not add any of the following labels:
 
@@ -33,6 +33,7 @@ These labels cause the MR to be added to code verification QA issues.
 
 Documentation-related MRs should be reviewed by a Technical Writer for a non-blocking review, based on [Documentation Guidelines](https://docs.gitlab.com/development/documentation/) and the [Style Guide](https://docs.gitlab.com/development/documentation/styleguide/).
 
+- [ ] As soon as you begin reviewing, select **Start a review** on your first comment so the MR shows *Reviewer started review*.
 - [ ] If the content requires it, ensure the information is reviewed by a subject matter expert.
 - Technical writer review items:
   - [ ] Ensure docs metadata is present and up-to-date.

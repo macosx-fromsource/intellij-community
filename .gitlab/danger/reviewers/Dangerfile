@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
-return if helper.has_scoped_label_with_scope?("workflow")
-
 REVIEWERS_MESSAGE = <<~MSG
-Please add the ~"workflow::ready for review" label once you think the MR is ready to for an initial review, and assign
-a reviewer based on the Reviewer Roulette suggestion below.
+When requesting a review, it's recommended that you pick the reviewer suggested by the reviewer roulette, but you can pick someone else if you see fit.
 
-Merge requests are handled according to the workflow documented in our [handbook](https://about.gitlab.com/handbook/engineering/infrastructure/core-platform/systems/distribution/merge_requests.html#workflow) and should receive a response within the limit documented in our [First-response SLO](https://about.gitlab.com/handbook/engineering/workflow/code-review/#first-response-slo).
+Merge requests should receive a response within the limit documented in the [Review-response SLO](https://handbook.gitlab.com/handbook/engineering/workflow/code-review/#review-response-slo).
 
-If you don't receive a response, please mention `@gitlab-org\/distribution`, or one of our [Project Maintainers](https://about.gitlab.com/handbook/engineering/projects/#omnibus-gitlab)
+If you don't receive a response from the reviewer within the SLO, please mention `@gitlab-org\/software-delivery\/operate`, or one of our [Project Maintainers](https://handbook.gitlab.com/handbook/engineering/projects/#omnibus-gitlab)
 MSG
 
 # Print maintainers message
