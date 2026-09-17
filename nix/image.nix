@@ -83,7 +83,7 @@ let
       pname = "gitlab-operator${lib.optionalString bridge "-bridge"}";
       version = "dev";
       src = goSrc;
-      vendorHash = "sha256-gAL5Vn+iGxh6W946f09eCGpUUDwGkpu51lmYuSOtI9k=";
+      vendorHash = "sha256-ObZ2cFaM25e79/PYsRK9yiPCUr8D2/PRqf+nqU+k7WY=";
       # main lives in cmd/manager (moved there in 6e4d37ca); building "." would
       # compile the non-main module root and install NO binary → empty $out.
       subPackages = [ "cmd/manager" ];
@@ -152,7 +152,7 @@ let
     dontInstall = true;
     outputHashMode = "recursive";
     outputHashAlgo = "sha256";
-    outputHash = "sha256-G5Mo6mfjl9S62Mz0P8KtyBiIAO9xlOn7npuTfewueqY=";
+    outputHash = "sha256-dVvIOneJjlRDWmDv9eJfM08tYpTwIR112hQ9KA4Z4tk=";
   };
 
   # Image filesystem laid out to match the upstream Dockerfile contract:
