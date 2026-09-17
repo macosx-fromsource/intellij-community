@@ -151,6 +151,105 @@ var _ = Describe("EffectiveValues", func() {
 		})
 	})
 
+	When("OpenBao is specified", func() {
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.OpenBao = &apiv2alpha1.OpenBaoSpec{
+			PostgreSQL: apiv2alpha1.OpenBaoPostgreSQLSpec{
+				Host:              "dev-openbao-postgresql",
+				PasswordSecretRef: apiv2alpha1.SecretKeySelector{Name: "openbao-db-password", Key: "password"},
+			},
+			ServiceAccount: apiv2alpha1.OpenBaoServiceAccountSpec{Name: "openbao"},
+		}
+
+		values, err := EffectiveValues(core)
+
+		It("turns on the GitLab-side integration and the bundled subchart", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetBool(openbaoEnabledKey)).To(BeTrue())
+			Expect(values.GetBool(openbaoInstallKey)).To(BeTrue())
+		})
+
+		It("points the chart at the database and the password Secret", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(openbaoPsqlHostKey)).To(Equal("dev-openbao-postgresql"))
+			Expect(values.GetString(openbaoPsqlPasswordSecretKey)).To(Equal("openbao-db-password"))
+			Expect(values.GetString(openbaoPsqlPasswordKeyKey)).To(Equal("password"))
+		})
+
+		It("leaves the port, database, and username to the chart's own defaults", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(openbaoPsqlPortKey)).To(BeEmpty())
+			Expect(values.GetString(openbaoPsqlDatabaseKey)).To(BeEmpty())
+			Expect(values.GetString(openbaoPsqlUsernameKey)).To(BeEmpty())
+		})
+
+		It("names the pre-existing ServiceAccount and turns off the chart's own RBAC", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(openbaoServiceAccountNameKey)).To(Equal("openbao"))
+			Expect(values.GetBool(openbaoServiceAccountCreateKey, true)).To(BeFalse())
+			Expect(values.GetBool(openbaoRoleCreateKey, true)).To(BeFalse())
+		})
+	})
+
+	When("OpenBao specifies a port, database, and username", func() {
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.OpenBao = &apiv2alpha1.OpenBaoSpec{
+			PostgreSQL: apiv2alpha1.OpenBaoPostgreSQLSpec{
+				Host:              "dev-openbao-postgresql",
+				Port:              5433,
+				Database:          "openbao_db",
+				Username:          "openbao_user",
+				PasswordSecretRef: apiv2alpha1.SecretKeySelector{Name: "openbao-db-password", Key: "password"},
+			},
+			ServiceAccount: apiv2alpha1.OpenBaoServiceAccountSpec{Name: "openbao"},
+		}
+
+		values, err := EffectiveValues(core)
+
+		It("maps every field", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetString(openbaoPsqlPortKey)).To(Equal("5433"))
+			Expect(values.GetString(openbaoPsqlDatabaseKey)).To(Equal("openbao_db"))
+			Expect(values.GetString(openbaoPsqlUsernameKey)).To(Equal("openbao_user"))
+		})
+	})
+
+	When("the free-form values ask the chart to manage OpenBao's own RBAC", func() {
+		userValues := support.Values{}
+		_ = userValues.SetValue(openbaoServiceAccountCreateKey, true)
+		_ = userValues.SetValue(openbaoRoleCreateKey, true)
+
+		core := &apiv2alpha1.GitLabCore{}
+		core.Spec.OpenBao = &apiv2alpha1.OpenBaoSpec{
+			PostgreSQL: apiv2alpha1.OpenBaoPostgreSQLSpec{
+				Host:              "dev-openbao-postgresql",
+				PasswordSecretRef: apiv2alpha1.SecretKeySelector{Name: "openbao-db-password", Key: "password"},
+			},
+			ServiceAccount: apiv2alpha1.OpenBaoServiceAccountSpec{Name: "openbao"},
+		}
+		core.Spec.Chart.Values = apiv2alpha1.ChartValues{Object: userValues}
+
+		values, err := EffectiveValues(core)
+
+		It("keeps the administrator's choice, because the defaults are not overrides", func() {
+			Expect(err).To(BeNil())
+			Expect(values.GetBool(openbaoServiceAccountCreateKey)).To(BeTrue())
+			Expect(values.GetBool(openbaoRoleCreateKey)).To(BeTrue())
+		})
+	})
+
+	When("OpenBao is not specified", func() {
+		core := &apiv2alpha1.GitLabCore{}
+
+		values, err := EffectiveValues(core)
+
+		It("leaves the Secret Manager off", func() {
+			Expect(err).To(BeNil())
+			Expect(values.HasKey(openbaoEnabledKey)).To(BeFalse())
+			Expect(values.HasKey(openbaoInstallKey)).To(BeFalse())
+		})
+	})
+
 	When("the free-form values name another database than the structured field", func() {
 		userValues := support.Values{}
 		_ = userValues.SetValue(psqlHostKey, "administrator-cluster-rw")

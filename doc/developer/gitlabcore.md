@@ -121,6 +121,7 @@ then `spec.chart.values` merged over them, then the Operator overrides.
 | `spec.postgresql` | `global.psql.host`, `global.psql.password.secret`, `global.psql.password.key` |
 | `spec.redis` | `global.redis.host`, `global.redis.auth.secret`, `global.redis.auth.key` |
 | `spec.objectStorage` | `global.appConfig.object_store.enabled`, `global.appConfig.object_store.connection.secret`, `global.appConfig.object_store.connection.key` |
+| `spec.openbao` | `global.openbao.enabled`, `openbao.install`, `global.openbao.psql.host`, `global.openbao.psql.password.secret`, `global.openbao.psql.password.key`, and optionally `global.openbao.psql.port`/`database`/`username`; `openbao.serviceAccount.name`, `openbao.serviceAccount.create: false`, `openbao.role.create: false` |
 
 A hostname of `gitlab.example.com` therefore yields a domain of `example.com`, and with it the
 sibling hosts `registry.example.com` and `kas.example.com`. An apex hostname is its own domain,
@@ -145,6 +146,23 @@ Secret carries the endpoint, the region, and the credentials in the
 [connection format](https://docs.gitlab.com/charts/charts/globals/#connection) of the chart, and the
 Operator passes it through without reading it. The registry, the Pages daemon, and the backup
 toolbox read settings of their own, which stay in the free-form values.
+
+`spec.openbao` backs the GitLab Secret Manager with an OpenBao instance, and naming it also turns on
+both the GitLab-side integration (`global.openbao.enabled`) and the bundled OpenBao subchart
+(`openbao.install`). OpenBao needs a PostgreSQL database of its own: it does not inherit the password
+of `spec.postgresql`, so `spec.openbao.postgresql` is a connection of its own, with `passwordSecretRef`
+required rather than defaulted. The port, the database, and the username fall back to the chart's own
+defaults (`5432`, `openbao`, `openbao`) when left unset. See
+[the OpenBao chart setup](https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao)
+for what those values configure; the database and its role are still an administrator prerequisite,
+the same way `spec.postgresql`'s database is.
+
+`spec.openbao.serviceAccount.name` names the ServiceAccount OpenBao's pod runs as, and defaults the
+chart's own `openbao.serviceAccount.create` and `openbao.role.create` to `false`. Both default `true`
+in the chart and would otherwise create a Role granting `get`/`update`/`patch` on Pods and a
+RoleBinding to it; the Operator does not manage RBAC on the cluster it reconciles (mirroring the
+shared secrets ServiceAccount below), so that Role and its RoleBinding are an administrator
+prerequisite instead, created ahead of time for the named ServiceAccount.
 
 The derived layer also mirrors the shared secrets defaults of the `v1beta1` controller:
 

@@ -158,6 +158,9 @@ components:
         objectStorage:
           $ref: "#/components/schemas/ObjectStorageDTO"
           description: "S3 compatible object storage the instance keeps its artifacts, uploads, and other blobs in. The chart needs one: it enables object storage for these with no connection of its own. See https://docs.gitlab.com/charts/charts/globals/#connection."
+        openbao:
+          $ref: "#/components/schemas/OpenBaoDTO"
+          description: Backs the GitLab Secret Manager with an OpenBao instance. Naming it turns on both the GitLab-side integration and the bundled OpenBao subchart. See https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao.
         postgresql:
           $ref: "#/components/schemas/PostgreSQLDTO"
           description: PostgreSQL server the instance stores its data in. The chart bundles no database. See https://docs.gitlab.com/install/requirements/#postgresql.
@@ -190,6 +193,69 @@ components:
           description: Key of the Secret that holds the connection settings.
       required:
         - connectionSecretRef
+      type: object
+    OpenBaoDTO:
+      additionalProperties: false
+      properties:
+        postgresql:
+          $ref: "#/components/schemas/OpenBaoPostgreSQLDTO"
+          description: PostgreSQL server OpenBao stores its data in, separate from the database of the GitLab instance itself. OpenBao does not inherit that database's password.
+        serviceAccount:
+          $ref: "#/components/schemas/OpenBaoServiceAccountDTO"
+          description: "Pre-existing ServiceAccount OpenBao's pod runs as. OpenBao needs a Role granting get/update/patch on Pods and a RoleBinding to it, neither of which the bridge or the Operator creates: RBAC is not managed on the cluster they reconcile. Create both ahead of time."
+      required:
+        - postgresql
+        - serviceAccount
+      type: object
+    OpenBaoPostgreSQLDTO:
+      additionalProperties: false
+      properties:
+        database:
+          description: Database OpenBao stores its data in. Defaults to 'openbao'.
+          examples:
+            - openbao
+          maxLength: 63
+          minLength: 1
+          type: string
+        host:
+          description: Hostname of the PostgreSQL server.
+          examples:
+            - openbao-postgresql.databases.svc.cluster.local
+          maxLength: 253
+          minLength: 1
+          type: string
+        passwordSecretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the password of the database user.
+        port:
+          description: Port of the PostgreSQL server. Defaults to 5432.
+          examples:
+            - 5432
+          format: int32
+          maximum: 65535
+          minimum: 1
+          type: integer
+        username:
+          description: Login role OpenBao connects as. Defaults to 'openbao'.
+          examples:
+            - openbao
+          maxLength: 63
+          minLength: 1
+          type: string
+      required:
+        - host
+        - passwordSecretRef
+      type: object
+    OpenBaoServiceAccountDTO:
+      additionalProperties: false
+      properties:
+        name:
+          description: Name of the ServiceAccount, already granted the Role OpenBao needs.
+          maxLength: 253
+          minLength: 1
+          type: string
+      required:
+        - name
       type: object
     PostgreSQLDTO:
       additionalProperties: false

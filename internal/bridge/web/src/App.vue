@@ -29,11 +29,12 @@ function clear(): void {
 
 <template>
   <header class="app-header">
-    <RouterLink to="/" class="brand">GitLab Operator</RouterLink>
+    <RouterLink to="/" class="brand">GitLab Bridge</RouterLink>
     <div class="token-bar">
+      <a href="/docs" target="_blank" rel="noopener">API docs</a>
       <template v-if="localMode">
-        <span class="token-status" title="Authenticated via your kubeconfig (kubectl bridge)">
-          Local — kubeconfig identity
+        <span class="token-status token-status--local" title="Authenticated via your kubeconfig (kubectl bridge)">
+          Local kubeconfig identity
         </span>
       </template>
       <template v-else-if="editing">
@@ -52,7 +53,6 @@ function clear(): void {
         <button type="button" @click="edit">Change</button>
         <button type="button" @click="clear">Clear</button>
       </template>
-      <a href="/docs" target="_blank" rel="noopener">API docs</a>
     </div>
   </header>
 
@@ -95,6 +95,18 @@ function clear(): void {
 .token-status {
   font-size: 0.9rem;
   color: var(--color-text);
+}
+
+/*
+ * A pill rather than plain text, so it reads as a status indicator next to
+ * the "API docs" link instead of a second, unrelated link.
+ */
+.token-status--local {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-background-mute);
+  font-size: 0.85rem;
 }
 
 .token-bar a {

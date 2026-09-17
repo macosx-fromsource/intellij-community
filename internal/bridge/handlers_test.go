@@ -107,6 +107,13 @@ func TestCRUDLifecycle(t *testing.T) {
 		ObjectStorage: &ObjectStorageDTO{
 			ConnectionSecretRef: SecretRefDTO{Name: "gitlab-object-storage", Key: "connection"},
 		},
+		OpenBao: &OpenBaoDTO{
+			PostgreSQL: OpenBaoPostgreSQLDTO{
+				Host:              "openbao-postgresql",
+				PasswordSecretRef: SecretRefDTO{Name: "openbao-db-password", Key: "password"},
+			},
+			ServiceAccount: OpenBaoServiceAccountDTO{Name: "openbao"},
+		},
 		Chart: ChartDTO{
 			Version: "9.11.1",
 			Values:  map[string]any{"global": map[string]any{"hosts": map[string]any{"domain": "example.com"}}},
@@ -135,6 +142,10 @@ func TestCRUDLifecycle(t *testing.T) {
 		require.Equal(t, "default", created.Redis.PasswordSecretRef.Key)
 		require.NotNil(t, created.ObjectStorage)
 		require.Equal(t, "gitlab-object-storage", created.ObjectStorage.ConnectionSecretRef.Name)
+		require.NotNil(t, created.OpenBao)
+		require.Equal(t, "openbao-postgresql", created.OpenBao.PostgreSQL.Host)
+		require.Equal(t, "openbao-db-password", created.OpenBao.PostgreSQL.PasswordSecretRef.Name)
+		require.Equal(t, "openbao", created.OpenBao.ServiceAccount.Name)
 	})
 
 	t.Run("get", func(t *testing.T) {
@@ -179,6 +190,11 @@ func TestCRUDLifecycle(t *testing.T) {
 		require.NotNil(t, core.Spec.ObjectStorage)
 		require.Equal(t, "gitlab-object-storage", core.Spec.ObjectStorage.ConnectionSecretRef.Name)
 		require.Equal(t, "connection", core.Spec.ObjectStorage.ConnectionSecretRef.Key)
+		require.NotNil(t, core.Spec.OpenBao)
+		require.Equal(t, "openbao-postgresql", core.Spec.OpenBao.PostgreSQL.Host)
+		require.Equal(t, "openbao-db-password", core.Spec.OpenBao.PostgreSQL.PasswordSecretRef.Name)
+		require.Equal(t, "password", core.Spec.OpenBao.PostgreSQL.PasswordSecretRef.Key)
+		require.Equal(t, "openbao", core.Spec.OpenBao.ServiceAccount.Name)
 	})
 
 	t.Run("update", func(t *testing.T) {

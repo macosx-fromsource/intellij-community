@@ -17,12 +17,15 @@ vi.mock('@/lib/api/client', () => ({
 }))
 
 // The values editor is a CodeMirror instance, which jsdom cannot lay out. The
-// step logic does not depend on it, so it is stubbed down to its model value.
+// section logic does not depend on it, so it is stubbed down to a plain
+// textarea that still round-trips through v-model, so a test can drive it.
 vi.mock('@/components/YamlEditor.vue', () => ({
   default: {
     name: 'YamlEditor',
     props: ['modelValue'],
-    template: '<textarea :value="modelValue" />',
+    emits: ['update:modelValue'],
+    template:
+      '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
 }))
 
@@ -39,42 +42,60 @@ async function mountForm(): Promise<VueWrapper> {
 const push = vi.fn<(to: unknown) => void>()
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 
-/** Titles of the steps, in the order the header shows them. */
-const stepTitles = ['Basics', 'Dependencies', 'Overrides']
+/** Titles of the sidebar entries, in the order the sidebar shows them. */
+const sectionTitles = [
+  'Basics',
+  'Dependencies',
+  'AI Gateway',
+  'Artifact Registry',
+  'Orbit',
+  'Secret Manager',
+  'Siphon',
+  'Overrides',
+]
 
-/** Returns the title of the step the form is on. */
-function currentStep(wrapper: VueWrapper): string {
-  return wrapper
-    .get('[aria-current="step"]')
-    .text()
-    .replace(/^\d+\s*/, '')
+/** The sidebar button whose text starts with the given title. */
+function navButton(wrapper: VueWrapper, title: string) {
+  return wrapper.findAll('.sidebar button').find((candidate) => candidate.text().startsWith(title))!
 }
 
-/** Selects a step in the header. */
-async function selectStep(wrapper: VueWrapper, title: string) {
-  const button = wrapper.findAll('nav button').find((candidate) => candidate.text().includes(title))
+/** Strips the trailing "On"/"Soon" status badge some sidebar entries carry. */
+function stripStatus(text: string): string {
+  return text.replace(/(On|Soon)$/, '').trim()
+}
+
+/** Returns the title of the section the sidebar marks as current. */
+function currentSection(wrapper: VueWrapper): string {
+  return stripStatus(wrapper.get('[aria-current="page"]').text())
+}
+
+/** Selects a section from the sidebar. */
+async function selectSection(wrapper: VueWrapper, title: string) {
+  const button = wrapper
+    .findAll('.sidebar button')
+    .find((candidate) => candidate.text().includes(title))
 
   await button!.trigger('click')
 }
 
 /**
- * The panel of the step that is shown. The others stay in the DOM behind
+ * The panel of the section that is shown. The others stay in the DOM behind
  * `v-show`, so a query has to be scoped to this one to reach the right field.
  */
 function panel(wrapper: VueWrapper) {
   return wrapper
-    .findAll('.step-panel')
+    .findAll('.section-panel')
     .find((candidate) => (candidate.element as HTMLElement).style.display !== 'none')!
 }
 
-/** The fieldset of the named group within the visible step. */
+/** The fieldset of the named group within the visible section. */
 function group(wrapper: VueWrapper, legend: string) {
   return panel(wrapper)
     .findAll('fieldset')
     .find((candidate) => candidate.get('legend').text().includes(legend))!
 }
 
-/** Fills an input by the label it sits under, within the visible step. */
+/** Fills an input by the label it sits under, within the visible section. */
 async function fill(wrapper: VueWrapper, label: string, value: string) {
   const field = panel(wrapper)
     .findAll('label')
@@ -89,44 +110,49 @@ describe('GitLabFormView', () => {
     vi.clearAllMocks()
   })
 
-  it('starts on the first step and shows all three', async () => {
+  it('starts on Basics and lists every section, including add-ons', async () => {
     const wrapper = await mountForm()
 
-    expect(
-      wrapper.findAll('nav button').map((button) => button.text().replace(/^\d+\s*/, '')),
-    ).toEqual(stepTitles)
-    expect(currentStep(wrapper)).toBe('Basics')
+    expect(wrapper.findAll('.sidebar button').map((button) => stripStatus(button.text()))).toEqual(
+      sectionTitles,
+    )
+    expect(currentSection(wrapper)).toBe('Basics')
   })
 
-  it('walks forward through the steps with Next', async () => {
+  it('disables the not-yet-configurable add-ons', async () => {
     const wrapper = await mountForm()
 
-    await fill(wrapper, 'Chart version', '10.2.2')
+    for (const title of ['Siphon', 'Orbit', 'Artifact Registry', 'AI Gateway']) {
+      const button = wrapper.findAll('.sidebar button').find((candidate) => candidate.text().startsWith(title))!
 
-    const next = () =>
-      wrapper
-        .findAll('.actions button')
-        .find((button) => button.text() === 'Next')!
-        .trigger('click')
+      expect(button.attributes('disabled')).toBeDefined()
 
-    await next()
-    expect(currentStep(wrapper)).toBe('Dependencies')
-
-    await next()
-    expect(currentStep(wrapper)).toBe('Overrides')
-    expect(wrapper.findAll('.actions button').map((button) => button.text())).toContain('Create')
+      await button.trigger('click')
+      expect(currentSection(wrapper)).toBe('Basics')
+    }
   })
 
-  // The name identifies the resource, so an empty one holds the form on the step
-  // it belongs to rather than reaching the API.
-  it('keeps an incomplete first step from being left', async () => {
+  it('jumps straight to any section without validating the ones skipped', async () => {
+    const wrapper = await mountForm()
+
+    await selectSection(wrapper, 'Overrides')
+
+    expect(currentSection(wrapper)).toBe('Overrides')
+    expect(wrapper.text()).not.toContain('A name is required.')
+  })
+
+  // The name identifies the resource, so submitting with it empty holds the
+  // form on the section it belongs to, wherever the form currently is.
+  it('sends an incomplete submit back to the section with the problem', async () => {
     const wrapper = await mountForm()
 
     await fill(wrapper, 'Name', '')
-    await selectStep(wrapper, 'Overrides')
+    await selectSection(wrapper, 'Overrides')
+    await wrapper.get('form').trigger('submit')
 
-    expect(currentStep(wrapper)).toBe('Basics')
+    expect(currentSection(wrapper)).toBe('Basics')
     expect(wrapper.text()).toContain('A name is required.')
+    expect(mockApi.POST).not.toHaveBeenCalled()
   })
 
   // The namespace is the one the Operator installation owns, and the form offers
@@ -156,13 +182,14 @@ describe('GitLabFormView', () => {
   // The field is free-form: what renders is whatever the Operator bundles or
   // can pull, which the SPA has no way to know.
   it('takes any version', async () => {
+    mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+
     const wrapper = await mountForm()
 
     await fill(wrapper, 'Chart version', '11.0.0-rc1')
-    await selectStep(wrapper, 'Dependencies')
+    await wrapper.get('form').trigger('submit')
 
-    expect(currentStep(wrapper)).toBe('Dependencies')
-    expect(wrapper.text()).not.toContain('A chart version is required.')
+    expect(mockApi.POST).toHaveBeenCalled()
   })
 
   // Nothing renders without a version, so the field cannot be cleared.
@@ -170,23 +197,25 @@ describe('GitLabFormView', () => {
     const wrapper = await mountForm()
 
     await fill(wrapper, 'Chart version', '  ')
-    await selectStep(wrapper, 'Dependencies')
+    await wrapper.get('form').trigger('submit')
 
-    expect(currentStep(wrapper)).toBe('Basics')
+    expect(currentSection(wrapper)).toBe('Basics')
     expect(wrapper.text()).toContain('A chart version is required.')
+    expect(mockApi.POST).not.toHaveBeenCalled()
   })
 
   // A data store connection is all three fields or none, and the check belongs
-  // to the step that holds them.
-  it('reports an incomplete dependency on the step that owns it', async () => {
+  // to the section that holds them, which submitting jumps back to.
+  it('reports an incomplete dependency on the section that owns it', async () => {
     const wrapper = await mountForm()
 
     await fill(wrapper, 'Chart version', '10.2.2')
-    await selectStep(wrapper, 'Dependencies')
+    await selectSection(wrapper, 'Dependencies')
     await fill(wrapper, 'Hostname', 'gitlab-postgresql')
-    await selectStep(wrapper, 'Overrides')
+    await selectSection(wrapper, 'Overrides')
+    await wrapper.get('form').trigger('submit')
 
-    expect(currentStep(wrapper)).toBe('Dependencies')
+    expect(currentSection(wrapper)).toBe('Dependencies')
     expect(wrapper.text()).toContain('PostgreSQL needs a hostname')
   })
 
@@ -196,22 +225,190 @@ describe('GitLabFormView', () => {
     const wrapper = await mountForm()
 
     await fill(wrapper, 'Chart version', '10.2.2')
-    await selectStep(wrapper, 'Dependencies')
+    await selectSection(wrapper, 'Dependencies')
     await group(wrapper, 'Object storage').findAll('input')[0]!.setValue('gitlab-object-storage')
-    await selectStep(wrapper, 'Overrides')
+    await wrapper.get('form').trigger('submit')
 
-    expect(currentStep(wrapper)).toBe('Dependencies')
+    expect(currentSection(wrapper)).toBe('Dependencies')
     expect(wrapper.text()).toContain('Object storage needs both a Secret name and a Secret key.')
   })
 
-  it('creates the resource from every step once the last one submits', async () => {
+  it('marks a section with an error in the sidebar', async () => {
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Name', '')
+    await wrapper.get('form').trigger('submit')
+
+    expect(navButton(wrapper, 'Basics').find('.nav-item-badge').exists()).toBe(true)
+  })
+
+  it('marks a section as having unsaved changes once it is edited, and clears it on save', async () => {
+    mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+
+    const wrapper = await mountForm()
+
+    expect(navButton(wrapper, 'Basics').find('.nav-item-dot').exists()).toBe(false)
+
+    await fill(wrapper, 'Chart version', '10.2.2')
+    expect(navButton(wrapper, 'Basics').find('.nav-item-dot').exists()).toBe(true)
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(navButton(wrapper, 'Basics').find('.nav-item-dot').exists()).toBe(false)
+  })
+
+  // Unlike Siphon, Secret Manager's fields really are sent (folded into
+  // `chart.values`), so a successful save clears its mark like any other tab.
+  it('marks Secret Manager unsaved once enabled, and clears it once saved', async () => {
+    mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Chart version', '10.2.2')
+    await selectSection(wrapper, 'Secret Manager')
+    await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+
+    const fields = group(wrapper, 'PostgreSQL').findAll('input')
+    await fields[0]!.setValue('openbao-postgresql')
+    await fields[4]!.setValue('openbao-db-password')
+    await fields[5]!.setValue('password')
+    await group(wrapper, 'ServiceAccount').get('input').setValue('openbao')
+
+    expect(navButton(wrapper, 'Secret Manager').find('.nav-item-dot').exists()).toBe(true)
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(navButton(wrapper, 'Secret Manager').find('.nav-item-dot').exists()).toBe(false)
+  })
+
+  it('unlocks the Secret Manager PostgreSQL and ServiceAccount fields on enable', async () => {
+    const wrapper = await mountForm()
+
+    await selectSection(wrapper, 'Secret Manager')
+    expect(group(wrapper, 'PostgreSQL').attributes('disabled')).toBeDefined()
+    expect(group(wrapper, 'ServiceAccount').attributes('disabled')).toBeDefined()
+
+    await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+    expect(group(wrapper, 'PostgreSQL').attributes('disabled')).toBeUndefined()
+    expect(group(wrapper, 'ServiceAccount').attributes('disabled')).toBeUndefined()
+  })
+
+  it("requires Secret Manager's database hostname and password Secret once enabled", async () => {
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Chart version', '10.2.2')
+    await selectSection(wrapper, 'Secret Manager')
+    await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+
+    expect(currentSection(wrapper)).toBe('Secret Manager')
+    expect(wrapper.text()).toContain("Secret Manager needs its PostgreSQL database's hostname")
+    expect(mockApi.POST).not.toHaveBeenCalled()
+  })
+
+  // The CRD's own bounds on the port (1-65535) are checked client-side too,
+  // so an out-of-range value is caught here rather than reaching the API as
+  // a raw Kubernetes validation error.
+  it("rejects a Secret Manager PostgreSQL port outside 1-65535", async () => {
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Chart version', '10.2.2')
+    await selectSection(wrapper, 'Secret Manager')
+    await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+
+    const fields = group(wrapper, 'PostgreSQL').findAll('input')
+    await fields[0]!.setValue('openbao-postgresql')
+    await fields[1]!.setValue('99999999')
+    await fields[4]!.setValue('openbao-db-password')
+    await fields[5]!.setValue('password')
+
+    await wrapper.get('form').trigger('submit')
+
+    expect(currentSection(wrapper)).toBe('Secret Manager')
+    expect(wrapper.text()).toContain('The PostgreSQL port must be a number between 1 and 65535.')
+    expect(mockApi.POST).not.toHaveBeenCalled()
+  })
+
+  // OpenBao needs RBAC on Pods that the bridge and the Operator do not
+  // create, so the ServiceAccount name is required once Secret Manager is
+  // enabled, and reported alongside an incomplete PostgreSQL connection.
+  it("requires Secret Manager's ServiceAccount name once enabled", async () => {
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Chart version', '10.2.2')
+    await selectSection(wrapper, 'Secret Manager')
+    await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+
+    const fields = group(wrapper, 'PostgreSQL').findAll('input')
+    await fields[0]!.setValue('openbao-postgresql')
+    await fields[4]!.setValue('openbao-db-password')
+    await fields[5]!.setValue('password')
+
+    await wrapper.get('form').trigger('submit')
+
+    expect(currentSection(wrapper)).toBe('Secret Manager')
+    expect(wrapper.text()).toContain('Secret Manager needs the name of a ServiceAccount')
+    expect(mockApi.POST).not.toHaveBeenCalled()
+  })
+
+  // Secret Manager is a structured field of the resource, like PostgreSQL or Redis,
+  // not something folded into chart.values.
+  it('sends the enabled Secret Manager configuration as its own resource field', async () => {
+    mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Chart version', '10.2.2')
+
+    await selectSection(wrapper, 'Secret Manager')
+    await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+
+    const fields = group(wrapper, 'PostgreSQL').findAll('input')
+    await fields[0]!.setValue('openbao-postgresql')
+    await fields[1]!.setValue('5433')
+    await fields[2]!.setValue('openbao_db')
+    await fields[3]!.setValue('openbao_user')
+    await fields[4]!.setValue('openbao-db-password')
+    await fields[5]!.setValue('password')
+    await group(wrapper, 'ServiceAccount').get('input').setValue('openbao')
+
+    await wrapper.get('form').trigger('submit')
+
+    const body = mockApi.POST.mock.calls[0]![1].body
+    expect(body.openbao).toEqual({
+      postgresql: {
+        host: 'openbao-postgresql',
+        port: 5433,
+        database: 'openbao_db',
+        username: 'openbao_user',
+        passwordSecretRef: { name: 'openbao-db-password', key: 'password' },
+      },
+      serviceAccount: { name: 'openbao' },
+    })
+    expect(body.chart.values).toEqual({})
+  })
+
+  it('leaves the Secret Manager field out of the request when the add-on is off', async () => {
+    mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+
+    const wrapper = await mountForm()
+
+    await fill(wrapper, 'Chart version', '10.2.2')
+    await wrapper.get('form').trigger('submit')
+
+    const body = mockApi.POST.mock.calls[0]![1].body
+    expect(body.openbao).toBeUndefined()
+  })
+
+  it('creates the resource from every section on submit', async () => {
     mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
 
     const wrapper = await mountForm()
 
     await fill(wrapper, 'Chart version', '10.2.2')
     await fill(wrapper, 'Hostname', 'gitlab.example.com')
-    await selectStep(wrapper, 'Dependencies')
+    await selectSection(wrapper, 'Dependencies')
 
     const psql = group(wrapper, 'PostgreSQL').findAll('input')
     await psql[0]!.setValue('gitlab-postgresql')
@@ -227,7 +424,6 @@ describe('GitLabFormView', () => {
     await storage[0]!.setValue('gitlab-object-storage')
     await storage[1]!.setValue('connection')
 
-    await selectStep(wrapper, 'Overrides')
     await wrapper.get('form').trigger('submit')
 
     expect(mockApi.POST).toHaveBeenCalledWith('/api/v1/namespaces/{namespace}/gitlabs', {
@@ -254,15 +450,4 @@ describe('GitLabFormView', () => {
     })
   })
 
-  // Enter in a field submits a form, and the submit button lives on the last
-  // step. Advancing is what that has to mean on the earlier ones.
-  it('advances rather than creates when an earlier step submits', async () => {
-    const wrapper = await mountForm()
-
-    await fill(wrapper, 'Chart version', '10.2.2')
-    await wrapper.get('form').trigger('submit')
-
-    expect(currentStep(wrapper)).toBe('Dependencies')
-    expect(mockApi.POST).not.toHaveBeenCalled()
-  })
 })

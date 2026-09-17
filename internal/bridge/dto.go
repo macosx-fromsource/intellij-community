@@ -30,8 +30,10 @@ type GitLabResource struct {
 	Redis      *RedisDTO         `json:"redis,omitempty" doc:"Redis server the instance uses for caching, queues, and shared state; Valkey serves as a drop-in replacement. The chart bundles no server. See https://docs.gitlab.com/install/requirements/#redis."`
 	//nolint:lll // One doc string per field, and the URL is part of it.
 	ObjectStorage *ObjectStorageDTO `json:"objectStorage,omitempty" doc:"S3 compatible object storage the instance keeps its artifacts, uploads, and other blobs in. The chart needs one: it enables object storage for these with no connection of its own. See https://docs.gitlab.com/charts/charts/globals/#connection."`
-	Chart         ChartDTO          `json:"chart" doc:"GitLab Chart configuration."`
-	Status        *StatusDTO        `json:"status,omitempty" readOnly:"true" doc:"Most recently observed status. Read-only."`
+	//nolint:lll // One doc string per field, and the URL is part of it.
+	OpenBao *OpenBaoDTO `json:"openbao,omitempty" doc:"Backs the GitLab Secret Manager with an OpenBao instance. Naming it turns on both the GitLab-side integration and the bundled OpenBao subchart. See https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao."`
+	Chart   ChartDTO    `json:"chart" doc:"GitLab Chart configuration."`
+	Status  *StatusDTO  `json:"status,omitempty" readOnly:"true" doc:"Most recently observed status. Read-only."`
 }
 
 // LicenseDTO points at the Secret that holds the GitLab license key. Only the
@@ -58,6 +60,28 @@ type RedisDTO struct {
 // chart expects; the bridge neither reads nor rewrites it.
 type ObjectStorageDTO struct {
 	ConnectionSecretRef SecretRefDTO `json:"connectionSecretRef" doc:"Key of the Secret that holds the connection settings."`
+}
+
+// OpenBaoDTO configures the OpenBao instance backing the GitLab Secret Manager.
+type OpenBaoDTO struct {
+	//nolint:lll // One doc string per field, and the URL is part of it.
+	PostgreSQL OpenBaoPostgreSQLDTO `json:"postgresql" doc:"PostgreSQL server OpenBao stores its data in, separate from the database of the GitLab instance itself. OpenBao does not inherit that database's password."`
+	//nolint:lll // One doc string per field, and the URL is part of it.
+	ServiceAccount OpenBaoServiceAccountDTO `json:"serviceAccount" doc:"Pre-existing ServiceAccount OpenBao's pod runs as. OpenBao needs a Role granting get/update/patch on Pods and a RoleBinding to it, neither of which the bridge or the Operator creates: RBAC is not managed on the cluster they reconcile. Create both ahead of time."`
+}
+
+// OpenBaoPostgreSQLDTO is the connection to the PostgreSQL server OpenBao uses.
+type OpenBaoPostgreSQLDTO struct {
+	Host              string       `json:"host" minLength:"1" maxLength:"253" example:"openbao-postgresql.databases.svc.cluster.local" doc:"Hostname of the PostgreSQL server."`
+	Port              int32        `json:"port,omitempty" minimum:"1" maximum:"65535" example:"5432" doc:"Port of the PostgreSQL server. Defaults to 5432."`
+	Database          string       `json:"database,omitempty" minLength:"1" maxLength:"63" example:"openbao" doc:"Database OpenBao stores its data in. Defaults to 'openbao'."`
+	Username          string       `json:"username,omitempty" minLength:"1" maxLength:"63" example:"openbao" doc:"Login role OpenBao connects as. Defaults to 'openbao'."`
+	PasswordSecretRef SecretRefDTO `json:"passwordSecretRef" doc:"Key of the Secret that holds the password of the database user."`
+}
+
+// OpenBaoServiceAccountDTO names the pre-existing ServiceAccount OpenBao's pod runs as.
+type OpenBaoServiceAccountDTO struct {
+	Name string `json:"name" minLength:"1" maxLength:"253" doc:"Name of the ServiceAccount, already granted the Role OpenBao needs."`
 }
 
 // SecretRefDTO selects a single key of a Secret in the namespace of the
@@ -121,6 +145,19 @@ func toResource(core *apiv2alpha1.GitLabCore) GitLabResource {
 		}
 	}
 
+	if openbao := core.Spec.OpenBao; openbao != nil {
+		res.OpenBao = &OpenBaoDTO{
+			PostgreSQL: OpenBaoPostgreSQLDTO{
+				Host:              openbao.PostgreSQL.Host,
+				Port:              openbao.PostgreSQL.Port,
+				Database:          openbao.PostgreSQL.Database,
+				Username:          openbao.PostgreSQL.Username,
+				PasswordSecretRef: toSecretRef(openbao.PostgreSQL.PasswordSecretRef),
+			},
+			ServiceAccount: OpenBaoServiceAccountDTO{Name: openbao.ServiceAccount.Name},
+		}
+	}
+
 	res.Status = &StatusDTO{
 		Phase:         core.Status.Phase,
 		Version:       core.Status.Version,
@@ -150,6 +187,7 @@ func applyToGitLabCore(res GitLabResource, core *apiv2alpha1.GitLabCore) {
 	core.Spec.PostgreSQL = nil
 	core.Spec.Redis = nil
 	core.Spec.ObjectStorage = nil
+	core.Spec.OpenBao = nil
 
 	if res.License != nil {
 		core.Spec.License = &apiv2alpha1.LicenseSpec{
@@ -174,6 +212,19 @@ func applyToGitLabCore(res GitLabResource, core *apiv2alpha1.GitLabCore) {
 	if res.ObjectStorage != nil {
 		core.Spec.ObjectStorage = &apiv2alpha1.ObjectStorageSpec{
 			ConnectionSecretRef: toSecretKeySelector(res.ObjectStorage.ConnectionSecretRef),
+		}
+	}
+
+	if res.OpenBao != nil {
+		core.Spec.OpenBao = &apiv2alpha1.OpenBaoSpec{
+			PostgreSQL: apiv2alpha1.OpenBaoPostgreSQLSpec{
+				Host:              res.OpenBao.PostgreSQL.Host,
+				Port:              res.OpenBao.PostgreSQL.Port,
+				Database:          res.OpenBao.PostgreSQL.Database,
+				Username:          res.OpenBao.PostgreSQL.Username,
+				PasswordSecretRef: toSecretKeySelector(res.OpenBao.PostgreSQL.PasswordSecretRef),
+			},
+			ServiceAccount: apiv2alpha1.OpenBaoServiceAccountSpec{Name: res.OpenBao.ServiceAccount.Name},
 		}
 	}
 

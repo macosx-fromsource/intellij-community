@@ -168,6 +168,8 @@ export interface components {
             namespace: string;
             /** @description S3 compatible object storage the instance keeps its artifacts, uploads, and other blobs in. The chart needs one: it enables object storage for these with no connection of its own. See https://docs.gitlab.com/charts/charts/globals/#connection. */
             objectStorage?: components["schemas"]["ObjectStorageDTO"];
+            /** @description Backs the GitLab Secret Manager with an OpenBao instance. Naming it turns on both the GitLab-side integration and the bundled OpenBao subchart. See https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao. */
+            openbao?: components["schemas"]["OpenBaoDTO"];
             /** @description PostgreSQL server the instance stores its data in. The chart bundles no database. See https://docs.gitlab.com/install/requirements/#postgresql. */
             postgresql?: components["schemas"]["PostgreSQLDTO"];
             /** @description Redis server the instance uses for caching, queues, and shared state; Valkey serves as a drop-in replacement. The chart bundles no server. See https://docs.gitlab.com/install/requirements/#redis. */
@@ -182,6 +184,41 @@ export interface components {
         ObjectStorageDTO: {
             /** @description Key of the Secret that holds the connection settings. */
             connectionSecretRef: components["schemas"]["SecretRefDTO"];
+        };
+        OpenBaoDTO: {
+            /** @description PostgreSQL server OpenBao stores its data in, separate from the database of the GitLab instance itself. OpenBao does not inherit that database's password. */
+            postgresql: components["schemas"]["OpenBaoPostgreSQLDTO"];
+            /** @description Pre-existing ServiceAccount OpenBao's pod runs as. OpenBao needs a Role granting get/update/patch on Pods and a RoleBinding to it, neither of which the bridge or the Operator creates: RBAC is not managed on the cluster they reconcile. Create both ahead of time. */
+            serviceAccount: components["schemas"]["OpenBaoServiceAccountDTO"];
+        };
+        OpenBaoPostgreSQLDTO: {
+            /**
+             * @description Database OpenBao stores its data in. Defaults to 'openbao'.
+             * @example openbao
+             */
+            database?: string;
+            /**
+             * @description Hostname of the PostgreSQL server.
+             * @example openbao-postgresql.databases.svc.cluster.local
+             */
+            host: string;
+            /** @description Key of the Secret that holds the password of the database user. */
+            passwordSecretRef: components["schemas"]["SecretRefDTO"];
+            /**
+             * Format: int32
+             * @description Port of the PostgreSQL server. Defaults to 5432.
+             * @example 5432
+             */
+            port?: number;
+            /**
+             * @description Login role OpenBao connects as. Defaults to 'openbao'.
+             * @example openbao
+             */
+            username?: string;
+        };
+        OpenBaoServiceAccountDTO: {
+            /** @description Name of the ServiceAccount, already granted the Role OpenBao needs. */
+            name: string;
         };
         PostgreSQLDTO: {
             /**

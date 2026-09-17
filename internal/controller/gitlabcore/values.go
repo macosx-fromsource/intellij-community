@@ -46,6 +46,25 @@ const (
 	objectStoreConnectionSecretKey = "global.appConfig.object_store.connection.secret" //nolint:gosec // A chart value path, not a credential.
 	objectStoreConnectionKeyKey    = "global.appConfig.object_store.connection.key"
 
+	// OpenBao: the GitLab-side integration, the bundled subchart, and the PostgreSQL database
+	// it needs of its own (never the main application database; see setOpenBaoValues).
+	openbaoEnabledKey            = "global.openbao.enabled"
+	openbaoInstallKey            = "openbao.install"
+	openbaoPsqlHostKey           = "global.openbao.psql.host"
+	openbaoPsqlPortKey           = "global.openbao.psql.port"
+	openbaoPsqlDatabaseKey       = "global.openbao.psql.database"
+	openbaoPsqlUsernameKey       = "global.openbao.psql.username"
+	openbaoPsqlPasswordSecretKey = "global.openbao.psql.password.secret"
+	openbaoPsqlPasswordKeyKey    = "global.openbao.psql.password.key"
+
+	// The ServiceAccount OpenBao's pod runs as, and the chart's own ServiceAccount/Role it is
+	// defaulted off in favor of: the Operator does not manage RBAC on the cluster it
+	// reconciles, so the Role granting get/update/patch on Pods, and the RoleBinding to it, are
+	// an administrator prerequisite (see setOpenBaoValues).
+	openbaoServiceAccountNameKey   = "openbao.serviceAccount.name"
+	openbaoServiceAccountCreateKey = "openbao.serviceAccount.create"
+	openbaoRoleCreateKey           = "openbao.role.create"
+
 	sharedSecretsCreateRBACKey = "shared-secrets.rbac.create"
 	sharedSecretsCreateSAKey   = "shared-secrets.serviceAccount.create"
 	sharedSecretsSANameKey     = "shared-secrets.serviceAccount.name"
@@ -100,6 +119,10 @@ func EffectiveValues(core *apiv2alpha1.GitLabCore) (support.Values, error) {
 	}
 
 	if err := setObjectStorageValues(values, core.Spec.ObjectStorage); err != nil {
+		return nil, err
+	}
+
+	if err := setOpenBaoValues(values, core.Spec.OpenBao); err != nil {
 		return nil, err
 	}
 
@@ -327,6 +350,57 @@ func setObjectStorageValues(values support.Values, storage *apiv2alpha1.ObjectSt
 		objectStoreEnabledKey:          true,
 		objectStoreConnectionSecretKey: storage.ConnectionSecretRef.Name,
 		objectStoreConnectionKeyKey:    storage.ConnectionSecretRef.Key,
+	}
+
+	for key, value := range mapping {
+		if err := values.SetValue(key, value); err != nil {
+			return errors.Wrapf(err, "failed to set %s", key)
+		}
+	}
+
+	return nil
+}
+
+// setOpenBaoValues points the chart at the OpenBao instance's own PostgreSQL database and turns
+// on both the GitLab-side integration and the bundled OpenBao subchart.
+//
+// Only the host and the password Secret are mapped unconditionally: the port, the database, and
+// the username fall back to the chart's own defaults (which the CRD's kubebuilder defaults also
+// carry once the API server has applied them) when left unset here, the same way
+// setPostgreSQLValues treats the instance's own database.
+//
+// It also names the ServiceAccount OpenBao's pod runs as, and turns the chart's own
+// ServiceAccount and Role off in favor of it: both default on in the chart, and would grant
+// get/update/patch on Pods in the namespace through RBAC objects the Operator did not create and
+// does not track. The Operator does not manage RBAC on the cluster it reconciles, so that Role
+// and its RoleBinding are an administrator prerequisite, the same way the shared secrets
+// ServiceAccount is (see setSharedSecretsValues).
+func setOpenBaoValues(values support.Values, openbao *apiv2alpha1.OpenBaoSpec) error {
+	if openbao == nil {
+		return nil
+	}
+
+	mapping := map[string]interface{}{
+		openbaoEnabledKey:              true,
+		openbaoInstallKey:              true,
+		openbaoPsqlHostKey:             openbao.PostgreSQL.Host,
+		openbaoPsqlPasswordSecretKey:   openbao.PostgreSQL.PasswordSecretRef.Name,
+		openbaoPsqlPasswordKeyKey:      openbao.PostgreSQL.PasswordSecretRef.Key,
+		openbaoServiceAccountNameKey:   openbao.ServiceAccount.Name,
+		openbaoServiceAccountCreateKey: false,
+		openbaoRoleCreateKey:           false,
+	}
+
+	if openbao.PostgreSQL.Port != 0 {
+		mapping[openbaoPsqlPortKey] = openbao.PostgreSQL.Port
+	}
+
+	if openbao.PostgreSQL.Database != "" {
+		mapping[openbaoPsqlDatabaseKey] = openbao.PostgreSQL.Database
+	}
+
+	if openbao.PostgreSQL.Username != "" {
+		mapping[openbaoPsqlUsernameKey] = openbao.PostgreSQL.Username
 	}
 
 	for key, value := range mapping {

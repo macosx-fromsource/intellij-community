@@ -122,8 +122,8 @@ kubectl bridge --verbose      # --port/-p, --address, --context, --kubeconfig, -
 Unlike the rest of the repo (Ginkgo/Gomega), the bridge uses Go's standard `testing` package
 with **testify** (`require`). `handlers_test.go` drives the real handlers via `httptest` + a fake
 client (no cluster needed). The SPA has Vitest specs beside the sources:
-`stores/gitlabs.spec.ts` (store) and `views/GitLabFormView.spec.ts` (steps, per-step validation, and
-the body the form posts), run with `npm run test:unit`.
+`stores/gitlabs.spec.ts` (store) and `views/GitLabFormView.spec.ts` (sections, per-section validation,
+unsaved/error indicators, and the body the form posts), run with `npm run test:unit`.
 
 ```shell
 SKIP_ENVTEST=yes go test ./internal/bridge/...
@@ -138,21 +138,55 @@ from `openapi.yaml` by **openapi-typescript**. Node is pinned to **26** via [mis
 run commands inside a mise-activated shell (or prefix `mise exec --`).
 
 Structure: `src/lib/api/` (typed client), `src/stores/gitlabs.ts` (Pinia CRUD store),
-`src/views/GitLabsListView.vue` + `GitLabFormView.vue`, `src/router/index.ts`. The form edits the
-structured fields (hostname, edition, PostgreSQL, Redis, license, chart version) as inputs and
-`chart.values` as a YAML textarea (free-form; no schema yet), across three steps — Basics
-(name/chart version/hostname/edition/license), Dependencies (PostgreSQL/Valkey/object storage), Overrides (chart
-values). The namespace is not a field: creation goes to `gitlab-system` (`defaultNamespace`), and an
-edit keeps the namespace of the route. The chart version field is free-form with no default: the SPA
-carries no list of versions the Operator bundles, since it may pull one it does not bundle from a
-chart repository instead of failing (see the GitLabCore controller). `validateStep`/`goTo` check a
-step on the way forward only, and the panels use
-`v-show` so the CodeMirror editor of the last step mounts once. The PostgreSQL, Valkey, object storage, and license
-groups are all-or-nothing, validated client-side before the request; the license group sits under
-the edition select and is hidden (and left out of the request) for `ce`. The Valkey group writes
-`spec.redis` — the wire field, the resource, and the chart all keep the Redis name. The data store groups carry the
-official project logo from `src/assets/icons/`, and object storage a plain glyph painted through a
-CSS mask; see the [README](web/src/assets/icons/README.md) there before touching those files.
+`src/views/GitLabsListView.vue` + `GitLabFormView.vue`, `src/router/index.ts`. `GitLabFormView.vue` is
+a two-pane editor rather than a linear wizard, and it is only an orchestrator: a left sidebar
+(`components/gitlab-form/FormSidebar.vue`) lists every section, and the content pane mounts one
+section component per tab, always (`v-show`, never `v-if`, toggles which one is visible — the values
+editor of `OverridesSection.vue` is a CodeMirror instance that has to mount once). Each section owns
+its fields, its validation, and its slice of the request body, and exposes a small contract through
+`defineExpose`: `hasError`, `isDirty`, `validate()`, `loadFrom(resource)`, `resetBaseline()`, and
+`toPartial()`. The parent holds a template ref to each one (`useTemplateRef`) and drives them: on
+submit it calls `validate()` on Basics, Dependencies, OpenBao, then Overrides in that order, jumps the
+active tab to the first one that fails, and otherwise assembles the request from every `toPartial()`.
+`useDirtyTracking()` (`src/composables/`) is the shared "unsaved changes" implementation each section
+calls with its own field snapshot; a section shows a small dot in the sidebar when it disagrees with
+what was last loaded or saved, and a red badge when `hasError` is true. Styles shared across sections
+(`fieldset`/`legend`/`label`/`.hint`/`.error`/the data store logos) live in `src/assets/gitlab-form.css`,
+scoped under a `.gitlab-form` wrapper class so they cannot bleed into another view's identically named
+elements.
+
+Sections: **Basics** (name/chart version/hostname/edition/license — chart version lives here, not in
+Overrides, because it is a property of the instance rather than an override) and **Dependencies**
+(PostgreSQL/Valkey/object storage) are the core, always-present group. **Advanced** holds *Overrides*
+(the `chart.values` YAML textarea, free-form and with no schema yet). **Add-ons** are GitLab
+subcomponents an instance can optionally turn on; see below. The namespace is not a field: creation
+goes to `gitlab-system` (`defaultNamespace`), and an edit keeps the namespace of the route. The chart
+version field is free-form with no default: the SPA carries no list of versions the Operator bundles,
+since it may pull one it does not bundle from a chart repository instead of failing (see the
+GitLabCore controller). The PostgreSQL, Valkey, object storage, and license groups are all-or-nothing,
+validated client-side before the request; the license group sits under the edition select and is
+hidden (and left out of the request) for `ce`. The Valkey group writes `spec.redis` — the wire field,
+the resource, and the chart all keep the Redis name. The data store groups carry the official project
+logo from `src/assets/icons/`, and object storage a plain glyph painted through a CSS mask; see the
+[README](web/src/assets/icons/README.md) there before touching those files.
+
+**Add-ons.** OpenBao is the only one wired up (`components/gitlab-form/OpenBaoSection.vue`): its
+enable checkbox unlocks a PostgreSQL connection group (host/port/database/username/password Secret)
+and a ServiceAccount group (name), both mapping onto the structured `openbao` field of
+`GitLabResource` (`toPartial()`), the same way the PostgreSQL/Redis/object storage groups map onto
+their own fields — nothing here touches `chart.values`. The CRD carries the matching
+`spec.openbao.postgresql`/`spec.openbao.serviceAccount` fields (`api/v2alpha1/gitlabcore_types.go`),
+and `internal/controller/gitlabcore/values.go` (`setOpenBaoValues`) turns them into
+`global.openbao.enabled`/`global.openbao.psql`/`openbao.install`/`openbao.serviceAccount.name`, the
+same values the
+[OpenBao chart setup](https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao)
+describes; it also defaults `openbao.serviceAccount.create`/`openbao.role.create` to `false`, because
+the bridge and the Operator do not manage RBAC on the cluster they reconcile — the Role granting
+`get`/`update`/`patch` on Pods and its RoleBinding are an administrator prerequisite, like the
+database and its role are. The remaining add-ons (Siphon, Orbit, Artifact Registry, AI Gateway) are
+disabled placeholders (`plannedAddons`, listed directly in `GitLabFormView.vue`) with no panel yet —
+Siphon in particular is a separate custom resource the bridge exposes no CRUD for, so wiring it here
+would need a second resource entirely, not a structured `GitLabCore` field like OpenBao's.
 
 ```shell
 task frontend-install   # npm ci
