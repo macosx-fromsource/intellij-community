@@ -340,12 +340,12 @@ let
 
     kc=(kubectl --context "$KUBE_CONTEXT")
 
-    echo "==> ensuring RBAC ($SA / $ROLE) on gitlabs.apps.gitlab.com in $TARGET_NAMESPACE"
+    echo "==> ensuring RBAC ($SA / $ROLE) on gitlabcores.apps.gitlab.com in $TARGET_NAMESPACE"
     "''${kc[@]}" -n "$TARGET_NAMESPACE" create serviceaccount "$SA" \
       --dry-run=client -o yaml | "''${kc[@]}" apply -f -
     "''${kc[@]}" create clusterrole "$ROLE" \
       --verb=get,list,watch,create,update,patch,delete \
-      --resource=gitlabs.apps.gitlab.com \
+      --resource=gitlabcores.apps.gitlab.com \
       --dry-run=client -o yaml | "''${kc[@]}" apply -f -
     "''${kc[@]}" create clusterrolebinding "$SA" \
       --clusterrole="$ROLE" --serviceaccount="$TARGET_NAMESPACE:$SA" \
@@ -361,6 +361,76 @@ let
 
     echo "==> port-forwarding $DEPLOYMENT $LOCAL_PORT:$REMOTE_PORT (Ctrl-C to stop)"
     exec "''${kc[@]}" -n "$TARGET_NAMESPACE" port-forward "$DEPLOYMENT" "$LOCAL_PORT:$REMOTE_PORT"
+  '';
+
+  # Create (or recreate) a GitLabCore at the LOWEST bundled chart version, wired
+  # to the dev dependencies, so the Bridge UI upgrade flow has something to
+  # upgrade. The shared dev database is reset first: a fresh low-version install
+  # cannot start against a schema an earlier, higher-version instance migrated,
+  # so this makes the command repeatable for a clean demo.
+  demoInstance = mkScript "demo-instance" clusterTools ''
+    ${envDefaults}
+    kc=(kubectl --context "$KUBE_CONTEXT")
+    ns="$TARGET_NAMESPACE"
+
+    # Lowest bundled version: the last non-empty line of CHART_VERSIONS (the file
+    # is ordered highest-first). Read with bash builtins only, no coreutils.
+    version=""
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] && version="$line"
+    done < CHART_VERSIONS
+
+    echo "==> deploying a demo GitLabCore at the lowest bundled chart version ($version)"
+
+    echo "==> removing any existing 'gitlab' GitLabCore"
+    "''${kc[@]}" -n "$ns" delete gitlabcore gitlab --ignore-not-found --wait=true
+
+    echo "==> resetting the shared dev database (gitlabhq_production)"
+    prim="$("''${kc[@]}" -n "$ns" get cluster.postgresql.cnpg.io dev-cluster \
+      -o jsonpath='{.status.currentPrimary}' 2>/dev/null || true)"
+    : "''${prim:=dev-cluster-1}"
+    "''${kc[@]}" -n "$ns" exec "$prim" -c postgres -- psql -U postgres -c \
+      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='gitlabhq_production' AND pid<>pg_backend_pid();" >/dev/null
+    "''${kc[@]}" -n "$ns" exec "$prim" -c postgres -- psql -U postgres -c \
+      "DROP DATABASE IF EXISTS gitlabhq_production;"
+    "''${kc[@]}" -n "$ns" exec "$prim" -c postgres -- psql -U postgres -c \
+      "CREATE DATABASE gitlabhq_production OWNER gitlab;"
+
+    echo "==> applying the GitLabCore"
+    "''${kc[@]}" -n "$ns" apply -f - <<YAML
+apiVersion: apps.gitlab.com/v2alpha1
+kind: GitLabCore
+metadata:
+  name: gitlab
+  namespace: $ns
+spec:
+  hostname: gitlab.example.com
+  edition: ee
+  postgresql:
+    host: dev-cluster-rw
+    passwordSecretRef: { name: dev-cluster-app, key: password }
+  redis:
+    host: dev-valkey
+    passwordSecretRef: { name: dev-valkey-auth, key: default }
+  objectStorage:
+    connectionSecretRef: { name: dev-garage-gitlab-object-storage, key: config }
+  chart:
+    version: "$version"
+    values:
+      global:
+        gatewayApi: { enabled: false, installEnvoy: false, configureCertmanager: false }
+        ingress: { enabled: true, configureCertmanager: false, class: nginx, tls: { enabled: false } }
+      gitlab:
+        toolbox:
+          backups:
+            objectStorage:
+              config: { secret: dev-garage-gitlab-object-storage-s3cmd, key: config }
+      nginx-ingress: { enabled: false }
+      prometheus: { install: false }
+YAML
+
+    echo "==> done. GitLabCore 'gitlab' is installing at $version in $ns."
+    echo "    Reach the UI with: nix run .#bridge-access"
   '';
 
   # Inner dev loop: rebuild the operator image, load it into kind, and
@@ -537,6 +607,7 @@ in
     deploy-dev = mkApp deployDev;
     deploy-bridge = mkApp deployBridge;
     bridge-access = mkApp bridgeAccess;
+    demo-instance = mkApp demoInstance;
     refresh-dev = mkApp devRefresh;
     up = mkApp up;
     warm-cache = mkApp warmCache;

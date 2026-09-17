@@ -60,6 +60,7 @@ binary, `.#image-bridge` the image (tag `dev-bridge`), and
 | `BRIDGE=1 nix run .#up` | Full local env, bridge variant: loads `dev-bridge` image + deploys with `bridge.enabled=true`. |
 | `nix run .#deploy-bridge` | Deploy the bridge-enabled image (run `.#load-image-bridge` first). |
 | `nix run .#bridge-access` | Ensure caller RBAC → mint a token → print the token + UI/docs/API URLs → port-forward `:8090`. |
+| `nix run .#demo-instance` | (Re)create a `GitLabCore` at the lowest bundled chart version — resets the shared dev DB, then applies it — so the UI upgrade flow has something to upgrade. |
 
 `bridge-access` is env-overridable (`BRIDGE_SA`, `BRIDGE_ROLE`,
 `BRIDGE_TOKEN_DURATION`, `BRIDGE_LOCAL_PORT` / `BRIDGE_REMOTE_PORT`,
