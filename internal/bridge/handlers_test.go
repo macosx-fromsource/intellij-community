@@ -85,6 +85,20 @@ func decodeResource(t *testing.T, resp *http.Response) GitLabResource {
 	return res
 }
 
+func TestListChartVersions(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	resp := doRequest(t, server, http.MethodGet, "/api/v1/chart-versions", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var out ChartVersionsDTO
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+
+	// The catalog is empty in a unit test, but the endpoint must still answer a
+	// JSON array rather than null so the client can iterate it unconditionally.
+	require.NotNil(t, out.Versions)
+}
+
 func TestCRUDLifecycle(t *testing.T) {
 	server, c := newTestServer(t)
 
