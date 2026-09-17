@@ -10,7 +10,7 @@ ARG BUILD_IMAGE=docker.io/golang:1.26
 
 # Build the bridge SPA. It is embedded into the manager binary via go:embed
 # (internal/bridge/static.go), so it must be built before the Go build runs.
-FROM docker.io/node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS webbuilder
+FROM --platform=${BUILDPLATFORM} docker.io/node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS webbuilder
 WORKDIR /web
 COPY internal/bridge/web/package.json internal/bridge/web/package-lock.json ./
 RUN npm ci
@@ -21,10 +21,9 @@ RUN npx --yes openapi-typescript openapi.yaml -o src/lib/api/schema.d.ts && npm 
 FROM --platform=${BUILDPLATFORM} ${BUILD_IMAGE} AS builder
 WORKDIR /workspace
 
-# Copy in any existing Go cache, and download
-# any missing dependencies.
+# Download dependencies. This runs once for a multi-platform build: it sits
+# in the part of the stage that precedes TARGETARCH, so both targets share it.
 ENV GOPATH=/go
-COPY .go/pkg/mod/ /go/pkg/mod/
 COPY go.mod go.sum ./
 RUN go mod download
 
