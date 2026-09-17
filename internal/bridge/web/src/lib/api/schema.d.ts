@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/chart-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the GitLab chart versions the Operator bundles */
+        get: operations["list-chart-versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gitlabs": {
         parameters: {
             query?: never;
@@ -69,6 +86,16 @@ export interface components {
             };
             /** @description Semantic version of the GitLab Chart. */
             version?: string;
+        };
+        ChartVersionsDTO: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/ChartVersionsDTO.json
+             */
+            readonly $schema?: string;
+            /** @description GitLab chart versions the Operator carries, newest first. */
+            versions: string[] | null;
         };
         Condition: {
             lastTransitionTime: string;
@@ -226,6 +253,35 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    "list-chart-versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChartVersionsDTO"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     "list-gitlabs-all-namespaces": {
         parameters: {
             query?: never;

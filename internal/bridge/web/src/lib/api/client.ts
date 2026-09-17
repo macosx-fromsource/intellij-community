@@ -34,6 +34,9 @@ api.use(authMiddleware)
 export type GitLabResource = components['schemas']['GitLabResource']
 export type GitLabList = components['schemas']['GitLabList']
 export type ErrorModel = components['schemas']['ErrorModel']
+export type StatusDTO = components['schemas']['StatusDTO']
+export type Condition = components['schemas']['Condition']
+export type ChartVersionsDTO = components['schemas']['ChartVersionsDTO']
 
 /**
  * Extracts a human-readable message from a bridge RFC7807 error body, including

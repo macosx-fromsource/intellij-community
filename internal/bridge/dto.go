@@ -74,6 +74,11 @@ type ChartDTO struct {
 	Values  map[string]any `json:"values,omitempty" doc:"Free-form Helm values used to render the GitLab Chart. They are merged over the values derived from the structured fields and win on conflict."`
 }
 
+// ChartVersionsDTO lists the GitLab chart versions the Operator bundles.
+type ChartVersionsDTO struct {
+	Versions []string `json:"versions" doc:"GitLab chart versions the Operator carries, newest first."`
+}
+
 // StatusDTO is the read-only observed state of a GitLab resource.
 type StatusDTO struct {
 	Phase         string             `json:"phase,omitempty" doc:"Current lifecycle phase."`

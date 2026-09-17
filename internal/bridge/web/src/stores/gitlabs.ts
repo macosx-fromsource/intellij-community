@@ -11,8 +11,28 @@ import { api, errorMessage, type GitLabResource } from '@/lib/api/client'
 export const useGitLabsStore = defineStore('gitlabs', () => {
   const items = ref<GitLabResource[]>([])
   const current = ref<GitLabResource | null>(null)
+  const chartVersions = ref<string[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  /**
+   * Loads the chart versions the Operator bundles, newest first. It is auxiliary
+   * to the list, so a failure leaves the set empty (no upgrade options offered)
+   * rather than surfacing as the page error.
+   */
+  async function fetchChartVersions(): Promise<boolean> {
+    const { data, error: err } = await api.GET('/api/v1/chart-versions')
+
+    if (err) {
+      chartVersions.value = []
+
+      return false
+    }
+
+    chartVersions.value = data?.versions ?? []
+
+    return true
+  }
 
   async function fetchAll(): Promise<boolean> {
     loading.value = true
@@ -123,5 +143,17 @@ export const useGitLabsStore = defineStore('gitlabs', () => {
     return true
   }
 
-  return { items, current, loading, error, fetchAll, fetchOne, create, update, remove }
+  return {
+    items,
+    current,
+    chartVersions,
+    loading,
+    error,
+    fetchAll,
+    fetchOne,
+    fetchChartVersions,
+    create,
+    update,
+    remove,
+  }
 })

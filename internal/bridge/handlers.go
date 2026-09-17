@@ -1,20 +1,31 @@
 package bridge
 
 import (
+	"cmp"
 	"context"
+	"log/slog"
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
+	"golang.org/x/mod/semver"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/controllers/settings"
+	"gitlab.com/gitlab-org/cloud-native/gitlab-operator/internal/render"
+	charts "gitlab.com/gitlab-org/cloud-native/gitlab-operator/pkg/support/charts"
 )
 
 const (
 	tagGitLabs         = "gitlabs"
+	tagCharts          = "charts"
 	pathNamespaced     = "/api/v1/namespaces/{namespace}/gitlabs"
 	pathNamespacedName = "/api/v1/namespaces/{namespace}/gitlabs/{name}"
+
+	// gitlabChartName is the name of the GitLab Chart in the Operator's catalog.
+	gitlabChartName = "gitlab"
 )
 
 // namespacePath and namePath describe the shared path parameters.
@@ -52,6 +63,11 @@ type resourceBody struct {
 
 type listOutput struct {
 	Body GitLabList
+}
+
+// chartVersionsOutput wraps the list of bundled chart versions.
+type chartVersionsOutput struct {
+	Body ChartVersionsDTO
 }
 
 // RegisterRoutes registers the CRUD operations for the GitLabCore custom
@@ -161,6 +177,73 @@ func RegisterRoutes(api huma.API) {
 		}
 
 		return nil, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "list-chart-versions",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/chart-versions",
+		Summary:     "List the GitLab chart versions available to install or upgrade to",
+		Tags:        []string{tagCharts},
+	}, func(_ context.Context, _ *struct{}) (*chartVersionsOutput, error) {
+		// This needs no caller client: see listChartVersions.
+		return &chartVersionsOutput{Body: ChartVersionsDTO{Versions: listChartVersions(slog.Default())}}, nil
+	})
+}
+
+// listChartVersions lists the GitLab chart versions to offer in the version
+// picker. It prefers the configured chart repository
+// (settings.DynamicChartRepository) — the same source the GitLabCore
+// controller itself falls back to for a version its bundled catalog does not
+// carry (see internal/controller/gitlabcore/release.go) — over the bundled
+// catalog, which only the in-cluster bridge has: the catalog is populated from
+// HELM_CHARTS at manager startup (see cmd/manager/main.go), an image-only path
+// the `kubectl bridge` plugin never runs, since it runs on the caller's own
+// machine outside the Operator image. Reaching the repository directly lets the
+// plugin offer the same versions without needing any chart on disk.
+//
+// The bundled catalog remains the fallback for a disconnected cluster that has
+// turned dynamic chart pulling off (settings.DynamicChartPullEnabled), and for
+// a repository lookup that fails for any other reason (e.g. no network from the
+// plugin's machine); either way an empty result is a missing "upgrade to" list,
+// not a request failure, so an error here is only logged.
+//
+// Either source yields versions newest-first, so the picker sees a stable
+// ordering regardless of which one answered.
+func listChartVersions(log *slog.Logger) []string {
+	if settings.DynamicChartPullEnabled && settings.DynamicChartRepository != "" {
+		versions, err := render.RemoteChartVersions(
+			settings.DynamicChartRepository, gitlabChartName, settings.DynamicChartAllowHTTP, log)
+		if err == nil {
+			sortChartVersionsDescending(versions)
+
+			return versions
+		}
+
+		log.Warn("could not list chart versions from the chart repository; falling back to the bundled catalog",
+			"repository", settings.DynamicChartRepository, "error", err)
+	}
+
+	// charts.Catalog.Versions already returns its result newest-first.
+	versions := charts.GlobalCatalog().Versions(gitlabChartName)
+	if versions == nil {
+		versions = []string{}
+	}
+
+	return versions
+}
+
+// sortChartVersionsDescending orders chart versions newest-first, mirroring the
+// order charts.Catalog.Versions returns, so the version picker sees the same
+// ordering whether the versions came from the chart repository or the bundled
+// catalog.
+func sortChartVersionsDescending(versions []string) {
+	slices.SortFunc(versions, func(a, b string) int {
+		if res := semver.Compare("v"+b, "v"+a); res != 0 {
+			return res
+		}
+
+		return cmp.Compare(b, a)
 	})
 }
 
