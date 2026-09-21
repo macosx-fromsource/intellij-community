@@ -5,10 +5,10 @@ components:
       properties:
         values:
           additionalProperties: {}
-          description: Free-form Helm values used to render the GitLab Chart. They are merged over the values derived from the structured fields and win on conflict.
+          description: Free-form Helm values used to render the chart. They are merged over the values derived from the structured fields and win on conflict.
           type: object
         version:
-          description: Semantic version of the GitLab Chart.
+          description: Semantic version of the Helm chart.
           type: string
       type: object
     ChartVersionsDTO:
@@ -205,6 +205,17 @@ components:
       required:
         - secretRef
       type: object
+    LocalSecretRefDTO:
+      additionalProperties: false
+      properties:
+        name:
+          description: Name of the Secret.
+          maxLength: 253
+          minLength: 1
+          type: string
+      required:
+        - name
+      type: object
     ObjectStorageDTO:
       additionalProperties: false
       properties:
@@ -327,6 +338,280 @@ components:
       required:
         - name
         - key
+      type: object
+    SiphonQueueAuthDTO:
+      additionalProperties: false
+      properties:
+        passwordSecretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the password.
+        usernameSecretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the user name.
+      required:
+        - usernameSecretRef
+        - passwordSecretRef
+      type: object
+    SiphonQueueDTO:
+      additionalProperties: false
+      properties:
+        auth:
+          $ref: "#/components/schemas/SiphonQueueAuthDTO"
+          description: User name and password the client authenticates with. Leave it out for a server that accepts anonymous clients.
+        tls:
+          $ref: "#/components/schemas/SiphonQueueTLSDTO"
+          description: Client certificate the connection presents.
+        url:
+          description: URL of the NATS server.
+          examples:
+            - nats://nats.nats.svc.cluster.local:4222
+          maxLength: 2048
+          minLength: 1
+          pattern: ^nats://
+          type: string
+      required:
+        - url
+      type: object
+    SiphonQueueTLSDTO:
+      additionalProperties: false
+      properties:
+        caCertKey:
+          description: Key holding the certificate authority bundle. Defaults to 'ca.crt'.
+          examples:
+            - ca.crt
+          maxLength: 253
+          minLength: 1
+          type: string
+        clientCertKey:
+          description: Key holding the client certificate. Defaults to 'tls.crt'.
+          examples:
+            - tls.crt
+          maxLength: 253
+          minLength: 1
+          type: string
+        clientKeyKey:
+          description: Key holding the client private key. Defaults to 'tls.key'.
+          examples:
+            - tls.key
+          maxLength: 253
+          minLength: 1
+          type: string
+        secretName:
+          description: Name of the Secret in the namespace of the resource.
+          maxLength: 253
+          minLength: 1
+          type: string
+      required:
+        - secretName
+      type: object
+    SiphonResource:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/schemas/SiphonResource.json
+          format: uri
+          readOnly: true
+          type: string
+        chart:
+          $ref: "#/components/schemas/ChartDTO"
+          description: "Siphon chart configuration. Only a version the Operator bundles renders: unlike the GitLab chart, a Siphon chart is never pulled."
+        gitlabRef:
+          description: Name of the GitLabCore instance whose database this pipeline streams.
+          readOnly: true
+          type: string
+        name:
+          description: Name of the Siphon resource. The bridge derives it from the GitLab instance when it creates one.
+          readOnly: true
+          type: string
+        namespace:
+          description: Namespace the Siphon resource lives in, which is the namespace of the GitLab instance.
+          readOnly: true
+          type: string
+        queue:
+          $ref: "#/components/schemas/SiphonQueueDTO"
+          description: "NATS server the stream passes through. JetStream must be enabled: Siphon uses streams, a key-value bucket, and an object store."
+        sink:
+          $ref: "#/components/schemas/SiphonSinkDTO"
+          description: ClickHouse server the stream is written to, over the native protocol. Its target tables are created by the ClickHouse migrations of GitLab, not by Siphon.
+        source:
+          $ref: "#/components/schemas/SiphonSourceDTO"
+          description: "PostgreSQL server the change data capture stream reads. It must be the primary: a logical replication slot is not created on a standby."
+        status:
+          $ref: "#/components/schemas/SiphonStatusDTO"
+          description: Most recently observed status. Read-only.
+          readOnly: true
+        tables:
+          $ref: "#/components/schemas/SiphonTablesDTO"
+          description: How the table definitions of the deployed GitLab version reach the pods. They ship as an OCI image tagged with the GitLab version the referenced instance runs.
+      required:
+        - source
+        - queue
+        - sink
+        - chart
+      type: object
+    SiphonSinkDTO:
+      additionalProperties: false
+      properties:
+        database:
+          description: Database holding the target tables.
+          examples:
+            - gitlab_clickhouse_main_production
+          maxLength: 63
+          minLength: 1
+          type: string
+        host:
+          description: Hostname of the ClickHouse server.
+          examples:
+            - clickhouse.databases.svc.cluster.local
+          maxLength: 253
+          minLength: 1
+          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+          type: string
+        passwordSecretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the password of that user.
+        port:
+          description: Port of the ClickHouse native protocol, not of the HTTP interface. Defaults to 9000; 8123 is the HTTP interface, which Siphon does not speak.
+          examples:
+            - 9000
+          format: int32
+          maximum: 65535
+          minimum: 1
+          type: integer
+        ssl:
+          description: Turns TLS on for the native protocol connection. The port changes with it, so set both.
+          type: boolean
+        username:
+          description: ClickHouse user the consumer and the reconciler connect as. It needs INSERT and SELECT on the target tables.
+          examples:
+            - gitlab
+          maxLength: 63
+          minLength: 1
+          type: string
+      required:
+        - host
+        - database
+        - username
+        - passwordSecretRef
+      type: object
+    SiphonSourceDTO:
+      additionalProperties: false
+      properties:
+        advisoryLockID:
+          description: PostgreSQL advisory lock the producer takes to elect itself. Defaults to 1; change it only to run a second, independent stream off the same database.
+          format: int32
+          maximum: 2147483647
+          minimum: 1
+          type: integer
+        database:
+          description: "Database to replicate. Defaults to 'gitlabhq_production' and is immutable: changing it re-snapshots every table."
+          examples:
+            - gitlabhq_production
+          maxLength: 63
+          minLength: 1
+          type: string
+        host:
+          description: Hostname of the PostgreSQL primary.
+          examples:
+            - gitlab-postgresql-rw.databases.svc.cluster.local
+          maxLength: 253
+          minLength: 1
+          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+          type: string
+        passwordSecretRef:
+          $ref: "#/components/schemas/SecretRefDTO"
+          description: Key of the Secret that holds the password of that role.
+        port:
+          description: Port of the PostgreSQL server. Defaults to 5432.
+          examples:
+            - 5432
+          format: int32
+          maximum: 65535
+          minimum: 1
+          type: integer
+        sslMode:
+          description: libpq TLS mode of the connection. Defaults to 'require'.
+          enum:
+            - disable
+            - allow
+            - prefer
+            - require
+            - verify-ca
+            - verify-full
+          examples:
+            - require
+          type: string
+        user:
+          description: Login role the producer connects as. It needs REPLICATION, EXECUTE on siphon_alter_publication, and SELECT on the replicated tables. Defaults to 'siphon'.
+          examples:
+            - siphon
+          maxLength: 63
+          minLength: 1
+          type: string
+      required:
+        - host
+        - passwordSecretRef
+      type: object
+    SiphonStatusDTO:
+      additionalProperties: false
+      properties:
+        conditions:
+          description: Detailed status conditions.
+          items:
+            $ref: "#/components/schemas/Condition"
+          type:
+            - array
+            - "null"
+        gitlabVersion:
+          description: Application version of the referenced instance, the version the table definitions are pinned to.
+          type: string
+        phase:
+          description: Current lifecycle phase.
+          type: string
+        publication:
+          description: PostgreSQL publication the producer reads. Deleting the resource leaves it behind.
+          type: string
+        replicationSlot:
+          description: PostgreSQL replication slot the producer holds. Deleting the resource leaves it behind.
+          type: string
+        streamName:
+          description: NATS JetStream stream the events pass through. Deleting the resource leaves it behind.
+          type: string
+        tableCount:
+          description: How many table definitions the pipeline carries.
+          format: int32
+          type: integer
+        tablesImage:
+          description: Fully resolved table definitions image reference.
+          type: string
+        tablesSource:
+          description: What the table definitions source resolved to, 'ImageVolume' or 'ConfigMap'.
+          type: string
+        version:
+          description: Deployed Siphon chart version.
+          type: string
+      type: object
+    SiphonTablesDTO:
+      additionalProperties: false
+      properties:
+        image:
+          description: Overrides the table definitions image. Left out, it is the GitLab image tagged with the application version of the referenced instance.
+          maxLength: 512
+          type: string
+        pullSecretRef:
+          $ref: "#/components/schemas/LocalSecretRefDTO"
+          description: A kubernetes.io/dockerconfigjson Secret the image is pulled with. Leave it out for the public image.
+        source:
+          description: Where the definitions come from. 'ImageVolume' mounts the image into the pod, which needs a runtime that serves OCI image volumes. 'ConfigMap' has the Operator extract it. 'Auto', the default, resolves to 'ConfigMap'.
+          enum:
+            - Auto
+            - ImageVolume
+            - ConfigMap
+          examples:
+            - Auto
+          type: string
       type: object
     StatusDTO:
       additionalProperties: false
@@ -573,5 +858,119 @@ paths:
       summary: Update a GitLab resource
       tags:
         - gitlabs
+  /api/v1/namespaces/{namespace}/gitlabs/{name}/siphon:
+    delete:
+      operationId: delete-siphon
+      parameters:
+        - description: Namespace of the GitLab resource.
+          in: path
+          name: namespace
+          required: true
+          schema:
+            description: Namespace of the GitLab resource.
+            examples:
+              - gitlab-system
+            type: string
+        - description: Name of the GitLab resource.
+          in: path
+          name: name
+          required: true
+          schema:
+            description: Name of the GitLab resource.
+            examples:
+              - gitlab
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete the Siphon of a GitLab instance
+      tags:
+        - siphons
+    get:
+      operationId: get-siphon
+      parameters:
+        - description: Namespace of the GitLab resource.
+          in: path
+          name: namespace
+          required: true
+          schema:
+            description: Namespace of the GitLab resource.
+            examples:
+              - gitlab-system
+            type: string
+        - description: Name of the GitLab resource.
+          in: path
+          name: name
+          required: true
+          schema:
+            description: Name of the GitLab resource.
+            examples:
+              - gitlab
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiphonResource"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get the Siphon of a GitLab instance
+      tags:
+        - siphons
+    put:
+      operationId: put-siphon
+      parameters:
+        - description: Namespace of the GitLab resource.
+          in: path
+          name: namespace
+          required: true
+          schema:
+            description: Namespace of the GitLab resource.
+            examples:
+              - gitlab-system
+            type: string
+        - description: Name of the GitLab resource.
+          in: path
+          name: name
+          required: true
+          schema:
+            description: Name of the GitLab resource.
+            examples:
+              - gitlab
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SiphonResource"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiphonResource"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create or replace the Siphon of a GitLab instance
+      tags:
+        - siphons
 security:
   - bearer: []

@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List the GitLab chart versions the Operator bundles */
+        /** List the GitLab chart versions available to install or upgrade to */
         get: operations["list-chart-versions"];
         put?: never;
         post?: never;
@@ -75,16 +75,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/namespaces/{namespace}/gitlabs/{name}/siphon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the Siphon of a GitLab instance */
+        get: operations["get-siphon"];
+        /** Create or replace the Siphon of a GitLab instance */
+        put: operations["put-siphon"];
+        post?: never;
+        /** Delete the Siphon of a GitLab instance */
+        delete: operations["delete-siphon"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         ChartDTO: {
-            /** @description Free-form Helm values used to render the GitLab Chart. They are merged over the values derived from the structured fields and win on conflict. */
+            /** @description Free-form Helm values used to render the chart. They are merged over the values derived from the structured fields and win on conflict. */
             values?: {
                 [key: string]: unknown;
             };
-            /** @description Semantic version of the GitLab Chart. */
+            /** @description Semantic version of the Helm chart. */
             version?: string;
         };
         ChartVersionsDTO: {
@@ -208,6 +227,10 @@ export interface components {
             /** @description Key of the Secret that holds the license. */
             secretRef: components["schemas"]["SecretRefDTO"];
         };
+        LocalSecretRefDTO: {
+            /** @description Name of the Secret. */
+            name: string;
+        };
         ObjectStorageDTO: {
             /** @description Key of the Secret that holds the connection settings. */
             connectionSecretRef: components["schemas"]["SecretRefDTO"];
@@ -270,6 +293,168 @@ export interface components {
             key: string;
             /** @description Name of the Secret. */
             name: string;
+        };
+        SiphonQueueAuthDTO: {
+            /** @description Key of the Secret that holds the password. */
+            passwordSecretRef: components["schemas"]["SecretRefDTO"];
+            /** @description Key of the Secret that holds the user name. */
+            usernameSecretRef: components["schemas"]["SecretRefDTO"];
+        };
+        SiphonQueueDTO: {
+            /** @description User name and password the client authenticates with. Leave it out for a server that accepts anonymous clients. */
+            auth?: components["schemas"]["SiphonQueueAuthDTO"];
+            /** @description Client certificate the connection presents. */
+            tls?: components["schemas"]["SiphonQueueTLSDTO"];
+            /**
+             * @description URL of the NATS server.
+             * @example nats://nats.nats.svc.cluster.local:4222
+             */
+            url: string;
+        };
+        SiphonQueueTLSDTO: {
+            /**
+             * @description Key holding the certificate authority bundle. Defaults to 'ca.crt'.
+             * @example ca.crt
+             */
+            caCertKey?: string;
+            /**
+             * @description Key holding the client certificate. Defaults to 'tls.crt'.
+             * @example tls.crt
+             */
+            clientCertKey?: string;
+            /**
+             * @description Key holding the client private key. Defaults to 'tls.key'.
+             * @example tls.key
+             */
+            clientKeyKey?: string;
+            /** @description Name of the Secret in the namespace of the resource. */
+            secretName: string;
+        };
+        SiphonResource: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/SiphonResource.json
+             */
+            readonly $schema?: string;
+            /** @description Siphon chart configuration. Only a version the Operator bundles renders: unlike the GitLab chart, a Siphon chart is never pulled. */
+            chart: components["schemas"]["ChartDTO"];
+            /** @description Name of the GitLabCore instance whose database this pipeline streams. */
+            readonly gitlabRef?: string;
+            /** @description Name of the Siphon resource. The bridge derives it from the GitLab instance when it creates one. */
+            readonly name?: string;
+            /** @description Namespace the Siphon resource lives in, which is the namespace of the GitLab instance. */
+            readonly namespace?: string;
+            /** @description NATS server the stream passes through. JetStream must be enabled: Siphon uses streams, a key-value bucket, and an object store. */
+            queue: components["schemas"]["SiphonQueueDTO"];
+            /** @description ClickHouse server the stream is written to, over the native protocol. Its target tables are created by the ClickHouse migrations of GitLab, not by Siphon. */
+            sink: components["schemas"]["SiphonSinkDTO"];
+            /** @description PostgreSQL server the change data capture stream reads. It must be the primary: a logical replication slot is not created on a standby. */
+            source: components["schemas"]["SiphonSourceDTO"];
+            /** @description Most recently observed status. Read-only. */
+            readonly status?: components["schemas"]["SiphonStatusDTO"];
+            /** @description How the table definitions of the deployed GitLab version reach the pods. They ship as an OCI image tagged with the GitLab version the referenced instance runs. */
+            tables?: components["schemas"]["SiphonTablesDTO"];
+        };
+        SiphonSinkDTO: {
+            /**
+             * @description Database holding the target tables.
+             * @example gitlab_clickhouse_main_production
+             */
+            database: string;
+            /**
+             * @description Hostname of the ClickHouse server.
+             * @example clickhouse.databases.svc.cluster.local
+             */
+            host: string;
+            /** @description Key of the Secret that holds the password of that user. */
+            passwordSecretRef: components["schemas"]["SecretRefDTO"];
+            /**
+             * Format: int32
+             * @description Port of the ClickHouse native protocol, not of the HTTP interface. Defaults to 9000; 8123 is the HTTP interface, which Siphon does not speak.
+             * @example 9000
+             */
+            port?: number;
+            /** @description Turns TLS on for the native protocol connection. The port changes with it, so set both. */
+            ssl?: boolean;
+            /**
+             * @description ClickHouse user the consumer and the reconciler connect as. It needs INSERT and SELECT on the target tables.
+             * @example gitlab
+             */
+            username: string;
+        };
+        SiphonSourceDTO: {
+            /**
+             * Format: int32
+             * @description PostgreSQL advisory lock the producer takes to elect itself. Defaults to 1; change it only to run a second, independent stream off the same database.
+             */
+            advisoryLockID?: number;
+            /**
+             * @description Database to replicate. Defaults to 'gitlabhq_production' and is immutable: changing it re-snapshots every table.
+             * @example gitlabhq_production
+             */
+            database?: string;
+            /**
+             * @description Hostname of the PostgreSQL primary.
+             * @example gitlab-postgresql-rw.databases.svc.cluster.local
+             */
+            host: string;
+            /** @description Key of the Secret that holds the password of that role. */
+            passwordSecretRef: components["schemas"]["SecretRefDTO"];
+            /**
+             * Format: int32
+             * @description Port of the PostgreSQL server. Defaults to 5432.
+             * @example 5432
+             */
+            port?: number;
+            /**
+             * @description libpq TLS mode of the connection. Defaults to 'require'.
+             * @example require
+             * @enum {string}
+             */
+            sslMode?: "disable" | "allow" | "prefer" | "require" | "verify-ca" | "verify-full";
+            /**
+             * @description Login role the producer connects as. It needs REPLICATION, EXECUTE on siphon_alter_publication, and SELECT on the replicated tables. Defaults to 'siphon'.
+             * @example siphon
+             */
+            user?: string;
+        };
+        SiphonStatusDTO: {
+            /** @description Detailed status conditions. */
+            conditions?: components["schemas"]["Condition"][] | null;
+            /** @description Application version of the referenced instance, the version the table definitions are pinned to. */
+            gitlabVersion?: string;
+            /** @description Current lifecycle phase. */
+            phase?: string;
+            /** @description PostgreSQL publication the producer reads. Deleting the resource leaves it behind. */
+            publication?: string;
+            /** @description PostgreSQL replication slot the producer holds. Deleting the resource leaves it behind. */
+            replicationSlot?: string;
+            /** @description NATS JetStream stream the events pass through. Deleting the resource leaves it behind. */
+            streamName?: string;
+            /**
+             * Format: int32
+             * @description How many table definitions the pipeline carries.
+             */
+            tableCount?: number;
+            /** @description Fully resolved table definitions image reference. */
+            tablesImage?: string;
+            /** @description What the table definitions source resolved to, 'ImageVolume' or 'ConfigMap'. */
+            tablesSource?: string;
+            /** @description Deployed Siphon chart version. */
+            version?: string;
+        };
+        SiphonTablesDTO: {
+            /** @description Overrides the table definitions image. Left out, it is the GitLab image tagged with the application version of the referenced instance. */
+            image?: string;
+            /** @description A kubernetes.io/dockerconfigjson Secret the image is pulled with. Leave it out for the public image. */
+            pullSecretRef?: components["schemas"]["LocalSecretRefDTO"];
+            /**
+             * @description Where the definitions come from. 'ImageVolume' mounts the image into the pod, which needs a runtime that serves OCI image volumes. 'ConfigMap' has the Operator extract it. 'Auto', the default, resolves to 'ConfigMap'.
+             * @example Auto
+             * @enum {string}
+             */
+            source?: "Auto" | "ImageVolume" | "ConfigMap";
         };
         StatusDTO: {
             /** @description Detailed status conditions. */
@@ -489,6 +674,110 @@ export interface operations {
         };
     };
     "delete-gitlab": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Namespace of the GitLab resource. */
+                namespace: string;
+                /** @description Name of the GitLab resource. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-siphon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Namespace of the GitLab resource. */
+                namespace: string;
+                /** @description Name of the GitLab resource. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiphonResource"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "put-siphon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Namespace of the GitLab resource. */
+                namespace: string;
+                /** @description Name of the GitLab resource. */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SiphonResource"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SiphonResource"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-siphon": {
         parameters: {
             query?: never;
             header?: never;

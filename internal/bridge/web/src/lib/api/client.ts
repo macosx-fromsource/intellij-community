@@ -33,6 +33,7 @@ api.use(authMiddleware)
 
 export type GitLabResource = components['schemas']['GitLabResource']
 export type GitLabList = components['schemas']['GitLabList']
+export type SiphonResource = components['schemas']['SiphonResource']
 export type ErrorModel = components['schemas']['ErrorModel']
 export type StatusDTO = components['schemas']['StatusDTO']
 export type Condition = components['schemas']['Condition']

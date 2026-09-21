@@ -26,29 +26,35 @@ const (
 
 	// gitlabChartName is the name of the GitLab Chart in the Operator's catalog.
 	gitlabChartName = "gitlab"
+
+	// gitlabKind names the resource an operation was about in the errors it
+	// returns, the way siphonKind does for the add-on.
+	gitlabKind = "GitLab resource"
 )
 
-// namespacePath and namePath describe the shared path parameters.
-type namespacePath struct {
+// NamespacePath and NamespacedNamePath describe the path parameters the
+// operations share, embedded by the inputs that carry a body as well. They are
+// exported because Huma fills them by reflection, which cannot write to a
+// field promoted through an unexported embedded type.
+type NamespacePath struct {
 	Namespace string `path:"namespace" doc:"Namespace of the GitLab resource." example:"gitlab-system"`
 }
 
-type namespacedNamePath struct {
+type NamespacedNamePath struct {
 	Namespace string `path:"namespace" doc:"Namespace of the GitLab resource." example:"gitlab-system"`
 	Name      string `path:"name" doc:"Name of the GitLab resource." example:"gitlab"`
 }
 
 // createInput is the request for creating a GitLab resource.
 type createInput struct {
-	Namespace string `path:"namespace" doc:"Namespace of the GitLab resource." example:"gitlab-system"`
-	Body      GitLabResource
+	NamespacePath
+	Body GitLabResource
 }
 
 // updateInput is the request for updating a GitLab resource.
 type updateInput struct {
-	Namespace string `path:"namespace" doc:"Namespace of the GitLab resource." example:"gitlab-system"`
-	Name      string `path:"name" doc:"Name of the GitLab resource." example:"gitlab"`
-	Body      GitLabResource
+	NamespacedNamePath
+	Body GitLabResource
 }
 
 // GitLabList is the response body for list operations.
@@ -71,9 +77,11 @@ type chartVersionsOutput struct {
 }
 
 // RegisterRoutes registers the CRUD operations for the GitLabCore custom
-// resource (`apps.gitlab.com/v2alpha1`) on the given Huma API. The paths keep
-// the `gitlabs` segment: it names the GitLab instances the bridge manages, and
-// `/api/v1` is the version of the bridge API, not of the custom resource.
+// resource (`apps.gitlab.com/v2alpha1`) on the given Huma API, along with the
+// operations of the add-ons that are custom resources of their own
+// (registerSiphonRoutes). The paths keep the `gitlabs` segment: it names the
+// GitLab instances the bridge manages, and `/api/v1` is the version of the
+// bridge API, not of the custom resource.
 //
 // Each handler obtains its Kubernetes client from the request context
 // (populated by authMiddleware from the caller's bearer token), so no client is
@@ -96,7 +104,7 @@ func RegisterRoutes(api huma.API) {
 		Path:        pathNamespaced,
 		Summary:     "List GitLab resources in a namespace",
 		Tags:        []string{tagGitLabs},
-	}, func(ctx context.Context, in *namespacePath) (*listOutput, error) {
+	}, func(ctx context.Context, in *NamespacePath) (*listOutput, error) {
 		return listGitLabs(ctx, clientFrom(ctx), in.Namespace)
 	})
 
@@ -106,10 +114,10 @@ func RegisterRoutes(api huma.API) {
 		Path:        pathNamespacedName,
 		Summary:     "Get a GitLab resource",
 		Tags:        []string{tagGitLabs},
-	}, func(ctx context.Context, in *namespacedNamePath) (*resourceBody, error) {
+	}, func(ctx context.Context, in *NamespacedNamePath) (*resourceBody, error) {
 		core := &apiv2alpha1.GitLabCore{}
 		if err := clientFrom(ctx).Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, core); err != nil {
-			return nil, mapError(err)
+			return nil, mapResourceError(err, gitlabKind)
 		}
 
 		return &resourceBody{Body: toResource(core)}, nil
@@ -129,7 +137,7 @@ func RegisterRoutes(api huma.API) {
 		applyToGitLabCore(in.Body, core)
 
 		if err := clientFrom(ctx).Create(ctx, core); err != nil {
-			return nil, mapError(err)
+			return nil, mapResourceError(err, gitlabKind)
 		}
 
 		return &resourceBody{Body: toResource(core)}, nil
@@ -146,7 +154,7 @@ func RegisterRoutes(api huma.API) {
 
 		core := &apiv2alpha1.GitLabCore{}
 		if err := c.Get(ctx, client.ObjectKey{Namespace: in.Namespace, Name: in.Name}, core); err != nil {
-			return nil, mapError(err)
+			return nil, mapResourceError(err, gitlabKind)
 		}
 
 		in.Body.Namespace = in.Namespace
@@ -154,7 +162,7 @@ func RegisterRoutes(api huma.API) {
 		applyToGitLabCore(in.Body, core)
 
 		if err := c.Update(ctx, core); err != nil {
-			return nil, mapError(err)
+			return nil, mapResourceError(err, gitlabKind)
 		}
 
 		return &resourceBody{Body: toResource(core)}, nil
@@ -167,13 +175,13 @@ func RegisterRoutes(api huma.API) {
 		Summary:       "Delete a GitLab resource",
 		Tags:          []string{tagGitLabs},
 		DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, in *namespacedNamePath) (*struct{}, error) {
+	}, func(ctx context.Context, in *NamespacedNamePath) (*struct{}, error) {
 		core := &apiv2alpha1.GitLabCore{}
 		core.Name = in.Name
 		core.Namespace = in.Namespace
 
 		if err := clientFrom(ctx).Delete(ctx, core); err != nil {
-			return nil, mapError(err)
+			return nil, mapResourceError(err, gitlabKind)
 		}
 
 		return nil, nil
@@ -189,6 +197,8 @@ func RegisterRoutes(api huma.API) {
 		// This needs no caller client: see listChartVersions.
 		return &chartVersionsOutput{Body: ChartVersionsDTO{Versions: listChartVersions(slog.Default())}}, nil
 	})
+
+	registerSiphonRoutes(api)
 }
 
 // listChartVersions lists the GitLab chart versions to offer in the version
@@ -258,7 +268,7 @@ func listGitLabs(ctx context.Context, c client.Client, namespace string) (*listO
 	}
 
 	if err := c.List(ctx, list, opts...); err != nil {
-		return nil, mapError(err)
+		return nil, mapResourceError(err, gitlabKind)
 	}
 
 	out := &listOutput{Body: GitLabList{Items: make([]GitLabResource, 0, len(list.Items))}}
@@ -269,22 +279,23 @@ func listGitLabs(ctx context.Context, c client.Client, namespace string) (*listO
 	return out, nil
 }
 
-// mapError translates Kubernetes API errors into Huma HTTP errors.
-func mapError(err error) error {
+// mapResourceError translates Kubernetes API errors into Huma HTTP errors,
+// naming the kind of resource the operation was about.
+func mapResourceError(err error, kind string) error {
 	switch {
 	case apierrors.IsUnauthorized(err):
 		return huma.Error401Unauthorized("unauthorized", err)
 	case apierrors.IsForbidden(err):
 		return huma.Error403Forbidden("forbidden", err)
 	case apierrors.IsNotFound(err):
-		return huma.Error404NotFound("GitLab resource not found", err)
+		return huma.Error404NotFound(kind+" not found", err)
 	case apierrors.IsAlreadyExists(err):
-		return huma.Error409Conflict("GitLab resource already exists", err)
+		return huma.Error409Conflict(kind+" already exists", err)
 	case apierrors.IsConflict(err):
-		return huma.Error409Conflict("conflict updating GitLab resource", err)
+		return huma.Error409Conflict("conflict updating "+kind, err)
 	case apierrors.IsInvalid(err), apierrors.IsBadRequest(err):
-		return huma.Error422UnprocessableEntity("invalid GitLab resource", err)
+		return huma.Error422UnprocessableEntity("invalid "+kind, err)
 	default:
-		return huma.Error500InternalServerError("failed to process GitLab resource", err)
+		return huma.Error500InternalServerError("failed to process "+kind, err)
 	}
 }

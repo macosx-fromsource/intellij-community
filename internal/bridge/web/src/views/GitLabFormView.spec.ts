@@ -29,11 +29,11 @@ vi.mock('@/components/YamlEditor.vue', () => ({
   },
 }))
 
-const mockApi = api as unknown as { GET: Mock; POST: Mock }
+const mockApi = api as unknown as { GET: Mock; POST: Mock; PUT: Mock; DELETE: Mock }
 
 /** Mounts the form and lets its mounted hook settle. */
-async function mountForm(): Promise<VueWrapper> {
-  const wrapper = mount(GitLabFormView)
+async function mountForm(props?: { namespace: string; name: string }): Promise<VueWrapper> {
+  const wrapper = mount(GitLabFormView, props ? { props } : undefined)
   await flushPromises()
 
   return wrapper
@@ -122,7 +122,7 @@ describe('GitLabFormView', () => {
   it('disables the not-yet-configurable add-ons', async () => {
     const wrapper = await mountForm()
 
-    for (const title of ['Siphon', 'Orbit', 'Artifact Registry', 'AI Gateway']) {
+    for (const title of ['Orbit', 'Artifact Registry', 'AI Gateway']) {
       const button = wrapper.findAll('.sidebar button').find((candidate) => candidate.text().startsWith(title))!
 
       expect(button.attributes('disabled')).toBeDefined()
@@ -399,6 +399,345 @@ describe('GitLabFormView', () => {
 
     const body = mockApi.POST.mock.calls[0]![1].body
     expect(body.openbao).toBeUndefined()
+  })
+
+  // Siphon is a custom resource of its own, linked to the instance by its
+  // reference, so the form drives a second endpoint rather than a field.
+  describe('Siphon', () => {
+    /** Fills the groups a Siphon needs, from the Siphon section. */
+    async function fillSiphon(wrapper: VueWrapper) {
+      await group(wrapper, 'Chart').get('input').setValue('1.21.0')
+
+      const source = group(wrapper, 'PostgreSQL source').findAll('input')
+      await source[0]!.setValue('gitlab-postgresql-rw.databases.svc.cluster.local')
+      await source[4]!.setValue('gitlab-siphon-postgresql')
+      await source[5]!.setValue('password')
+
+      await group(wrapper, 'NATS queue').findAll('input')[0]!.setValue('nats://nats.nats.svc.cluster.local:4222')
+
+      const sink = group(wrapper, 'ClickHouse sink').findAll('input')
+      await sink[0]!.setValue('clickhouse.databases.svc.cluster.local')
+      await sink[2]!.setValue('gitlab_clickhouse_main_production')
+      await sink[3]!.setValue('gitlab')
+      await sink[4]!.setValue('gitlab-clickhouse-gitlab')
+      await sink[5]!.setValue('password')
+    }
+
+    /** The Siphon of that instance, carrying the status given, if any. */
+    function siphonFixture(status?: Record<string, unknown>) {
+      return {
+        name: 'gitlab-siphon',
+        namespace: 'gitlab-system',
+        gitlabRef: 'gitlab',
+        source: {
+          host: 'gitlab-postgresql-rw',
+          passwordSecretRef: { name: 'gitlab-siphon-postgresql', key: 'password' },
+        },
+        queue: { url: 'nats://nats:4222' },
+        sink: {
+          host: 'clickhouse',
+          database: 'gitlab_clickhouse_main_production',
+          username: 'gitlab',
+          passwordSecretRef: { name: 'gitlab-clickhouse-gitlab', key: 'password' },
+        },
+        chart: { version: '1.21.0' },
+        ...(status ? { status } : {}),
+      }
+    }
+
+    /**
+     * Answers the fetches of an instance being edited: the instance itself,
+     * and the Siphon given. `null` answers the Siphon with the 404 an
+     * instance that has none reads as.
+     */
+    function mockInstance(siphon: Record<string, unknown> | null) {
+      const instance = {
+        data: { name: 'gitlab', namespace: 'gitlab-system', chart: { version: '10.2.2' } },
+        error: undefined,
+      }
+      const addon = siphon
+        ? { data: siphon, error: undefined }
+        : {
+            data: undefined,
+            error: { detail: 'Siphon resource not found' },
+            response: { status: 404 },
+          }
+
+      mockApi.GET.mockImplementation((path: string) =>
+        Promise.resolve(path.endsWith('/siphon') ? addon : instance),
+      )
+    }
+
+    it('is configurable rather than a placeholder', async () => {
+      const wrapper = await mountForm()
+
+      expect(navButton(wrapper, 'Siphon').attributes('disabled')).toBeUndefined()
+
+      await selectSection(wrapper, 'Siphon')
+      expect(currentSection(wrapper)).toBe('Siphon')
+    })
+
+    it('unlocks its groups on enable', async () => {
+      const wrapper = await mountForm()
+
+      await selectSection(wrapper, 'Siphon')
+      expect(group(wrapper, 'PostgreSQL source').attributes('disabled')).toBeDefined()
+
+      await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+      expect(group(wrapper, 'PostgreSQL source').attributes('disabled')).toBeUndefined()
+      expect(group(wrapper, 'ClickHouse sink').attributes('disabled')).toBeUndefined()
+    })
+
+    it('requires the three connections and a chart version once enabled', async () => {
+      const wrapper = await mountForm()
+
+      await fill(wrapper, 'Chart version', '10.2.2')
+      await selectSection(wrapper, 'Siphon')
+      await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+      await wrapper.get('form').trigger('submit')
+
+      expect(currentSection(wrapper)).toBe('Siphon')
+      expect(wrapper.text()).toContain('Siphon needs a chart version')
+      expect(wrapper.text()).toContain('The PostgreSQL source needs a hostname')
+      expect(wrapper.text()).toContain('Siphon needs the URL of a NATS server')
+      expect(wrapper.text()).toContain('The ClickHouse sink needs a hostname')
+      expect(mockApi.POST).not.toHaveBeenCalled()
+    })
+
+    // The CRD rejects the HTTP interface port, so the form does too.
+    it('rejects the ClickHouse HTTP port', async () => {
+      const wrapper = await mountForm()
+
+      await fill(wrapper, 'Chart version', '10.2.2')
+      await selectSection(wrapper, 'Siphon')
+      await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+      await fillSiphon(wrapper)
+      await group(wrapper, 'ClickHouse sink').findAll('input')[1]!.setValue('8123')
+
+      await wrapper.get('form').trigger('submit')
+
+      expect(currentSection(wrapper)).toBe('Siphon')
+      expect(wrapper.text()).toContain('Port 8123 is the ClickHouse HTTP interface')
+      expect(mockApi.POST).not.toHaveBeenCalled()
+    })
+
+    it('saves the Siphon under the instance once it is stored', async () => {
+      mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+      mockApi.PUT.mockResolvedValue({ data: undefined, error: undefined })
+
+      const wrapper = await mountForm()
+
+      await fill(wrapper, 'Chart version', '10.2.2')
+      await selectSection(wrapper, 'Siphon')
+      await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+      await fillSiphon(wrapper)
+
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mockApi.POST).toHaveBeenCalled()
+      expect(mockApi.PUT).toHaveBeenCalledWith(
+        '/api/v1/namespaces/{namespace}/gitlabs/{name}/siphon',
+        {
+          params: { path: { namespace: 'gitlab-system', name: 'gitlab' } },
+          body: {
+            source: {
+              host: 'gitlab-postgresql-rw.databases.svc.cluster.local',
+              port: undefined,
+              database: undefined,
+              user: undefined,
+              passwordSecretRef: { name: 'gitlab-siphon-postgresql', key: 'password' },
+              sslMode: 'require',
+              advisoryLockID: undefined,
+            },
+            queue: { url: 'nats://nats.nats.svc.cluster.local:4222', auth: undefined, tls: undefined },
+            sink: {
+              host: 'clickhouse.databases.svc.cluster.local',
+              port: undefined,
+              database: 'gitlab_clickhouse_main_production',
+              username: 'gitlab',
+              passwordSecretRef: { name: 'gitlab-clickhouse-gitlab', key: 'password' },
+              ssl: false,
+            },
+            tables: { source: 'Auto', image: undefined, pullSecretRef: undefined },
+            chart: { version: '1.21.0', values: {} },
+          },
+        },
+      )
+    })
+
+    it('touches no Siphon endpoint while the add-on is off', async () => {
+      mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+
+      const wrapper = await mountForm()
+
+      await fill(wrapper, 'Chart version', '10.2.2')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mockApi.PUT).not.toHaveBeenCalled()
+      expect(mockApi.DELETE).not.toHaveBeenCalled()
+    })
+
+    it('loads the Siphon of an instance being edited', async () => {
+      mockInstance(siphonFixture({ phase: 'Running', tableCount: 42, tablesSource: 'ConfigMap' }))
+
+      const wrapper = await mountForm({ namespace: 'gitlab-system', name: 'gitlab' })
+
+      expect(navButton(wrapper, 'Siphon').text()).toContain('On')
+
+      await selectSection(wrapper, 'Siphon')
+      expect((group(wrapper, 'Chart').get('input').element as HTMLInputElement).value).toBe('1.21.0')
+      expect(panel(wrapper).text()).toContain('Running')
+      expect(panel(wrapper).text()).toContain('42 (ConfigMap)')
+    })
+
+    // An instance without a Siphon is the normal case, not a failure.
+    it('leaves the add-on off when the instance has none', async () => {
+      mockInstance(null)
+
+      const wrapper = await mountForm({ namespace: 'gitlab-system', name: 'gitlab' })
+
+      expect(navButton(wrapper, 'Siphon').text()).not.toContain('On')
+      expect(wrapper.text()).not.toContain('not found')
+    })
+
+    // A caller allowed on GitLab resources but not on Siphons can still edit
+    // the instance; whether it has a Siphon is unknown, so the add-on is
+    // locked rather than shown off and turned on over one that went unseen.
+    it('locks the add-on when the Siphon cannot be read', async () => {
+      mockInstance(null)
+      const instance = mockApi.GET.getMockImplementation()!
+      mockApi.GET.mockImplementation((path: string) =>
+        path.endsWith('/siphon')
+          ? Promise.resolve({
+              data: undefined,
+              error: { detail: 'siphons.apps.gitlab.com is forbidden' },
+              response: { status: 403 },
+            })
+          : instance(path),
+      )
+      mockApi.PUT.mockResolvedValue({ data: undefined, error: undefined })
+
+      const wrapper = await mountForm({ namespace: 'gitlab-system', name: 'gitlab' })
+
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(navButton(wrapper, 'Siphon').text()).toContain('Unknown')
+
+      await selectSection(wrapper, 'Siphon')
+      expect(panel(wrapper).get('input[type="checkbox"]').attributes('disabled')).toBeDefined()
+      expect(panel(wrapper).text()).toContain('could not be read')
+
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      // Only the instance is saved.
+      expect(mockApi.PUT).toHaveBeenCalledTimes(1)
+      expect(mockApi.PUT.mock.calls[0]![0]).not.toMatch(/\/siphon$/)
+      expect(mockApi.DELETE).not.toHaveBeenCalled()
+    })
+
+    // Turning the add-on off deletes a resource, so it is confirmed first.
+    it('deletes the Siphon when the add-on is turned off, once confirmed', async () => {
+      mockInstance(siphonFixture())
+      mockApi.PUT.mockResolvedValue({ data: undefined, error: undefined })
+      mockApi.DELETE.mockResolvedValue({ data: undefined, error: undefined })
+      vi.stubGlobal('confirm', vi.fn(() => true))
+
+      const wrapper = await mountForm({ namespace: 'gitlab-system', name: 'gitlab' })
+
+      await selectSection(wrapper, 'Siphon')
+      await panel(wrapper).get('input[type="checkbox"]').setValue(false)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(confirm).toHaveBeenCalled()
+      expect(mockApi.DELETE).toHaveBeenCalledWith(
+        '/api/v1/namespaces/{namespace}/gitlabs/{name}/siphon',
+        { params: { path: { namespace: 'gitlab-system', name: 'gitlab' } } },
+      )
+
+      vi.unstubAllGlobals()
+    })
+
+    // The instance is stored before its Siphon, so a Siphon that fails leaves
+    // it created. Submitting again has to update that instance rather than
+    // create a second one under the same name, which the API server rejects.
+    it('updates the instance it just created when the Siphon failed', async () => {
+      mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+      mockApi.PUT.mockResolvedValue({ data: undefined, error: { detail: 'no kind "Siphon" is registered' } })
+
+      const wrapper = await mountForm()
+
+      await fill(wrapper, 'Chart version', '10.2.2')
+      await selectSection(wrapper, 'Siphon')
+      await panel(wrapper).get('input[type="checkbox"]').setValue(true)
+      await fillSiphon(wrapper)
+
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mockApi.POST).toHaveBeenCalledTimes(1)
+      expect(push).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('The instance was saved, but its Siphon was not.')
+      // The form now edits what it created: the name is fixed, and the
+      // button saves rather than creates.
+      expect(wrapper.get('button[type="submit"]').text()).toBe('Save')
+      expect(panel(wrapper).html()).not.toContain('Siphon needs a chart version')
+
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mockApi.POST).toHaveBeenCalledTimes(1)
+      expect(mockApi.PUT).toHaveBeenCalledWith('/api/v1/namespaces/{namespace}/gitlabs/{name}', {
+        params: { path: { namespace: 'gitlab-system', name: 'gitlab' } },
+        body: expect.objectContaining({ name: 'gitlab', namespace: 'gitlab-system' }),
+      })
+    })
+
+    // Declining the confirmation is not a failure: the instance is saved and
+    // the Siphon is left alone, which the form says rather than navigating
+    // away from a checkbox that no longer matches the cluster.
+    it('keeps the form open when the deletion is declined', async () => {
+      mockInstance(siphonFixture())
+      mockApi.PUT.mockResolvedValue({ data: undefined, error: undefined })
+      vi.stubGlobal('confirm', vi.fn(() => false))
+
+      const wrapper = await mountForm({ namespace: 'gitlab-system', name: 'gitlab' })
+
+      await selectSection(wrapper, 'Siphon')
+      await panel(wrapper).get('input[type="checkbox"]').setValue(false)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mockApi.DELETE).not.toHaveBeenCalled()
+      expect(push).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('its Siphon kept')
+
+      vi.unstubAllGlobals()
+    })
+
+    // The stores outlive the page, and a new instance fetches no Siphon of
+    // its own: the one left by the instance edited before is not this one's.
+    it('does not offer to delete the Siphon of the instance edited before', async () => {
+      mockInstance(siphonFixture())
+      await mountForm({ namespace: 'gitlab-system', name: 'gitlab' })
+
+      mockApi.POST.mockResolvedValue({ data: undefined, error: undefined })
+      vi.stubGlobal('confirm', vi.fn(() => true))
+
+      const wrapper = await mountForm()
+
+      await fill(wrapper, 'Chart version', '10.2.2')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(confirm).not.toHaveBeenCalled()
+      expect(mockApi.DELETE).not.toHaveBeenCalled()
+      expect(push).toHaveBeenCalled()
+
+      vi.unstubAllGlobals()
+    })
   })
 
   it('creates the resource from every section on submit', async () => {
