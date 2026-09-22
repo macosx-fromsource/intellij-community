@@ -167,7 +167,7 @@ var _ = Describe("Component", func() {
   `internal/render.PullChart` and the PoC caveats below.
 - **SPA:** `internal/bridge/web/` is a Vue 3 + TypeScript app (Vite, Vue Router, Pinia) built into
   `web/dist`; the operator image builds it in a Node stage. `task frontend-dev` / `frontend-build`;
-  details in [internal/bridge/CLAUDE.md](internal/bridge/CLAUDE.md).
+  details in [internal/bridge/AGENTS.md](internal/bridge/AGENTS.md).
 - **Regenerate:** `task openapi` writes `internal/bridge/web/openapi.yaml`; `task frontend-client`
   regenerates the TS client.
 - **Auth:** caller-identity delegation, like the old Kubernetes Dashboard. Every `/api` request

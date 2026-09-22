@@ -11,7 +11,7 @@ to configure GitLab instances. The bridge is disabled by default.
 
 This page describes how to enable the bridge, create a service account for a caller, mint a token,
 and reach the UI. For the internal architecture and how to work on the code, see
-[internal/bridge/CLAUDE.md](../../internal/bridge/CLAUDE.md).
+[internal/bridge/AGENTS.md](../../internal/bridge/AGENTS.md).
 
 ## Authentication model
 
@@ -350,4 +350,4 @@ task frontend-dev   # http://localhost:5173, proxies /api, /openapi*, and /docs 
 ```
 
 For more information about the frontend workflow and regenerating the OpenAPI document and typed
-client, see [internal/bridge/CLAUDE.md](../../internal/bridge/CLAUDE.md).
+client, see [internal/bridge/AGENTS.md](../../internal/bridge/AGENTS.md).
