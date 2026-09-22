@@ -16,7 +16,7 @@ For anything in this list which will not be completed, please provide a reason i
 - [ ] Merge Request Title and Description are up to date, accurate, and descriptive
 - [ ] MR targeting the appropriate branch
 - [ ] MR has a green pipeline on GitLab.com
-- [ ] When ready for review, MR is labeled "~workflow::ready for review" per the [Distribution MR workflow](https://about.gitlab.com/handbook/engineering/development/enablement/systems/distribution/merge_requests.html)
+- [ ] When ready for review, MR is marked as ready (not a draft) and assigned to a reviewer.
 
 ### Expected (please provide an explanation if not completing)
 - [ ] Test plan indicating conditions for success has been posted and passes
@@ -25,6 +25,10 @@ For anything in this list which will not be completed, please provide a reason i
 - [ ] Integration tests added to [GitLab QA](https://gitlab.com/gitlab-org/gitlab-qa)
 - [ ] Equivalent MR/issue for [omnibus-gitlab](https://gitlab.com/gitlab-org/omnibus-gitlab) opened
 - [ ] Validate potential values for new configuration settings. Formats such as integer `10`, duration `10s`, URI `scheme://user:passwd@host:port` may require quotation or other special handling when rendered in a template and written to a configuration file.
+
+## Reviewers checklist
+
+- [ ] As soon as you begin reviewing, select **Start a review** on your first comment so the MR shows *Reviewer started review*.
 
 ## Related issues
 
