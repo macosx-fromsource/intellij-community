@@ -65,6 +65,13 @@ type GitLabCoreSpec struct {
 	// +kubebuilder:validation:Optional
 	ObjectStorage *ObjectStorageSpec `json:"objectStorage,omitempty"`
 
+	// OpenBao backs the GitLab Secret Manager with an OpenBao instance. Naming it also turns on
+	// both the GitLab-side integration and the bundled OpenBao subchart; an instance without
+	// this field runs with the Secret Manager off. See
+	// https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao.
+	// +kubebuilder:validation:Optional
+	OpenBao *OpenBaoSpec `json:"openbao,omitempty"`
+
 	// Chart is the specification of the GitLab umbrella chart that is used to deploy the instance.
 	// +kubebuilder:validation:Optional
 	Chart ChartSpec `json:"chart,omitempty"`
@@ -154,6 +161,71 @@ type ObjectStorageSpec struct {
 	// ConnectionSecretRef selects the key of the Secret that holds the connection settings.
 	// +kubebuilder:validation:Required
 	ConnectionSecretRef SecretKeySelector `json:"connectionSecretRef"`
+}
+
+// OpenBaoSpec configures the OpenBao instance backing the GitLab Secret Manager.
+//
+// The chart bundles OpenBao itself, but not a database for it: OpenBao needs a PostgreSQL
+// database of its own, and does not inherit the password of the instance's main database. See
+// https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao.
+type OpenBaoSpec struct {
+	// PostgreSQL is the PostgreSQL server OpenBao stores its data in, separate from the
+	// database of the GitLab instance itself.
+	// +kubebuilder:validation:Required
+	PostgreSQL OpenBaoPostgreSQLSpec `json:"postgresql"`
+
+	// ServiceAccount names the ServiceAccount OpenBao's pod runs as. OpenBao needs a Role
+	// granting get/update/patch on Pods in the namespace of the instance, and a RoleBinding
+	// binding that Role to the ServiceAccount. The Operator creates neither: it does not manage
+	// RBAC on the cluster it reconciles, by design. Create the ServiceAccount, the Role, and the
+	// RoleBinding ahead of time, and name the ServiceAccount here.
+	// +kubebuilder:validation:Required
+	ServiceAccount OpenBaoServiceAccountSpec `json:"serviceAccount"`
+}
+
+// OpenBaoServiceAccountSpec names the pre-existing ServiceAccount OpenBao's pod runs as.
+type OpenBaoServiceAccountSpec struct {
+	// Name is the name of the ServiceAccount, already granted the Role OpenBao needs.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name"`
+}
+
+// OpenBaoPostgreSQLSpec is the connection to the PostgreSQL server OpenBao uses.
+type OpenBaoPostgreSQLSpec struct {
+	// Host is the hostname of the PostgreSQL server.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Host string `json:"host"`
+
+	// Port is the port of the PostgreSQL server.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default=5432
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port,omitempty"`
+
+	// Database is the database OpenBao stores its data in.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default=openbao
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Database string `json:"database,omitempty"`
+
+	// Username is the login role OpenBao connects as.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:default=openbao
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Username string `json:"username,omitempty"`
+
+	// PasswordSecretRef selects the key of the Secret that holds the password of the database
+	// user. OpenBao does not inherit the password of the instance's own database, so this is
+	// required rather than defaulted.
+	// +kubebuilder:validation:Required
+	PasswordSecretRef SecretKeySelector `json:"passwordSecretRef"`
 }
 
 // GitLabCoreStatus defines the observed state of a GitLab instance.

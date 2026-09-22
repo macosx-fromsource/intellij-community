@@ -23,7 +23,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
-input,
+input:not([type='checkbox']):not([type='radio']),
 textarea,
 select {
   font: inherit;
@@ -34,6 +34,16 @@ select {
   background: var(--color-background);
   color: var(--color-text);
   box-sizing: border-box;
+}
+
+/* A checkbox or radio input is a small fixed-size control, not a text field:
+   it takes none of the width/padding/border treatment above, only its
+   native size and the theme's accent color. */
+input[type='checkbox'],
+input[type='radio'] {
+  flex: none;
+  width: auto;
+  accent-color: var(--color-text);
 }
 
 /* The dropdown list is painted by the platform, which does not inherit the

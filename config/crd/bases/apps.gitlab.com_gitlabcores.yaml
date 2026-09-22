@@ -141,6 +141,88 @@ spec:
                 required:
                 - connectionSecretRef
                 type: object
+              openbao:
+                description: |-
+                  OpenBao backs the GitLab Secret Manager with an OpenBao instance. Naming it also turns on
+                  both the GitLab-side integration and the bundled OpenBao subchart; an instance without
+                  this field runs with the Secret Manager off. See
+                  https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao.
+                properties:
+                  postgresql:
+                    description: |-
+                      PostgreSQL is the PostgreSQL server OpenBao stores its data in, separate from the
+                      database of the GitLab instance itself.
+                    properties:
+                      database:
+                        default: openbao
+                        description: Database is the database OpenBao stores its data
+                          in.
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                      host:
+                        description: Host is the hostname of the PostgreSQL server.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      passwordSecretRef:
+                        description: |-
+                          PasswordSecretRef selects the key of the Secret that holds the password of the database
+                          user. OpenBao does not inherit the password of the instance's own database, so this is
+                          required rather than defaulted.
+                        properties:
+                          key:
+                            description: Key is the key of the Secret to read.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name is the name of the Secret.
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      port:
+                        default: 5432
+                        description: Port is the port of the PostgreSQL server.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      username:
+                        default: openbao
+                        description: Username is the login role OpenBao connects as.
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                    required:
+                    - host
+                    - passwordSecretRef
+                    type: object
+                  serviceAccount:
+                    description: |-
+                      ServiceAccount names the ServiceAccount OpenBao's pod runs as. OpenBao needs a Role
+                      granting get/update/patch on Pods in the namespace of the instance, and a RoleBinding
+                      binding that Role to the ServiceAccount. The Operator creates neither: it does not manage
+                      RBAC on the cluster it reconciles, by design. Create the ServiceAccount, the Role, and the
+                      RoleBinding ahead of time, and name the ServiceAccount here.
+                    properties:
+                      name:
+                        description: Name is the name of the ServiceAccount, already
+                          granted the Role OpenBao needs.
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - postgresql
+                - serviceAccount
+                type: object
               postgresql:
                 description: |-
                   PostgreSQL is the PostgreSQL server the instance stores its data in. The chart bundles no

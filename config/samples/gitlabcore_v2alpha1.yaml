@@ -29,6 +29,22 @@ spec:
     connectionSecretRef:
       name: gitlab-object-storage
       key: connection
+  # Backs the GitLab Secret Manager with an OpenBao instance. Naming it turns on both the
+  # GitLab-side integration and the bundled OpenBao subchart. OpenBao needs a PostgreSQL database
+  # of its own: it does not inherit the password of `postgresql` above. It also needs a Role
+  # granting get/update/patch on Pods and a RoleBinding to its ServiceAccount: the Operator does
+  # not manage RBAC on the cluster it reconciles, so create the ServiceAccount, the Role, and the
+  # RoleBinding ahead of time, and name the ServiceAccount below. See
+  # https://docs.gitlab.com/charts/charts/openbao/#setup-gitlab-secret-manager-and-openbao
+  # openbao:
+  #   postgresql:
+  #     host: openbao-postgresql.databases.svc.cluster.local # use a real host here
+  #     # port defaults to 5432, database and username default to openbao.
+  #     passwordSecretRef:
+  #       name: openbao-db-password
+  #       key: password
+  #   serviceAccount:
+  #     name: openbao # already granted the Role above
   chart:
     version: "X.Y.Z" # select a version from the CHART_VERSIONS file in the root of this project
     values:  # see https://docs.gitlab.com/charts for configuration options
