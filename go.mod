@@ -10,7 +10,7 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/envoyproxy/gateway v1.8.3
 	github.com/go-logr/logr v1.4.4
-	github.com/google/go-containerregistry v0.22.0
+	github.com/google/go-containerregistry v0.22.1
 	github.com/mitchellh/copystructure v1.2.0
 	github.com/onsi/ginkgo/v2 v2.32.2
 	github.com/onsi/gomega v1.43.0
