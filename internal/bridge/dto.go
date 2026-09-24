@@ -5,6 +5,8 @@
 package bridge
 
 import (
+	"reflect"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv2alpha1 "gitlab.com/gitlab-org/cloud-native/gitlab-operator/api/v2alpha1"
@@ -92,10 +94,12 @@ type SecretRefDTO struct {
 	Key  string `json:"key" minLength:"1" maxLength:"253" doc:"Key of the Secret to read."`
 }
 
-// ChartDTO carries the GitLab Chart version and Helm values.
+// ChartDTO carries the version of the Helm chart that backs a resource and the
+// free-form values it is rendered with. Every resource the bridge serves has
+// one, so the wording stays clear of any single chart.
 type ChartDTO struct {
-	Version string         `json:"version,omitempty" doc:"Semantic version of the GitLab Chart."`
-	Values  map[string]any `json:"values,omitempty" doc:"Free-form Helm values used to render the GitLab Chart. They are merged over the values derived from the structured fields and win on conflict."`
+	Version string         `json:"version,omitempty" doc:"Semantic version of the Helm chart."`
+	Values  map[string]any `json:"values,omitempty" doc:"Free-form Helm values used to render the chart. They are merged over the values derived from the structured fields and win on conflict."`
 }
 
 // ChartVersionsDTO lists the GitLab chart versions the Operator bundles.
@@ -163,11 +167,15 @@ func toResource(core *apiv2alpha1.GitLabCore) GitLabResource {
 		}
 	}
 
-	res.Status = &StatusDTO{
-		Phase:         core.Status.Phase,
-		Version:       core.Status.Version,
-		GitLabVersion: core.Status.GitLabVersion,
-		Conditions:    core.Status.Conditions,
+	// A resource the controller has not reported on yet carries no status,
+	// rather than an empty object a client would have to tell from a real one.
+	if !reflect.DeepEqual(core.Status, apiv2alpha1.GitLabCoreStatus{}) {
+		res.Status = &StatusDTO{
+			Phase:         core.Status.Phase,
+			Version:       core.Status.Version,
+			GitLabVersion: core.Status.GitLabVersion,
+			Conditions:    core.Status.Conditions,
+		}
 	}
 
 	return res

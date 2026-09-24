@@ -152,7 +152,10 @@ var _ = Describe("Component", func() {
   Registered via `mgr.Add` in [cmd/manager/main.go](cmd/manager/main.go) as a non-leader-elected `manager.Runnable`;
   reuses `mgr.GetClient()`. Binds `BRIDGE_BIND_ADDRESS` (default `:8090`, set in
   [controllers/settings/settings.go](controllers/settings/settings.go)). Logs via stdlib `slog`.
-- **Resource:** `GitLabCore` only; the deprecated `v1beta1` `GitLab` is a separate definition that
+- **Resource:** `GitLabCore`, plus `Siphon` as the one add-on that is a resource of its own (the
+  wire type mirrors `spec.source`/`queue`/`sink`/`tables`/`chart`, the path supplies
+  `spec.gitlabRef`, and the bridge finds an instance's Siphon by that reference); the deprecated
+  `v1beta1` `GitLab` is a separate definition that
   nothing converts from, so no dual-version mode. The wire type mirrors the spec — `hostname`,
   `edition`, `license.secretRef`, `postgresql`, `redis`, `objectStorage`,
   `openbao.postgresql`/`openbao.serviceAccount`, `chart.version`/`chart.values` — and repeats the CRD
@@ -160,8 +163,9 @@ var _ = Describe("Component", func() {
   `chart.values` remain the escape hatch and win over the values derived from the structured fields
   (ADR 26); the mapping to chart values lives in `internal/controller/gitlabcore/values.go`.
 - **Endpoints:** CRUD under `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]` (`/api/v1` versions
-  the bridge API, not the CR), OpenAPI at `/openapi.yaml` (+ `/openapi.json`), docs UI at `/docs`,
-  SPA embedded via `go:embed` (`internal/bridge/web/dist`). The chart version field is free-form,
+  the bridge API, not the CR), the Siphon of an instance under `.../gitlabs/{name}/siphon`
+  (`GET`/`PUT`/`DELETE`), the upgrade targets at `/api/v1/chart-versions`, OpenAPI at
+  `/openapi.yaml` (+ `/openapi.json`), docs UI at `/docs`, SPA embedded via `go:embed` (`internal/bridge/web/dist`). The chart version field is free-form,
   with no default: the Operator may pull a version it does not bundle from `DYNAMIC_CHART_REPOSITORY`
   (default `https://charts.gitlab.io/`; `ENABLE_DYNAMIC_CHART_PULL=false` turns it off), see
   `internal/render.PullChart` and the PoC caveats below.
@@ -189,7 +193,7 @@ var _ = Describe("Component", func() {
 - **PoC caveats:** the SPA keeps the token in `localStorage` (XSS-exposed; use short-lived tokens);
   `spec.chart.values` is a free-form object (no schema until the chart's `values.schema.json` is
   wired in), and the structured layer covers only hostname, edition, license, PostgreSQL, Redis,
-  object storage, and OpenBao's own PostgreSQL database so far. The reconciler defaults
+  object storage, OpenBao's own PostgreSQL database, and the Siphon add-on so far. The reconciler defaults
   `registry.enabled` off, because the registry storage has no structured field yet. A dynamically
   pulled chart (see above) is not signature- or provenance-verified.
 

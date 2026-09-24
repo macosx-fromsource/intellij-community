@@ -34,6 +34,16 @@ export const useGitLabsStore = defineStore('gitlabs', () => {
     return true
   }
 
+  /**
+   * Forgets the resource held and any error shown. The store outlives the
+   * page that filled it, so a page that fetches nothing of its own starts
+   * clean rather than from what the last one left.
+   */
+  function reset() {
+    current.value = null
+    error.value = null
+  }
+
   async function fetchAll(): Promise<boolean> {
     loading.value = true
     error.value = null
@@ -149,6 +159,7 @@ export const useGitLabsStore = defineStore('gitlabs', () => {
     chartVersions,
     loading,
     error,
+    reset,
     fetchAll,
     fetchOne,
     fetchChartVersions,

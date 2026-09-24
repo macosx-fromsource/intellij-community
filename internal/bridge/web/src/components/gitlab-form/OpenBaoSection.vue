@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 
 import { useDirtyTracking } from '@/composables/useDirtyTracking'
 import type { GitLabResource } from '@/lib/api/client'
+import { parsePort, portError } from '@/lib/port'
 
 const openbaoEnabled = ref(false)
 const openbaoError = ref<string | null>(null)
@@ -28,15 +29,10 @@ function validatePostgreSQL(): boolean {
     return false
   }
 
-  const port = openbaoPsql.port.trim()
-  if (port) {
-    // Matches the CRD's own bounds (OpenBaoPostgreSQLSpec.Port: minimum 1, maximum 65535), so a
-    // value out of range is caught here rather than surfacing as a raw Kubernetes API error.
-    if (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535) {
-      openbaoError.value = 'The PostgreSQL port must be a number between 1 and 65535.'
+  if (parsePort(openbaoPsql.port) === null) {
+    openbaoError.value = portError('PostgreSQL')
 
-      return false
-    }
+    return false
   }
 
   return true
@@ -100,12 +96,10 @@ function toPartial(): NonNullable<GitLabResource['openbao']> | undefined {
     return undefined
   }
 
-  const port = openbaoPsql.port.trim()
-
   return {
     postgresql: {
       host: openbaoPsql.host.trim(),
-      port: port ? Number(port) : undefined,
+      port: parsePort(openbaoPsql.port) ?? undefined,
       database: openbaoPsql.database.trim() || undefined,
       username: openbaoPsql.username.trim() || undefined,
       passwordSecretRef: { name: openbaoPsql.secretName.trim(), key: openbaoPsql.secretKey.trim() },

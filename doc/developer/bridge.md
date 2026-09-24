@@ -34,8 +34,9 @@ RBAC decides what the caller can do. A caller with no token receives a `401` res
 caller cannot perform receives a `403` response.
 
 As a result, each caller needs their own RBAC on the `GitLabCore` custom resource
-(`gitlabcores.apps.gitlab.com`). The following sections create a service account with those
-permissions and mint a token for it.
+(`gitlabcores.apps.gitlab.com`), and on the `Siphon` custom resource
+(`siphons.apps.gitlab.com`) to manage that add-on. The following sections create a service account
+with those permissions and mint a token for it.
 
 ## Build the bridge
 
@@ -138,16 +139,16 @@ them, every API call returns an error from the Kubernetes API server.
 
 ## Create a service account and grant access
 
-Create a service account and bind it to a role with the verbs the caller needs on `GitLabCore`
-resources. This example grants full CRUD. For a read-only caller, drop `create`, `update`, `patch`, and
-`delete`.
+Create a service account and bind it to a role with the verbs the caller needs on `GitLabCore` and
+`Siphon` resources. This example grants full CRUD. For a read-only caller, drop `create`, `update`,
+`patch`, and `delete`.
 
 ```shell
 kubectl -n gitlab-system create serviceaccount bridge-user
 
 kubectl create clusterrole gitlab-editor \
   --verb=get,list,watch,create,update,patch,delete \
-  --resource=gitlabcores.apps.gitlab.com
+  --resource=gitlabcores.apps.gitlab.com,siphons.apps.gitlab.com
 
 kubectl create clusterrolebinding bridge-user \
   --clusterrole=gitlab-editor \
@@ -201,16 +202,19 @@ The chart version field is free-form with no default: a version the Operator doe
 pulled from its chart repository (`https://charts.gitlab.io/` by default) when it starts
 reconciling, rather than failing outright, so the SPA has no fixed list of versions to prefill from.
 
-The form in the SPA writes one `GitLabCore` resource, in three steps:
+The form in the SPA writes one `GitLabCore` resource. A sidebar lists its sections, and selecting
+one shows its fields:
 
-1. **Basics**: what the instance is, and which chart deploys it.
-1. **Dependencies**: the data stores the instance connects to.
-1. **Overrides**: the chart values, for everything the steps above do not cover.
+- **Basics**: what the instance is, and which chart deploys it.
+- **Dependencies**: the data stores the instance connects to.
+- **Add-ons**: the GitLab subcomponents the instance can turn on, each behind a checkbox.
+  **Secret Manager** writes `spec.openbao`. **Siphon** writes a resource of its own, described in
+  [Configure the Siphon add-on](#configure-the-siphon-add-on). The rest are placeholders.
+- **Overrides**: the chart values, for everything the sections above do not cover.
 
-Moving forward checks the steps you leave and stops at the first one that does not hold up. Moving
-back checks nothing, so you can look at an earlier step with a half-filled one behind you. Select a
-step in the header to jump to it. **Create** and **Save** are on the last step, and they check every
-step again.
+Moving between sections checks nothing, so you can look at another one with a half-filled section
+behind you. A section with unsaved changes carries a dot, and one that needs attention a red mark.
+**Create** and **Save** check every section and open the first one that does not hold up.
 
 Each field maps to the specification:
 
@@ -223,7 +227,7 @@ Each field maps to the specification:
 | **PostgreSQL** | `spec.postgresql` | Hostname of the database server, and the Secret that holds the password of the database user. For the versions and extensions GitLab requires, see [the PostgreSQL requirements](https://docs.gitlab.com/install/requirements/#postgresql). |
 | **Valkey** | `spec.redis` | Hostname of the Valkey server, and the Secret that holds its password. Redis works in its place, and the resource and the chart values both still call the field `redis`. For the versions GitLab requires, see [the Redis requirements](https://docs.gitlab.com/install/requirements/#redis). |
 | **Object storage** | `spec.objectStorage` | Name and key of the Secret that holds the object storage connection. Setting it turns the consolidated object storage on, which the chart needs: artifacts, LFS, uploads, and packages are enabled with no connection of their own. The registry, Pages, and backups keep their own settings in the chart values. |
-| **Chart version** | `spec.chart.version` | Prefilled with the latest version the SPA was built with. Free-form, because what renders is what the Operator image carries. Required: nothing renders without a version. An upgrade is a change of this field. |
+| **Chart version** | `spec.chart.version` | Free-form and empty by default, because the Operator pulls a version it does not carry rather than failing. Required: nothing renders without a version. An upgrade is a change of this field. |
 | **Chart values** | `spec.chart.values` | Free-form YAML for everything the fields above do not cover. |
 
 All three connections are required. The chart bundles neither PostgreSQL nor Redis, and it enables
@@ -239,6 +243,47 @@ empty. The form reports an incomplete group before it sends the request.
 The bridge rejects a value the definition would reject, such as a hostname that is not a domain
 name, with a `422` response that names the field. The constraints are part of the OpenAPI document,
 so the generated client carries them too.
+
+## Configure the Siphon add-on
+
+Siphon streams change data capture from the database of an instance into ClickHouse, through NATS
+JetStream. Unlike the other fields of the form, it is a `Siphon` custom resource of its own, linked
+to the instance through `spec.gitlabRef`. For more information, see
+[the Siphon reconciler](siphon.md).
+
+In the SPA, select **Siphon** under **Add-ons**, then select **Enable Siphon**. The panel
+configures one `Siphon` resource:
+
+| Field | Resource field | Description |
+|---|---|---|
+| **Chart version** | `spec.chart.version` | Version of the Siphon chart, which is not the GitLab chart. Required. Only a version the Operator bundles renders, because a Siphon chart is never pulled. |
+| **PostgreSQL source** | `spec.source` | Hostname, port, database, login role, password Secret, TLS mode, and advisory lock ID of the server the stream reads. It must be the primary. |
+| **NATS queue** | `spec.queue` | URL of the server, the Secrets holding the user name and password, and the Secret holding a client certificate. Leave the credential fields empty for a server that accepts anonymous clients. |
+| **ClickHouse sink** | `spec.sink` | Hostname, native protocol port, database, user, password Secret, and TLS of the server the stream is written to. |
+| **Table definitions** | `spec.tables` | Where the table definitions come from, an image that overrides the one the GitLab version resolves to, and the Secret that image is pulled with. |
+
+The three servers are referenced, not created. The publication, the `siphon_alter_publication`
+function, the login roles and the grants on PostgreSQL, the NATS server, and the ClickHouse target
+tables are all prerequisites. For the DDL, see [the Siphon reconciler](siphon.md).
+
+The bridge names the resource after the instance, such as `gitlab-siphon`, and finds it again
+through its reference. A `Siphon` created with `kubectl` under another name is the one the form
+edits from then on. A name longer than the 31 characters the definition allows is rejected with a
+`422` response.
+
+Saving the form writes the instance first, then the `Siphon`. Clearing **Enable Siphon** deletes the
+resource after a confirmation. If the `Siphon` cannot be written, the instance is still saved. The
+form stays open on the add-on, and saving again updates that instance and retries the `Siphon`. The
+form does not create the instance a second time.
+
+If the caller cannot read `Siphon` resources, for example because their role covers only
+`gitlabcores.apps.gitlab.com`, the instance can still be edited and saved. The add-on is locked
+and marked **Unknown**, and saving leaves any existing `Siphon` untouched.
+
+> [!warning]
+> Deleting a `Siphon` stops the pipeline and leaves its PostgreSQL publication and replication slot
+> and its NATS stream behind. A retained replication slot pins write-ahead log on the source server,
+> which eventually fills its volume. The panel reports all three while the resource exists.
 
 ## Verify the RBAC delegation
 

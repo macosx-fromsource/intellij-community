@@ -12,8 +12,10 @@ architecture and stack rationale. This file documents how to work on and locally
 | File | Purpose |
 |---|---|
 | `server.go` | `Server` (`manager.Runnable`); `NewAPI(cf)` / `NewLocalAPI(client)` build the `humago` mux |
-| `handlers.go` | 6 CRUD operations registered with `huma.Register`; K8s→HTTP error mapping |
+| `handlers.go` | 6 CRUD operations + `list-chart-versions` registered with `huma.Register`; K8s→HTTP error mapping |
 | `dto.go` | Wire DTOs (`GitLabResource`/`LicenseDTO`/`PostgreSQLDTO`/`RedisDTO`/`SecretRefDTO`/`ChartDTO`/`StatusDTO`) + mappers to/from `apiv2alpha1.GitLabCore` |
+| `siphon_handlers.go` | The 3 operations on the `Siphon` of an instance, registered from `RegisterRoutes` |
+| `siphon_dto.go` | Wire DTOs (`SiphonResource` + its source/queue/sink/tables parts) + mappers to/from `apiv2alpha1.Siphon` |
 | `static.go` + `web/dist/` | `go:embed` SPA serving with client-side-routing fallback |
 | `web/` | Vue 3 + TS SPA (Vite, Vue Router, Pinia); see the Frontend section |
 | `web/openapi.yaml` | Generated OpenAPI doc (do not hand-edit; run `task openapi`) |
@@ -45,9 +47,22 @@ Nothing converts a `v1beta1` `GitLab` into a `GitLabCore` (separate definitions,
 the bridge serves `GitLabCore` only — there is no dual-version mode. The paths keep the `gitlabs`
 segment: `/api/v1` versions the bridge API, not the custom resource.
 
+`Siphon` (`apps.gitlab.com/v2alpha1`) is the one add-on that is a resource of its own rather than a
+field of `GitLabCore`. `SiphonResource` mirrors its specification — `source`, `queue`, `sink`,
+`tables`, `chart` — and leaves out `spec.gitlabRef`, which the path supplies. The bridge keeps the
+one-to-one relation the UI presents: `findSiphon` looks a Siphon up by its reference rather than by
+name (so one created with `kubectl` under any name is the one the form then edits), `PUT` upserts,
+and a created one is named `<instance>-siphon` — rejected with a 422 when that exceeds the 31
+characters the definition allows. The definition reaches no installation yet (ADR 27), so a lookup
+that cannot resolve the kind reports absence instead of failing every edit page; creating one there
+still fails and says why.
+
 ## Endpoints
 
 - CRUD: `/api/v1/gitlabs` (list all watched ns) and `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]`
+- Siphon add-on: `/api/v1/namespaces/{namespace}/gitlabs/{name}/siphon` (`GET`/`PUT`/`DELETE`)
+- Chart versions: `/api/v1/chart-versions` (`GET`, newest first, from `DYNAMIC_CHART_REPOSITORY`
+  with the bundled catalog as fallback; feeds the list view's upgrade picker, not the form)
 - OpenAPI: `/openapi.yaml`, `/openapi.json` — Docs UI: `/docs`
 - SPA: everything else (falls back to `index.html`)
 - Bind address: `BRIDGE_BIND_ADDRESS` (default `:8090`), see [controllers/settings/settings.go](../../controllers/settings/settings.go)
@@ -59,7 +74,8 @@ Like the old Kubernetes Dashboard: every `/api` request must send `Authorization
 [auth.go](auth.go) holds a huma middleware that extracts the token and builds a per-request client
 (`rest.AnonymousClientConfig(base)` + `BearerToken`, sharing one `RESTMapper`); handlers pull it via
 `clientFrom(ctx)`. Authn **and** authz are delegated to the kube-apiserver — the caller needs their
-own RBAC on `gitlabcores.apps.gitlab.com`; 401/403 from the API server are mapped through in `mapError`.
+own RBAC on `gitlabcores.apps.gitlab.com` (and on `siphons.apps.gitlab.com` for that add-on);
+401/403 from the API server are mapped through in `mapResourceError`.
 Non-`/api` routes (`/openapi.*`, `/docs`, SPA) stay open. The SPA attaches the token via an
 openapi-fetch middleware ([web/src/lib/api/client.ts](web/src/lib/api/client.ts)) reading a token
 held by the `auth` Pinia store ([web/src/stores/auth.ts](web/src/stores/auth.ts)); enter it in the
@@ -70,7 +86,8 @@ Get a token for local use (needs k8s ≥ 1.24):
 ```shell
 kubectl -n gitlab-system create serviceaccount bridge-user
 kubectl create clusterrole gitlab-editor \
-  --verb=get,list,watch,create,update,patch,delete --resource=gitlabcores.apps.gitlab.com
+  --verb=get,list,watch,create,update,patch,delete \
+  --resource=gitlabcores.apps.gitlab.com,siphons.apps.gitlab.com
 kubectl create clusterrolebinding bridge-user \
   --clusterrole=gitlab-editor --serviceaccount=gitlab-system:bridge-user
 TOKEN=$(kubectl -n gitlab-system create token bridge-user --duration=1h)
@@ -120,10 +137,11 @@ kubectl bridge --verbose      # --port/-p, --address, --context, --kubeconfig, -
 ## Testing
 
 Unlike the rest of the repo (Ginkgo/Gomega), the bridge uses Go's standard `testing` package
-with **testify** (`require`). `handlers_test.go` drives the real handlers via `httptest` + a fake
-client (no cluster needed). The SPA has Vitest specs beside the sources:
-`stores/gitlabs.spec.ts` (store) and `views/GitLabFormView.spec.ts` (sections, per-section validation,
-unsaved/error indicators, and the body the form posts), run with `npm run test:unit`.
+with **testify** (`require`). `handlers_test.go` and `siphon_handlers_test.go` drive the real
+handlers via `httptest` + a fake client (no cluster needed). The SPA has Vitest specs beside the
+sources: `stores/gitlabs.spec.ts` (store) and `views/GitLabFormView.spec.ts` (sections, per-section
+validation, unsaved/error indicators, and the bodies the form sends, including the Siphon one),
+run with `npm run test:unit`.
 
 ```shell
 SKIP_ENVTEST=yes go test ./internal/bridge/...
@@ -137,7 +155,7 @@ from `openapi.yaml` by **openapi-typescript**. Node is pinned to **26** via [mis
 [Dockerfile.bridge](../../Dockerfile.bridge) webbuilder stage;
 run commands inside a mise-activated shell (or prefix `mise exec --`).
 
-Structure: `src/lib/api/` (typed client), `src/stores/gitlabs.ts` (Pinia CRUD store),
+Structure: `src/lib/api/` (typed client), `src/stores/gitlabs.ts` and `src/stores/siphons.ts` (Pinia CRUD stores),
 `src/views/GitLabsListView.vue` + `GitLabFormView.vue`, `src/router/index.ts`. `GitLabFormView.vue` is
 a two-pane editor rather than a linear wizard, and it is only an orchestrator: a left sidebar
 (`components/gitlab-form/FormSidebar.vue`) lists every section, and the content pane mounts one
@@ -146,10 +164,13 @@ editor of `OverridesSection.vue` is a CodeMirror instance that has to mount once
 its fields, its validation, and its slice of the request body, and exposes a small contract through
 `defineExpose`: `hasError`, `isDirty`, `validate()`, `loadFrom(resource)`, `resetBaseline()`, and
 `toPartial()`. The parent holds a template ref to each one (`useTemplateRef`) and drives them: on
-submit it calls `validate()` on Basics, Dependencies, OpenBao, then Overrides in that order, jumps the
+submit it calls `validate()` on Basics, Dependencies, OpenBao, Siphon, then Overrides in that order, jumps the
 active tab to the first one that fails, and otherwise assembles the request from every `toPartial()`.
+A section whose add-on is a resource of its own (Siphon) is saved by the parent after the instance,
+through its own store, rather than folded into the `GitLabResource` the request carries.
 `useDirtyTracking()` (`src/composables/`) is the shared "unsaved changes" implementation each section
-calls with its own field snapshot; a section shows a small dot in the sidebar when it disagrees with
+calls with its own field snapshot, and `parsePort()`/`portError()` (`src/lib/port.ts`) the shared
+port field parser, pure so that both a section's validation and its `toPartial()` can call it; a section shows a small dot in the sidebar when it disagrees with
 what was last loaded or saved, and a red badge when `hasError` is true. Styles shared across sections
 (`fieldset`/`legend`/`label`/`.hint`/`.error`/the data store logos) live in `src/assets/gitlab-form.css`,
 scoped under a `.gitlab-form` wrapper class so they cannot bleed into another view's identically named
@@ -183,10 +204,31 @@ same values the
 describes; it also defaults `openbao.serviceAccount.create`/`openbao.role.create` to `false`, because
 the bridge and the Operator do not manage RBAC on the cluster they reconcile — the Role granting
 `get`/`update`/`patch` on Pods and its RoleBinding are an administrator prerequisite, like the
-database and its role are. The remaining add-ons (Siphon, Orbit, Artifact Registry, AI Gateway) are
-disabled placeholders (`plannedAddons`, listed directly in `GitLabFormView.vue`) with no panel yet —
-Siphon in particular is a separate custom resource the bridge exposes no CRUD for, so wiring it here
-would need a second resource entirely, not a structured `GitLabCore` field like OpenBao's.
+database and its role are.
+
+Siphon (`components/gitlab-form/SiphonSection.vue`) is the other one, and it is a *separate custom
+resource* rather than a field: its `toPartial()` returns a whole `SiphonResource`, and
+`GitLabFormView.vue` persists it through `stores/siphons.ts` (`persistSiphon`) after the instance is
+stored, because the Siphon references the instance and not the other way around. `loadFrom()` takes
+the fetched Siphon (or `null`, which leaves the add-on off) instead of the `GitLabResource` every
+other section takes. Clearing the checkbox deletes the resource, behind a `confirm()`: it stops the
+pipeline and leaves the PostgreSQL publication and slot and the NATS stream behind, which the panel
+also reports from `status` while one exists. A Siphon that cannot be read for any reason but a 404 (a
+caller with RBAC on `gitlabcores` but not `siphons`, say) is not a page error: the store keeps the
+reason in `unreadable`, the section locks its checkbox and says why, and `persistSiphon` leaves the
+add-on alone, so the instance still saves and an unseen Siphon is never replaced. The panel carries no values editor, so `chart.values`
+are round-tripped as loaded rather than dropped by the replace the `PUT` performs.
+
+Because the instance is stored first, a Siphon that fails leaves it created while the form stays
+open, so `GitLabFormView.vue` tracks whether the resource exists (`created`) rather than whether the
+edit route was opened (`isEdit`): from that point the form saves with `PUT`, holds the name, and
+says so, instead of posting the same name again for the API server to reject with a 409. For the
+same reason `persistSiphon` reports `saved`/`failed`/`cancelled` rather than a boolean — declining
+the deletion is not an error to show — and the create route resets both stores on mount, since a
+Siphon left in the store by the instance edited before is not this one's.
+
+The remaining add-ons (Orbit, Artifact Registry, AI Gateway) are disabled placeholders
+(`plannedAddons`, listed directly in `GitLabFormView.vue`) with no panel yet.
 
 ```shell
 task frontend-install   # npm ci
