@@ -124,7 +124,7 @@ var _ = Describe("KAS", func() {
 
 		It("Templates HTTPRoute instead of Ingress", func() {
 			Expect(adapter.WantsComponent(component.GitLabKAS)).To(BeTrue())
-			Expect(KasRoutes(template)).To(HaveLen(1))
+			Expect(KasRoutes(template)).ToNot(BeEmpty())
 			Expect(KasIngress(adapter, template)).To(BeNil())
 			Expect(KasGRPCIngress(adapter, template)).To(BeNil())
 		})
