@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cmp"
 	"fmt"
 
 	acmev1 "github.com/cert-manager/cert-manager/pkg/apis/acme/v1"
@@ -155,12 +156,14 @@ func gatewayAcmeSolver(adapter gitlab.Adapter) *acmev1.ACMEChallengeSolver {
 		return nil
 	}
 
+	// Resolve the Gateway the same way the chart does: an external
+	// global.gatewayApi.gatewayRef, otherwise the chart-managed <release>-gw.
 	namespace := gatewayv1.Namespace(
-		adapter.Values().GetString("global.gatewayApi.gateway.namespace", adapter.Name().Namespace),
+		cmp.Or(adapter.Values().GetString("global.gatewayApi.gatewayRef.namespace"), adapter.Name().Namespace),
 	)
 
 	name := gatewayv1.ObjectName(
-		adapter.Values().GetString("global.gatewayApi.gateway.name", fmt.Sprintf("%s-gw", adapter.Name())),
+		cmp.Or(adapter.Values().GetString("global.gatewayApi.gatewayRef.name"), fmt.Sprintf("%s-gw", adapter.ReleaseName())),
 	)
 
 	return &acmev1.ACMEChallengeSolver{
