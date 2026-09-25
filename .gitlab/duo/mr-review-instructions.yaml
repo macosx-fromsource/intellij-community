@@ -1,0 +1,89 @@
+# Custom review instructions for GitLab Duo Code Review.
+# https://docs.gitlab.com/user/duo_agent_platform/customize/review_instructions/
+#
+# Code Review Flow does not read AGENTS.md, so this file repeats the rules from
+# doc/developer/workflow.md and doc/specs/_index.md that a review can check.
+# When you change a rule there, update it here too.
+
+instructions:
+  - name: Proof of delivery
+    fileFilters:
+      - "!**/*.md"
+      - "!doc/**"
+      - "!doc-locale/**"
+      - "!go.mod"
+      - "!go.sum"
+    instructions: |
+      1. Check that the merge request description shows the change works: a test name with
+         the command and its passing result, or manual steps with the commands and the
+         observed output. "Tested locally" without commands or output is not proof.
+      2. If the description has neither proof nor a stated exemption, ask the author for one.
+         Documentation-only changes, dependency and image digest updates, and small fixes
+         are exempt when the description says so.
+
+  - name: Behavior changes
+    fileFilters:
+      - "**/*.go"
+      - "!**/*_test.go"
+      - "!**/zz_generated*.go"
+      - "!test/**"
+    instructions: |
+      1. If the change adds or changes behavior a user sees, such as a custom resource field,
+         reconciler behavior, or a bridge endpoint, and the diff does not touch doc/specs/,
+         ask whether a spec needs to be added or updated. Bug fixes and refactors need no spec.
+      2. If the merge request fixes a bug, check that the diff adds or changes a test that
+         fails without the fix. Ask for one if it does not.
+
+  - name: Spec conformance
+    fileFilters:
+      - "doc/specs/**/*.md"
+    instructions: |
+      A spec states a current product requirement of the Operator: what it does and why, not
+      how. The rules and template are in doc/specs/_index.md.
+      1. Compare the rest of the diff with the Requirements of the spec. Point out
+         requirements with no test in this diff and ask where they are tested. Point out
+         behavior the diff adds that the spec does not describe.
+      2. Point out implementation details in the spec, such as package, type, or function
+         names, libraries, or step-by-step designs. They belong in an ADR under
+         doc/developer/adr/.
+      3. Point out a spec longer than about 20 lines before its FAQ section, and requirements
+         that a test could not observe.
+      4. Check the Status line: Proposed until the capability ships, Delivered once every
+         requirement is implemented.
+
+  - name: Meaningful tests
+    fileFilters:
+      - "**/*_test.go"
+      - "test/e2e/suite/**/*.go"
+      - "internal/bridge/web/src/**/*.spec.ts"
+    instructions: |
+      The project values tests that each cover a requirement over a high test count.
+      1. Point out tests that only exercise generated code, trivial accessors, or
+         implementation details that a refactor would break without any change in behavior.
+      2. Point out near-duplicate test cases that add to the count but not to the behavior
+         covered, and suggest a table-driven test.
+      3. Point out tests or suites that always skip, such as an unconditional t.Skip.
+      4. In a new Go package, check that tests use the standard testing package with testify
+         (require or assert, t.Run subtests) instead of Ginkgo and Gomega, with no
+         suite_test.go. Existing Ginkgo packages keep Ginkgo.
+
+  - name: ADRs
+    fileFilters:
+      - "doc/developer/adr/*.md"
+    instructions: |
+      1. Check that the ADR has a Date and Status, Context, Decision, and Consequences
+         sections.
+      2. An ADR should be readable in under 10 minutes. Point out passages that restate the
+         spec, repeat background from an earlier ADR, or could be cut without losing a
+         decision or its reason.
+      3. If a spec exists for the capability, check that the ADR links it instead of
+         restating it.
+
+  - name: Review instruction sync
+    fileFilters:
+      - "doc/developer/workflow.md"
+      - "doc/specs/_index.md"
+    instructions: |
+      1. This file changes rules that .gitlab/duo/mr-review-instructions.yaml repeats. If the
+         diff changes a rule but not that file, ask whether the review instructions need the
+         same change.

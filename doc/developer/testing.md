@@ -18,8 +18,8 @@ export CHART_VERSION=$(head -n1 CHART_VERSIONS)
 
 | Tier | Where | Run it with | Needs |
 |---|---|---|---|
-| Unit, Ginkgo | `controllers/`, `helm/`, `pkg/` | `task unit-tests` | the charts |
-| Unit, testify | `internal/`, `api/` | `task unit-tests`, `task bridge-unit-tests` | nothing |
+| Unit, Ginkgo | `controllers/`, `helm/`, `pkg/`, `api/`, `internal/controller/gitlabcore/` | `task unit-tests` | the charts |
+| Unit, testify | the rest of `internal/` | `task unit-tests`, `task bridge-unit-tests` | nothing |
 | Controller, envtest | `controllers/`, `pkg/support/kube` | `task slow-unit-tests` | `KUBEBUILDER_ASSETS` |
 | End-to-end, in-process | `internal/**/e2e_test.go` | `task e2e-tests` | a cluster, the v2alpha1 definitions |
 | End-to-end, black-box | `test/e2e/` | `task e2e-suite` | a cluster, a built `-bridge` image |
