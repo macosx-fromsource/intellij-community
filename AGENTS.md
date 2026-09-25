@@ -6,22 +6,6 @@ Module: `gitlab.com/gitlab-org/cloud-native/gitlab-operator`
 
 See [doc/developer/guide.md](doc/developer/guide.md) for full setup and project structure.
 
-## Workflow
-
-Follow [doc/developer/workflow.md](doc/developer/workflow.md). The rules you must not skip:
-
-- **Spec before code.** A new or changed capability gets a brief spec (what and why) in
-  [doc/specs/](doc/specs/_index.md), and technical choices go in an ADR under
-  [doc/developer/adr/](doc/developer/adr/). Keep `doc/specs/` current in the same MR.
-- **Meaningful tests.** Cover each requirement with a unit or end-to-end test. Coverage of behavior
-  matters, not the number of tests. Bug fixes start with a failing test.
-- **Proof of delivery.** Never claim a change is done without showing a passing test or a recorded
-  manual run. Docs-only changes and small fixes are exempt; say so.
-- **Fresh review.** Before marking an MR ready, have a fresh sub-agent or session compare the
-  change with the spec. Record caveats as backlog issues.
-- **Labels.** Label every issue and MR you create per
-  [doc/developer/labels.md](doc/developer/labels.md): `group::operate`, one `type::`, one subtype.
-
 ## Build & Lint
 
 Uses **Taskfile** (`task`), NOT Make. Run `task --list` for all commands.
@@ -37,35 +21,64 @@ task manifests        # generate CRD/webhook manifests
 
 ## Tests
 
-Retrieve and build the charts, and export two variables, before running any test:
+Ginkgo v2 + Gomega.
+
+### Prerequisites
+
+Charts must be retrieved and built before running any tests:
 
 ```shell
 task retrieve-charts
 task build_chart
+```
+
+### Required environment variables
+
+Every test invocation requires these two env vars:
+
+```shell
 export HELM_CHARTS=$(pwd)/charts
 export CHART_VERSION=$(head -n1 CHART_VERSIONS)
 ```
 
+### Running tests
+
 ```shell
-task unit-tests                                        # all fast tests
-task unit-tests TEST_PKGS="./controllers/gitlab/..."   # one package
-task slow-unit-tests                                   # controller tests (envtest)
-go test ./internal/controller/siphon/ -run TestName    # one testify test
-SKIP_ENVTEST=yes go run github.com/onsi/ginkgo/v2/ginkgo --focus "description" ./controllers/gitlab/...
+# All fast tests
+HELM_CHARTS=$(pwd)/charts CHART_VERSION=$(head -n1 CHART_VERSIONS) \
+  task unit-tests
+
+# Single package
+HELM_CHARTS=$(pwd)/charts CHART_VERSION=$(head -n1 CHART_VERSIONS) \
+  task unit-tests TEST_PKGS="./controllers/gitlab/..."
+
+# Single test by name
+HELM_CHARTS=$(pwd)/charts CHART_VERSION=$(head -n1 CHART_VERSIONS) SKIP_ENVTEST=yes \
+  go run github.com/onsi/ginkgo/v2/ginkgo --focus "test description" ./controllers/gitlab/...
+
+# Controller tests (requires envtest)
+HELM_CHARTS=$(pwd)/charts CHART_VERSION=$(head -n1 CHART_VERSIONS) \
+  task slow-unit-tests
 ```
 
-End-to-end tests come in two kinds that are not interchangeable:
+**Other env vars:** `SKIP_ENVTEST=yes` (skip envtest setup for fast tests).
 
-- `task e2e-tests`: in-process, `//go:build e2e`, beside the code it tests. Needs a cluster and
+### End-to-end tests
+
+Two kinds, and they are not interchangeable. See [doc/developer/testing.md](doc/developer/testing.md).
+
+- `task e2e-tests` — in-process, `//go:build e2e`, lives beside the code it tests
+  (`internal/controller/gitlabcore/e2e_test.go`). Needs a cluster and
   `task install_v2alpha1_crds`.
-- `task e2e-suite SUITE=<name>`: black-box, `test/e2e/`, no build tag (gated on `E2E=true`).
-  Deploys the bridge image, so it covers the `bridge` tag, `ENABLE_BRIDGE` and the real RBAC.
-  `task e2e-suites` lists the suites; `E2E_CLUSTER_PROVIDER=k3s` gets a disposable cluster. New
-  suites go in `test/e2e/suite/<name>/`, register from `init()`, and need a blank import in
-  `test/e2e/suite/doc.go`.
+- `task e2e-suite SUITE=<name>` — black-box, `test/e2e/`, **no build tag** (gated on
+  `E2E=true`). Deploys the bridge image and drives the Operator through the API
+  server, so it covers the `bridge` tag, `ENABLE_BRIDGE` and the real RBAC. Suites:
+  `operator` and `siphon`. `task e2e-suites` lists them; `E2E_CLUSTER_PROVIDER=k3s`
+  gets a disposable cluster; every variable is in
+  [test/e2e/README.md](test/e2e/README.md).
 
-Tiers: [doc/developer/testing.md](doc/developer/testing.md). E2E variables:
-[test/e2e/README.md](test/e2e/README.md).
+New suites go in `test/e2e/suite/<name>/`, register themselves from `init()`, and need
+a blank import in `test/e2e/suite/doc.go`.
 
 ## Code Style
 
@@ -97,11 +110,23 @@ Enforced by `goimports` with local prefix `gitlab.com/gitlab-org/cloud-native/gi
 
 ### Test Patterns
 
-- **New packages:** standard `testing` + testify (`require`/`assert`, `t.Run` subtests). No Ginkgo,
-  no `suite_test.go`. Follow `internal/controller/siphon/` or `internal/render/`.
-- **Existing Ginkgo packages** (`controllers/`, `helm/`, `pkg/`, `api/`,
-  `internal/controller/gitlabcore/`): keep Ginkgo v2 + Gomega, dot-imported, with a
-  `suite_test.go` per package.
+BDD-style with dot-imported ginkgo/gomega. Each package has `suite_test.go`.
+
+```go
+var _ = Describe("Component", func() {
+    When("condition", func() {
+        chartValues := support.Values{}
+        _ = chartValues.SetValue("key", value)
+        mockGitLab := CreateMockGitLab(releaseName, namespace, chartValues)
+        adapter := CreateMockAdapter(mockGitLab)
+        template, err := GetTemplate(adapter)
+
+        It("does something", func() {
+            Expect(err).To(BeNil())
+        })
+    })
+})
+```
 
 ### Lint Rules (from `.golangci.yml`)
 
@@ -113,12 +138,64 @@ Enforced by `goimports` with local prefix `gitlab.com/gitlab-org/cloud-native/gi
 
 `logr.Logger` with structured key-value pairs: `log.Info("msg", "key", val)`. Use `log.V(1)`/`log.V(2)` for debug.
 
-## Bridge
+## Bridge (Backend for Frontend)
 
-`internal/bridge/` serves an HTTP API over the v2alpha1 `GitLabCore` and `Siphon` resources, plus an
-embedded Vue SPA. It is compiled in only with the `bridge` build tag and runs only with
-`ENABLE_BRIDGE=true`. Read [internal/bridge/AGENTS.md](internal/bridge/AGENTS.md) before changing
-it; setup is in [doc/developer/bridge.md](doc/developer/bridge.md).
+`internal/bridge/` hosts a bridge (backend-for-frontend) HTTP server that exposes CRUD over the
+`GitLabCore` CR (`apps.gitlab.com/v2alpha1`) so a SPA can configure GitLab instances.
+
+- **Stack:** [Huma](https://github.com/danielgtaylor/huma) (code-first, `net/http` via the
+  `humago` adapter) emits **OpenAPI 3.1**; the TypeScript client is generated with
+  **openapi-typescript** + **openapi-fetch**.
+- **Why Huma:** it reflects the existing kubebuilder CR Go types, keeping a single source of
+  truth aligned with the CRD (no second schema, unlike a proto-first approach).
+- **Runtime:** disabled by default; enable with `ENABLE_BRIDGE=true` (chart: `bridge.enabled`).
+  Registered via `mgr.Add` in [cmd/manager/main.go](cmd/manager/main.go) as a non-leader-elected `manager.Runnable`;
+  reuses `mgr.GetClient()`. Binds `BRIDGE_BIND_ADDRESS` (default `:8090`, set in
+  [controllers/settings/settings.go](controllers/settings/settings.go)). Logs via stdlib `slog`.
+- **Resource:** `GitLabCore`, plus `Siphon` as the one add-on that is a resource of its own (the
+  wire type mirrors `spec.source`/`queue`/`sink`/`tables`/`chart`, the path supplies
+  `spec.gitlabRef`, and the bridge finds an instance's Siphon by that reference); the deprecated
+  `v1beta1` `GitLab` is a separate definition that
+  nothing converts from, so no dual-version mode. The wire type mirrors the spec — `hostname`,
+  `edition`, `license.secretRef`, `postgresql`, `redis`, `objectStorage`,
+  `openbao.postgresql`/`openbao.serviceAccount`, `chart.version`/`chart.values` — and repeats the CRD
+  constraints as Huma validation tags. Free-form
+  `chart.values` remain the escape hatch and win over the values derived from the structured fields
+  (ADR 26); the mapping to chart values lives in `internal/controller/gitlabcore/values.go`.
+- **Endpoints:** CRUD under `/api/v1[/namespaces/{namespace}]/gitlabs[/{name}]` (`/api/v1` versions
+  the bridge API, not the CR), the Siphon of an instance under `.../gitlabs/{name}/siphon`
+  (`GET`/`PUT`/`DELETE`), the upgrade targets at `/api/v1/chart-versions`, OpenAPI at
+  `/openapi.yaml` (+ `/openapi.json`), docs UI at `/docs`, SPA embedded via `go:embed` (`internal/bridge/web/dist`). The chart version field is free-form,
+  with no default: the Operator may pull a version it does not bundle from `DYNAMIC_CHART_REPOSITORY`
+  (default `https://charts.gitlab.io/`; `ENABLE_DYNAMIC_CHART_PULL=false` turns it off), see
+  `internal/render.PullChart` and the PoC caveats below.
+- **SPA:** `internal/bridge/web/` is a Vue 3 + TypeScript app (Vite, Vue Router, Pinia) built into
+  `web/dist`; the operator image builds it in a Node stage. `task frontend-dev` / `frontend-build`;
+  details in [internal/bridge/AGENTS.md](internal/bridge/AGENTS.md).
+- **Regenerate:** `task openapi` writes `internal/bridge/web/openapi.yaml`; `task frontend-client`
+  regenerates the TS client.
+- **Auth:** caller-identity delegation, like the old Kubernetes Dashboard. Every `/api` request
+  must carry `Authorization: Bearer <token>`; the bridge builds a per-request client from that
+  token (`rest.AnonymousClientConfig` + `BearerToken`, see
+  [internal/bridge/auth.go](internal/bridge/auth.go)), so authn/authz are delegated to the
+  kube-apiserver and the caller's own RBAC applies — the operator's service account is never lent
+  out. Get a token with `kubectl create token <sa>`; the SPA has a token field and `/docs` an
+  Authorize button.
+- **`kubectl bridge` plugin:** [cmd/kubectl-bridge](cmd/kubectl-bridge) runs the same server locally
+  under the caller's kubeconfig (client-cert/exec-OIDC/token all work, no token to paste).
+  `bridge.NewLocalAPI(c, acceptHosts...)` swaps `authMiddleware` for `localClientMiddleware` (one
+  fixed client, no bearer check) and marks `index.html` so the SPA hides the token field. It does no
+  request auth of its own, so it binds loopback by default and warns otherwise, and
+  `localGuardMiddleware` 403s `/api/` requests with an unexpected `Host` (DNS rebinding) or a
+  cross-origin `Sec-Fetch-Site`/`Origin`/`Referer`, so a stray browser tab can't drive the cluster
+  (`--accept-hosts` widens the host allowlist).
+  `task build-kubectl-plugin` / `install-kubectl-plugin`.
+- **PoC caveats:** the SPA keeps the token in `localStorage` (XSS-exposed; use short-lived tokens);
+  `spec.chart.values` is a free-form object (no schema until the chart's `values.schema.json` is
+  wired in), and the structured layer covers only hostname, edition, license, PostgreSQL, Redis,
+  object storage, OpenBao's own PostgreSQL database, and the Siphon add-on so far. The reconciler defaults
+  `registry.enabled` off, because the registry storage has no structured field yet. A dynamically
+  pulled chart (see above) is not signature- or provenance-verified.
 
 ## Key Directories
 
@@ -127,8 +204,8 @@ it; setup is in [doc/developer/bridge.md](doc/developer/bridge.md).
 | `controllers/` | v1beta1 GitLab reconciler (**deprecated**, frozen) |
 | `controllers/gitlab/` | Per-component reconciler helpers (v1beta1) |
 | `helm/` | Helm chart templating for v1beta1 (**deprecated**, frozen) |
-| `internal/controller/` | v2alpha1 controllers, one package per resource (wired in behind the `bridge` build tag); see [gitlabcore.md](doc/developer/gitlabcore.md), [siphon.md](doc/developer/siphon.md) |
-| `internal/render/` | Helm rendering for v2 resources (use this for new code); see [render.md](doc/developer/render.md) |
+| `internal/controller/` | v2alpha1 controllers, one package per resource (wired in behind the `bridge` build tag) |
+| `internal/render/` | Helm rendering for v2 resources (use this for new code) |
 | `pkg/gitlab/` | Adapter abstraction |
 | `pkg/support/` | Utilities (values, secrets, charts, kube) |
 | `internal/bridge/` | Bridge (backend-for-frontend) HTTP API + embedded SPA |

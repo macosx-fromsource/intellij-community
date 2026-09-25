@@ -1,22 +1,11 @@
 # Bridge (backend-for-frontend)
 
-HTTP server exposing CRUD over the `GitLabCore` CR (`apps.gitlab.com/v2alpha1`) and its `Siphon`
-add-on, an OpenAPI document, and an embedded SPA, so a frontend can configure GitLab instances.
-This file documents how to work on and locally deploy the bridge. Setup for users is in
-[doc/developer/bridge.md](../../doc/developer/bridge.md), the stack decision in
-[ADR 25](../../doc/developer/adr/0025-bridge-tech-stack.md).
+HTTP server exposing CRUD over the `GitLabCore` CR (`apps.gitlab.com/v2alpha1`), an OpenAPI
+document, and an embedded SPA, so a frontend can configure GitLab instances. Runs inside the
+operator as a `manager.Runnable`.
 
-- **Stack:** [Huma](https://github.com/danielgtaylor/huma), code-first on `net/http` through the
-  `humago` adapter, emits OpenAPI 3.1. It reflects the kubebuilder CR Go types, so the CRD stays
-  the only schema (no second, proto-first definition).
-- **Runtime:** `Server` is a non-leader-elected `manager.Runnable`, registered with `mgr.Add` in
-  [cmd/manager/bridge.go](../../cmd/manager/bridge.go), which only the `bridge` build tag compiles.
-  It takes `mgr.GetConfig()` and `mgr.GetScheme()` to build per-request clients (see Auth) and logs
-  through `slog`.
-- **PoC caveats:** the SPA keeps the token in `localStorage` (XSS-exposed; use short-lived tokens).
-  `chart.values` has no schema until the chart's `values.schema.json` is wired in, and the
-  structured fields cover only hostname, edition, license, PostgreSQL, Redis, object storage,
-  OpenBao's PostgreSQL, and the Siphon add-on.
+See the "Bridge (Backend for Frontend)" section in the root [AGENTS.md](../../AGENTS.md) for the
+architecture and stack rationale. This file documents how to work on and locally deploy the bridge.
 
 ## Layout
 
@@ -147,8 +136,8 @@ kubectl bridge --verbose      # --port/-p, --address, --context, --kubeconfig, -
 
 ## Testing
 
-Like the other new packages, the bridge uses Go's standard `testing` package with **testify**
-(`require`). `handlers_test.go` and `siphon_handlers_test.go` drive the real
+Unlike the rest of the repo (Ginkgo/Gomega), the bridge uses Go's standard `testing` package
+with **testify** (`require`). `handlers_test.go` and `siphon_handlers_test.go` drive the real
 handlers via `httptest` + a fake client (no cluster needed). The SPA has Vitest specs beside the
 sources: `stores/gitlabs.spec.ts` (store) and `views/GitLabFormView.spec.ts` (sections, per-section
 validation, unsaved/error indicators, and the bodies the form sends, including the Siphon one),
