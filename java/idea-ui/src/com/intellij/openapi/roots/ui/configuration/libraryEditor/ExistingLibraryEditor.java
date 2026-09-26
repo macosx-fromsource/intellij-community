@@ -1,25 +1,18 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.roots.ui.configuration.libraryEditor;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.roots.OrderRootType;
+import com.intellij.openapi.roots.ProjectModelExternalSource;
 import com.intellij.openapi.roots.impl.libraries.LibraryEx;
-import com.intellij.openapi.roots.libraries.*;
+import com.intellij.openapi.roots.libraries.Library;
+import com.intellij.openapi.roots.libraries.LibraryDetectionManager;
+import com.intellij.openapi.roots.libraries.LibraryKind;
+import com.intellij.openapi.roots.libraries.LibraryProperties;
+import com.intellij.openapi.roots.libraries.LibraryTable;
+import com.intellij.openapi.roots.libraries.LibraryType;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
@@ -31,10 +24,10 @@ import java.util.Collection;
 public class ExistingLibraryEditor extends LibraryEditorBase implements Disposable {
   private final LibraryEx myLibrary;
   private final LibraryEditorListener myListener;
-  private String myLibraryName = null;
+  private String myLibraryName;
   private LibraryProperties myLibraryProperties;
   private LibraryProperties myDetectedLibraryProperties;
-  private LibraryEx.ModifiableModelEx myModel = null;
+  private LibraryEx.ModifiableModelEx myModel;
   private LibraryType<?> myDetectedType;
   private boolean myDetectedTypeComputed;
 
@@ -48,7 +41,7 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
   }
 
   @Override
-  public String getName() {
+  public @NlsSafe String getName() {
     if (myLibraryName != null) {
       return myLibraryName;
     }
@@ -57,11 +50,16 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
 
   @Override
   public LibraryType<?> getType() {
-    final LibraryKind kind = ((LibraryEx)myLibrary).getKind();
+    final LibraryKind kind = myLibrary.getKind();
     if (kind != null) {
       return LibraryType.findByKind(kind);
     }
     return detectType();
+  }
+
+  @Override
+  public @Nullable ProjectModelExternalSource getExternalSource() {
+    return myLibrary.getExternalSource();
   }
 
   @Override
@@ -119,7 +117,7 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
   }
 
   @Override
-  public String[] getUrls(OrderRootType rootType) {
+  public String @NotNull [] getUrls(@NotNull OrderRootType rootType) {
     if (myModel != null) {
       return myModel.getUrls(rootType);
     }
@@ -127,7 +125,7 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
   }
 
   @Override
-  public VirtualFile[] getFiles(OrderRootType rootType) {
+  public VirtualFile @NotNull [] getFiles(@NotNull OrderRootType rootType) {
     if (myModel != null) {
       return myModel.getFiles(rootType);
     }
@@ -135,7 +133,7 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
   }
 
   @Override
-  public String[] getExcludedRootUrls() {
+  public String @NotNull [] getExcludedRootUrls() {
     if (myModel != null) {
       return myModel.getExcludedRootUrls();
     }
@@ -153,12 +151,12 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
   }
 
   @Override
-  public void addRoot(VirtualFile file, OrderRootType rootType) {
+  public void addRoot(@NotNull VirtualFile file, @NotNull OrderRootType rootType) {
     getModel().addRoot(file, rootType);
   }
 
   @Override
-  public void addRoot(String url, OrderRootType rootType) {
+  public void addRoot(@NotNull String url, @NotNull OrderRootType rootType) {
     getModel().addRoot(url, rootType);
   }
 
@@ -168,22 +166,18 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
   }
 
   @Override
-  public void addJarDirectory(VirtualFile file, boolean recursive, OrderRootType rootType) {
+  public void addJarDirectory(@NotNull VirtualFile file, boolean recursive, @NotNull OrderRootType rootType) {
     getModel().addJarDirectory(file, recursive, rootType);
   }
 
   @Override
-  public void addJarDirectory(String url, boolean recursive, OrderRootType rootType) {
+  public void addJarDirectory(@NotNull String url, boolean recursive, @NotNull OrderRootType rootType) {
     getModel().addJarDirectory(url, recursive, rootType);
   }
 
   @Override
-  public void removeRoot(String url, OrderRootType rootType) {
-    boolean removed;
-    do {
-      removed = getModel().removeRoot(url, rootType);
-    }
-    while (removed);
+  public void removeRoot(@NotNull String url, @NotNull OrderRootType rootType) {
+    getModel().removeRoot(url, rootType);
   }
 
   @Override
@@ -219,7 +213,7 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
   }
 
   @Override
-  public boolean isJarDirectory(String url, OrderRootType rootType) {
+  public boolean isJarDirectory(@NotNull String url, @NotNull OrderRootType rootType) {
     if (myModel != null) {
       return myModel.isJarDirectory(url, rootType);
     }
@@ -227,7 +221,7 @@ public class ExistingLibraryEditor extends LibraryEditorBase implements Disposab
   }
 
   @Override
-  public boolean isValid(final String url, final OrderRootType orderRootType) {
+  public boolean isValid(final @NotNull String url, final @NotNull OrderRootType orderRootType) {
     if (myModel != null) {
       return myModel.isValid(url, orderRootType);
     }

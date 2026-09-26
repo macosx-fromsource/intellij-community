@@ -1,63 +1,50 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.rollback;
 
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.rollback.RollbackProgressListener;
-import com.intellij.util.Processor;
-import com.intellij.util.containers.ContainerUtil;
 import com.intellij.vcsUtil.VcsUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.svn.SvnFileSystemListener;
 import org.jetbrains.idea.svn.SvnVcs;
 import org.jetbrains.idea.svn.api.Depth;
+import org.jetbrains.idea.svn.api.ErrorCode;
 import org.jetbrains.idea.svn.api.EventAction;
 import org.jetbrains.idea.svn.api.ProgressEvent;
 import org.jetbrains.idea.svn.api.ProgressTracker;
+import org.jetbrains.idea.svn.api.Revision;
+import org.jetbrains.idea.svn.api.Target;
+import org.jetbrains.idea.svn.commandLine.SvnBindException;
 import org.jetbrains.idea.svn.properties.PropertiesMap;
 import org.jetbrains.idea.svn.properties.PropertyConsumer;
 import org.jetbrains.idea.svn.properties.PropertyData;
-import org.tmatesoft.svn.core.SVNErrorCode;
-import org.tmatesoft.svn.core.SVNException;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.wc.SVNRevision;
-import org.tmatesoft.svn.core.wc2.SvnTarget;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-/**
-* @author Konstantin Kolosovsky.
-*/
+import static org.jetbrains.idea.svn.SvnBundle.message;
+
 public class Reverter {
 
-  @NotNull private final SvnVcs myVcs;
+  private final @NotNull SvnVcs myVcs;
   private final ProgressTracker myHandler;
-  private final List<VcsException> myExceptions;
+  private final @NotNull List<? super VcsException> myExceptions;
   private final List<CopiedAsideInfo> myFromToModified;
   private final Map<File, PropertiesMap> myProperties;
 
-  Reverter(@NotNull SvnVcs vcs, @NotNull RollbackProgressListener listener, @NotNull List<VcsException> exceptions) {
+  Reverter(@NotNull SvnVcs vcs, @NotNull RollbackProgressListener listener, @NotNull List<? super VcsException> exceptions) {
     myVcs = vcs;
     myHandler = createRevertHandler(exceptions, listener);
     myExceptions = exceptions;
-    myFromToModified = ContainerUtil.newArrayList();
-    myProperties = ContainerUtil.newHashMap();
+    myFromToModified = new ArrayList<>();
+    myProperties = new HashMap<>();
   }
 
   public void revert(@NotNull Collection<File> files, boolean recursive) {
@@ -68,8 +55,14 @@ public class Reverter {
       // Files passed here are split into groups by root and working copy format - thus we could determine factory based on first file
       myVcs.getFactory(target).createRevertClient().revert(files, Depth.allOrEmpty(recursive), myHandler);
     }
+    catch (SvnBindException e) {
+      // skip errors on unversioned resources.
+      if (!e.contains(ErrorCode.WC_NOT_WORKING_COPY)) {
+        myExceptions.add(e);
+      }
+    }
     catch (VcsException e) {
-      processRevertError(e);
+      myExceptions.add(e);
     }
   }
 
@@ -85,7 +78,7 @@ public class Reverter {
         final File source = entry.getKey();
         final ThroughRenameInfo info = entry.getValue();
         if (info.isVersioned()) {
-          myVcs.getFactory(source).createPropertyClient().list(SvnTarget.fromFile(source), SVNRevision.WORKING, Depth.EMPTY, handler);
+          myVcs.getFactory(source).createPropertyClient().list(Target.on(source), Revision.WORKING, Depth.EMPTY, handler);
         }
         if (source.isDirectory()) {
           if (!FileUtil.filesEqual(info.getTo(), info.getFirstTo())) {
@@ -109,12 +102,7 @@ public class Reverter {
   }
 
   public void moveGroup() {
-    Collections.sort(myFromToModified, new Comparator<CopiedAsideInfo>() {
-      @Override
-      public int compare(CopiedAsideInfo o1, CopiedAsideInfo o2) {
-        return FileUtil.compareFiles(o1.getTo(), o2.getTo());
-      }
-    });
+    myFromToModified.sort((o1, o2) -> FileUtil.compareFiles(o1.getTo(), o2.getTo()));
     for (CopiedAsideInfo info : myFromToModified) {
       if (info.getParentImmediateReverted().exists()) {
         // parent successfully renamed/moved
@@ -135,26 +123,23 @@ public class Reverter {
             }
           }
           else {
-            FileUtil.processFilesRecursively(root, new Processor<File>() {
-              @Override
-              public boolean process(File file) {
-                if (file.isDirectory()) return true;
-                String relativePath = FileUtil.getRelativePath(root.getPath(), file.getPath(), File.separatorChar);
-                File newFile = new File(target, relativePath);
-                newFile.getParentFile().mkdirs();
-                try {
-                  if (target.exists()) {
-                    FileUtil.copy(file, newFile);
-                  }
-                  else {
-                    FileUtil.rename(file, newFile);
-                  }
+            FileUtil.processFilesRecursively(root, file -> {
+              if (file.isDirectory()) return true;
+              String relativePath = FileUtil.getRelativePath(root.getPath(), file.getPath(), File.separatorChar);
+              File newFile = new File(target, relativePath);
+              newFile.getParentFile().mkdirs();
+              try {
+                if (target.exists()) {
+                  FileUtil.copy(file, newFile);
                 }
-                catch (IOException e) {
-                  myExceptions.add(new VcsException(e));
+                else {
+                  FileUtil.rename(file, newFile);
                 }
-                return true;
               }
+              catch (IOException e) {
+                myExceptions.add(new VcsException(e));
+              }
+              return true;
             });
           }
         }
@@ -182,23 +167,10 @@ public class Reverter {
     }
   }
 
-  private void processRevertError(@NotNull VcsException e) {
-    if (e.getCause() instanceof SVNException) {
-      SVNException cause = (SVNException)e.getCause();
-
-      // skip errors on unversioned resources.
-      if (cause.getErrorMessage().getErrorCode() != SVNErrorCode.WC_NOT_DIRECTORY) {
-        myExceptions.add(e);
-      }
-    } else {
-      myExceptions.add(e);
-    }
-  }
-
-  @NotNull
-  private static ProgressTracker createRevertHandler(@NotNull final List<VcsException> exceptions,
-                                                     @NotNull final RollbackProgressListener listener) {
+  private static @NotNull ProgressTracker createRevertHandler(final @NotNull List<? super VcsException> exceptions,
+                                                              final @NotNull RollbackProgressListener listener) {
     return new ProgressTracker() {
+      @Override
       public void consume(ProgressEvent event) {
         if (event.getAction() == EventAction.REVERT) {
           final File file = event.getFile();
@@ -207,22 +179,22 @@ public class Reverter {
           }
         }
         if (event.getAction() == EventAction.FAILED_REVERT) {
-          exceptions.add(new VcsException("Revert failed"));
+          exceptions.add(new VcsException(message("error.revert.failed")));
         }
       }
 
-      public void checkCancelled() {
+      @Override
+      public void checkCancelled() throws ProcessCanceledException {
         listener.checkCanceled();
       }
     };
   }
 
-  @NotNull
-  private static PropertyConsumer createPropertyHandler(@NotNull final Map<File, PropertiesMap> properties,
-                                                        @NotNull final UnversionedAndNotTouchedFilesGroupCollector collector) {
+  private static @NotNull PropertyConsumer createPropertyHandler(final @NotNull Map<File, PropertiesMap> properties,
+                                                                 final @NotNull UnversionedAndNotTouchedFilesGroupCollector collector) {
     return new PropertyConsumer() {
       @Override
-      public void handleProperty(File path, PropertyData property) throws SVNException {
+      public void handleProperty(File path, PropertyData property) {
         final ThroughRenameInfo info = collector.findToFile(VcsUtil.getFilePath(path), null);
         if (info != null) {
           if (!properties.containsKey(info.getTo())) {
@@ -230,14 +202,6 @@ public class Reverter {
           }
           properties.get(info.getTo()).put(property.getName(), property.getValue());
         }
-      }
-
-      @Override
-      public void handleProperty(SVNURL url, PropertyData property) throws SVNException {
-      }
-
-      @Override
-      public void handleProperty(long revision, PropertyData property) throws SVNException {
       }
     };
   }

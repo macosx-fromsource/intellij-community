@@ -1,29 +1,19 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.javaee;
 
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.List;
+
 public abstract class ExternalResourceManagerEx extends ExternalResourceManager {
-  @NonNls public static final String STANDARD_SCHEMAS = "/standardSchemas/";
+  public static final @NonNls String STANDARD_SCHEMAS = "/standardSchemas/";
 
   public enum XMLSchemaVersion {
     XMLSchema_1_0,
@@ -46,30 +36,21 @@ public abstract class ExternalResourceManagerEx extends ExternalResourceManager 
 
   public abstract void clearAllResources(Project project);
 
-  public abstract void addIgnoredResource(@NotNull String url);
-
-  public abstract void removeIgnoredResource(@NotNull String url);
+  public abstract void addIgnoredResources(@NotNull List<String> urls, @Nullable Disposable disposable);
 
   public abstract boolean isIgnoredResource(@NotNull String url);
 
   public abstract String[] getIgnoredResources();
 
-  public abstract void addExternalResourceListener(ExternalResourceListener listener);
-
-  public abstract void removeExternalResourceListener(ExternalResourceListener listener);
-
   public abstract boolean isUserResource(VirtualFile file);
 
   public abstract boolean isStandardResource(VirtualFile file);
 
-  @Nullable
-  public abstract String getUserResource(Project project, String url, String version);
+  public abstract @Nullable @NlsSafe String getUserResource(Project project, String url, String version);
 
-  @Nullable
-  public abstract String getStdResource(@NotNull String url, @Nullable String version);
+  public abstract @NlsSafe String getStdResource(@NotNull String url, @Nullable String version);
 
-  @NotNull
-  public abstract String getDefaultHtmlDoctype(@NotNull Project project);
+  public abstract @NlsSafe String getDefaultHtmlDoctype(@NotNull Project project);
 
   public abstract void setDefaultHtmlDoctype(@NotNull String defaultHtmlDoctype, @NotNull Project project);
 
@@ -77,7 +58,7 @@ public abstract class ExternalResourceManagerEx extends ExternalResourceManager 
 
   public abstract void setXmlSchemaVersion(XMLSchemaVersion version, @NotNull Project project);
 
-  public abstract String getCatalogPropertiesFile();
+  public abstract @NlsSafe String getCatalogPropertiesFile();
 
   public abstract void setCatalogPropertiesFile(@Nullable String filePath);
 

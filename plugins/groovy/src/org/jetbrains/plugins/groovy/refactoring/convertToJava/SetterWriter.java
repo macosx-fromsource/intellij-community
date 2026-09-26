@@ -1,22 +1,15 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.refactoring.convertToJava;
 
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.psi.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCompiledElement;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.PsiType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElement;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory;
@@ -30,7 +23,6 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrGd
  * @author Max Medvedev
  */
 public class SetterWriter {
-  private static final Logger LOG = Logger.getInstance(SetterWriter.class);
 
   private final StringBuilder myBuffer;
   private final PsiClass myClass;
@@ -82,7 +74,7 @@ public class SetterWriter {
   }
 
   private void writeBody(boolean aStatic,
-                         @NotNull PsiParameter[] parameters,
+                         PsiParameter @NotNull [] parameters,
                          @NotNull PsiParameter parameter, final GroovyPsiElement place) {
     //method body
     myBuffer.append("{\n");
@@ -105,8 +97,7 @@ public class SetterWriter {
     myBuffer.append("}\n");
   }
 
-  @NotNull
-  private GrExpression[] generateArguments(@NotNull PsiParameter[] parameters, @NotNull GroovyPsiElement place) {
+  private GrExpression @NotNull [] generateArguments(PsiParameter @NotNull [] parameters, @NotNull GroovyPsiElement place) {
     final GrExpression[] args = new GrExpression[parameters.length];
     for (int i = 0; i < parameters.length; i++) {
       args[i] = GroovyPsiElementFactory.getInstance(myContext.project).createExpressionFromText(parameters[i].getName(), place);
@@ -115,7 +106,7 @@ public class SetterWriter {
     return args;
   }
 
-  private GroovyPsiElement createStubMethod(@NotNull PsiParameter[] parameters) {
+  private GroovyPsiElement createStubMethod(PsiParameter @NotNull [] parameters) {
     StringBuilder methodText = new StringBuilder("def ").append(myName).append('(');
     for (PsiParameter parameter : parameters) {
       methodText.append(parameter.getType().getCanonicalText()).append(' ').append(parameter.getName()).append(',');
@@ -125,10 +116,9 @@ public class SetterWriter {
     return GroovyPsiElementFactory.getInstance(myContext.project).createMethodFromText(methodText.toString(), mySetter);
   }
 
-  @NotNull
-  private PsiParameter[] inferActualParameters(boolean aStatic,
-                                               @NotNull PsiParameter[] parameters,
-                                               @NotNull PsiParameter parameter) {
+  private PsiParameter @NotNull [] inferActualParameters(boolean aStatic,
+                                                         PsiParameter @NotNull [] parameters,
+                                                         @NotNull PsiParameter parameter) {
     //parameters
     parameters[parameters.length - 1] = parameter;
     PsiParameter[] actual;
@@ -140,7 +130,7 @@ public class SetterWriter {
       final PsiClass containingClass = mySetter.getContainingClass();
       if (containingClass == null) {
         if (mySetter instanceof GrGdkMethod) {
-          typeText = ((GrGdkMethod)mySetter).getStaticMethod().getParameterList().getParameters()[0].getType().getCanonicalText();
+          typeText = ((GrGdkMethod)mySetter).getReceiverType().getCanonicalText();
         }
         else {
           typeText = CommonClassNames.JAVA_LANG_OBJECT;

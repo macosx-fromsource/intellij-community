@@ -1,23 +1,14 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl.statements.typedef;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiListLikeElement;
+import com.intellij.psi.StubBasedPsiElement;
+import com.intellij.psi.TokenType;
 import com.intellij.psi.stubs.IStubElementType;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.util.IncorrectOperationException;
@@ -32,14 +23,17 @@ import org.jetbrains.plugins.groovy.lang.psi.impl.GrStubElementBase;
 import org.jetbrains.plugins.groovy.lang.psi.stubs.GrReferenceListStub;
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
 
-import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * @author Maxim.Medvedev
  */
-public abstract class GrReferenceListImpl extends GrStubElementBase<GrReferenceListStub> implements StubBasedPsiElement<GrReferenceListStub>, GrReferenceList {
+public abstract class GrReferenceListImpl extends GrStubElementBase<GrReferenceListStub>
+  implements StubBasedPsiElement<GrReferenceListStub>, GrReferenceList, PsiListLikeElement {
+
   private static final Logger LOG = Logger.getInstance(GrReferenceListImpl.class);
-  
+
   private PsiClassType[] myCachedTypes;
 
   public GrReferenceListImpl(@NotNull ASTNode node) {
@@ -67,17 +61,12 @@ public abstract class GrReferenceListImpl extends GrStubElementBase<GrReferenceL
           comma.delete();
         }
       }
-
-      super.deleteChildInternal(child);
     }
-    else {
-      super.deleteChildInternal(child);
-    }
+    super.deleteChildInternal(child);
   }
 
   @Override
-  @Nullable
-  public PsiElement getKeyword() {
+  public @Nullable PsiElement getKeyword() {
     PsiElement firstChild = getFirstChild();
     if (firstChild != null && firstChild.getNode().getElementType() == getKeywordType()) {
       return firstChild;
@@ -90,14 +79,13 @@ public abstract class GrReferenceListImpl extends GrStubElementBase<GrReferenceL
   }
 
   @Override
-  @NotNull
-  public GrCodeReferenceElement[] getReferenceElementsGroovy() {
+  public GrCodeReferenceElement @NotNull [] getReferenceElementsGroovy() {
     final GrReferenceListStub stub = getStub();
     if (stub != null) {
       final String[] baseClasses = stub.getBaseClasses();
       final GrCodeReferenceElement[] result = new GrCodeReferenceElement[baseClasses.length];
       for (int i = 0; i < baseClasses.length; i++) {
-        result[i] = GroovyPsiElementFactory.getInstance(getProject()).createReferenceElementFromText(baseClasses[i], this);
+        result[i] = GroovyPsiElementFactory.getInstance(getProject()).createCodeReference(baseClasses[i], this);
       }
       return result;
     }
@@ -105,17 +93,19 @@ public abstract class GrReferenceListImpl extends GrStubElementBase<GrReferenceL
     return findChildrenByClass(GrCodeReferenceElement.class);
   }
 
-  @NotNull
   @Override
-  public PsiClassType[] getReferencedTypes() {
-    if (myCachedTypes == null || !isValid()) {
-      final ArrayList<PsiClassType> types = new ArrayList<>();
-      for (GrCodeReferenceElement ref : getReferenceElementsGroovy()) {
-        types.add(new GrClassReferenceType(ref));
+  public PsiClassType @NotNull [] getReferencedTypes() {
+    PsiClassType[] cachedTypes = myCachedTypes;
+    if (cachedTypes == null || !isValid()) {
+      GrCodeReferenceElement[] elementsGroovy = getReferenceElementsGroovy();
+      cachedTypes = elementsGroovy.length == 0 ? PsiClassType.EMPTY_ARRAY : new PsiClassType[elementsGroovy.length];
+      for (int i = 0; i < elementsGroovy.length; i++) {
+        GrCodeReferenceElement ref = elementsGroovy[i];
+        cachedTypes[i] = new GrClassReferenceType(ref);
       }
-      myCachedTypes = types.toArray(new PsiClassType[types.size()]);
+      myCachedTypes = cachedTypes;
     }
-    return myCachedTypes;
+    return cachedTypes;
   }
 
   @Override
@@ -127,9 +117,11 @@ public abstract class GrReferenceListImpl extends GrStubElementBase<GrReferenceL
   public PsiElement add(@NotNull PsiElement element) throws IncorrectOperationException {
     //hack for inserting references from java code
     if (element instanceof GrCodeReferenceElement || element instanceof PsiJavaCodeReferenceElement) {
-      if (findChildByType(getKeywordType()) == null) {
+      IElementType keywordType = getKeywordType();
+      if (keywordType == null) return super.add(element);
+      if (findChildByType(keywordType) == null) {
         getNode().getTreeParent().addLeaf(TokenType.WHITE_SPACE, " ", getNode());
-        getNode().addLeaf(getKeywordType(), getKeywordType().toString(), null);
+        getNode().addLeaf(keywordType, keywordType.toString(), null);
       }
       else if (findChildByClass(GrCodeReferenceElement.class) != null) {
         PsiElement lastChild = getLastChild();
@@ -142,5 +134,10 @@ public abstract class GrReferenceListImpl extends GrStubElementBase<GrReferenceL
     return super.add(element);
   }
 
-  protected abstract IElementType getKeywordType();
+  protected abstract @Nullable IElementType getKeywordType();
+
+  @Override
+  public @NotNull List<? extends PsiElement> getComponents() {
+    return Arrays.asList(getReferenceElementsGroovy());
+  }
 }

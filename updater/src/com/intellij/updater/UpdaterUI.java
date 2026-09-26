@@ -1,45 +1,43 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.updater;
 
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.PropertyKey;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Target;
+import java.text.MessageFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.ResourceBundle;
 
 public interface UpdaterUI {
-  void startProcess(String title);
+  @Target(ElementType.TYPE_USE)
+  @Nls(capitalization = Nls.Capitalization.Title)
+  @interface Title { }
 
+  @Target(ElementType.TYPE_USE)
+  @Nls(capitalization = Nls.Capitalization.Sentence)
+  @interface Message { }
+
+  void setDescription(@Message String text);
+
+  void startProcess(@Title String title);
   void setProgress(int percentage);
-
   void setProgressIndeterminate();
-
-  void setStatus(String status);
-
-  void showError(Throwable e);
-
   void checkCancelled() throws OperationCancelledException;
 
-  void setDescription(String oldBuildDesc, String newBuildDesc);
-
-  /**
-   * Shows a warning associated with the pretense of a file and asks the user if the validation needs be retried.
-   * This function will return true iff the user wants to retry.
-   * @param message The warning message to display.
-   * @return true if the validation needs to be retried or false if te updater should quit.
-   */
-  boolean showWarning(String message);
+  void showError(@Message String message);
 
   Map<String, ValidationResult.Option> askUser(List<ValidationResult> validationResults) throws OperationCancelledException;
+
+  default @Nls String bold(@Nls String text) { return text; }
+
+  String BUNDLE = "messages.UpdaterBundle";
+
+  static @Nls String message(@PropertyKey(resourceBundle = BUNDLE) String key, Object... parameters) {
+    var bundle = ResourceBundle.getBundle(BUNDLE);
+    var template = bundle.getString(key);
+    return MessageFormat.format(template, parameters);
+  }
 }

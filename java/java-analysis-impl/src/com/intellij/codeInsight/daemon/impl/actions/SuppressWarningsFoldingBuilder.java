@@ -1,84 +1,75 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * User: anna
- * Date: 25-May-2010
- */
 package com.intellij.codeInsight.daemon.impl.actions;
 
+import com.intellij.codeInsight.AnnotationUtil;
 import com.intellij.codeInsight.folding.JavaCodeFoldingSettings;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.folding.FoldingBuilderEx;
 import com.intellij.lang.folding.FoldingDescriptor;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
+import com.intellij.pom.java.JavaFeature;
+import com.intellij.psi.JavaRecursiveElementWalkingVisitor;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiAnnotationMemberValue;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiJavaFile;
+import com.intellij.psi.PsiLiteral;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.util.Function;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
-public class SuppressWarningsFoldingBuilder extends FoldingBuilderEx {
-  @NotNull
+public final class SuppressWarningsFoldingBuilder extends FoldingBuilderEx {
+  private static final Logger LOG = Logger.getInstance(SuppressWarningsFoldingBuilder.class);
   @Override
-  public FoldingDescriptor[] buildFoldRegions(@NotNull PsiElement root, @NotNull Document document, boolean quick) {
+  public FoldingDescriptor @NotNull [] buildFoldRegions(@NotNull PsiElement root, @NotNull Document document, boolean quick) {
     if (!(root instanceof PsiJavaFile) || quick || !JavaCodeFoldingSettings.getInstance().isCollapseSuppressWarnings()) {
-      return FoldingDescriptor.EMPTY;
+      return FoldingDescriptor.EMPTY_ARRAY;
     }
-    if (!PsiUtil.isLanguageLevel5OrHigher(root)) {
-      return FoldingDescriptor.EMPTY;
+    if (!PsiUtil.isAvailable(JavaFeature.ANNOTATIONS, root)) {
+      return FoldingDescriptor.EMPTY_ARRAY;
     }
     final List<FoldingDescriptor> result = new ArrayList<>();
     root.accept(new JavaRecursiveElementWalkingVisitor(){
       @Override
-      public void visitAnnotation(PsiAnnotation annotation) {
+      public void visitAnnotation(@NotNull PsiAnnotation annotation) {
         if (Comparing.strEqual(annotation.getQualifiedName(), SuppressWarnings.class.getName())) {
-          result.add(new FoldingDescriptor(annotation, annotation.getTextRange()));
+          result.add(new FoldingDescriptor(annotation.getNode(), annotation.getTextRange(), null, placeholderText(annotation),
+                                           JavaCodeFoldingSettings.getInstance().isCollapseSuppressWarnings(), Collections.emptySet()));
         }
         super.visitAnnotation(annotation);
       }
     });
-    return result.toArray(new FoldingDescriptor[result.size()]);
+    return result.toArray(FoldingDescriptor.EMPTY_ARRAY);
   }
 
   @Override
   public String getPlaceholderText(@NotNull ASTNode node) {
-    final PsiElement element = node.getPsi();
-    if (element instanceof PsiAnnotation) {
-      return "/" + StringUtil.join(((PsiAnnotation)element).getParameterList().getAttributes(), value -> getMemberValueText(value.getValue()), ", ") + "/";
-    }
-    return element.getText();
+    LOG.error("unknown element " + node);
+    return null;
   }
 
-  private static String getMemberValueText(PsiAnnotationMemberValue memberValue) {
-    if (memberValue instanceof PsiArrayInitializerMemberValue) {
-      final PsiAnnotationMemberValue[] initializers = ((PsiArrayInitializerMemberValue)memberValue).getInitializers();
-      return StringUtil.join(initializers, psiAnnotationMemberValue -> getMemberValueText(psiAnnotationMemberValue), ", ");
-    }
-    if (memberValue instanceof PsiLiteral) {
-      final Object o = ((PsiLiteral)memberValue).getValue();
-      if (o != null) {
-        return o.toString();
+  private static @NotNull String placeholderText(@NotNull PsiAnnotation element) {
+    return "/" + StringUtil.join(element.getParameterList().getAttributes(), value -> getMemberValueText(value.getValue()), ", ") + "/";
+  }
+
+  private static @NotNull String getMemberValueText(@Nullable PsiAnnotationMemberValue _memberValue) {
+    return StringUtil.join(AnnotationUtil.arrayAttributeValues(_memberValue), memberValue -> {
+      if (memberValue instanceof PsiLiteral) {
+        final Object o = ((PsiLiteral)memberValue).getValue();
+        if (o != null) {
+          return o.toString();
+        }
       }
-    }
-    return memberValue != null ? memberValue.getText() : "";
+      return memberValue != null ? memberValue.getText() : "";
+    }, ", ");
   }
 
 

@@ -1,4 +1,4 @@
-// "Replace with 'java.util.TreeSet' constructor" "false"
+// "Replace with 'java.util.TreeSet' constructor" "true-preview"
 
 import java.util.*;
 import java.util.stream.*;

@@ -1,24 +1,21 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.findUsages;
 
 import com.intellij.openapi.application.QueryExecutorBase;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
-import com.intellij.psi.search.*;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiNamedElement;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.search.LocalSearchScope;
+import com.intellij.psi.search.PsiSearchHelper;
+import com.intellij.psi.search.RequestResultProcessor;
+import com.intellij.psi.search.SearchRequestCollector;
+import com.intellij.psi.search.SearchScope;
+import com.intellij.psi.search.SearchSession;
+import com.intellij.psi.search.UsageSearchContext;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.util.Processor;
 import org.jetbrains.annotations.NotNull;
@@ -30,14 +27,14 @@ import org.jetbrains.plugins.groovy.lang.psi.util.GroovyPropertyUtils;
 /**
  * @author Maxim.Medvedev
  */
-public class GrAliasedImportedElementSearcher extends QueryExecutorBase<PsiReference, ReferencesSearch.SearchParameters> {
+public final class GrAliasedImportedElementSearcher extends QueryExecutorBase<PsiReference, ReferencesSearch.SearchParameters> {
 
   public GrAliasedImportedElementSearcher() {
     super(true);
   }
 
   @Override
-  public void processQuery(@NotNull ReferencesSearch.SearchParameters parameters, @NotNull Processor<PsiReference> consumer) {
+  public void processQuery(@NotNull ReferencesSearch.SearchParameters parameters, @NotNull Processor<? super PsiReference> consumer) {
     final PsiElement target = parameters.getElementToSearch();
     if (!(target instanceof PsiMember) || !(target instanceof PsiNamedElement)) return;
 
@@ -48,16 +45,13 @@ public class GrAliasedImportedElementSearcher extends QueryExecutorBase<PsiRefer
 
     final SearchRequestCollector collector = parameters.getOptimizer();
     final SearchSession session = collector.getSearchSession();
-    if (target instanceof PsiMethod) {
-      final PsiMethod method = (PsiMethod)target;
+    if (target instanceof PsiMethod method) {
       if (GroovyPropertyUtils.isSimplePropertyAccessor(method)) {
         final PsiField field = GroovyPropertyUtils.findFieldForAccessor(method, true);
         if (field != null) {
           final String propertyName = field.getName();
-          if (propertyName != null) {
-            final MyProcessor processor = new MyProcessor(method, GroovyPropertyUtils.getAccessorPrefix(method), session);
-            collector.searchWord(propertyName, onlyGroovy, UsageSearchContext.IN_CODE, true, method, processor);
-          }
+          final MyProcessor processor = new MyProcessor(method, GroovyPropertyUtils.getAccessorPrefix(method), session);
+          collector.searchWord(propertyName, onlyGroovy, UsageSearchContext.IN_CODE, true, method, processor);
         }
       }
     }
@@ -78,7 +72,7 @@ public class GrAliasedImportedElementSearcher extends QueryExecutorBase<PsiRefer
     }
 
     @Override
-    public boolean processTextOccurrence(@NotNull final PsiElement element, int offsetInElement, @NotNull Processor<PsiReference> consumer) {
+    public boolean processTextOccurrence(final @NotNull PsiElement element, int offsetInElement, @NotNull Processor<? super PsiReference> consumer) {
       String alias = getAlias(element);
       if (alias == null) return true;
 
@@ -98,13 +92,11 @@ public class GrAliasedImportedElementSearcher extends QueryExecutorBase<PsiRefer
       }
 
 
-      return PsiSearchHelper.SERVICE.getInstance(element.getProject()).processRequests(collector, consumer);
+      return PsiSearchHelper.getInstance(element.getProject()).processRequests(collector, consumer);
     }
 
-    @Nullable
-    private static String getAlias(final PsiElement element) {
-      if (!(element.getParent() instanceof GrImportStatement)) return null;
-      final GrImportStatement importStatement = (GrImportStatement)element.getParent();
+    private static @Nullable String getAlias(final PsiElement element) {
+      if (!(element.getParent() instanceof GrImportStatement importStatement)) return null;
       if (!importStatement.isAliasedImport()) return null;
       return importStatement.getImportedName();
     }

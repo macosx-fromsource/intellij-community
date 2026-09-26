@@ -1,3 +1,4 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.javaFX.fxml;
 
 import com.intellij.openapi.diagnostic.Logger;
@@ -14,21 +15,16 @@ import org.jetbrains.annotations.Nullable;
 
 import java.net.URL;
 
-/**
- * User: anna
- * Date: 1/10/13
- */
-public class JavaFxSchemaProvider extends XmlSchemaProvider {
-  private static final Logger LOG = Logger.getInstance("#" + JavaFxSchemaProvider.class.getName());
+public final class JavaFxSchemaProvider extends XmlSchemaProvider {
+  private static final Logger LOG = Logger.getInstance(JavaFxSchemaProvider.class);
 
   @Override
   public boolean isAvailable(final @NotNull XmlFile file) {
     return JavaFxFileTypeFactory.isFxml(file);
   }
 
-  @Nullable
   @Override
-  public XmlFile getSchema(@NotNull @NonNls String url, @Nullable Module module, @NotNull PsiFile baseFile) {
+  public @Nullable XmlFile getSchema(@NotNull @NonNls String url, @Nullable Module module, @NotNull PsiFile baseFile) {
     return module != null && JavaFxFileTypeFactory.isFxml(baseFile) ? getReference(module) : null;
   }
 

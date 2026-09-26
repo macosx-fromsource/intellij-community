@@ -1,254 +1,118 @@
 <idea-plugin>
-  <name>Plugin DevKit</name>
   <id>DevKit</id>
-  <version>1.0</version>
-
-  <description>
-    IntelliJ Platform plugin development kit.
-  </description>
-
-  <category>inspection</category>
+  <!--suppress PluginXmlValidity -->
+  <name>Plugin DevKit</name>
+  <category>Plugin Development</category>
   <vendor>JetBrains</vendor>
 
-  <depends>com.intellij.properties</depends>
+  <description><![CDATA[
+    <p>Provides a powerful foundation for developing plugins for JetBrains IDEs and other products based on the
+      <a href="https://www.jetbrains.com/opensource/idea?from=DevKit&utm_source=product&utm_campaign=devkit">IntelliJ Platform.</a></p>
 
-  <resource-bundle>org.jetbrains.idea.devkit.DevKitBundle</resource-bundle>
+    <b>Features:</b>
+    <ul>
+      <li>Built-in support for extension points, actions, and services</li>
+      <li>Easy way to bootstrap a project via New Project wizard</li>
+      <li>Tools for UI development and plugin configuration</li>
+      <li>Quick navigation to extension declarations and implementations</li>
+      <li>Enhanced coding assistance, inspections, and code generation</li>
+    </ul>
+
+    <br>
+    <a href="https://plugins.jetbrains.com/docs/intellij/welcome.html?from=DevKit&utm_source=product&utm_campaign=devkit">Learn More!</a></p>
+  ]]></description>
+
+  <dependencies>
+    <module name="intellij.java.backend"/>
+    <!-- region Generated dependencies - run `Generate Product Layouts` to regenerate -->
+    <module name="intellij.platform.ide.impl"/>
+    <!-- endregion -->
+  </dependencies>
+
+  <content namespace="jetbrains">
+    <module name="intellij.devkit.core"/>
+    <module name="intellij.devkit.compose"/>
+    <module name="intellij.devkit.experiments"/>
+    <module name="intellij.devkit.gradle"/>
+    <module name="intellij.devkit.gradle.toml"/>
+    <module name="intellij.devkit.gradle.tooling"/>
+    <module name="intellij.devkit.i18n"/>
+    <module name="intellij.devkit.intelliLang"/>
+    <module name="intellij.devkit.themes"/>
+    <module name="intellij.devkit.uiDesigner"/>
+    <module name="intellij.devkit.uiDsl"/>
+    <module name="intellij.devkit.workspaceModel"/>
+    <module name="intellij.devkit.workspaceModel.k2"/>
+    <module name="intellij.kotlin.devkit"/>
+    <module name="intellij.kotlin.devkit.k2"/>
+    <module name="intellij.devkit.debugger"/>
+    <module name="intellij.devkit.stacktrace"/>
+    <module name="intellij.devkit.apiDump"/>
+    <module name="intellij.devkit.apiDump.lang"/>
+    <module name="intellij.devkit.scaffolding"/>
+    <module name="intellij.devkit.modules"/>
+    <module name="intellij.devkit.mcp"/>
+    <module name="intellij.devkit.mcp.inspections"/>
+    <module name="intellij.devkit.qodana"/>
+    <module name="intellij.devkit.threading"/>
+    <module name="intellij.devkit.smartupdate"/>
+
+    <module name="intellij.platform.jewel.samples.showcase"/>
+  </content>
+
+  <!-- Not embedded: intellij.devkit.workspaceModel is a regular content module, and CodegenJarLoader gives the
+       downloaded codegen-impl jar that module's own classloader as a parent, which has the wrapper as a parent.
+       No 'namespace' attribute, so this is a private copy for this plugin only. -->
+  <content>
+    <module name="intellij.libraries.workspace.model.codegen"/>
+  </content>
 
   <extensions defaultExtensionNs="com.intellij">
+    <!-- Dependencies created with IntelliJ Platform Gradle Plugin 2.x -->
+    <dependencySupport coordinate="com.jetbrains.intellij.idea:ideaIC" kind="java" displayName="IntelliJ IDEA Community"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.idea:ideaIU" kind="java" displayName="IntelliJ IDEA Ultimate"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.clion:clion" kind="java" displayName="CLion"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.pycharm:pycharmPC" kind="java" displayName="PyCharm Community"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.pycharm:pycharmPY" kind="java" displayName="PyCharm"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.goland:goland" kind="java" displayName="GoLand"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.phpstorm:phpstorm" kind="java" displayName="PhpStorm"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.rider:riderRD" kind="java" displayName="Rider"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.gateway:gateway" kind="java" displayName="JetBrains Gateway"/>
+    <dependencySupport coordinate="com.google.android.studio:android-studio" kind="java" displayName="Android Studio"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.fleetBackend:fleetBackend" kind="java" displayName="Fleet Backend"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.rustrover:RustRover" kind="java" displayName="RustRover"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.webstorm:webstorm" kind="java" displayName="WebStorm"/>
+    <dependencySupport coordinate="com.jetbrains.intellij.idea:writerside" kind="java" displayName="Writerside"/>
 
-    <runLineMarkerContributor language="JAVA" implementationClass="org.jetbrains.idea.devkit.testAssistant.TestDataLineMarkerProvider"/>
-    <fileEditorProvider implementation="org.jetbrains.idea.devkit.testAssistant.TestDataGroupEditorProvider"/>
-    <gotoRelatedProvider implementation="org.jetbrains.idea.devkit.testAssistant.TestDataAsRelatedFileProvider"/>
-    <gotoRelatedProvider implementation="org.jetbrains.idea.devkit.testAssistant.TestCaseAsRelatedFileProvider"/>
-    <psi.referenceContributor language="JAVA" implementation="org.jetbrains.idea.devkit.testAssistant.TestDataReferenceContributor"/>
-    <getDataRule key="Location" implementationClass="org.jetbrains.idea.devkit.testAssistant.TestLocationDataRule"/>
+    <!-- Dependencies created with IntelliJ Platform Gradle Plugin 2.x that point to CDN artifacts -->
+    <dependencySupport coordinate="idea:ideaIC" kind="java" displayName="IntelliJ IDEA Community"/>
+    <dependencySupport coordinate="idea:ideaIU" kind="java" displayName="IntelliJ IDEA Ultimate"/>
+    <dependencySupport coordinate="cpp:CLion" kind="java" displayName="CLion"/>
+    <dependencySupport coordinate="python:pycharm-community" kind="java" displayName="PyCharm Community"/>
+    <dependencySupport coordinate="python:pycharm-professional" kind="java" displayName="PyCharm"/>
+    <dependencySupport coordinate="go:goland" kind="java" displayName="GoLand"/>
+    <dependencySupport coordinate="webide:PhpStorm" kind="java" displayName="PhpStorm"/>
+    <dependencySupport coordinate="rider:JetBrains.Rider" kind="java" displayName="Rider"/>
+    <dependencySupport coordinate="idea/gateway:JetBrainsGateway" kind="java" displayName="JetBrains Gateway"/>
+    <dependencySupport coordinate="rustrover:RustRover" kind="java" displayName="RustRover"/>
+    <dependencySupport coordinate="webstorm:WebStorm" kind="java" displayName="WebStorm"/>
+    <dependencySupport coordinate="writerside:writerside" kind="java" displayName="Writerside"/>
+    <dependencySupport coordinate="aqua:aqua" kind="java" displayName="Aqua"/>
+    <dependencySupport coordinate="datagrip:datagrip" kind="java" displayName="DataGrip"/>
+    <dependencySupport coordinate="mps:MPS" kind="java" displayName="MPS"/>
+    <dependencySupport coordinate="ruby:RubyMine" kind="java" displayName="RubyMine"/>
 
-    <junitPatcher implementation="org.jetbrains.idea.devkit.run.JUnitDevKitPatcher"/>
-    <antBuildGen implementation="org.jetbrains.idea.devkit.build.ant.ChunkBuildPluginExtension"/>
-    <compiler.buildTargetScopeProvider implementation="org.jetbrains.idea.devkit.build.PluginModuleBuildScopeProvider"/>
-
-    <dom.fileDescription implementation="org.jetbrains.idea.devkit.dom.impl.PluginXmlDomFileDescription"/>
-    <dom.extender domClass="org.jetbrains.idea.devkit.dom.Extensions"
-                  extenderClass="org.jetbrains.idea.devkit.dom.impl.ExtensionDomExtender"/>
-    <dom.extender domClass="org.jetbrains.idea.devkit.dom.Action"
-                  extenderClass="org.jetbrains.idea.devkit.dom.impl.InternalDomExtender$ForAction"/>
-    <dom.extender domClass="org.jetbrains.idea.devkit.dom.Group"
-                  extenderClass="org.jetbrains.idea.devkit.dom.impl.InternalDomExtender$ForGroup"/>
-    <dom.implementation interfaceClass="org.jetbrains.idea.devkit.dom.IdeaPlugin"
-                        implementationClass="org.jetbrains.idea.devkit.dom.impl.IdeaPluginImpl"/>
-    <dom.implementation interfaceClass="org.jetbrains.idea.devkit.dom.Extension"
-                        implementationClass="org.jetbrains.idea.devkit.dom.impl.ExtensionImpl"/>
-    <dom.implementation interfaceClass="org.jetbrains.idea.devkit.dom.ExtensionPoint"
-                        implementationClass="org.jetbrains.idea.devkit.dom.impl.ExtensionPointImpl"/>
-    <dom.implementation interfaceClass="org.jetbrains.idea.devkit.dom.Extensions"
-                        implementationClass="org.jetbrains.idea.devkit.dom.impl.ExtensionsImpl"/>
-    <useScopeEnlarger implementation="org.jetbrains.idea.devkit.DevKitUseScopeEnlarger"/>
-    <properties.implicitPropertyUsageProvider implementation="org.jetbrains.idea.devkit.inspections.RegistryImplicitPropertyUsageProvider"/>
-
-    <configurationType implementation="org.jetbrains.idea.devkit.run.PluginConfigurationType"/>
-    <moduleType id="PLUGIN_MODULE" implementationClass="org.jetbrains.idea.devkit.module.PluginModuleType" classpathProvider="true"/>
-    <sdkType implementation="org.jetbrains.idea.devkit.projectRoots.IdeaJdk"/>
-    <compileServer.plugin classpath="devkit-jps-plugin.jar"/>
-    <fileTemplateGroup implementation="org.jetbrains.idea.devkit.DevKitFileTemplatesFactory"/>
-    <lang.documentationProvider language="XML"
-                                implementationClass="org.jetbrains.idea.devkit.references.extensions.ExtensionPointDocumentationProvider"/>
-
-    <localInspection language="XML" shortName="PluginXmlValidity" displayName="Plugin.xml Validity" applyToDialects="false"
-                     groupKey="inspections.group.name" enabledByDefault="true" level="ERROR"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.PluginXmlDomInspection"/>
-    <localInspection language="JAVA" shortName="ComponentNotRegistered"
-                     key="inspections.component.not.registered.name" groupKey="inspections.group.name" enabledByDefault="true"
-                     level="WARNING" implementationClass="org.jetbrains.idea.devkit.inspections.ComponentNotRegisteredInspection"/>
-    <localInspection language="JAVA" shortName="InspectionDescriptionNotFoundInspection" displayName="Inspection Description Checker"
-                     groupKey="inspections.group.name" enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.InspectionDescriptionNotFoundInspection"/>
-    <localInspection language="JAVA" shortName="InspectionUsingGrayColors" displayName="Using new Color(a,a,a)"
-                     groupKey="inspections.group.name" enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.UseGrayInspection"/>
-    <localInspection language="JAVA" shortName="IntentionDescriptionNotFoundInspection" displayName="Intention Description Checker"
-                     groupKey="inspections.group.name" enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.IntentionDescriptionNotFoundInspection"/>
-    <localInspection language="JAVA"
-                     key="inspections.component.postfix.template.not.found.description.name"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true"
-                     level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.PostfixTemplateDescriptionNotFoundInspection"/>
-    <localInspection shortName="ComponentRegistrationProblems"
-                     key="inspections.registration.problems.name"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="ERROR"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.RegistrationProblemsInspection"/>
-    <localInspection language="XML" shortName="InspectionMappingConsistency" applyToDialects="false"
-                     groupKey="inspections.group.name"
-                     displayName="&lt;inspection&gt; tag consistency"
-                     enabledByDefault="true"
-                     level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.InspectionMappingConsistencyInspection"/>
-
-    <localInspection language="JAVA" shortName="UndesirableClassUsage" displayName="Undesirable class usage"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.UndesirableClassUsageInspection"/>
-    <localInspection language="JAVA" shortName="FileEqualsUsage" displayName="File.equals() usage"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.FileEqualsUsageInspection"/>
-    <localInspection language="JAVA" shortName="GtkPreferredJComboBoxRenderer" displayName="Preferred JComboBox renderer"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.GtkPreferredJComboBoxRendererInspection"/>
-    <localInspection language="JAVA" shortName="UnsafeVfsRecursion" displayName="Unsafe VFS recursion"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.UnsafeVfsRecursionInspection"/>
-    <localInspection language="JAVA" shortName="UseJBColor" displayName="Use Darcula aware JBColor"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.UseJBColorInspection"/>
-    <localInspection language="JAVA" shortName="UseDPIAwareInsets" displayName="Use DPI-aware insets"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.UseDPIAwareInsetsInspection"/>
-    <localInspection language="JAVA" shortName="UseCouple" displayName="Use Couple instead of Pair"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="false" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.UseCoupleInspection"/>
-    <localInspection language="JAVA" shortName="DontUsePairConstructor" displayName="Don't use constructor of Pair class"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.DontUseNewPairInspection"/>
-    <localInspection language="JAVA" shortName="UseVirtualFileEquals" displayName="Use VirtualFile.equals"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.UseVirtualFileEqualsInspection"/>
-    <localInspection language="JAVA" shortName="UnsafeReturnStatementVisitor" displayName="Unsafe return statements visitor"
-                     groupKey="inspections.group.name" enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.UnsafeReturnStatementVisitorInspection"/>
-    <localInspection language="JAVA" shortName="StatefulEp" displayName="Stateful Extension"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.StatefulEpInspection"/>
-    <localInspection language="JAVA" shortName="UsePrimitiveTypes" displayName="Use .equals with primitive types"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.internal.UsePrimitiveTypesInspection"/>
-    <localInspection groupPath="Java" language="JAVA" shortName="HighlightVisitorInternal"
-                     displayName="Good code is red"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="false" isInternal="true"
-                     level="ERROR" implementationClass="org.jetbrains.idea.devkit.inspections.internal.HighlightVisitorInternalInspection"/>
-    <localInspection language="JAVA" shortName="QuickFixGetFamilyNameViolation"
-                     displayName="QuickFix's getFamilyName() implementation must not depend on a specific context"
-                     groupKey="inspections.group.name"
-                     enabledByDefault="true"
-                     level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.QuickFixGetFamilyNameViolationInspection"/>
-    <localInspection language="JAVA" shortName="PsiElementConcatenation"
-                     displayName="Using PsiElement string representation to generate new expression is incorrect"
-                     groupKey="inspections.group.name" enabledByDefault="true" level="WARNING"
-                     implementationClass="org.jetbrains.idea.devkit.inspections.PsiElementConcatenationInspection"/>
-
-
-    <moduleConfigurationEditorProvider implementation="org.jetbrains.idea.devkit.module.PluginModuleEditorsProvider"/>
-    <implicitUsageProvider implementation="org.jetbrains.idea.devkit.inspections.DevKitImplicitUsageProvider"/>
-    <psi.referenceContributor language="XML" implementation="org.jetbrains.idea.devkit.dom.impl.I18nReferenceContributor"/>
-    <psi.referenceContributor implementation="org.jetbrains.idea.devkit.references.IconsReferencesContributor"/>
-    <referencesSearch implementation="org.jetbrains.idea.devkit.references.IconsReferencesContributor"/>
-    <unusedDeclarationFixProvider implementation="org.jetbrains.idea.devkit.inspections.quickfix.RegisterExtensionFixProvider"/>
-
-    <stacktrace.fold substring="at com.intellij.ide.IdeEventQueue"/>
-    <stacktrace.fold substring="at com.intellij.util.messages.impl.MessageBus"/>
-    <stacktrace.fold substring="com.intellij.openapi.command.WriteCommandAction"/>
-    <stacktrace.fold substring="at com.intellij.openapi.application.impl.ApplicationImpl.runWriteAction("/>
-    <stacktrace.fold substring="at com.intellij.openapi.application.impl.ApplicationImpl.runReadAction("/>
-    <stacktrace.fold substring="at com.intellij.openapi.application.RunResult.run("/>
-    <stacktrace.fold substring="at com.intellij.openapi.command.impl.CoreCommandProcessor.executeCommand("/>
-    <stacktrace.fold substring="at com.intellij.testFramework.EdtTestUtil"/>
-    <stacktrace.fold substring="at com.intellij.testFramework.UsefulTestCase"/>
-    <stacktrace.fold substring="at com.intellij.testFramework.fixtures.impl.CodeInsightTestFixtureImpl.collectAndCheckHighlighting("/>
-    <stacktrace.fold substring="at com.intellij.testFramework.fixtures.impl.CodeInsightTestFixtureImpl.checkResultByFile("/>
-    <stacktrace.fold substring="at com.intellij.testFramework.fixtures.impl.CodeInsightTestFixtureImpl.access$"/>
-    <stacktrace.fold substring="at com.intellij.testFramework.fixtures.impl.CodeInsightTestFixtureImpl$"/>
-    <stacktrace.fold substring="at com.intellij.testFramework.ExpectedHighlightingData"/>
-
-    <codeInsight.lineMarkerProvider language="JAVA"
-                                    implementationClass="org.jetbrains.idea.devkit.navigation.DescriptionTypeRelatedItemLineMarkerProvider"/>
-    <codeInsight.lineMarkerProvider language="JAVA"
-                                    implementationClass="org.jetbrains.idea.devkit.navigation.ExtensionPointDeclarationRelatedItemLineMarkerProvider"/>
-    <codeInsight.implementedAtRuntime implementation="org.jetbrains.idea.devkit.inspections.DevKitImplementedAtRuntimeCondition"/>
-
-    <annotator language="Properties" implementationClass="org.jetbrains.idea.devkit.inspections.RegistryPropertiesAnnotator"/>
-
-    <moduleService serviceImplementation="org.jetbrains.idea.devkit.build.PluginBuildConfiguration"/>
-    <generatedSourcesFilter implementation="org.jetbrains.idea.devkit.internal.IconsGeneratedSourcesFilter"/>
-
-    <!-- must be before SubstringConsoleFolding to be able to fold the entire stacktrace -->
-    <console.folding order="first" implementation="com.intellij.testFramework.FailedTestDebugLogConsoleFolding"/>
+    <!-- Dependencies created with Gradle IntelliJ Plugin 1.x as intermediate Ivy repository artifacts -->
+    <dependencySupport coordinate="com.jetbrains:ideaIC" kind="java" displayName="IntelliJ IDEA Community"/>
+    <dependencySupport coordinate="com.jetbrains:ideaIU" kind="java" displayName="IntelliJ IDEA Ultimate"/>
+    <dependencySupport coordinate="com.jetbrains:clion" kind="java" displayName="CLion"/>
+    <dependencySupport coordinate="com.jetbrains:pycharmPC" kind="java" displayName="PyCharm Community"/>
+    <dependencySupport coordinate="com.jetbrains:pycharmPY" kind="java" displayName="PyCharm"/>
+    <dependencySupport coordinate="com.jetbrains:goland" kind="java" displayName="GoLand"/>
+    <dependencySupport coordinate="com.jetbrains:phpstorm" kind="java" displayName="PhpStorm"/>
+    <dependencySupport coordinate="com.jetbrains:riderRD" kind="java" displayName="Rider"/>
+    <dependencySupport coordinate="com.jetbrains:JetBrainsGateway" kind="java" displayName="JetBrains Gateway"/>
+    <dependencySupport coordinate="com.jetbrains:android-studio" kind="java" displayName="Android Studio"/>
+    <dependencySupport coordinate="com.jetbrains:fleetBackend" kind="java" displayName="Fleet Backend"/>
   </extensions>
-
-  <project-components>
-    <component>
-      <implementation-class>org.jetbrains.idea.devkit.testAssistant.TestDataHighlightingPassFactory</implementation-class>
-    </component>
-  </project-components>
-
-
-  <actions>
-    <group id="PluginDeployActions">
-      <action class="org.jetbrains.idea.devkit.build.PrepareToDeployAction" id="MakeJarAction"/>
-      <action class="org.jetbrains.idea.devkit.build.PrepareAllToDeployAction" id="MakeAllJarsAction"/>
-      <add-to-group anchor="after" group-id="ProjectViewPopupMenu" relative-to-action="Compile"/>
-      <add-to-group anchor="after" group-id="BuildMenu" relative-to-action="BuildArtifact"/>
-    </group>
-
-    <action class="org.jetbrains.idea.devkit.actions.NewApplicationComponentAction" text="Application Component"
-            id="NewApplicationComponent">
-      <add-to-group anchor="last" group-id="NewGroup"/>
-    </action>
-
-    <action class="org.jetbrains.idea.devkit.actions.NewProjectComponentAction" text="Project Component" id="NewProjectComponent">
-      <add-to-group anchor="last" group-id="NewGroup"/>
-    </action>
-
-    <action class="org.jetbrains.idea.devkit.actions.NewModuleComponentAction" text="Module Component" id="NewModuleComponent">
-      <add-to-group anchor="last" group-id="NewGroup"/>
-    </action>
-
-    <action class="org.jetbrains.idea.devkit.actions.NewActionAction" text="Action" id="NewAction">
-      <add-to-group anchor="last" group-id="NewGroup"/>
-    </action>
-
-    <action class="org.jetbrains.idea.devkit.actions.GenerateComponentExternalizationAction" text="Generate Externalization"
-            id="GenerateExternalization">
-      <add-to-group anchor="last" group-id="GenerateGroup"/>
-    </action>
-
-    <group id="Internal.DevKit" internal="true" text="DevKit" popup="true">
-      <action internal="true" class="org.jetbrains.idea.devkit.actions.ToggleHighlightingMarkupAction"
-              text="Toggle Expected Highlighting Markup"
-              id="ToggleHighlightingMarkup"/>
-
-      <action internal="true" class="org.jetbrains.idea.devkit.actions.ShuffleNamesAction" text="Shuffle Names"
-              id="ShuffleNamesAction"/>
-
-      <action internal="true" class="org.jetbrains.idea.devkit.actions.ShowSerializedXmlAction" text="Show Serialized XML for Class"
-              id="ShowSerializedXml"/>
-
-      <action internal="true" class="org.jetbrains.idea.devkit.dom.generator.GenerateDomModelAction" text="Generate DOM Model..."
-              id="GenerateDomModel"/>
-
-      <add-to-group group-id="Internal" anchor="last"/>
-
-    </group>
-    <action id="TestData.Navigate"
-            class="org.jetbrains.idea.devkit.testAssistant.NavigateToTestDataAction"
-            text="Navigate to testdata" use-shortcut-of="GotoRelated">
-      <add-to-group anchor="last" group-id="TestTreePopupMenu"/>
-    </action>
-    <action id="DumpCleanTestData" internal="true" class="org.jetbrains.idea.devkit.internal.DumpCleanHighlightingTestdataAction">
-      <add-to-group group-id="Internal.Dump"/>
-    </action>
-  </actions>
-
 </idea-plugin>

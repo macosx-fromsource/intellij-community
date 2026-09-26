@@ -1,55 +1,46 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.execution.scratch;
 
-import com.intellij.execution.JavaExecutionUtil;
 import com.intellij.execution.Location;
 import com.intellij.execution.actions.ConfigurationContext;
 import com.intellij.execution.actions.ConfigurationFromContext;
 import com.intellij.execution.application.AbstractApplicationConfigurationProducer;
 import com.intellij.execution.application.ApplicationConfigurationType;
-import com.intellij.ide.scratch.ScratchFileType;
+import com.intellij.execution.configurations.ConfigurationFactory;
+import com.intellij.ide.scratch.ScratchUtil;
 import com.intellij.lang.java.JavaLanguage;
-import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VirtualFileWithId;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.Objects;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: 29-Sep-15
  */
-public class JavaScratchConfigurationProducer extends AbstractApplicationConfigurationProducer<JavaScratchConfiguration> {
+public final class JavaScratchConfigurationProducer extends AbstractApplicationConfigurationProducer<JavaScratchConfiguration>
+  implements DumbAware {
 
-  public JavaScratchConfigurationProducer() {
-    super(JavaScratchConfigurationType.getInstance());
+  @Override
+  public @NotNull ConfigurationFactory getConfigurationFactory() {
+    return JavaScratchConfigurationType.getInstance();
   }
 
   @Override
-  protected boolean setupConfigurationFromContext(JavaScratchConfiguration configuration, ConfigurationContext context, Ref<PsiElement> sourceElement) {
+  protected boolean setupConfigurationFromContext(@NotNull JavaScratchConfiguration configuration,
+                                                  @NotNull ConfigurationContext context,
+                                                  @NotNull Ref<PsiElement> sourceElement) {
     final Location location = context.getLocation();
     if (location != null) {
       final VirtualFile vFile = location.getVirtualFile();
-      if (vFile instanceof VirtualFileWithId && vFile.getFileType() == ScratchFileType.INSTANCE) {
+      if (vFile != null && ScratchUtil.isScratch(vFile)) {
         final PsiFile psiFile = location.getPsiElement().getContainingFile();
         if (psiFile != null && psiFile.getLanguage() == JavaLanguage.INSTANCE) {
-          configuration.SCRATCH_FILE_ID = ((VirtualFileWithId)vFile).getId();
+          configuration.setScratchFileUrl(vFile.getUrl());
           return super.setupConfigurationFromContext(configuration, context, sourceElement);
         }
       }
@@ -58,15 +49,15 @@ public class JavaScratchConfigurationProducer extends AbstractApplicationConfigu
   }
 
   @Override
-  public boolean shouldReplace(ConfigurationFromContext self, ConfigurationFromContext other) {
+  public boolean shouldReplace(@NotNull ConfigurationFromContext self, @NotNull ConfigurationFromContext other) {
     return other.isProducedBy(AbstractApplicationConfigurationProducer.class) && !other.isProducedBy(JavaScratchConfigurationProducer.class);
   }
 
   @Override
-  public boolean isConfigurationFromContext(JavaScratchConfiguration configuration, ConfigurationContext context) {
+  public boolean isConfigurationFromContext(@NotNull JavaScratchConfiguration configuration, @NotNull ConfigurationContext context) {
     final PsiElement location = context.getPsiLocation();
     final PsiClass aClass = ApplicationConfigurationType.getMainClass(location);
-    if (aClass != null && Comparing.equal(JavaExecutionUtil.getRuntimeQualifiedName(aClass), configuration.MAIN_CLASS_NAME)) {
+    if (aClass != null && Objects.equals(aClass.getQualifiedName(), configuration.getMainClassName())) {
       // for scratches it is enough to check that the configuration is associated with the same scratch file
       final VirtualFile scratchFile = configuration.getScratchVirtualFile();
       if (scratchFile != null) {

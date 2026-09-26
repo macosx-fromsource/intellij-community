@@ -1,42 +1,26 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.inspections;
 
-import com.jetbrains.python.fixtures.PyTestCase;
-import com.jetbrains.python.psi.LanguageLevel;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
 
-/**
- * @author yole
- */
-public class PyRedundantParenthesesInspectionTest extends PyTestCase {
-  public void doTest() {
-    myFixture.configureByFile("inspections/PyRedundantParenthesesInspection/" + getTestName(false) + ".py");
-    myFixture.enableInspections(PyRedundantParenthesesInspection.class);
-    myFixture.checkHighlighting(true, false, true);
+import com.jetbrains.python.fixtures.PyInspectionTestCase;
+import com.jetbrains.python.psi.LanguageLevel;
+import org.jetbrains.annotations.NotNull;
+
+
+@Subsystems.Inspections
+@Layers.Functional
+public class PyRedundantParenthesesInspectionTest extends PyInspectionTestCase {
+  @NotNull
+  @Override
+  protected Class<? extends PyInspection> getInspectionClass() {
+    return PyRedundantParenthesesInspection.class;
   }
 
-  public void doTest(LanguageLevel languageLevel) {
-    try {
-      setLanguageLevel(languageLevel);
-      myFixture.configureByFile("inspections/PyRedundantParenthesesInspection/" + getTestName(false) + ".py");
-      myFixture.enableInspections(PyRedundantParenthesesInspection.class);
-      myFixture.checkHighlighting(true, false, true);
-    } finally {
-      setLanguageLevel(null);
-    }
+  @Override
+  protected boolean isLowerCaseTestFile() {
+    return false;
   }
 
   public void testBooleanMultiline() {
@@ -72,15 +56,78 @@ public class PyRedundantParenthesesInspectionTest extends PyTestCase {
   }
 
   public void testYieldFrom() {       //PY-7410
-    doTest(LanguageLevel.PYTHON33);
+    doTest();
   }
 
-  public void testYield() {       //PY-10420
-    doTest(LanguageLevel.PYTHON27);
+  public void testYieldExpression() {       //PY-10420
+    doTest();
   }
 
   public void testBinaryInBinary() {       //PY-10420
     doTest();
   }
 
+  // PY-31795
+  public void testSyntaxErrorInside() {
+    doTest();
+  }
+
+  // PY-31795
+  public void testSingleLeftParenthesis() {
+    doTest();
+  }
+
+  public void testParenthesizedTupleInReturn() {
+    doTest();
+  }
+
+  public void testParenthesizedTupleInYield() {
+    doTest();
+  }
+
+  // PY-33266
+  public void testNestedParentheses() {
+    doTest();
+  }
+
+  // PY-21530
+  public void testReferenceExpression() {
+    doTest();
+  }
+
+  // PY-20324
+  public void testParenthesizedTupleWithUnpackingInReturnBefore38() {
+    runWithLanguageLevel(LanguageLevel.PYTHON37, this::doTest);
+  }
+
+  // PY-35961
+  public void testParenthesizedTupleWithUnpackingInReturn() {
+    doTest();
+  }
+
+  // PY-20324
+  public void testParenthesizedTupleWithUnpackingInYieldBefore38() {
+    runWithLanguageLevel(LanguageLevel.PYTHON37, this::doTest);
+  }
+
+  // PY-35961
+  public void testParenthesizedTupleWithUnpackingInYield() {
+    doTest();
+  }
+
+  // PY-35961
+  public void testParenthesizedTupleWithUnpackingInYieldFrom() {
+    doTest();
+  }
+
+  // PY-34262
+  public void testReturnOneElementTuple() {
+    doTestByText("def foo():\n" +
+                 "  return (1, )");
+  }
+
+  // PY-45143
+  public void testNoInspectionWithYieldFrom() {
+    doTest();
+  }
 }

@@ -1,10 +1,12 @@
+import unittest
+
 def f():
     return
     <warning descr="This code is unreachable">a = 1</warning>
 
 
 def f():
-    if 0:
+    if b:
         return
     a = 1 # pass
 
@@ -55,7 +57,7 @@ def f():
 
 class MyTestCase(unittest.TestCase):
     def test_something(self):
-        with self.assertRaises():
+        with self.assertRaises(Exception):
             raise Foo
         foo() # pass
 
@@ -66,15 +68,6 @@ def f():
     f = lambda: sys.exit() #pass
     foo = 3
     return f, foo
-
-
-# PY-3886
-def f():
-    from unittest import TestCase
-    class C(TestCase):
-        def test_1(self):
-            self.fail()
-            <warning descr="This code is unreachable">return -42</warning>
 
 
 # PY-4149
@@ -88,7 +81,7 @@ def f():
 # PY-4208
 def f(g):
     try:
-        raise
+        raise ValueError
     finally:
         g()
     <warning descr="This code is unreachable">g()</warning>

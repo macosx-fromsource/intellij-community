@@ -1,6 +1,6 @@
-// "Create property" "true"
+// "Create property" "true-preview"
 class Calculator {
     {
-      set<caret>I(() -> {}); 
+      set<caret>I(() -> {});
     }
 }

@@ -19,15 +19,14 @@ package com.intellij.util.xml.highlighting;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.util.xml.DomElement;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.List;
 
 public interface DomElementsProblemsHolder {
 
+  @Unmodifiable
   List<DomElementProblemDescriptor> getProblems(DomElement domElement);
-
-  @Deprecated
-  List<DomElementProblemDescriptor> getProblems(DomElement domElement, boolean includeXmlProblems);
 
   /**
    *
@@ -36,20 +35,18 @@ public interface DomElementsProblemsHolder {
    * @param withChildren include children problems
    * @return problems
    */
+  @Unmodifiable
   List<DomElementProblemDescriptor> getProblems(DomElement domElement, boolean includeXmlProblems, boolean withChildren);
 
-  @Deprecated
-  List<DomElementProblemDescriptor> getProblems(DomElement domElement,
-                                                final boolean includeXmlProblems,
-                                                final boolean withChildren,
-                                                HighlightSeverity minSeverity);
-
+  @Unmodifiable
   List<DomElementProblemDescriptor> getProblems(DomElement domElement,
                                                 final boolean withChildren,
                                                 HighlightSeverity minSeverity);
 
+  @Unmodifiable
   List<DomElementProblemDescriptor> getAllProblems();
 
+  @Unmodifiable
   List<DomElementProblemDescriptor> getAllProblems(@NotNull DomElementsInspection inspection);
 
   boolean isInspectionCompleted(@NotNull DomElementsInspection inspection);

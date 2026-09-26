@@ -1,129 +1,99 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.projectView.impl.nodes;
 
 import com.intellij.ide.projectView.ViewSettings;
 import com.intellij.ide.projectView.impl.ModuleGroup;
+import com.intellij.ide.projectView.impl.ProjectRootsUtil;
 import com.intellij.ide.util.treeView.AbstractTreeNode;
+import com.intellij.ide.util.treeView.PathElementIdProvider;
+import com.intellij.ide.util.treeView.TreeState;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.module.ModuleUtil;
+import com.intellij.openapi.module.ModuleDescription;
+import com.intellij.openapi.module.ModuleManager;
+import com.intellij.openapi.module.ModuleUtilCore;
+import com.intellij.openapi.module.UnloadedModuleDescription;
+import com.intellij.openapi.module.impl.LoadedModuleDescriptionImpl;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.ProjectFileIndex;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiManager;
-import com.intellij.util.SystemProperties;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
-import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
-public class ProjectViewProjectNode extends AbstractProjectNode {
-
-  public ProjectViewProjectNode(Project project, ViewSettings viewSettings) {
+public class ProjectViewProjectNode extends AbstractProjectNode implements PathElementIdProvider {
+  public ProjectViewProjectNode(@NotNull Project project, ViewSettings viewSettings) {
     super(project, project, viewSettings);
   }
 
   @Override
-  @NotNull
-  public Collection<AbstractTreeNode> getChildren() {
-    List<VirtualFile> topLevelContentRoots = ProjectViewDirectoryHelper.getInstance(myProject).getTopLevelRoots();
+  public boolean isAlwaysShowPlus() {
+    return true;
+  }
 
-    Set<Module> modules = new LinkedHashSet<>(topLevelContentRoots.size());
+  @Override
+  public boolean canRepresent(Object element) {
+    Project project = getValue();
+    return project == element || project != null && element instanceof VirtualFile && element.equals(project.getBaseDir());
+  }
 
-    for (VirtualFile root : topLevelContentRoots) {
-      final Module module = ModuleUtil.findModuleForFile(root, myProject);
-      if (module != null) { // Some people exclude module's content roots...
-        modules.add(module);
+  @Override
+  public @NotNull Collection<AbstractTreeNode<?>> getChildren() {
+    Project project = myProject;
+    if (project == null || project.isDisposed() || project.isDefault()) {
+      return Collections.emptyList();
+    }
+
+    Set<VirtualFile> topLevelRoots = ProjectViewDirectoryHelper.getInstance(project).topLevelBaseDirectories();
+
+    Set<ModuleDescription> modules = new LinkedHashSet<>(topLevelRoots.size());
+    List<VirtualFile> nonModuleRoots = new ArrayList<>();
+    for (VirtualFile root : topLevelRoots) {
+      Module module = ModuleUtilCore.findModuleForFile(root, project);
+      if (module != null) {
+        modules.add(new LoadedModuleDescriptionImpl(module));
+        continue;
+      }
+
+      String unloadedModuleName = ProjectRootsUtil.findUnloadedModuleByContentRoot(root, project);
+      if (unloadedModuleName != null) {
+        ContainerUtil.addIfNotNull(modules, ModuleManager.getInstance(project).getUnloadedModuleDescription(unloadedModuleName));
+      }
+      else {
+        nonModuleRoots.add(root);
       }
     }
 
-    ArrayList<AbstractTreeNode> nodes = new ArrayList<>();
-    final PsiManager psiManager = PsiManager.getInstance(getProject());
-
-    /*
-    for (VirtualFile root : reduceRoots(topLevelContentRoots)) {
-      nodes.add(new PsiDirectoryNode(getProject(), psiManager.findDirectory(root), getSettings()));
-    }
-    */
-
-    nodes.addAll(modulesAndGroups(modules.toArray(new Module[modules.size()])));
-
-    final VirtualFile baseDir = getProject().getBaseDir();
-    if (baseDir == null) return nodes;
-
-    final VirtualFile[] files = baseDir.getChildren();
-    for (VirtualFile file : files) {
-      if (!file.isDirectory()) {
-        if (ProjectFileIndex.SERVICE.getInstance(getProject()).getModuleForFile(file, false) == null) {
-          nodes.add(new PsiFileNode(getProject(), psiManager.findFile(file), getSettings()));
+    List<AbstractTreeNode<?>> nodes = new ArrayList<>(modulesAndGroups(modules));
+    PsiManager psiManager = PsiManager.getInstance(project);
+    for (var root : nonModuleRoots) {
+      var psiDirectory = psiManager.findDirectory(root);
+      if (psiDirectory != null) {
+        nodes.add(new PsiDirectoryNode(myProject, psiDirectory, getSettings()));
+      }
+      else {
+        var psiFile = psiManager.findFile(root);
+        if (psiFile != null) {
+          nodes.add(new PsiFileNode(myProject, psiFile, getSettings()));
         }
       }
     }
 
     if (getSettings().isShowLibraryContents()) {
-      nodes.add(new ExternalLibrariesNode(getProject(), getSettings()));
+      nodes.add(new ExternalLibrariesNode(project, getSettings()));
     }
-
     return nodes;
   }
 
-  private static List<VirtualFile> reduceRoots(List<VirtualFile> roots) {
-    if (roots.isEmpty()) return Collections.emptyList();
-
-    String userHome;
-    try {
-      userHome = FileUtil.toSystemIndependentName(new File(SystemProperties.getUserHome()).getCanonicalPath());
-    }
-    catch (IOException e) {
-      userHome = null;
-    }
-
-    Collections.sort(roots, (o1, o2) -> o1.getPath().compareTo(o2.getPath()));
-
-    Iterator<VirtualFile> it = roots.iterator();
-    VirtualFile current = it.next();
-
-    List<VirtualFile> reducedRoots = new ArrayList<>();
-    while (it.hasNext()) {
-      VirtualFile next = it.next();
-      VirtualFile common = VfsUtilCore.getCommonAncestor(current, next);
-
-      if (common == null || common.getParent() == null || Comparing.equal(common.getPath(), userHome)) {
-        reducedRoots.add(current);
-        current = next;
-      }
-      else {
-        current = common;
-      }
-    }
-
-    reducedRoots.add(current);
-    return reducedRoots;
-  }
-
   @Override
-  protected AbstractTreeNode createModuleGroup(final Module module)
-    throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+  protected @NotNull AbstractTreeNode<?> createModuleGroup(final @NotNull Module module) {
     List<VirtualFile> roots = ProjectViewDirectoryHelper.getInstance(myProject).getTopLevelModuleRoots(module, getSettings());
     if (roots.size() == 1) {
       final PsiDirectory psi = PsiManager.getInstance(myProject).findDirectory(roots.get(0));
@@ -136,8 +106,40 @@ public class ProjectViewProjectNode extends AbstractProjectNode {
   }
 
   @Override
-  protected AbstractTreeNode createModuleGroupNode(final ModuleGroup moduleGroup)
-    throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+  protected AbstractTreeNode<?> createUnloadedModuleNode(@NotNull UnloadedModuleDescription moduleDescription) {
+    List<VirtualFile> roots = ProjectViewDirectoryHelper.getInstance(myProject).getTopLevelUnloadedModuleRoots(moduleDescription, getSettings());
+    if (roots.size() == 1) {
+      final PsiDirectory psi = PsiManager.getInstance(myProject).findDirectory(roots.get(0));
+      if (psi != null) {
+        return new PsiDirectoryNode(myProject, psi, getSettings());
+      }
+    }
+
+    return new ProjectViewUnloadedModuleNode(getProject(), moduleDescription, getSettings());
+  }
+
+  @Override
+  protected @NotNull AbstractTreeNode createModuleGroupNode(final @NotNull ModuleGroup moduleGroup) {
     return new ProjectViewModuleGroupNode(getProject(), moduleGroup, getSettings());
+  }
+
+  @Override
+  public @NotNull String getPathElementId() {
+    if (shouldUseSimplifiedProjectTreeState()) {
+      return "ROOT";
+    }
+    else {
+      return TreeState.defaultPathElementId(this);
+    }
+  }
+
+  @Override
+  public @Nullable String getPathElementType() {
+    if (shouldUseSimplifiedProjectTreeState()) {
+      return GENERIC_PROJECT_VIEW_NODE_TYPE;
+    }
+    else {
+      return null;
+    }
   }
 }

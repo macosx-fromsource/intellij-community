@@ -1,120 +1,65 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.util;
 
+import com.intellij.openapi.module.Module;
 import com.intellij.openapi.roots.FileIndexFacade;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.*;
+import com.intellij.psi.HierarchicalMethodSignature;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElementFactory;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeParameter;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.util.containers.HashSet;
-import gnu.trove.THashMap;
-import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.Closeable;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public class PsiSuperMethodUtil {
+public final class PsiSuperMethodUtil {
   private PsiSuperMethodUtil() {}
-
-  public static PsiMethod findConstructorInSuper(PsiMethod constructor) {
-    return findConstructorInSuper(constructor, new HashSet<PsiMethod>());
-  }
-
-  public static PsiMethod findConstructorInSuper(PsiMethod constructor, Set<PsiMethod> visited) {
-    if (visited.contains(constructor)) return null;
-    visited.add(constructor);
-    final PsiCodeBlock body = constructor.getBody();
-    if (body != null) {
-      PsiStatement[] statements = body.getStatements();
-      if (statements.length > 0) {
-        PsiElement firstChild = statements[0].getFirstChild();
-        if (firstChild instanceof PsiMethodCallExpression) {
-          PsiReferenceExpression methodExpr = ((PsiMethodCallExpression)firstChild).getMethodExpression();
-          @NonNls final String text = methodExpr.getText();
-          if (text.equals("super")) {
-            PsiElement superConstructor = methodExpr.resolve();
-            if (superConstructor instanceof PsiMethod) {
-              return (PsiMethod)superConstructor;
-            }
-          } else if (text.equals("this")) {
-            final PsiElement resolved = methodExpr.resolve();
-            if (resolved instanceof PsiMethod) {
-              return findConstructorInSuper((PsiMethod)resolved, visited);
-            }
-            return null;
-          }
-        }
-      }
-    }
-
-    PsiClass containingClass = constructor.getContainingClass();
-    if (containingClass != null) {
-      PsiClass superClass = containingClass.getSuperClass();
-      if (superClass != null) {
-        MethodSignature defConstructor = MethodSignatureUtil.createMethodSignature(superClass.getName(), PsiType.EMPTY_ARRAY,
-                                                                                   PsiTypeParameter.EMPTY_ARRAY, PsiSubstitutor.EMPTY, true);
-        return MethodSignatureUtil.findMethodBySignature(superClass, defConstructor, false);
-      }
-    }
-    return null;
-  }
 
   public static boolean isSuperMethod(@NotNull PsiMethod method, @NotNull PsiMethod superMethod) {
     HierarchicalMethodSignature signature = method.getHierarchicalMethodSignature();
-    List<HierarchicalMethodSignature> superSignatures = signature.getSuperSignatures();
-    for (int i = 0, superSignaturesSize = superSignatures.size(); i < superSignaturesSize; i++) {
-      HierarchicalMethodSignature supsig = superSignatures.get(i);
-      PsiMethod supsigme = supsig.getMethod();
+    for (HierarchicalMethodSignature superSignature : signature.getSuperSignatures()) {
+      PsiMethod supsigme = superSignature.getMethod();
       if (superMethod.equals(supsigme) || isSuperMethod(supsigme, superMethod)) return true;
     }
 
     return false;
   }
 
-  @NotNull
-  public static PsiSubstitutor obtainFinalSubstitutor(@NotNull PsiClass superClass,
-                                                      @NotNull PsiSubstitutor superSubstitutor,
-                                                      @NotNull PsiSubstitutor derivedSubstitutor,
-                                                      boolean inRawContext) {
+  public static @NotNull PsiSubstitutor obtainFinalSubstitutor(@NotNull PsiClass superClass,
+                                                               @NotNull PsiSubstitutor superSubstitutor,
+                                                               @NotNull PsiSubstitutor derivedSubstitutor,
+                                                               boolean inRawContext) {
     if (inRawContext) {
       Set<PsiTypeParameter> typeParams = superSubstitutor.getSubstitutionMap().keySet();
       PsiElementFactory factory = JavaPsiFacade.getElementFactory(superClass.getProject());
-      superSubstitutor = factory.createRawSubstitutor(derivedSubstitutor, typeParams.toArray(new PsiTypeParameter[typeParams.size()]));
+      superSubstitutor = factory.createRawSubstitutor(derivedSubstitutor, typeParams.toArray(PsiTypeParameter.EMPTY_ARRAY));
     }
     Map<PsiTypeParameter, PsiType> map = null;
     for (PsiTypeParameter typeParameter : PsiUtil.typeParametersIterable(superClass)) {
       PsiType type = superSubstitutor.substitute(typeParameter);
       final PsiType t = derivedSubstitutor.substitute(type);
       if (map == null) {
-        map = new THashMap<PsiTypeParameter, PsiType>();
+        map = new HashMap<>();
       }
       map.put(typeParameter, t);
     }
 
-    return map == null ? PsiSubstitutor.EMPTY : JavaPsiFacade.getInstance(superClass.getProject()).getElementFactory().createSubstitutor(map);
+    return map == null ? PsiSubstitutor.EMPTY : JavaPsiFacade.getElementFactory(superClass.getProject()).createSubstitutor(map);
   }
 
-  @NotNull
-  public static Map<MethodSignature, Set<PsiMethod>> collectOverrideEquivalents(@NotNull PsiClass aClass) {
-    final Map<MethodSignature, Set<PsiMethod>> overrideEquivalent =
-      new THashMap<MethodSignature, Set<PsiMethod>>(MethodSignatureUtil.METHOD_PARAMETERS_ERASURE_EQUALITY);
+  public static @NotNull Map<MethodSignature, Set<PsiMethod>> collectOverrideEquivalents(@NotNull PsiClass aClass) {
+    final Map<MethodSignature, Set<PsiMethod>> overrideEquivalent = MethodSignatureUtil.createErasedMethodSignatureMap();
     final GlobalSearchScope resolveScope = aClass.getResolveScope();
     PsiClass[] supers = aClass.getSupers();
     for (int i = 0; i < supers.length; i++) {
@@ -129,7 +74,9 @@ public class PsiSuperMethodUtil {
       for (HierarchicalMethodSignature hms : superClass.getVisibleSignatures()) {
         PsiMethod method = hms.getMethod();
         if (MethodSignatureUtil.findMethodBySignature(aClass, method.getSignature(superClassSubstitutor), false) != null) continue;
-        final PsiClass containingClass = correctClassByScope(method.getContainingClass(), resolveScope);
+        PsiClass methodClass = method.getContainingClass();
+        if (methodClass == null) continue;
+        final PsiClass containingClass = correctClassByScope(methodClass, resolveScope);
         if (containingClass == null) continue;
         method = containingClass.findMethodBySignature(method, false);
         if (method == null) continue;
@@ -138,40 +85,59 @@ public class PsiSuperMethodUtil {
         final PsiSubstitutor finalSubstitutor =
           obtainFinalSubstitutor(containingClass, containingClassSubstitutor, hms.getSubstitutor(), false);
         final MethodSignatureBackedByPsiMethod signature = MethodSignatureBackedByPsiMethod.create(method, finalSubstitutor, false);
-        Set<PsiMethod> methods = overrideEquivalent.get(signature);
-        if (methods == null) {
-          methods = new LinkedHashSet<PsiMethod>();
-          overrideEquivalent.put(signature, methods);
-        }
+        Set<PsiMethod> methods = overrideEquivalent.computeIfAbsent(signature, __ -> new LinkedHashSet<>());
         methods.add(method);
       }
     }
     return overrideEquivalent;
   }
 
-  @Nullable
-  public static PsiClass correctClassByScope(PsiClass psiClass, final GlobalSearchScope resolveScope) {
-    if (psiClass == null) return null;
+  /**
+   * Maps the given class to the class which is located in the specified resolve scope.
+   * <p/>
+   * For the multi-module projects which use different jdks or libraries,
+   * it's important to map e.g. super class hierarchy to the current jdk.
+   * <p>Example:</p>
+   * Suppose there is an abstract reader in a module with jdk 1.6 which inherits {@link Closeable} (no super interfaces!).
+   * In another module with jdk 1.7+ an inheritor of this reader should implement {@link AutoCloseable} though.
+   *
+   * @param psiClass     a class to remap
+   * @param resolveScope scope where class should be found
+   * @return remapped class or same, if no other candidates were found
+   */
+  public static @Nullable PsiClass correctClassByScope(@NotNull PsiClass psiClass, @NotNull GlobalSearchScope resolveScope) {
     String qualifiedName = psiClass.getQualifiedName();
     if (qualifiedName == null) {
       return psiClass;
     }
 
     PsiFile file = psiClass.getContainingFile();
-    if (file == null || !file.getViewProvider().isPhysical()) {
+    if (file == null || !file.getViewProvider().correspondsToRealFile()) {
       return psiClass;
     }
-
+    //it shouldn't be corrected because it is not inside indexes and doesn't have FQN
+    if (JavaImplicitClassUtil.isFileWithImplicitClass(file)) {
+      return psiClass;
+    }
     final VirtualFile vFile = file.getVirtualFile();
     if (vFile == null) {
       return psiClass;
     }
 
     final FileIndexFacade index = FileIndexFacade.getInstance(file.getProject());
-    if (!index.isInSource(vFile) && !index.isInLibrarySource(vFile) && !index.isInLibraryClasses(vFile)) {
+    if (!index.isInSource(vFile) && !index.isInLibrary(vFile)) {
       return psiClass;
     }
 
-    return JavaPsiFacade.getInstance(psiClass.getProject()).findClass(qualifiedName, resolveScope);
+    PsiClass aClass = JavaPsiFacade.getInstance(psiClass.getProject()).findClass(qualifiedName, resolveScope);
+    VirtualFile mappedVFile = PsiUtilCore.getVirtualFile(aClass);
+    if (mappedVFile != null) {
+      Module module = index.getModuleForFile(vFile);
+      if (module != null && module == index.getModuleForFile(mappedVFile)) {
+        return psiClass;
+      }
+    }
+    return aClass;
   }
+
 }

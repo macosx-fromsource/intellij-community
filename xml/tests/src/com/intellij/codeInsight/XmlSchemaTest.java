@@ -1,25 +1,11 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInsight;
 
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
-import com.intellij.testFramework.LightCodeInsightTestCase;
+import com.intellij.testFramework.LightJavaCodeInsightTestCase;
 import com.intellij.xml.XmlAttributeDescriptor;
 import com.intellij.xml.XmlElementDescriptor;
 import com.intellij.xml.XmlNSDescriptor;
@@ -28,10 +14,7 @@ import com.intellij.xml.impl.schema.XmlNSDescriptorImpl;
 import com.intellij.xml.util.XmlUtil;
 import org.jetbrains.annotations.NonNls;
 
-/**
- * @author Mike
- */
-public class XmlSchemaTest extends LightCodeInsightTestCase {
+public class XmlSchemaTest extends LightJavaCodeInsightTestCase {
   private XmlTag SHIP_TO;
   private XmlTag UNKNOWN_TAG;
 
@@ -42,7 +25,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     UNKNOWN_TAG = XmlTestUtil.tag("xxx", getProject());
   }
 
-  public void testDocumentDescriptor1() throws Exception {
+  public void testDocumentDescriptor1() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -55,7 +38,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(NSDescriptor.getElementDescriptor(UNKNOWN_TAG));
   }
 
-  public void testElementDescriptor1() throws Exception {
+  public void testElementDescriptor1() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -69,7 +52,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("comment", elementDescriptor.getName());
   }
 
-  public void testElementDescriptor2() throws Exception {
+  public void testElementDescriptor2() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"comment\" type=\"xsd:string\"/>" +
@@ -87,7 +70,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals(elementDescriptor.getContentType(), XmlElementDescriptor.CONTENT_TYPE_MIXED);
   }
 
-  public void testElementDescriptor3() throws Exception {
+  public void testElementDescriptor3() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -113,7 +96,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(elementDescriptor.getElementDescriptor(UNKNOWN_TAG, null));
   }
 
-  public void testElementDescriptor4() throws Exception {
+  public void testElementDescriptor4() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -137,7 +120,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(elementDescriptor.getAttributeDescriptor("xxx", tag));
   }
 
-  public void testElementDescriptor5() throws Exception {
+  public void testElementDescriptor5() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -179,7 +162,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("country", attributes[0].getName());
   }
 
-  public void testElementDescriptor6() throws Exception {
+  public void testElementDescriptor6() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -220,7 +203,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("country", attributes[0].getName());
   }
 
-  public void testElementDescriptor7() throws Exception {
+  public void testElementDescriptor7() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\">" +
@@ -253,7 +236,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("shipTo", elements[0].getName());
   }
 
-  public void testElementDescriptor8() throws Exception {
+  public void testElementDescriptor8() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -276,7 +259,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(elementDescriptor.getElementDescriptor(UNKNOWN_TAG, null));
   }
 
-  public void testElementDescriptor9() throws Exception {
+  public void testElementDescriptor9() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -305,7 +288,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(elementDescriptor.getElementDescriptor(UNKNOWN_TAG, null));
   }
 
-  public void testElementDescriptor10() throws Exception {
+  public void testElementDescriptor10() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -332,7 +315,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(elementDescriptor.getAttributeDescriptor("xxx", tag));
   }
 
-  public void testElementDescriptor11() throws Exception {
+  public void testElementDescriptor11() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -365,7 +348,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("items", elements[3].getName());
   }
 
-  public void testElementDescriptor15() throws Exception {
+  public void testElementDescriptor15() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -397,7 +380,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("shipTo2", elements[3].getName());
   }
 
-  public void testElementDescriptor12() throws Exception {
+  public void testElementDescriptor12() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -428,7 +411,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("name", attributes[2].getName());
   }
 
-  public void testElementDescriptor13() throws Exception {
+  public void testElementDescriptor13() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\">" +
@@ -448,7 +431,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals(0, elements.length);
   }
 
-  public void testElementDescriptor14() throws Exception {
+  public void testElementDescriptor14() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema targetNamespace=\"http://www.deansoft.com/AddressBook\" xmlns:ab=\"http://www.deansoft.com/AddressBook\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\">" +
@@ -481,7 +464,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("items", element0Descriptors[0].getName());
   }
 
-  public void testAttributeDescriptor1() throws Exception {
+  public void testAttributeDescriptor1() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -500,7 +483,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(attribute.getDefaultValue());
   }
 
-  public void testAttributeDescriptorProhibited() throws Exception {
+  public void testAttributeDescriptorProhibited() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -515,7 +498,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals(0, attributes.length);
   }
 
-  public void testAttributeDescriptorProhibited2() throws Exception {
+  public void testAttributeDescriptorProhibited2() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -543,7 +526,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("name", attributes[0].getName());
   }
 
-  public void testAttributeDescriptor2() throws Exception {
+  public void testAttributeDescriptor2() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -562,7 +545,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals(" 2002 ", attribute.getDefaultValue());
   }
 
-  public void testAttributeDescriptor3() throws Exception {
+  public void testAttributeDescriptor3() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -581,7 +564,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("1 01 2001", attribute.getDefaultValue());
   }
 
-  public void testAttributeDescriptor4() throws Exception {
+  public void testAttributeDescriptor4() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -602,7 +585,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertEquals("1 01 2001", attribute.getDefaultValue());
   }
 
-  public void testNamespace1() throws Exception {
+  public void testNamespace1() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xs:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -615,7 +598,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(NSDescriptor.getElementDescriptor(UNKNOWN_TAG));
   }
 
-  public void testNamespace2() throws Exception {
+  public void testNamespace2() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema targetNamespace=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" >" +
         "<xsd:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -638,7 +621,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(elementDescriptor.getElementDescriptor("xxx"));
   }
 
-  public void testNamespace3() throws Exception {
+  public void testNamespace3() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xs:schema xmlns=\"http://www.w3.org/2001/XMLSchema\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">" +
         "<xs:element name=\"purchaseOrder\" type=\"PurchaseOrderType\"/>" +
@@ -679,7 +662,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
   //  assertNotNull(aDescriptor);
   //}
 
-  public void testAny2() throws Exception {
+  public void testAny2() {
     PsiFile dtdFile = createFile("test.xml", "<xsd:schema targetNamespace=\"http://foo\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" >" +
                                              "  <xsd:element name=\"root\">" +
                                              "    <xsd:complexType>" +
@@ -707,7 +690,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     //assertNull(aDescriptor);
   }
 
-  public void testAny3() throws Exception {
+  public void testAny3() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema targetNamespace=\"http://foo\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" >" +
         "  <xsd:element name=\"root\">" +
@@ -733,7 +716,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNotNull(aDescriptor);
   }
 
-  public void testAny4() throws Exception {
+  public void testAny4() {
     XmlNSDescriptor NSDescriptor = createDescriptor(
         "<xsd:schema targetNamespace=\"http://foo\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" >" +
         "  <xsd:element name=\"root\">" +
@@ -764,7 +747,7 @@ public class XmlSchemaTest extends LightCodeInsightTestCase {
     assertNull(attribute);
   }
 
-  private static XmlNSDescriptor createDescriptor(@NonNls String dtdText) {
+  private XmlNSDescriptor createDescriptor(@NonNls String dtdText) {
     PsiFile dtdFile = createFile("test.xml", dtdText);
 
     return new XmlNSDescriptorImpl((XmlFile)dtdFile);

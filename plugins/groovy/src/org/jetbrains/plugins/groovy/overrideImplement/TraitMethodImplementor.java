@@ -1,3 +1,4 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.overrideImplement;
 
 import com.intellij.codeInsight.MethodImplementor;
@@ -12,20 +13,18 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.GrTraitMethod;
+import org.jetbrains.plugins.groovy.util.GroovyOverrideImplementUtil;
 
-/**
- * Created by Max Medvedev on 08/06/14
- */
-public class TraitMethodImplementor implements MethodImplementor {
-  @NotNull
+public final class TraitMethodImplementor implements MethodImplementor {
   @Override
-  public PsiMethod[] createImplementationPrototypes(PsiClass inClass, PsiMethod method) throws IncorrectOperationException {
+  public PsiMethod @NotNull [] createImplementationPrototypes(PsiClass inClass, PsiMethod method) throws IncorrectOperationException {
     if (!(inClass instanceof GrTypeDefinition && method instanceof GrTraitMethod)) return PsiMethod.EMPTY_ARRAY;
 
     final PsiClass containingClass = method.getContainingClass();
     PsiSubstitutor substitutor = inClass.isInheritor(containingClass, true) ? TypeConversionUtil.getSuperClassSubstitutor(containingClass, inClass, PsiSubstitutor.EMPTY)
                                                                             : PsiSubstitutor.EMPTY;
-    return new GrMethod[]{GroovyOverrideImplementUtil.generateTraitMethodPrototype((GrTypeDefinition)inClass, (GrTraitMethod)method, substitutor)};
+    return new GrMethod[]{
+      GroovyOverrideImplementUtil.generateTraitMethodPrototype((GrTypeDefinition)inClass, (GrTraitMethod)method, substitutor)};
   }
 
   @Override
@@ -33,18 +32,16 @@ public class TraitMethodImplementor implements MethodImplementor {
     return null;
   }
 
-  @NotNull
   @Override
-  public Consumer<PsiMethod> createDecorator(PsiClass targetClass,
-                                             PsiMethod baseMethod,
-                                             boolean toCopyJavaDoc,
-                                             boolean insertOverrideIfPossible) {
+  public @NotNull Consumer<PsiMethod> createDecorator(PsiClass targetClass,
+                                                      PsiMethod baseMethod,
+                                                      boolean toCopyJavaDoc,
+                                                      boolean insertOverrideIfPossible) {
     return new GroovyMethodImplementor.PsiMethodConsumer(targetClass, toCopyJavaDoc, baseMethod, insertOverrideIfPossible);
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] getMethodsToImplement(PsiClass aClass) {
+  public PsiMethod @NotNull [] getMethodsToImplement(PsiClass aClass) {
     return PsiMethod.EMPTY_ARRAY;
   }
 }

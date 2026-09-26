@@ -1,28 +1,24 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.tasks.generic;
 
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.project.ProjectManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.XmlElementFactory;
-import com.intellij.psi.xml.XmlTag;
 import com.intellij.tasks.Task;
+import com.intellij.tasks.TaskBundle;
 import com.intellij.ui.EditorTextField;
 import com.intellij.ui.LanguageTextField;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.xmlb.annotations.Tag;
-import com.intellij.xml.util.XmlUtil;
 import org.intellij.lang.regexp.RegExpLanguage;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -36,7 +32,7 @@ import java.util.regex.Pattern;
  */
 @Tag("RegExResponseHandler")
 public final class RegExResponseHandler extends ResponseHandler {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.tasks.generic.RegExResponseHandler");
+  private static final Logger LOG = Logger.getInstance(RegExResponseHandler.class);
   private static final String ID_PLACEHOLDER = "{id}";
   private static final String SUMMARY_PLACEHOLDER = "{summary}";
 
@@ -68,26 +64,24 @@ public final class RegExResponseHandler extends ResponseHandler {
     return myTaskRegex.hashCode();
   }
 
-  @NotNull
   @Override
-  public JComponent getConfigurationComponent(@NotNull Project project) {
+  public @NotNull JComponent getConfigurationComponent(@NotNull Project project) {
     FormBuilder builder = FormBuilder.createFormBuilder();
     final EditorTextField taskPatternText;
     taskPatternText = new LanguageTextField(RegExpLanguage.INSTANCE, project, myTaskRegex, false);
-    taskPatternText.addDocumentListener(new DocumentAdapter() {
+    taskPatternText.addDocumentListener(new DocumentListener() {
       @Override
-      public void documentChanged(DocumentEvent e) {
+      public void documentChanged(@NotNull DocumentEvent e) {
         myTaskRegex = taskPatternText.getText();
       }
     });
-    String tooltip = "<html>Task pattern should be a regexp with two matching groups: ({id}.+?) and ({summary}.+?)";
-    builder.addLabeledComponent("Task Pattern:", new JBScrollPane(taskPatternText)).addTooltip(tooltip);
+    String tooltip = TaskBundle.message("label.html.task.pattern.should.be.regexp.with.two.matching.groups.id.summary");
+    builder.addLabeledComponent(TaskBundle.message("label.task.pattern"), new JBScrollPane(taskPatternText)).addTooltip(tooltip);
     return builder.getPanel();
   }
 
-  @NotNull
   @Override
-  public Task[] parseIssues(@NotNull String response, int max) throws Exception {
+  public Task @NotNull [] parseIssues(@NotNull String response, int max) throws Exception {
     final List<String> placeholders = getPlaceholders(myTaskRegex);
     if (!placeholders.contains(ID_PLACEHOLDER) || !placeholders.contains(SUMMARY_PLACEHOLDER)) {
       throw new Exception("Incorrect Task Pattern");
@@ -103,25 +97,13 @@ public final class RegExResponseHandler extends ResponseHandler {
     for (int i = 0; i < max && matcher.find(); i++) {
       String id = matcher.group(placeholders.indexOf(ID_PLACEHOLDER) + 1);
       String summary = matcher.group(placeholders.indexOf(SUMMARY_PLACEHOLDER) + 1);
-      // temporary workaround to make AssemblaIntegrationTestPass
-      final String finalSummary = summary;
-      summary = ApplicationManager.getApplication().runReadAction(new Computable<String>() {
-        @Override
-        public String compute() {
-          XmlElementFactory factory = XmlElementFactory.getInstance(ProjectManager.getInstance().getDefaultProject());
-          XmlTag text = factory.createTagFromText("<a>" + finalSummary + "</a>");
-          String trimmedText = text.getValue().getTrimmedText();
-          return XmlUtil.decode(trimmedText);
-        }
-      });
-      tasks.add(new GenericTask(id, summary, myRepository));
+      tasks.add(new GenericTask(id, summary, repository));
     }
-    return tasks.toArray(new Task[tasks.size()]);
+    return tasks.toArray(Task.EMPTY_ARRAY);
   }
 
-  @Nullable
   @Override
-  public Task parseIssue(@NotNull String response) throws Exception {
+  public @Nullable Task parseIssue(@NotNull String response) throws Exception {
     return null;
   }
 
@@ -151,9 +133,8 @@ public final class RegExResponseHandler extends ResponseHandler {
     return !StringUtil.isEmpty(myTaskRegex);
   }
 
-  @NotNull
   @Override
-  public ResponseType getResponseType() {
+  public @NotNull ResponseType getResponseType() {
     return ResponseType.TEXT;
   }
 

@@ -15,13 +15,15 @@
  */
 package com.intellij.ui.roots;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.Icon;
+import javax.swing.JComponent;
+import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.geom.AffineTransform;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Oct 29
  * @author 2003
  */
 public class ScalableIconComponent extends JComponent {
@@ -43,6 +45,7 @@ public class ScalableIconComponent extends JComponent {
     }
   }
 
+  @Override
   protected void paintComponent(Graphics g) {
     final Icon icon = myIsSelected? mySelectedIcon : myIcon;
     if (icon != null) {

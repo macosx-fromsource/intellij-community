@@ -1,10 +1,10 @@
-// "Replace Stream API chain with loop" "true"
+// "Replace Stream API chain with loop" "true-preview"
 
 import java.util.*;
 
 public class Main {
   private static long test(List<?> list) {
-      long count = 0;
+      long count = 0L;
       Set<Object> uniqueValues = new HashSet<>();
       long toSkip = list.size() / 2;
       for (Object o : list) {

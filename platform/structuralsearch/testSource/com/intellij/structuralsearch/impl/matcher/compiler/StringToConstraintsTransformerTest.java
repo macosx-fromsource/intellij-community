@@ -1,160 +1,139 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.structuralsearch.impl.matcher.compiler;
 
 import com.intellij.structuralsearch.MalformedPatternException;
 import com.intellij.structuralsearch.MatchOptions;
 import com.intellij.structuralsearch.MatchVariableConstraint;
-import com.intellij.structuralsearch.UnsupportedPatternException;
 import com.intellij.structuralsearch.plugin.ui.Configuration;
-import org.junit.Before;
-import org.junit.Test;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertFalse;
+import junit.framework.TestCase;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * @author Bas Leijdekkers
  */
-public class StringToConstraintsTransformerTest {
+public class StringToConstraintsTransformerTest extends TestCase {
 
   private MatchOptions myOptions;
 
-  @Before
+  @Override
   public void setUp() throws Exception {
+    super.setUp();
     myOptions = new MatchOptions();
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testCharacterExpectedAfterQuote() {
-    test("' asdf");
+    expectException("' asdf", "Character expected after single quote");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testCharacterExpectedAfterQuote2() {
-    test("'");
+    expectException("'", "Character expected after single quote");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testUnexpectedEndOfPattern() {
-    test("'_a{");
+    expectException("'_a{", "Digit expected");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testDigitExpected() {
-    test("'a{a");
+    expectException("'a{a", "Digit expected");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testDigitExpected2() {
-    test("'a{1,a}");
+    expectException("'a{1,a}", "Digit, '}' or ',' expected");
   }
 
-  @Test
-  public void testZeroOccurs() {
-    test("'a{,}");
-    final MatchVariableConstraint constraint = myOptions.getVariableConstraint("a");
-    assertEquals(0, constraint.getMinCount());
-    assertEquals(0, constraint.getMaxCount());
+  public void testCountedOccurs() {
+    test("'_a{3,}'_b{4} '_c{,5}");
+    final MatchVariableConstraint a = myOptions.getVariableConstraint("a");
+    assertEquals(3, a.getMinCount());
+    assertEquals(Integer.MAX_VALUE, a.getMaxCount());
+    final MatchVariableConstraint b = myOptions.getVariableConstraint("b");
+    assertEquals(4, b.getMinCount());
+    assertEquals(4, b.getMaxCount());
+    final MatchVariableConstraint c = myOptions.getVariableConstraint("c");
+    assertEquals(0, c.getMinCount());
+    assertEquals(5, c.getMaxCount());
   }
 
-  @Test(expected = MalformedPatternException.class)
+  public void testEmptyQuantifier1() {
+    expectException("'_a{}", "Empty quantifier");
+  }
+
+  public void testEmptyQuantifier2() {
+    expectException("'_a{,}", "Empty quantifier");
+  }
+
   public void testOverflow() {
-    test("'a{2147483648}");
+    expectException("'a{2147483648}", "Value overflow");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testMissingBrace() {
-    test("'a{1,3");
+    expectException("'a{1,3", "Digit or '}' expected");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testNoOptions() {
-    test("'a:");
+    expectException("'a:", "Constraint expected after ':'");
   }
 
-  @Test
   public void testColon() {
     test("for('_t 'a : '_b) {}");
     assertEquals("for($t$ $a$ : $b$) {}", myOptions.getSearchPattern());
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testNoOptions2() {
-    test("'a:+");
+    expectException("'a:+", "Constraint expected after '+'");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testUnclosedCondition() {
-    test("'a:[");
+    expectException("'a:[", "']' expected");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testClosedCondition() {
-    test("'a:[]");
+    expectException("'a:[]", "Constraint expected after '['");
+    expectException("'a:[  ]", "Constraint expected after '['");
+    expectException("'a:[  x]", "'  ]' expected");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testEmptyNegated() {
-    test("'a:[!]");
+    expectException("'a:[!]", "Constraint expected after '!'");
   }
 
-  @Test(expected = UnsupportedPatternException.class)
   public void testCondition() {
-    test("'a:[aap()]");
+    expectException("'a:[aap()]", "Constraint 'aap' not recognized");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testIncompleteCondition() {
-    test("'a:[regex(]");
+    expectException("'a:[regex(]", "Argument expected on 'regex' constraint");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testIncompleteCondition2() {
-    test("'a:[regex()]");
+    expectException("'a:[regex()]", "Argument expected on 'regex' constraint");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testIncompleteMultipleCondition() {
-    test("'a:[regex( a ) &&]");
+    expectException("'a:[regex( a ) &&]", "Constraint expected after '&&'");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testInvalidRegularExpression() {
-    test("'a:x!(");
+    try {
+      test("'a:x!(");
+    } catch (MalformedPatternException e) {
+      assertTrue(e.getMessage().startsWith(String.format("Invalid regular expression: Unclosed group near index 3%nx!(")));
+    }
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testRepeatingConstraints() {
-    test("'a*:foo 'a+:[regex( bla )]");
+    expectException("'a*:foo 'a+:[regex( bla )]", "Constraints are only allowed on the first reference of a variable");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testRepeatingConstraints2() {
-    test("'a:foo 'a*");
+    expectException("'a:foo 'a*", "Constraints are only allowed on the first reference of a variable");
   }
 
-  @Test
   public void testMethodReference() {
     test("'_a::'_b");
     assertEquals("$a$::$b$", myOptions.getSearchPattern());
   }
 
-  @Test
   public void testCompleteMatchConditions() {
     test("[within( \"if('_a) { 'st*; }\" )]1+1");
     assertEquals("1+1", myOptions.getSearchPattern());
@@ -162,12 +141,10 @@ public class StringToConstraintsTransformerTest {
     assertEquals("\"if('_a) { 'st*; }\"", constraint.getWithinConstraint());
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testBadWithin() {
-    test("'_type 'a:[within( \"if ('_a) { '_st*; }\" )] = '_b;");
+    expectException("'_type 'a:[within( \"if ('_a) { '_st*; }\" )] = '_b;", "Constraint 'within' is only applicable to Complete Match");
   }
 
-  @Test
   public void testNestedPatterns() {
     test("[within( \"if ('_a:[regex( .*e.* )]) { '_st*; }\" )]'_type 'a = '_b;");
     assertEquals("$type$ $a$ = $b$;", myOptions.getSearchPattern());
@@ -186,7 +163,6 @@ public class StringToConstraintsTransformerTest {
     assertEquals("\"if ('_a:[regex( \".*\" )]) { '_st*; }\"", constraint3.getWithinConstraint());
   }
 
-  @Test
   public void testEscaping() {
     test("\\[within( \"if ('_a) { '_st*; }\" )]");
     assertEquals("[within( \"if ($a$) { $st$; }\" )]", myOptions.getSearchPattern());
@@ -198,7 +174,6 @@ public class StringToConstraintsTransformerTest {
     assertEquals("$a$:", myOptions.getSearchPattern());
   }
 
-  @Test
   public void testQuotes() {
     test("''");
     assertEquals("'", myOptions.getSearchPattern());
@@ -214,7 +189,6 @@ public class StringToConstraintsTransformerTest {
     assertEquals("'\\u0123'$a$", myOptions.getSearchPattern());
   }
 
-  @Test
   public void testComplexRegexes() {
     test("'_t:[regex( *Object\\[\\] ) ] '_t2");
     assertEquals("$t$ $t2$", myOptions.getSearchPattern());
@@ -228,46 +202,91 @@ public class StringToConstraintsTransformerTest {
     assertEquals(".*(?:comment).*", constraint1.getRegExp());
   }
 
-  @Test
   public void testInvert() {
-    test("'a:[!read&&write]");
+    test("'a:[!regexw(a)&&formal(*List)]");
     assertEquals("$a$", myOptions.getSearchPattern());
     final MatchVariableConstraint constraint = myOptions.getVariableConstraint("a");
-    assertTrue(constraint.isReadAccess());
-    assertTrue(constraint.isInvertReadAccess());
-    assertTrue(constraint.isWriteAccess());
-    assertFalse(constraint.isInvertWriteAccess());
+    assertTrue(constraint.isWholeWordsOnly());
+    assertEquals("a", constraint.getRegExp());
+    assertTrue(constraint.isInvertRegExp());
+    assertTrue(constraint.isFormalArgTypeWithinHierarchy());
+    assertFalse(constraint.isInvertFormalType());
+    assertEquals("List", constraint.getNameOfFormalArgType());
   }
 
-  @Test(expected = MalformedPatternException.class)
+  public void testInvertShortcut() {
+    test("class '_X:!*A {}");
+    assertEquals("class $X$ {}", myOptions.getSearchPattern());
+    final MatchVariableConstraint constraint = myOptions.getVariableConstraint("X");
+    assertTrue(constraint.isInvertRegExp());
+    assertTrue(constraint.isWithinHierarchy());
+    assertEquals("A", constraint.getRegExp());
+  }
+
   public void testAmpersandsExpected() {
-    test("'a:[read write]");
+    expectException("'a:[regex(a) regex(b)]", "'&&' expected");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testUnexpectedAmpersands() {
-    test("'a:[&&read]");
+    expectException("'a:[&&regex(a)]", "Unexpected '&'");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testUnbalancedSpacesSurroundingContent() {
-    test("'a:[regex(  .* ) ]");
+    expectException("'a:[regex(  .* ) ]", "'  )' expected");
   }
 
-  @Test(expected = MalformedPatternException.class)
   public void testInvalidRegex() {
-    test("'T:{ ;");
+    expectException("'T:{ ;", "Invalid regular expression: Illegal repetition");
   }
 
-  @Test
   public void testNoSpacesSurroundingRegexNeeded() {
     test("'t:[regex(a)]");
     final MatchVariableConstraint constraint = myOptions.getVariableConstraint("t");
     assertEquals("a", constraint.getRegExp());
   }
 
-  private void test(String pattern) {
-    myOptions.setSearchPattern(pattern);
-    StringToConstraintsTransformer.transformOldPattern(myOptions);
+  public void testMultipleTargets() {
+    expectException("try { 'Statements+; } catch('_ '_) { 'HandlerStatements+; }", "Only one target allowed");
+  }
+
+  public void testSameTargetMultipleTimes() {
+    test("'a = 'a;");
+  }
+
+  public void testPresenceOfContext() {
+    test("a");
+    assertNotNull(myOptions.getVariableConstraint(Configuration.CONTEXT_VAR_NAME));
+  }
+
+  public void testBrackets() {
+    test("'_x:[exprtype( java\\.lang\\.String\\[\\]\\[\\] )]");
+    final MatchVariableConstraint constraint = myOptions.getVariableConstraint("x");
+    assertEquals("java\\.lang\\.String\\[\\]\\[\\]", constraint.getNameOfExprType());
+  }
+
+  public void testAdditionalConstraint() {
+    test("'_x:[_custom( test )]");
+    final MatchVariableConstraint x = myOptions.getVariableConstraint("x");
+    assertEquals("test", x.getAdditionalConstraint("custom"));
+  }
+
+  public void testRegexStartingWithBrackets() {
+    test("'_key='value:[  regex( [^{]*''[^{]* )  ] ");
+    assertEquals("$key$=$value$ ", myOptions.getSearchPattern());
+    final MatchVariableConstraint value = myOptions.getVariableConstraint("value");
+    assertEquals("[^{]*''[^{]*", value.getRegExp());
+  }
+
+  private void expectException(@NotNull String criteria, @NotNull String exceptionMessage) {
+    try {
+      test(criteria);
+    } catch (MalformedPatternException e) {
+      assertFalse(e.getMessage(), exceptionMessage.isEmpty());
+      assertTrue(e.getMessage(), e.getMessage().startsWith(exceptionMessage));
+    }
+  }
+
+  private void test(@NotNull String criteria) {
+    StringToConstraintsTransformer.transformCriteria(criteria, myOptions);
   }
 }

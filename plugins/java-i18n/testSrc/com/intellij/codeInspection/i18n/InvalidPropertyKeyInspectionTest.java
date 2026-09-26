@@ -17,27 +17,35 @@ package com.intellij.codeInspection.i18n;
 
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper;
 import com.intellij.openapi.application.PluginPathManager;
-import com.intellij.testFramework.InspectionTestCase;
+import com.intellij.openapi.roots.ModuleRootModificationUtil;
+import com.intellij.testFramework.JavaInspectionTestCase;
+import com.intellij.testFramework.fixtures.DefaultLightProjectDescriptor;
 
-public class InvalidPropertyKeyInspectionTest extends InspectionTestCase {
-  private void doTest() throws Exception {
+public class InvalidPropertyKeyInspectionTest extends JavaInspectionTestCase {
+  @Override
+  protected void setUp() throws Exception {
+    super.setUp();
+    ModuleRootModificationUtil.updateModel(getModule(), DefaultLightProjectDescriptor::addJetBrainsAnnotations);
+  }
+
+  private void doTest() {
     LocalInspectionToolWrapper tool = new LocalInspectionToolWrapper(new InvalidPropertyKeyInspection());
-    doTest("invalidPropertyKey/" + getTestName(true), tool, "java 1.5");
+    doTest("invalidPropertyKey/" + getTestName(true), tool);
   }
 
-  public void testSimple() throws Exception {
+  public void testSimple() {
     doTest();
   }
 
-  public void testImplicit() throws Exception {
+  public void testImplicit() {
     doTest();
   }
 
-  public void testImplicit2() throws Exception {
+  public void testImplicit2() {
     doTest();
   }
 
-  public void testImplicit3() throws Exception {
+  public void testImplicit3() {
     doTest();
   }
 

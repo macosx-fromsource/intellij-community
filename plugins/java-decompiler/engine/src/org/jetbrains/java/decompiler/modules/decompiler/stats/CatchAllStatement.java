@@ -1,38 +1,24 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.modules.decompiler.stats;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
-import org.jetbrains.java.decompiler.main.TextBuffer;
 import org.jetbrains.java.decompiler.main.collectors.BytecodeMappingTracer;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
 import org.jetbrains.java.decompiler.modules.decompiler.DecHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeType;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
-import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
+import org.jetbrains.java.decompiler.util.TextBuffer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
-public class CatchAllStatement extends Statement {
+public final class CatchAllStatement extends Statement {
 
   private Statement handler;
 
@@ -47,7 +33,7 @@ public class CatchAllStatement extends Statement {
   // *****************************************************************************
 
   private CatchAllStatement() {
-    type = Statement.TYPE_CATCHALL;
+    super(StatementType.CATCH_ALL);
   }
 
   private CatchAllStatement(Statement head, Statement handler) {
@@ -60,17 +46,17 @@ public class CatchAllStatement extends Statement {
     this.handler = handler;
     stats.addWithKey(handler, handler.id);
 
-    List<StatEdge> lstSuccs = head.getSuccessorEdges(STATEDGE_DIRECT_ALL);
+    List<StatEdge> lstSuccs = head.getSuccessorEdges(EdgeType.DIRECT_ALL);
     if (!lstSuccs.isEmpty()) {
       StatEdge edge = lstSuccs.get(0);
-      if (edge.getType() == StatEdge.TYPE_REGULAR) {
+      if (edge.getType() == EdgeType.REGULAR) {
         post = edge.getDestination();
       }
     }
 
     vars.add(new VarExprent(DecompilerContext.getCounterContainer().getCounterAndIncrement(CounterContainer.VAR_COUNTER),
                             new VarType(CodeConstants.TYPE_OBJECT, 0, "java/lang/Throwable"),
-                            (VarProcessor)DecompilerContext.getProperty(DecompilerContext.CURRENT_VAR_PROCESSOR)));
+                            DecompilerContext.getVarProcessor()));
   }
 
 
@@ -79,25 +65,27 @@ public class CatchAllStatement extends Statement {
   // *****************************************************************************
 
   public static Statement isHead(Statement head) {
-
-    if (head.getLastBasicType() != Statement.LASTBASICTYPE_GENERAL) {
+    if (head.getLastBasicType() != StatementType.GENERAL) {
       return null;
     }
 
-    HashSet<Statement> setHandlers = DecHelper.getUniquePredExceptions(head);
-
+    Set<Statement> setHandlers = DecHelper.getUniquePredExceptions(head);
     if (setHandlers.size() != 1) {
       return null;
     }
 
-    for (StatEdge edge : head.getSuccessorEdges(StatEdge.TYPE_EXCEPTION)) {
+    for (StatEdge edge : head.getSuccessorEdges(EdgeType.EXCEPTION)) {
       Statement exc = edge.getDestination();
 
-      if (edge.getExceptions() == null && setHandlers.contains(exc) && exc.getLastBasicType() == LASTBASICTYPE_GENERAL) {
-        List<StatEdge> lstSuccs = exc.getSuccessorEdges(STATEDGE_DIRECT_ALL);
-        if (lstSuccs.isEmpty() || lstSuccs.get(0).getType() != StatEdge.TYPE_REGULAR) {
+      if (edge.getExceptions() == null && exc.getLastBasicType() == StatementType.GENERAL && setHandlers.contains(exc)) {
+        List<StatEdge> lstSuccs = exc.getSuccessorEdges(EdgeType.DIRECT_ALL);
+        if (lstSuccs.isEmpty() || lstSuccs.get(0).getType() != EdgeType.REGULAR) {
 
           if (head.isMonitorEnter() || exc.isMonitorEnter()) {
+            return null;
+          }
+
+          if (DecHelper.invalidHeadMerge(head)) {
             return null;
           }
 
@@ -111,6 +99,7 @@ public class CatchAllStatement extends Statement {
     return null;
   }
 
+  @Override
   public TextBuffer toJava(int indent, BytecodeMappingTracer tracer) {
     String new_line_separator = DecompilerContext.getNewLineSeparator();
 
@@ -120,12 +109,12 @@ public class CatchAllStatement extends Statement {
 
     boolean labeled = isLabeled();
     if (labeled) {
-      buf.appendIndent(indent).append("label").append(this.id.toString()).append(":").appendLineSeparator();
+      buf.appendIndent(indent).append("label").append(Integer.toString(id)).append(":").appendLineSeparator();
       tracer.incrementCurrentSourceLine();
     }
 
-    List<StatEdge> lstSuccs = first.getSuccessorEdges(STATEDGE_DIRECT_ALL);
-    if (first.type == TYPE_TRYCATCH && first.varDefinitions.isEmpty() && isFinally &&
+    List<StatEdge> lstSuccs = first.getSuccessorEdges(EdgeType.DIRECT_ALL);
+    if (first.type == StatementType.TRY_CATCH && first.varDefinitions.isEmpty() && isFinally &&
         !labeled && !first.isLabeled() && (lstSuccs.isEmpty() || !lstSuccs.get(0).explicit)) {
       TextBuffer content = ExprProcessor.jmpWrapper(first, indent, true, tracer);
       content.setLength(content.length() - new_line_separator.length());
@@ -144,7 +133,7 @@ public class CatchAllStatement extends Statement {
     tracer.incrementCurrentSourceLine();
 
     if (monitor != null) {
-      buf.appendIndent(indent+1).append("if(").append(monitor.toJava(indent, tracer)).append(") {").appendLineSeparator();
+      buf.appendIndent(indent+1).append("if (").append(monitor.toJava(indent, tracer)).append(") {").appendLineSeparator();
       tracer.incrementCurrentSourceLine();
     }
 
@@ -161,6 +150,7 @@ public class CatchAllStatement extends Statement {
     return buf;
   }
 
+  @Override
   public void replaceStatement(Statement oldstat, Statement newstat) {
 
     if (handler == oldstat) {
@@ -170,6 +160,7 @@ public class CatchAllStatement extends Statement {
     super.replaceStatement(oldstat, newstat);
   }
 
+  @Override
   public Statement getSimpleCopy() {
 
     CatchAllStatement cas = new CatchAllStatement();
@@ -179,19 +170,19 @@ public class CatchAllStatement extends Statement {
     if (this.monitor != null) {
       cas.monitor = new VarExprent(DecompilerContext.getCounterContainer().getCounterAndIncrement(CounterContainer.VAR_COUNTER),
                                    VarType.VARTYPE_INT,
-                                   (VarProcessor)DecompilerContext.getProperty(DecompilerContext.CURRENT_VAR_PROCESSOR));
+                                   DecompilerContext.getVarProcessor());
     }
 
     if (!this.vars.isEmpty()) {
-      // FIXME: WTF??? vars?!
-      vars.add(new VarExprent(DecompilerContext.getCounterContainer().getCounterAndIncrement(CounterContainer.VAR_COUNTER),
+      cas.vars.add(new VarExprent(DecompilerContext.getCounterContainer().getCounterAndIncrement(CounterContainer.VAR_COUNTER),
                               new VarType(CodeConstants.TYPE_OBJECT, 0, "java/lang/Throwable"),
-                              (VarProcessor)DecompilerContext.getProperty(DecompilerContext.CURRENT_VAR_PROCESSOR)));
+                              DecompilerContext.getVarProcessor()));
     }
 
     return cas;
   }
 
+  @Override
   public void initSimpleCopy() {
     first = stats.get(0);
     handler = stats.get(1);
@@ -205,26 +196,17 @@ public class CatchAllStatement extends Statement {
     return handler;
   }
 
-
-  public void setHandler(Statement handler) {
-    this.handler = handler;
-  }
-
-
   public boolean isFinally() {
     return isFinally;
   }
-
 
   public void setFinally(boolean isFinally) {
     this.isFinally = isFinally;
   }
 
-
   public VarExprent getMonitor() {
     return monitor;
   }
-
 
   public void setMonitor(VarExprent monitor) {
     this.monitor = monitor;

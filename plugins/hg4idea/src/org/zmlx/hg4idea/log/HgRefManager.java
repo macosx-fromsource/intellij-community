@@ -1,48 +1,62 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.zmlx.hg4idea.log;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.ui.JBColor;
-import com.intellij.util.Function;
-import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.vcs.log.*;
+import com.intellij.util.containers.MultiMap;
+import com.intellij.vcs.log.RefGroup;
+import com.intellij.vcs.log.VcsLogRefManager;
+import com.intellij.vcs.log.VcsLogStandardColors;
+import com.intellij.vcs.log.VcsRef;
+import com.intellij.vcs.log.VcsRefType;
 import com.intellij.vcs.log.impl.SimpleRefGroup;
+import com.intellij.vcs.log.impl.SimpleRefType;
 import com.intellij.vcs.log.impl.SingletonRefGroup;
-import com.intellij.vcs.log.impl.VcsLogUtil;
+import com.intellij.vcs.log.util.VcsLogUtil;
+import org.jetbrains.annotations.CalledInAny;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.zmlx.hg4idea.HgBundle;
+import org.zmlx.hg4idea.branch.HgBranchManager;
+import org.zmlx.hg4idea.branch.HgBranchType;
+import org.zmlx.hg4idea.repo.HgRepository;
+import org.zmlx.hg4idea.util.HgUtil;
 
-import java.awt.*;
+import java.awt.Color;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+
+import static com.intellij.ui.JBColor.namedColor;
+import static com.intellij.util.containers.ContainerUtil.emptyList;
+import static com.intellij.util.containers.ContainerUtil.getFirstItem;
 
 public class HgRefManager implements VcsLogRefManager {
-  private static final Color CLOSED_BRANCH_COLOR = new JBColor(new Color(0x823139), new Color(0xff5f6f));
-  private static final Color LOCAL_TAG_COLOR = new JBColor(new Color(0x009090), new Color(0x00f3f3));
-  private static final Color MQ_TAG_COLOR = new JBColor(new Color(0x002f90), new Color(0x0055ff));
+  private static final JBColor TIP_COLOR = namedColor("VersionControl.HgLog.tipIconColor", VcsLogStandardColors.Refs.TIP);
+  private static final JBColor HEAD_COLOR = namedColor("VersionControl.HgLog.headIconColor", VcsLogStandardColors.Refs.LEAF);
+  private static final JBColor BRANCH_COLOR = namedColor("VersionControl.HgLog.branchIconColor", VcsLogStandardColors.Refs.BRANCH);
+  private static final JBColor CLOSED_BRANCH_COLOR = namedColor("VersionControl.HgLog.closedBranchIconColor",
+                                                                new JBColor(new Color(0x823139), new Color(0xff5f6f)));
+  private static final JBColor BOOKMARK_COLOR = namedColor("VersionControl.HgLog.bookmarkIconColor", VcsLogStandardColors.Refs.BRANCH_REF);
+  private static final JBColor TAG_COLOR = namedColor("VersionControl.HgLog.tagIconColor", VcsLogStandardColors.Refs.TAG);
+  private static final JBColor LOCAL_TAG_COLOR = namedColor("VersionControl.HgLog.localTagIconColor",
+                                                            new JBColor(new Color(0x009090), new Color(0x00f3f3)));
+  private static final JBColor MQ_TAG_COLOR = namedColor("VersionControl.HgLog.mqTagIconColor",
+                                                         new JBColor(new Color(0x002f90), new Color(0x0055ff)));
 
-  public static final VcsRefType TIP = new SimpleRefType("TIP", true, VcsLogStandardColors.Refs.TIP);
-  public static final VcsRefType HEAD = new SimpleRefType("HEAD", true, VcsLogStandardColors.Refs.LEAF);
-  public static final VcsRefType BRANCH = new SimpleRefType("BRANCH", true, VcsLogStandardColors.Refs.BRANCH);
+  public static final VcsRefType TIP = new SimpleRefType("TIP", true, TIP_COLOR);
+  public static final VcsRefType HEAD = new SimpleRefType("HEAD", true, HEAD_COLOR);
+  public static final VcsRefType BRANCH = new SimpleRefType("BRANCH", true, BRANCH_COLOR);
   public static final VcsRefType CLOSED_BRANCH = new SimpleRefType("CLOSED_BRANCH", false, CLOSED_BRANCH_COLOR);
-  public static final VcsRefType BOOKMARK = new SimpleRefType("BOOKMARK", true, VcsLogStandardColors.Refs.BRANCH_REF);
-  public static final VcsRefType TAG = new SimpleRefType("TAG", false, VcsLogStandardColors.Refs.TAG);
+  public static final VcsRefType BOOKMARK = new SimpleRefType("BOOKMARK", true, BOOKMARK_COLOR);
+  public static final VcsRefType TAG = new SimpleRefType("TAG", false, TAG_COLOR);
   public static final VcsRefType LOCAL_TAG = new SimpleRefType("LOCAL_TAG", false, LOCAL_TAG_COLOR);
   public static final VcsRefType MQ_APPLIED_TAG = new SimpleRefType("MQ_TAG", false, MQ_TAG_COLOR);
 
@@ -52,87 +66,110 @@ public class HgRefManager implements VcsLogRefManager {
     Arrays.asList(TIP, HEAD, BRANCH, CLOSED_BRANCH, BOOKMARK, TAG, LOCAL_TAG, MQ_APPLIED_TAG);
 
   // -1 => higher priority
-  public static final Comparator<VcsRefType> REF_TYPE_COMPARATOR = new Comparator<VcsRefType>() {
-    @Override
-    public int compare(VcsRefType type1, VcsRefType type2) {
-      int p1 = REF_TYPE_PRIORITIES.indexOf(type1);
-      int p2 = REF_TYPE_PRIORITIES.indexOf(type2);
-      return p1 - p2;
-    }
+  public static final Comparator<VcsRefType> REF_TYPE_COMPARATOR = (type1, type2) -> {
+    int p1 = REF_TYPE_PRIORITIES.indexOf(type1);
+    int p2 = REF_TYPE_PRIORITIES.indexOf(type2);
+    return p1 - p2;
   };
 
-  private static final String DEFAULT = "default";
+  public static final String DEFAULT = "default";
 
   // @NotNull private final RepositoryManager<HgRepository> myRepositoryManager;
 
   // -1 => higher priority, i. e. the ref will be displayed at the left
-  private final Comparator<VcsRef> REF_COMPARATOR = new Comparator<VcsRef>() {
-    public int compare(VcsRef ref1, VcsRef ref2) {
-      VcsRefType type1 = ref1.getType();
-      VcsRefType type2 = ref2.getType();
+  private final Comparator<VcsRef> REF_COMPARATOR = (ref1, ref2) -> {
+    VcsRefType type1 = ref1.getType();
+    VcsRefType type2 = ref2.getType();
 
-      int typeComparison = REF_TYPE_COMPARATOR.compare(type1, type2);
-      if (typeComparison != 0) {
-        return typeComparison;
-      }
-
-      int nameComparison = ref1.getName().compareTo(ref2.getName());
-      if (nameComparison != 0) {
-        if (type1 == BRANCH) {
-          if (ref1.getName().equals(DEFAULT)) {
-            return -1;
-          }
-          if (ref2.getName().equals(DEFAULT)) {
-            return 1;
-          }
-        }
-        return nameComparison;
-      }
-
-      return VcsLogUtil.compareRoots(ref1.getRoot(), ref2.getRoot());
+    int typeComparison = REF_TYPE_COMPARATOR.compare(type1, type2);
+    if (typeComparison != 0) {
+      return typeComparison;
     }
+
+    int nameComparison = ref1.getName().compareTo(ref2.getName());
+    if (nameComparison != 0) {
+      if (type1 == BRANCH) {
+        if (ref1.getName().equals(DEFAULT)) {
+          return -1;
+        }
+        if (ref2.getName().equals(DEFAULT)) {
+          return 1;
+        }
+      }
+      return nameComparison;
+    }
+
+    return VcsLogUtil.compareRoots(ref1.getRoot(), ref2.getRoot());
   };
 
-  @NotNull
+  private final @NotNull Project myProject;
+
+  public HgRefManager(@NotNull Project project) {
+    myProject = project;
+  }
+
   @Override
-  public Comparator<VcsRef> getLabelsOrderComparator() {
+  public @NotNull Comparator<VcsRef> getLabelsOrderComparator() {
     return REF_COMPARATOR;
   }
 
-  @NotNull
   @Override
-  public List<RefGroup> groupForBranchFilter(@NotNull Collection<VcsRef> refs) {
-    return ContainerUtil.map(sort(refs), new Function<VcsRef, RefGroup>() {
-      @Override
-      public RefGroup fun(final VcsRef ref) {
-        return new SingletonRefGroup(ref);
-      }
-    });
-  }
+  public @NotNull List<RefGroup> groupForBranchFilter(@NotNull Collection<? extends VcsRef> refs) {
+    List<VcsRef> sortedRefs = sort(refs);
+    MultiMap<VcsRefType, VcsRef> groupedRefs = ContainerUtil.groupBy(sortedRefs, VcsRef::getType);
 
-  @NotNull
-  @Override
-  public List<RefGroup> groupForTable(@NotNull Collection<VcsRef> references) {
-    List<VcsRef> sortedReferences = sort(references);
-    Set<Map.Entry<VcsRefType, Collection<VcsRef>>> groupedRefs = ContainerUtil.groupBy(sortedReferences, VcsRef::getType).entrySet();
-    Map.Entry<VcsRefType, Collection<VcsRef>> firstGroup =
-      ContainerUtil.find(groupedRefs, entry -> !entry.getKey().equals(TIP) && !entry.getKey().equals(HEAD));
-    if (firstGroup == null) {
-      firstGroup = ContainerUtil.getFirstItem(groupedRefs);
+    List<RefGroup> result = new ArrayList<>();
+    List<VcsRef> branches = new ArrayList<>();
+    List<VcsRef> bookmarks = new ArrayList<>();
+    for (Map.Entry<VcsRefType, Collection<VcsRef>> entry : groupedRefs.entrySet()) {
+      if (entry.getKey().equals(TIP) || entry.getKey().equals(HEAD)) {
+        for (VcsRef ref : entry.getValue()) {
+          result.add(new SingletonRefGroup(ref));
+        }
+      }
+      else if (entry.getKey().equals(BOOKMARK)) {
+        bookmarks.addAll(entry.getValue());
+      }
+      else {
+        branches.addAll(entry.getValue());
+      }
     }
 
-    List<RefGroup> groups = ContainerUtil.newArrayList();
+    if (!branches.isEmpty()) result.add(new SimpleRefGroup(HgBundle.message("hg.ref.group.name.branches"), branches));
+    if (!bookmarks.isEmpty()) result.add(new SimpleRefGroup(HgBundle.message("hg.ref.group.name.bookmarks"), bookmarks));
 
-    if (firstGroup == null) return groups;
+    return result;
+  }
 
-    VcsRef firstRef = ObjectUtils.assertNotNull(ContainerUtil.getFirstItem(firstGroup.getValue()));
-    VcsRefType firstRefType = firstGroup.getKey();
+  @Override
+  public @NotNull List<RefGroup> groupForTable(@NotNull Collection<? extends VcsRef> references, boolean compact, boolean showTagNames) {
+    List<VcsRef> sortedReferences = sort(references);
 
-    groups.add(
-      new SimpleRefGroup(firstRefType.isBranch() && !firstRefType.equals(TIP) && !firstRefType.equals(HEAD) ? firstRef.getName() : "",
-                         sortedReferences));
+    List<VcsRef> headAndTip = new ArrayList<>();
+    MultiMap<VcsRefType, VcsRef> groupedRefs = MultiMap.createLinked();
+    for (VcsRef ref : sortedReferences) {
+      if (ref.getType().equals(HEAD) || ref.getType().equals(TIP)) {
+        headAndTip.add(ref);
+      }
+      else {
+        groupedRefs.putValue(ref.getType(), ref);
+      }
+    }
 
-    return groups;
+    List<RefGroup> refGroups = SimpleRefGroup.buildGroups(emptyList(), groupedRefs, compact, showTagNames);
+    if (headAndTip.isEmpty()) return refGroups;
+
+    RefGroup firstGroup = getFirstItem(refGroups);
+    if (firstGroup != null) {
+      firstGroup.getRefs().addAll(0, headAndTip);
+      return refGroups;
+    }
+
+    List<RefGroup> result = new ArrayList<>();
+    result.add(new SimpleRefGroup("", headAndTip));
+    result.addAll(refGroups);
+
+    return result;
   }
 
   @Override
@@ -140,58 +177,43 @@ public class HgRefManager implements VcsLogRefManager {
     out.writeInt(REF_TYPE_INDEX.indexOf(type));
   }
 
-  @NotNull
   @Override
-  public VcsRefType deserialize(@NotNull DataInput in) throws IOException {
+  public @NotNull VcsRefType deserialize(@NotNull DataInput in) throws IOException {
     int id = in.readInt();
     if (id < 0 || id > REF_TYPE_INDEX.size() - 1) throw new IOException("Reference type by id " + id + " does not exist");
     return REF_TYPE_INDEX.get(id);
   }
 
-  @NotNull
+  private static @NotNull HgBranchType getBranchType(@NotNull VcsRef reference) {
+    return reference.getType().equals(BOOKMARK) ? HgBranchType.BOOKMARK : HgBranchType.BRANCH;
+  }
+
+  @CalledInAny
+  private @Nullable HgRepository getRepository(@NotNull VcsRef reference) {
+    return HgUtil.getRepositoryManager(myProject).getRepositoryForRootQuick(reference.getRoot());
+  }
+
   @Override
-  public Comparator<VcsRef> getBranchLayoutComparator() {
+  public boolean isFavorite(@NotNull VcsRef reference) {
+    if (reference.getType().equals(HEAD) || reference.getType().equals(TIP)) return true;
+    if (!reference.getType().isBranch()) return false;
+    return myProject.getService(HgBranchManager.class)
+      .isFavorite(getBranchType(reference), getRepository(reference), reference.getName());
+  }
+
+  @Override
+  public void setFavorite(@NotNull VcsRef reference, boolean favorite) {
+    if (!reference.getType().isBranch() || reference.getType().equals(HEAD) || reference.getType().equals(TIP)) return;
+    myProject.getService(HgBranchManager.class)
+      .setFavorite(getBranchType(reference), getRepository(reference), reference.getName(), favorite);
+  }
+
+  @Override
+  public @NotNull Comparator<VcsRef> getBranchLayoutComparator() {
     return REF_COMPARATOR;
   }
 
-  @NotNull
-  private List<VcsRef> sort(@NotNull Collection<VcsRef> refs) {
+  private @NotNull List<VcsRef> sort(@NotNull Collection<? extends VcsRef> refs) {
     return ContainerUtil.sorted(refs, getLabelsOrderComparator());
-  }
-
-  private static class SimpleRefType implements VcsRefType {
-    @NotNull private final String myName;
-    private final boolean myIsBranch;
-    @NotNull private final Color myColor;
-
-    public SimpleRefType(@NotNull String name, boolean isBranch, @NotNull Color color) {
-      myName = name;
-      myIsBranch = isBranch;
-      myColor = color;
-    }
-
-    @Override
-    public boolean isBranch() {
-      return myIsBranch;
-    }
-
-    @NotNull
-    @Override
-    public Color getBackgroundColor() {
-      return myColor;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) return true;
-      if (o == null || getClass() != o.getClass()) return false;
-      SimpleRefType type = (SimpleRefType)o;
-      return myIsBranch == type.myIsBranch && Objects.equals(myName, type.myName);
-    }
-
-    @Override
-    public int hashCode() {
-      return Objects.hash(myName, myIsBranch);
-    }
   }
 }

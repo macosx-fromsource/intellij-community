@@ -1,13 +1,9 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-  <title>java</title>
-  <g>
-    <g>
-      <polygon points="6 0 2 4 6 4 6 0" fill="#9aa7b0" opacity="0.7" style="isolation: isolate"/>
-      <rect x="1" y="9" width="15" height="7" fill="#40b6e0" opacity="0.6"/>
-      <polygon points="7 0 7 4 7 5 6 5 2 5 2 8 13 8 13 0 7 0" fill="#9aa7b0" opacity="0.7" style="isolation: isolate"/>
-    </g>
-    <g opacity="0.6">
-      <path d="M2.83158,14.20413l0.55808-.59174a1.18477,1.18477,0,0,0,.97089.58486,0.8,0.8,0,0,0,.765-0.9719V10H6v3.25344a1.81349,1.81349,0,0,1-.45431,1.30963A1.5894,1.5894,0,0,1,4.37456,15,1.8047,1.8047,0,0,1,2.83158,14.20413Z" fill="#231f20"/>
-    </g>
+<!-- Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="none" fill-rule="evenodd">
+    <polygon fill="#40B6E0" fill-opacity=".7" points="1 16 16 16 16 9 1 9"/>
+    <polygon fill="#9AA7B0" fill-opacity=".8" points="7 1 3 5 7 5"/>
+    <polygon fill="#9AA7B0" fill-opacity=".8" points="8 1 8 6 3 6 3 8 13 8 13 1"/>
+    <path fill="#231F20" fill-opacity=".7" d="M1.39509277,3.58770752 C1.62440186,3.83789062 1.83782861,4 2.28682861,4 C2.81318359,4 3,3.58770752 3,3.29760742 L3,0 L4,0 L4,3.58770752 C4,4.31964111 3.32670898,5 2.45,5 C1.629,5 1.15,4.76264111 0.8,4.31964111 L1.39509277,3.58770752 Z" transform="translate(2 10)"/>
   </g>
 </svg>

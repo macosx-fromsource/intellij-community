@@ -1,67 +1,50 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.inspections;
 
-import com.jetbrains.python.fixtures.PyTestCase;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
+import com.intellij.psi.PsiFile;
+import com.intellij.testFramework.LightProjectDescriptor;
+import com.intellij.util.containers.ContainerUtil;
+import com.jetbrains.python.fixtures.PyInspectionTestCase;
 import com.jetbrains.python.psi.LanguageLevel;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * User : catherine
  */
-public class PyCompatibilityInspectionTest extends PyTestCase {
+@Subsystems.Inspections
+@Layers.Functional
+public class PyCompatibilityInspectionTest extends PyInspectionTestCase {
 
-  public void testDictCompExpression() {
-    setLanguageLevel(LanguageLevel.PYTHON27);
-    doTest();
-  }
-
-  public void testSetLiteralExpression() {
-    setLanguageLevel(LanguageLevel.PYTHON27);
-    doTest();
-  }
-
-  public void testSetCompExpression() {
-    setLanguageLevel(LanguageLevel.PYTHON27);
-    doTest();
+  @Override
+  protected @Nullable LightProjectDescriptor getProjectDescriptor() {
+    return ourPy2Descriptor;
   }
 
   public void testExceptBlock() {
-    setLanguageLevel(LanguageLevel.PYTHON27);
-    doTest();
+    doTest(LanguageLevel.PYTHON27);
   }
 
   public void testImportStatement() {
-    setLanguageLevel(LanguageLevel.PYTHON27);
-    doTest();
+    doTest(LanguageLevel.PYTHON27);
   }
 
   public void testImportErrorCaught() {
-    setLanguageLevel(LanguageLevel.PYTHON27);
-    doTest();
+    doTest(LanguageLevel.PYTHON27);
   }
 
   public void testStarExpression() {
-    setLanguageLevel(LanguageLevel.PYTHON35);
-    doTest();
+    doTest(LanguageLevel.PYTHON35);
   }
 
   public void testBinaryExpression() {
-    setLanguageLevel(LanguageLevel.PYTHON27);
-    doTest();
+    doTest(LanguageLevel.PYTHON27);
   }
 
   public void testNumericLiteralExpression() {
@@ -76,26 +59,21 @@ public class PyCompatibilityInspectionTest extends PyTestCase {
     doTest();
   }
 
-  public void testRaiseStatement() {
+  public void testRaiseMultipleArgs() {
     doTest();
   }
 
   public void testRaiseFrom() {
-    setLanguageLevel(LanguageLevel.PYTHON32);
-    doTest();
+    doTest(LanguageLevel.PYTHON34);
   }
 
   public void testReprExpression() {
     doTest();
   }
 
-  public void testWithStatement() {
-    setLanguageLevel(LanguageLevel.PYTHON27);
-    doTest();
-  }
-
-  public void testPyClass() {
-    doTest();
+  // PY-42200
+  public void testParenthesizedWithItems() {
+    doTest(LanguageLevel.getLatest());
   }
 
   public void testPrintStatement() {
@@ -106,28 +84,15 @@ public class PyCompatibilityInspectionTest extends PyTestCase {
     doTest();
   }
 
-  public void testAssignmentStatement() {
-    doTest();
-  }
-
-  public void testTryExceptStatement() {
-    doTest();
-  }
-
   public void testImportElement() {
     doTest();
   }
 
   public void testCallExpression() {
-    setLanguageLevel(LanguageLevel.PYTHON30);
-    doTest();
+    doTest(LanguageLevel.PYTHON34);
   }
 
   public void testBasestring() {
-    doTest();
-  }
-
-  public void testConditionalExpression() {
     doTest();
   }
 
@@ -137,17 +102,12 @@ public class PyCompatibilityInspectionTest extends PyTestCase {
 
   // PY-7763
   public void testEllipsisAsStatementPy2() {
-    doTest(LanguageLevel.PYTHON33);
+    doTest(LanguageLevel.PYTHON34);
   }
 
   // PY-8606
   public void testEllipsisInSubscriptionPy2() {
-    doTest(LanguageLevel.PYTHON33);
-  }
-
-  // PY-11047
-  public void testRelativeImport() {
-    doTest();
+    doTest(LanguageLevel.PYTHON34);
   }
 
   // PY-15390
@@ -210,22 +170,175 @@ public class PyCompatibilityInspectionTest extends PyTestCase {
   }
 
   // PY-16098
-  public void testWarningAboutAsyncAndAwaitInPy35() {
-    doTest(LanguageLevel.PYTHON35);
-  }
-
-  // PY-16098
   public void testWarningAboutAsyncAndAwaitInPy36() {
     doTest(LanguageLevel.PYTHON36);
+  }
+
+  // PY-22302
+  public void testNoWarningAboutEllipsisInFunctionTypeComments() {
+    doTest();
+  }
+
+  // PY-23355
+  public void testNoWarningAboutStarredExpressionsInFunctionTypeComments() {
+    doTest();
+  }
+
+  public void testBuiltinLong() {
+    doTest();
+  }
+
+  // PY-26510
+  public void testTryExceptEmptyRaise() {
+    doTest();
+  }
+
+  // PY-84077
+  public void testTryExcept313Against27() {
+    testAgainstVersions(LanguageLevel.PYTHON313, LanguageLevel.PYTHON27);
+  }
+
+  // PY-84077
+  public void testTryExcept314Against27() {
+    testAgainstVersions(LanguageLevel.PYTHON314, LanguageLevel.PYTHON27);
+  }
+
+  // PY-84077
+  public void testTryExcept314Against37() {
+    testAgainstVersions(LanguageLevel.PYTHON314, LanguageLevel.PYTHON37);
+  }
+
+  // PY-26510
+  public void testTryFinallyEmptyRaisePy2() {
+    doTest();
+  }
+
+  // PY-26510
+  public void testTryFinallyEmptyRaisePy3() {
+    doTest(LanguageLevel.PYTHON34);
+  }
+
+  // PY-29763
+  public void testTryExceptEmptyRaiseUnderFinallyPy2() {
+    doTestByText("""
+                   try:
+                      something_that_raises_error1()
+                   except BaseException as e:
+                       raise
+                   finally:
+                       try:
+                           something_that_raises_error2()
+                       except BaseException as e:
+                           raise  \s""");
+  }
+
+  // PY-15360
+  public void testTrailingCommaAfterStarArgs() {
+    doTest(LanguageLevel.PYTHON34);
+  }
+
+  // PY-36009
+  public void testEqualitySignInFStrings() {
+    doTest(LanguageLevel.PYTHON38);
+  }
+
+  public void testInputFromSixLib() {
+    doTest(LanguageLevel.PYTHON27);
+  }
+
+  // PY-35512
+  public void testPositionalOnlyParameters() {
+    runWithLanguageLevel(
+      LanguageLevel.PYTHON38,
+      () -> doTestByText(
+        "def f(pos1, <warning descr=\"Python versions 2.7, 3.7 do not support positional-only parameters\">/</warning>, pos_or_kwd, *, kwd1):\n" +
+        "    pass"
+      )
+    );
+  }
+
+  // PY-33886
+  public void testAssignmentExpressions() {
+    doTest(LanguageLevel.PYTHON38);
+  }
+
+  // PY-36003
+  public void testContinueInFinallyBlock() {
+    runWithLanguageLevel(
+      LanguageLevel.PYTHON38,
+      () -> doTestByText("""
+                           while True:
+                             try:
+                               print("a")
+                             finally:
+                               <warning descr="Python versions 2.7, 3.7, 3.14, 3.15 do not support 'continue' inside 'finally' clause">continue</warning>""")
+    );
+  }
+
+  // PY-35961
+  public void testUnpackingInNonParenthesizedTuplesInReturnAndYield() {
+    doTest(LanguageLevel.PYTHON38);
+  }
+
+  // PY-41305
+  public void testExpressionInDecorators() {
+    doTest(LanguageLevel.PYTHON39);
+  }
+
+  // PY-53776
+  public void testStarExpressionInIndexes() {
+    doTest(LanguageLevel.PYTHON311);
+  }
+
+  // PY-53776
+  public void testStarExpressionInTypeAnnotation() {
+    doTest(LanguageLevel.PYTHON311);
+  }
+
+  // PY-60767
+  public void testTypeAliasStatements() {
+    doTest(LanguageLevel.PYTHON311);
+  }
+
+  // PY-60767
+  public void testTypeParameterLists() {
+    doTest(LanguageLevel.PYTHON311);
+  }
+
+  // PY-79967
+  public void testTemplateStrings() {
+    doTest(LanguageLevel.PYTHON313);
+  }
+
+  // PEP 798: unpacking (* and **) in comprehensions is not supported before Python 3.15
+  public void testUnpackingInComprehensions() {
+    testAgainstVersions(LanguageLevel.PYTHON315, LanguageLevel.PYTHON314);
   }
 
   private void doTest(@NotNull LanguageLevel level) {
     runWithLanguageLevel(level, this::doTest);
   }
 
-  private void doTest() {
-    myFixture.configureByFile("inspections/PyCompatibilityInspection/" + getTestName(true) + ".py");
-    myFixture.enableInspections(PyCompatibilityInspection.class);
-    myFixture.checkHighlighting(true, false, false);
+  void testAgainstVersions(LanguageLevel runLevel, LanguageLevel ... compLevels) {
+    assertNotNull(compLevels);
+    List<LanguageLevel> compLevelsList = Arrays.asList(compLevels);
+    assertNotEmpty(compLevelsList);
+
+    runWithLanguageLevel(runLevel, () -> {
+      PsiFile currentFile = myFixture.configureByFile(getTestFilePath());
+      PyCompatibilityInspection inspection = new PyCompatibilityInspection();
+      inspection.ourVersions.clear();
+      inspection.ourVersions.addAll(ContainerUtil.map(compLevelsList, l -> l.toPythonVersion()));
+      myFixture.enableInspections(inspection);
+
+      myFixture.checkHighlighting(isWarning(), isInfo(), isWeakWarning());
+      assertSdkRootsNotParsed(currentFile);
+    });
+  }
+
+  @NotNull
+  @Override
+  protected Class<? extends PyInspection> getInspectionClass() {
+    return PyCompatibilityInspection.class;
   }
 }

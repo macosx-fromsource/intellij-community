@@ -15,7 +15,13 @@
  */
 package org.jetbrains.plugins.groovy.transformations.impl.synch
 
-import com.intellij.psi.*
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiField
+import com.intellij.psi.PsiReference
+import com.intellij.psi.PsiReferenceBase
+import com.intellij.psi.PsiReferenceContributor
+import com.intellij.psi.PsiReferenceProvider
+import com.intellij.psi.PsiReferenceRegistrar
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrLiteral
@@ -43,5 +49,5 @@ class FieldReference(literal: GrLiteral) : PsiReferenceBase<GrLiteral>(literal) 
 
   override fun getVariants(): Array<out Any> = element.containingClass?.codeFields ?: emptyArray()
 
-  override fun resolve() = element.containingClass?.findCodeFieldByName(value, false)
+  override fun resolve(): PsiField? = element.containingClass?.findCodeFieldByName(value, false)
 }

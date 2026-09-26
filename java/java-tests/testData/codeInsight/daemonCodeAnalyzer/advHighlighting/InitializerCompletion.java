@@ -1,4 +1,4 @@
-/// initalizers completion
+// initializers completion
 import java.io.*;
 
 public class a  {
@@ -19,8 +19,8 @@ public class a  {
 
 }
 class a2 {
-  { 
-    if (1==2) <error descr="Unhandled exception: java.io.IOException">throw new IOException();</error> 
+  {
+    if (1==2) <error descr="Unhandled exception: java.io.IOException">throw new IOException();</error>
   }
 
   <error descr="Unhandled exception: java.io.IOException">a2()</error> {}
@@ -31,7 +31,7 @@ class ConnectException extends SocketException {
 }
 
 class a3 {
-  { 
+  {
     if (1==2) <error descr="Unhandled exception: SocketException">throw new SocketException();</error>
   }
 
@@ -56,7 +56,7 @@ class a4 {
 }
 
 class a5 {
-  int i = <error descr="Unhandled exception: java.lang.ClassNotFoundException">f();</error>
+  int i = <error descr="Unhandled exception: java.lang.ClassNotFoundException">f</error>();
 
   int f() throws ClassNotFoundException {
     return 0;
@@ -110,7 +110,7 @@ class a9 {
   public AnInterface getAnInterface() {
         return new AnInterface() {
             {
-                <error descr="Unhandled exception: java.io.FileNotFoundException">new java.io.FileInputStream("somefile")</error>;
+                new <error descr="Unhandled exception: java.io.FileNotFoundException">java.io.FileInputStream</error>("somefile");
             }
         };
     }
@@ -121,7 +121,7 @@ class BadStatic {
     static String f() throws ClassNotFoundException {
         return null;
     }
-	private static final String FOO = <error descr="Unhandled exception: java.lang.ClassNotFoundException">f();</error>
+	private static final String FOO = <error descr="Unhandled exception: java.lang.ClassNotFoundException">f</error>();
 
 	public BadStatic()  throws ClassNotFoundException {
 	}
@@ -131,7 +131,7 @@ class H {
     }
 
     static {
-        if(true) {      
+        if(true) {
             <error descr="Unhandled exception: java.io.FileNotFoundException">throw new FileNotFoundException();</error>
         }
     }

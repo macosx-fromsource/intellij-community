@@ -1,215 +1,296 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon.impl.analysis;
 
+import com.intellij.ide.highlighter.JavaClassFileType;
+import com.intellij.ide.highlighter.JavaFileType;
+import com.intellij.java.codeserver.core.JavaPsiModuleUtil;
+import com.intellij.java.syntax.parser.JavaKeywords;
+import com.intellij.lang.Language;
+import com.intellij.lang.java.JavaLanguage;
+import com.intellij.lang.jvm.JvmLanguage;
+import com.intellij.openapi.fileTypes.FileType;
+import com.intellij.openapi.fileTypes.FileTypeRegistry;
+import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.module.ModuleManager;
+import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.DependencyScope;
+import com.intellij.openapi.roots.ExportableOrderEntry;
+import com.intellij.openapi.roots.ModuleRootManager;
+import com.intellij.openapi.roots.OrderEntry;
+import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.*;
-import com.intellij.psi.impl.source.PsiJavaModuleReference;
-import com.intellij.psi.search.FilenameIndex;
-import com.intellij.psi.util.CachedValueProvider.Result;
-import com.intellij.psi.util.CachedValuesManager;
+import com.intellij.pom.java.JavaFeature;
+import com.intellij.psi.JavaModuleGraphHelper;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaModule;
+import com.intellij.psi.PsiNameHelper;
+import com.intellij.psi.PsiRequiresStatement;
+import com.intellij.psi.impl.light.LightJavaModule;
+import com.intellij.psi.impl.source.resolve.JavaResolveUtil;
+import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.util.PsiUtil;
+import com.intellij.psi.util.PsiUtilCore;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
-import com.intellij.util.graph.DFSTBuilder;
-import com.intellij.util.graph.Graph;
-import com.intellij.util.graph.GraphGenerator;
-import com.intellij.util.graph.OutboundSemiGraph;
-import gnu.trove.THashSet;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
 
-import static com.intellij.psi.PsiJavaModule.MODULE_INFO_FILE;
-import static com.intellij.psi.util.PsiModificationTracker.OUT_OF_CODE_BLOCK_MODIFICATION_COUNT;
+import static com.intellij.openapi.roots.DependencyScope.PROVIDED;
+import static com.intellij.psi.PsiJavaModule.JAVA_BASE;
 
-public class JavaModuleGraphUtil {
+public final class JavaModuleGraphUtil {
+  private static final Set<String> STATIC_REQUIRES_MODULE_NAMES = Set.of("lombok");
+
   private JavaModuleGraphUtil() { }
 
-  @Nullable
-  public static PsiJavaModule findDescriptorByElement(@NotNull PsiElement element) {
-    PsiFileSystemItem fsItem = element instanceof PsiFileSystemItem ? (PsiFileSystemItem)element : element.getContainingFile();
-    return fsItem != null ? ModuleHighlightUtil.getModuleDescriptor(fsItem) : null;
+  @Contract("null->null")
+  public static @Nullable PsiJavaModule findDescriptorByElement(@Nullable PsiElement element) {
+    return JavaPsiModuleUtil.findDescriptorByElement(element);
   }
 
-  @Nullable
-  public static PsiJavaModule findDescriptorByModule(@Nullable Module module) {
-    return ModuleHighlightUtil.getModuleDescriptor(module);
+  @Contract("null,_->null")
+  public static @Nullable PsiJavaModule findDescriptorByFile(@Nullable VirtualFile file, @NotNull Project project) {
+    return JavaPsiModuleUtil.findDescriptorByFile(file, project);
   }
 
-  @Nullable
-  public static Collection<PsiJavaModule> findCycle(@NotNull PsiJavaModule module) {
-    Project project = module.getProject();
-    List<Set<PsiJavaModule>> cycles = CachedValuesManager.getManager(project).getCachedValue(project, () ->
-      Result.create(findCycles(project), OUT_OF_CODE_BLOCK_MODIFICATION_COUNT));
-    return ContainerUtil.find(cycles, set -> set.contains(module));
+  @Contract("null,_->null")
+  public static @Nullable PsiJavaModule findDescriptorByModule(@Nullable Module module, boolean inTests) {
+    return JavaPsiModuleUtil.findDescriptorByModule(module, inTests);
   }
 
-  public static boolean exports(@NotNull PsiJavaModule source, @NotNull String packageName, @NotNull PsiJavaModule target) {
-    Map<String, Set<String>> exports = CachedValuesManager.getCachedValue(source, () ->
-      Result.create(exportsMap(source), source.getContainingFile()));
-    Set<String> targets = exports.get(packageName);
-    return targets != null && (targets.isEmpty() || targets.contains(target.getModuleName()));
+  public static @Nullable PsiJavaModule findDescriptorByLibrary(@Nullable Library library, @NotNull Project project) {
+    return JavaPsiModuleUtil.findDescriptorByLibrary(library, project);
   }
 
-  public static boolean reads(@NotNull PsiJavaModule source, @NotNull PsiJavaModule destination) {
-    Project project = source.getProject();
-    RequiresGraph graph = CachedValuesManager.getManager(project).getCachedValue(project, () ->
-      Result.create(buildRequiresGraph(project), OUT_OF_CODE_BLOCK_MODIFICATION_COUNT));
-    return graph.reads(source, destination);
+  public static @Nullable PsiJavaModule findNonAutomaticDescriptorByModule(@Nullable Module module, boolean inTests) {
+    PsiJavaModule javaModule = findDescriptorByModule(module, inTests);
+    return javaModule instanceof LightJavaModule ? null : javaModule;
   }
 
-  // Looks for cycles between Java modules in the project sources.
-  // Library/JDK modules are excluded - in assumption there can't be any lib -> src dependencies.
-  // Module references are resolved "globally" (i.e., without taking project dependencies into account).
-  private static List<Set<PsiJavaModule>> findCycles(Project project) {
-    Set<PsiJavaModule> projectModules = ContainerUtil.newHashSet();
-    for (Module module : ModuleManager.getInstance(project).getModules()) {
-      Collection<VirtualFile> files = FilenameIndex.getVirtualFilesByName(project, MODULE_INFO_FILE, module.getModuleScope(false));
-      if (files.size() > 1) return Collections.emptyList();  // aborts the process when there are incorrect modules in the project
-      Optional.ofNullable(ContainerUtil.getFirstItem(files))
-        .map(PsiManager.getInstance(project)::findFile)
-        .map(f -> f instanceof PsiJavaFile ? ((PsiJavaFile)f).getModuleDeclaration() : null)
-        .ifPresent(projectModules::add);
+  /**
+   * Determines if a specified module is readable from a given context
+   *
+   * @param place            current module/position
+   * @param targetModuleFile file from the target module
+   * @return {@code true} if the target module is readable from the place; {@code false} otherwise.
+   */
+  public static boolean isModuleReadable(@NotNull PsiElement place,
+                                         @NotNull VirtualFile targetModuleFile) {
+    PsiJavaModule targetModule = findDescriptorByFile(targetModuleFile, place.getProject());
+    if (targetModule == null) return true;
+    return isModuleReadable(place, targetModule);
+  }
+
+  /**
+   * Determines if the specified modules are readable from a given context.
+   *
+   * @param place        the current position or element from where readability is being checked
+   * @param targetModule the target module to check readability against
+   * @return {@code true} if any of the target modules are readable from the current context; {@code false} otherwise
+   */
+  public static boolean isModuleReadable(@NotNull PsiElement place,
+                                         @NotNull PsiJavaModule targetModule) {
+    return JavaModuleGraphHelper.getInstance().isAccessible(targetModule, place);
+  }
+
+  public static boolean addDependency(@NotNull PsiJavaModule from,
+                                      @NotNull String to,
+                                      @Nullable DependencyScope scope,
+                                      boolean isExported) {
+    if (to.equals(JAVA_BASE)) return false;
+    if (!PsiUtil.isAvailable(JavaFeature.MODULES, from)) return false;
+    if (from instanceof LightJavaModule) return false;
+    if (to.equals(from.getName())) return false;
+    if (!PsiNameHelper.isValidModuleName(to, from)) return false;
+    if (alreadyContainsRequires(from, to)) return false;
+
+    PsiJavaModule toModule = JavaPsiFacade.getInstance(from.getProject()).findModule(to, from.getResolveScope());
+    if (toModule != null && JavaPsiModuleUtil.reads(toModule, from)) return false; // check for circular dependencies
+    PsiUtil.addModuleStatement(from, JavaKeywords.REQUIRES + " " +
+                                     (isStaticModule(to, scope) ? JavaKeywords.STATIC + " " : "") +
+                                     (isExported ? JavaKeywords.TRANSITIVE + " " : "") +
+                                     to);
+    return true;
+  }
+
+  public static boolean addDependency(@NotNull PsiElement from,
+                                      @NotNull PsiClass to,
+                                      @Nullable DependencyScope scope) {
+    if (!PsiUtil.isAvailable(JavaFeature.MODULES, from)) return false;
+    PsiJavaModule fromDescriptor = findDescriptorByElement(from);
+    if (fromDescriptor == null) return false;
+    PsiJavaModule toDescriptor = findDescriptorByElement(to);
+    if (toDescriptor == null) return false;
+    if (!JavaModuleGraphHelper.getInstance().isAccessible(to, from)) return false;
+    return addDependency(fromDescriptor, toDescriptor, scope);
+  }
+
+  public static boolean addDependency(@NotNull PsiJavaModule from,
+                                      @NotNull PsiJavaModule to,
+                                      @Nullable DependencyScope scope) {
+    if (to.getName().equals(JAVA_BASE)) return false;
+    if (!PsiUtil.isAvailable(JavaFeature.MODULES, from)) return false;
+    if (from instanceof LightJavaModule) return false;
+    if (from == to || from.getName().equals(to.getName())) return false;
+    if (!PsiNameHelper.isValidModuleName(to.getName(), to)) return false;
+    if (contains(from.getRequires(), to.getName())) return false;
+    if (JavaPsiModuleUtil.reads(from, to)) return false;
+    if (JavaPsiModuleUtil.reads(to, from)) return false; // check for circular dependencies
+    PsiUtil.addModuleStatement(from, JavaKeywords.REQUIRES + " " +
+                                      (isStaticModule(to.getName(), scope) ? JavaKeywords.STATIC + " " : "") +
+                                      (isExported(from, to) ? JavaKeywords.TRANSITIVE + " " : "") +
+                                      to.getName());
+    return true;
+  }
+
+  private static boolean contains(@NotNull Iterable<PsiRequiresStatement> requires, @NotNull String name) {
+    for (PsiRequiresStatement statement : requires) {
+      if (name.equals(statement.getModuleName())) return true;
     }
+    return false;
+  }
 
-    if (!projectModules.isEmpty()) {
-      MultiMap<PsiJavaModule, PsiJavaModule> relations = MultiMap.create();
-      for (PsiJavaModule module : projectModules) {
-        for (PsiRequiresStatement statement : module.getRequires()) {
-          PsiJavaModule dependency = PsiJavaModuleReference.resolve(statement, statement.getModuleName(), true);
-          if (dependency != null && projectModules.contains(dependency)) {
-            relations.putValue(module, dependency);
-          }
-        }
+  private static boolean isExported(@NotNull PsiJavaModule from, @NotNull PsiJavaModule to) {
+    VirtualFile toFile = getVirtualFile(to);
+    if (toFile == null) return false;
+
+    Module fromModule = ModuleUtilCore.findModuleForPsiElement(from);
+    if (fromModule == null) return false;
+
+    Set<OrderEntry> toEntries = new HashSet<>(ProjectFileIndex.getInstance(from.getProject())
+                                                .getOrderEntriesForFile(toFile));
+    if (toEntries.isEmpty()) return false;
+
+    OrderEntry[] entries = ModuleRootManager.getInstance(fromModule).getOrderEntries();
+    for (OrderEntry entry : entries) {
+      if (toEntries.contains(entry) && entry instanceof ExportableOrderEntry exportable) {
+        return exportable.isExported();
       }
+    }
+    return false;
+  }
 
-      if (!relations.isEmpty()) {
-        Graph<PsiJavaModule> graph = new ChameleonGraph<>(relations, false);
-        DFSTBuilder<PsiJavaModule> builder = new DFSTBuilder<>(graph);
-        Collection<Collection<PsiJavaModule>> components = builder.getComponents();
-        if (!components.isEmpty()) {
-          return components.stream().map(ContainerUtil::newLinkedHashSet).collect(Collectors.toList());
-        }
+  private static @Nullable VirtualFile getVirtualFile(@NotNull PsiJavaModule module) {
+    if (module instanceof LightJavaModule light) {
+      return light.getRootVirtualFile();
+    }
+    return PsiUtilCore.getVirtualFile(module);
+  }
+
+  private static boolean alreadyContainsRequires(@NotNull PsiJavaModule module, @NotNull String dependency) {
+    for (PsiRequiresStatement requiresStatement : module.getRequires()) {
+      if (Objects.equals(requiresStatement.getModuleName(), dependency)) {
+        return true;
       }
     }
-
-    return Collections.emptyList();
+    return false;
   }
 
-  private static Map<String, Set<String>> exportsMap(@NotNull PsiJavaModule source) {
-    Map<String, Set<String>> map = ContainerUtil.newHashMap();
-    for (PsiExportsStatement statement : source.getExports()) {
-      String pkg = statement.getPackageName();
-      List<String> targets = statement.getModuleNames();
-      map.put(pkg, targets.isEmpty() ? Collections.emptySet() : ContainerUtil.newTroveSet(targets));
-    }
-    return map;
+  private static boolean isStaticModule(@NotNull String moduleName, @Nullable DependencyScope scope) {
+    if (STATIC_REQUIRES_MODULE_NAMES.contains(moduleName)) return true;
+    return scope == PROVIDED;
   }
 
-  // Starting from source modules, collects all module dependencies in the project.
-  // The resulting graph is used for tracing readability.
-  private static RequiresGraph buildRequiresGraph(Project project) {
-    MultiMap<PsiJavaModule, PsiJavaModule> relations = MultiMap.create();
-    Set<String> publicEdges = ContainerUtil.newTroveSet();
-    for (Module module : ModuleManager.getInstance(project).getModules()) {
-      Collection<VirtualFile> files = FilenameIndex.getVirtualFilesByName(project, MODULE_INFO_FILE, module.getModuleScope(false));
-      Optional.ofNullable(ContainerUtil.getFirstItem(files))
-        .map(PsiManager.getInstance(project)::findFile)
-        .map(f -> f instanceof PsiJavaFile ? ((PsiJavaFile)f).getModuleDeclaration() : null)
-        .ifPresent(m -> visit(m, relations, publicEdges));
-    }
+  public static class JavaModuleScope extends GlobalSearchScope {
+    private final @NotNull MultiMap<String, PsiJavaModule> myModules;
+    private final boolean myIncludeLibraries;
+    private final boolean myIsInTests;
 
-    Graph<PsiJavaModule> graph = GraphGenerator.generate(new ChameleonGraph<>(relations, true));
-    return new RequiresGraph(graph, publicEdges);
-  }
-
-  private static void visit(PsiJavaModule module, MultiMap<PsiJavaModule, PsiJavaModule> relations, Set<String> publicEdges) {
-    if (!relations.containsKey(module)) {
-      relations.putValues(module, Collections.emptyList());
-      for (PsiRequiresStatement statement : module.getRequires()) {
-        for (PsiJavaModule dependency : PsiJavaModuleReference.multiResolve(statement, statement.getModuleName(), false)) {
-          relations.putValue(module, dependency);
-          if (statement.isPublic()) publicEdges.add(RequiresGraph.key(dependency, module));
-          visit(dependency, relations, publicEdges);
-        }
+    private JavaModuleScope(@NotNull Project project, @NotNull Set<PsiJavaModule> modules) {
+      super(project);
+      myModules = new MultiMap<>();
+      for (PsiJavaModule module : modules) {
+        myModules.putValue(module.getName(), module);
       }
-    }
-  }
-
-  private static class RequiresGraph {
-    private final OutboundSemiGraph<PsiJavaModule> myGraph;
-    private final Set<String> myPublicEdges;
-
-    public RequiresGraph(OutboundSemiGraph<PsiJavaModule> graph, Set<String> publicEdges) {
-      myGraph = graph;
-      myPublicEdges = publicEdges;
-    }
-
-    public boolean reads(PsiJavaModule source, PsiJavaModule destination) {
-      Collection<PsiJavaModule> nodes = myGraph.getNodes();
-      if (nodes.contains(destination) && nodes.contains(source)) {
-        Iterator<PsiJavaModule> directReaders = myGraph.getOut(destination);
-        while (directReaders.hasNext()) {
-          PsiJavaModule next = directReaders.next();
-          if (source.equals(next) || myPublicEdges.contains(key(destination, next)) && reads(source, next)) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    public static String key(PsiJavaModule module, PsiJavaModule exporter) {
-      return module.getModuleName() + '/' + exporter.getModuleName();
-    }
-  }
-
-  private static class ChameleonGraph<N> implements Graph<N> {
-    private final Set<N> myNodes;
-    private final MultiMap<N, N> myEdges;
-    private final boolean myInbound;
-
-    public ChameleonGraph(MultiMap<N, N> edges, boolean inbound) {
-      myNodes = new THashSet<>();
-      edges.entrySet().forEach(e -> {
-        myNodes.add(e.getKey());
-        myNodes.addAll(e.getValue());
+      ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+      myIncludeLibraries = ContainerUtil.or(modules, m -> {
+        PsiFile containingFile = m.getContainingFile();
+        if (containingFile == null) return true;
+        VirtualFile moduleFile = containingFile.getVirtualFile();
+        if (moduleFile == null) return true;
+        return fileIndex.isInLibrary(moduleFile);
       });
-      myEdges = edges;
-      myInbound = inbound;
+      myIsInTests = !myIncludeLibraries && ContainerUtil.or(modules, m -> {
+        PsiFile containingFile = m.getContainingFile();
+        if (containingFile == null) return true;
+        VirtualFile moduleFile = containingFile.getVirtualFile();
+        if (moduleFile == null) return true;
+        return fileIndex.isInTestSourceContent(moduleFile);
+      });
     }
 
     @Override
-    public Collection<N> getNodes() {
-      return myNodes;
+    public boolean isSearchInModuleContent(@NotNull Module aModule) {
+      return contains(findDescriptorByModule(aModule, myIsInTests));
     }
 
     @Override
-    public Iterator<N> getIn(N n) {
-      return myInbound ? myEdges.get(n).iterator() : Collections.emptyIterator();
+    public boolean isSearchInLibraries() {
+      return myIncludeLibraries;
     }
 
     @Override
-    public Iterator<N> getOut(N n) {
-      return myInbound ? Collections.emptyIterator() : myEdges.get(n).iterator();
+    public boolean contains(@NotNull VirtualFile file) {
+      Project project = getProject();
+      if (project == null) return false;
+      if (!isJvmLanguageFile(file)) return false;
+      ProjectFileIndex index = ProjectFileIndex.getInstance(project);
+      if (index.isInLibrary(file)) return myIncludeLibraries && contains(JavaPsiModuleUtil.findDescriptorInLibrary(file, project));
+      Module module = index.getModuleForFile(file);
+      return contains(findDescriptorByModule(module, myIsInTests));
+    }
+
+    private boolean contains(@Nullable PsiJavaModule module) {
+      if (module == null || !module.isValid()) return false;
+      Collection<PsiJavaModule> myCollectedModules = myModules.get(module.getName());
+      return myCollectedModules.contains(module);
+    }
+
+    private static boolean isJvmLanguageFile(@NotNull VirtualFile file) {
+      FileTypeRegistry fileTypeRegistry = FileTypeRegistry.getInstance();
+      FileType fileType = fileTypeRegistry.getFileTypeByFileName(file.getName());
+      if (fileType == JavaClassFileType.INSTANCE ||
+          fileType == JavaFileType.INSTANCE) {
+        return true;
+      }
+      LanguageFileType languageFileType = ObjectUtils.tryCast(fileType, LanguageFileType.class);
+      if(languageFileType == null) return false;
+      Language language = languageFileType.getLanguage();
+      return language.isKindOf(JavaLanguage.INSTANCE) ||
+             language instanceof JvmLanguage ||
+             language.getID().equals("kotlin");
+    }
+
+    public static @Nullable JavaModuleScope moduleScope(@NotNull PsiJavaModule module) {
+      PsiFile moduleFile = module.getContainingFile();
+      if (moduleFile == null) return null;
+      VirtualFile virtualFile = moduleFile.getVirtualFile();
+      if (virtualFile == null) return null;
+      return new JavaModuleScope(module.getProject(), Set.of(module));
+    }
+
+    /**
+     * Creates a JavaModuleScope that includes the given module and all transitive modules.
+     *
+     * @param module the base PsiJavaModule for which to create the scope, must not be null
+     * @return a new JavaModuleScope including all transitive modules of the given module, or null if the moduleFile is null or no transitive modules are found
+     */
+    public static @Nullable JavaModuleScope moduleWithTransitiveScope(@NotNull PsiJavaModule module) {
+      Set<PsiJavaModule> allModules = JavaResolveUtil.getAllTransitiveModulesIncludeCurrent(module);
+      if (allModules.isEmpty()) return null;
+      return new JavaModuleScope(module.getProject(), allModules);
     }
   }
 }

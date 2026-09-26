@@ -1,19 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl.statements.typedef;
 
 import com.intellij.lang.ASTNode;
@@ -22,12 +7,32 @@ import com.intellij.navigation.ItemPresentationProviders;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.*;
-import com.intellij.psi.impl.*;
+import com.intellij.psi.HierarchicalMethodSignature;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiEnumConstant;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiIdentifier;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiReferenceList;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.ResolveState;
+import com.intellij.psi.StubBasedPsiElement;
+import com.intellij.psi.impl.ElementPresentationUtil;
+import com.intellij.psi.impl.InheritanceImplUtil;
+import com.intellij.psi.impl.JavaPsiImplementationHelper;
+import com.intellij.psi.impl.PsiClassImplUtil;
+import com.intellij.psi.impl.PsiImplUtil;
+import com.intellij.psi.impl.PsiSuperMethodImplUtil;
 import com.intellij.psi.impl.source.tree.LeafPsiElement;
 import com.intellij.psi.scope.PsiScopeProcessor;
 import com.intellij.psi.stubs.IStubElementType;
-import com.intellij.ui.RowIcon;
+import com.intellij.ui.IconManager;
+import com.intellij.ui.icons.RowIcon;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.VisibilityIcons;
@@ -40,7 +45,8 @@ import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocComment;
 import org.jetbrains.plugins.groovy.lang.groovydoc.psi.impl.GrDocCommentUtil;
 import org.jetbrains.plugins.groovy.lang.lexer.GroovyTokenTypes;
 import org.jetbrains.plugins.groovy.lang.lexer.TokenSets;
-import org.jetbrains.plugins.groovy.lang.parser.GroovyElementTypes;
+import org.jetbrains.plugins.groovy.lang.parser.GroovyEmptyStubElementTypes;
+import org.jetbrains.plugins.groovy.lang.parser.GroovyStubElementTypes;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyElementVisitor;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList;
@@ -50,6 +56,8 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrExtendsClause;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrImplementsClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrPermitsClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrRecordDefinition;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinitionBody;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMember;
@@ -60,18 +68,16 @@ import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeParameterList;
 import org.jetbrains.plugins.groovy.lang.psi.impl.GrStubElementBase;
 import org.jetbrains.plugins.groovy.lang.psi.impl.GroovyCodeStyleSettingsFacade;
 import org.jetbrains.plugins.groovy.lang.psi.impl.GroovyFileImpl;
+import org.jetbrains.plugins.groovy.lang.psi.impl.auxiliary.modifiers.GrModifierListUtil;
 import org.jetbrains.plugins.groovy.lang.psi.stubs.GrTypeDefinitionStub;
 import org.jetbrains.plugins.groovy.lang.psi.util.GrClassImplUtil;
 import org.jetbrains.plugins.groovy.lang.psi.util.GroovyRunnerPsiUtil;
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
 
-import javax.swing.*;
+import javax.swing.Icon;
 import java.util.Collection;
 import java.util.List;
 
-/**
- * @author ilyas
- */
 public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefinitionStub>
   implements GrTypeDefinition, StubBasedPsiElement<GrTypeDefinitionStub> {
 
@@ -86,7 +92,7 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
   }
 
   @Override
-  public void accept(GroovyElementVisitor visitor) {
+  public void accept(@NotNull GroovyElementVisitor visitor) {
     visitor.visitTypeDefinition(this);
   }
 
@@ -95,9 +101,8 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return getNameIdentifierGroovy().getTextRange().getStartOffset();
   }
 
-  @Nullable
   @Override
-  public String getQualifiedName() {
+  public @Nullable String getQualifiedName() {
     final GrTypeDefinitionStub stub = getStub();
     if (stub != null) {
       return stub.getQualifiedName();
@@ -117,15 +122,13 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return null;
   }
 
-  @Nullable
   @Override
-  public GrTypeDefinitionBody getBody() {
-    return getStubOrPsiChild(GroovyElementTypes.CLASS_BODY);
+  public @Nullable GrTypeDefinitionBody getBody() {
+    return getStubOrPsiChild(GroovyEmptyStubElementTypes.CLASS_BODY);
   }
 
-  @NotNull
   @Override
-  public GrMembersDeclaration[] getMemberDeclarations() {
+  public GrMembersDeclaration @NotNull [] getMemberDeclarations() {
     GrTypeDefinitionBody body = getBody();
     if (body == null) return GrMembersDeclaration.EMPTY_ARRAY;
     return body.getMemberDeclarations();
@@ -136,36 +139,47 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return ItemPresentationProviders.getItemPresentation(this);
   }
 
-  @Nullable
   @Override
-  public GrExtendsClause getExtendsClause() {
-    return getStubOrPsiChild(GroovyElementTypes.EXTENDS_CLAUSE);
-  }
-
-  @Nullable
-  @Override
-  public GrImplementsClause getImplementsClause() {
-    return getStubOrPsiChild(GroovyElementTypes.IMPLEMENTS_CLAUSE);
+  public @Nullable GrExtendsClause getExtendsClause() {
+    return getStubOrPsiChild(GroovyStubElementTypes.EXTENDS_CLAUSE);
   }
 
   @Override
-  @NotNull
-  public PsiElement getNameIdentifierGroovy() {
+  public @Nullable GrImplementsClause getImplementsClause() {
+    return getStubOrPsiChild(GroovyStubElementTypes.IMPLEMENTS_CLAUSE);
+  }
+
+  @Override
+  public @Nullable GrPermitsClause getPermitsClause() {
+    return getStubOrPsiChild(GroovyStubElementTypes.PERMITS_CLAUSE);
+  }
+
+  @Override
+  public @Nullable PsiReferenceList getPermitsList() {
+    return getPermitsClause();
+  }
+
+  @Override
+  public PsiClassType @NotNull [] getPermitsListTypes() {
+    GrPermitsClause permitsClause = getPermitsClause();
+    return permitsClause == null ? PsiClassType.EMPTY_ARRAY : permitsClause.getReferencedTypes();
+  }
+
+  @Override
+  public @NotNull PsiElement getNameIdentifierGroovy() {
     PsiElement result = findChildByType(TokenSets.PROPERTY_NAMES);
-    assert result != null;
+    if (result == null) {
+      List<PsiElement> children = findChildrenByType(TokenSets.GROOVY_KEYWORDS);
+      assert !children.isEmpty();
+      return children.size() > 1 ? children.get(1) : children.get(0);
+    }
     return result;
-  }
-
-  @Override
-  public void checkDelete() throws IncorrectOperationException {
-    CheckUtil.checkWritable(this);
   }
 
   @Override
   public void delete() throws IncorrectOperationException {
     PsiElement parent = getParent();
-    if (parent instanceof GroovyFileImpl) {
-      GroovyFileImpl file = (GroovyFileImpl)parent;
+    if (parent instanceof GroovyFileImpl file) {
       if (file.getTypeDefinitions().length == 1 && !file.isScript()) {
         file.delete();
         return;
@@ -217,58 +231,50 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return false;
   }
 
-  @Nullable
   @Override
-  public PsiReferenceList getExtendsList() {
+  public @Nullable PsiReferenceList getExtendsList() {
     //return PsiImplUtil.getOrCreatePsiReferenceList(getExtendsClause(), PsiReferenceList.Role.EXTENDS_LIST);
     return getExtendsClause();
   }
 
-  @Nullable
   @Override
-  public PsiReferenceList getImplementsList() {
+  public @Nullable PsiReferenceList getImplementsList() {
     //return PsiImplUtil.getOrCreatePsiReferenceList(getImplementsClause(), PsiReferenceList.Role.IMPLEMENTS_LIST);
     return getImplementsClause();
   }
 
-  @NotNull
   @Override
-  public PsiClassType[] getExtendsListTypes(boolean includeSynthetic) {
+  public PsiClassType @NotNull [] getExtendsListTypes(boolean includeSynthetic) {
     return myCache.getExtendsListTypes(includeSynthetic);
   }
 
-  @NotNull
   @Override
-  public PsiClassType[] getImplementsListTypes(boolean includeSynthetic) {
+  public PsiClassType @NotNull [] getImplementsListTypes(boolean includeSynthetic) {
     return myCache.getImplementsListTypes(includeSynthetic);
   }
 
-  @Nullable
   @Override
-  public PsiClass getSuperClass() {
+  public @Nullable PsiClass getSuperClass() {
     return GrClassImplUtil.getSuperClass(this);
   }
 
   @Override
-  public PsiClass[] getInterfaces() {
+  public PsiClass @NotNull [] getInterfaces() {
     return GrClassImplUtil.getInterfaces(this);
   }
 
-  @NotNull
   @Override
-  public final PsiClass[] getSupers(boolean includeSynthetic) {
+  public final PsiClass @NotNull [] getSupers(boolean includeSynthetic) {
     return GrClassImplUtil.getSupers(this, includeSynthetic);
   }
 
-  @NotNull
   @Override
-  public PsiClassType[] getSuperTypes(boolean includeSynthetic) {
+  public PsiClassType @NotNull [] getSuperTypes(boolean includeSynthetic) {
     return GrClassImplUtil.getSuperTypes(this, includeSynthetic);
   }
 
-  @NotNull
   @Override
-  public GrField[] getCodeFields() {
+  public GrField @NotNull [] getCodeFields() {
     return myCache.getCodeFields();
   }
 
@@ -277,137 +283,115 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return GrClassImplUtil.findFieldByName(this, name, checkBases, false);
   }
 
-  @NotNull
   @Override
-  public GrField[] getFields() {
+  public GrField @NotNull [] getFields() {
     return myCache.getFields();
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] getMethods() {
+  public PsiMethod @NotNull [] getMethods() {
     return myCache.getMethods();
   }
 
-  @NotNull
   @Override
-  public GrMethod[] getCodeMethods() {
+  public GrMethod @NotNull [] getCodeMethods() {
     return myCache.getCodeMethods();
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] getConstructors() {
+  public PsiMethod @NotNull [] getConstructors() {
     return myCache.getConstructors();
   }
 
-  @NotNull
   @Override
-  public GrMethod[] getCodeConstructors() {
+  public GrMethod @NotNull [] getCodeConstructors() {
     return myCache.getCodeConstructors();
   }
 
-  @NotNull
   @Override
-  public PsiClass[] getInnerClasses() {
+  public PsiClass @NotNull [] getInnerClasses() {
     return myCache.getInnerClasses();
   }
 
-  @NotNull
   @Override
-  public GrTypeDefinition[] getCodeInnerClasses() {
+  public GrTypeDefinition @NotNull [] getCodeInnerClasses() {
     return myCache.getCodeInnerClasses();
   }
 
-  @NotNull
   @Override
-  public GrClassInitializer[] getInitializers() {
+  public GrClassInitializer @NotNull [] getInitializers() {
     GrTypeDefinitionBody body = getBody();
     return body != null ? body.getInitializers() : GrClassInitializer.EMPTY_ARRAY;
   }
 
-  @NotNull
   @Override
-  public PsiField[] getAllFields() {
+  public PsiField @NotNull [] getAllFields() {
     return GrClassImplUtil.getAllFields(this);
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] getAllMethods() {
+  public PsiMethod @NotNull [] getAllMethods() {
     return GrClassImplUtil.getAllMethods(this);
   }
 
-  @NotNull
   @Override
-  public PsiClass[] getAllInnerClasses() {
+  public PsiClass @NotNull [] getAllInnerClasses() {
     return PsiClassImplUtil.getAllInnerClasses(this);
   }
 
-  @Nullable
   @Override
-  public PsiField findFieldByName(String name, boolean checkBases) {
+  public @Nullable PsiField findFieldByName(String name, boolean checkBases) {
     return GrClassImplUtil.findFieldByName(this, name, checkBases, true);
   }
 
-  @Nullable
   @Override
-  public PsiMethod findMethodBySignature(PsiMethod patternMethod, boolean checkBases) {
+  public @Nullable PsiMethod findMethodBySignature(@NotNull PsiMethod patternMethod, boolean checkBases) {
     return GrClassImplUtil.findMethodBySignature(this, patternMethod, checkBases);
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] findMethodsBySignature(PsiMethod patternMethod, boolean checkBases) {
+  public PsiMethod @NotNull [] findMethodsBySignature(@NotNull PsiMethod patternMethod, boolean checkBases) {
     return GrClassImplUtil.findMethodsBySignature(this, patternMethod, checkBases);
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] findCodeMethodsBySignature(PsiMethod patternMethod, boolean checkBases) {
+  public PsiMethod @NotNull [] findCodeMethodsBySignature(PsiMethod patternMethod, boolean checkBases) {
     return GrClassImplUtil.findCodeMethodsBySignature(this, patternMethod, checkBases);
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] findMethodsByName(@NonNls String name, boolean checkBases) {
+  public PsiMethod @NotNull [] findMethodsByName(@NonNls String name, boolean checkBases) {
     return GrClassImplUtil.findMethodsByName(this, name, checkBases);
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] findCodeMethodsByName(@NonNls String name, boolean checkBases) {
+  public PsiMethod @NotNull [] findCodeMethodsByName(@NonNls String name, boolean checkBases) {
     return GrClassImplUtil.findCodeMethodsByName(this, name, checkBases);
   }
 
-  @NotNull
   @Override
-  public List<Pair<PsiMethod, PsiSubstitutor>> findMethodsAndTheirSubstitutorsByName(String name, boolean checkBases) {
+  public @NotNull List<Pair<PsiMethod, PsiSubstitutor>> findMethodsAndTheirSubstitutorsByName(@NotNull String name, boolean checkBases) {
     return GrClassImplUtil.findMethodsAndTheirSubstitutorsByName(this, name, checkBases);
   }
 
-  @NotNull
   @Override
-  public List<Pair<PsiMethod, PsiSubstitutor>> getAllMethodsAndTheirSubstitutors() {
+  public @NotNull List<Pair<PsiMethod, PsiSubstitutor>> getAllMethodsAndTheirSubstitutors() {
     return GrClassImplUtil.getAllMethodsAndTheirSubstitutors(this);
   }
 
-  @Nullable
   @Override
-  public PsiClass findInnerClassByName(String name, boolean checkBases) {
+  public @Nullable PsiClass findInnerClassByName(String name, boolean checkBases) {
     return GrClassImplUtil.findInnerClassByName(this, name, checkBases);
   }
 
-  @Nullable
   @Override
-  public PsiElement getLBrace() {
+  public @Nullable PsiElement getLBrace() {
     final GrTypeDefinitionBody body = getBody();
     return body == null ? null : body.getLBrace();
   }
 
-  @Nullable
   @Override
-  public PsiElement getRBrace() {
+  public @Nullable PsiElement getRBrace() {
     final GrTypeDefinitionBody body = getBody();
     return body == null ? null : body.getRBrace();
   }
@@ -417,15 +401,13 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return false;
   }
 
-  @Nullable
   @Override
-  public PsiIdentifier getNameIdentifier() {
+  public @Nullable PsiIdentifier getNameIdentifier() {
     return PsiUtil.getJavaNameIdentifier(this);
   }
 
-  @Nullable
   @Override
-  public PsiElement getScope() {
+  public @Nullable PsiElement getScope() {
     final GrTypeDefinitionStub stub = getStub();
     if (stub != null) {
       return stub.getParentStub().getPsi();
@@ -435,7 +417,7 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     ASTNode parent = treeElement.getTreeParent();
 
     while (parent != null) {
-      if (parent.getElementType() instanceof IStubElementType && !(parent.getElementType() == GroovyElementTypes.CLASS_BODY)) {
+      if (parent.getElementType() instanceof IStubElementType && !(parent.getElementType() == GroovyEmptyStubElementTypes.CLASS_BODY)) {
         return parent.getPsi();
       }
       parent = parent.getTreeParent();
@@ -457,13 +439,12 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
   }
 
   @Override
-  public boolean isInheritorDeep(PsiClass baseClass, @Nullable PsiClass classToByPass) {
+  public boolean isInheritorDeep(@NotNull PsiClass baseClass, @Nullable PsiClass classToByPass) {
     return InheritanceImplUtil.isInheritorDeep(this, baseClass, classToByPass);
   }
 
-  @Nullable
   @Override
-  public PsiClass getContainingClass() {
+  public @Nullable PsiClass getContainingClass() {
     PsiElement parent = getParent();
     if (parent instanceof GrTypeDefinitionBody) {
       final PsiElement pparent = parent.getParent();
@@ -475,9 +456,8 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return null;
   }
 
-  @NotNull
   @Override
-  public Collection<HierarchicalMethodSignature> getVisibleSignatures() {
+  public @NotNull Collection<HierarchicalMethodSignature> getVisibleSignatures() {
     return PsiSuperMethodImplUtil.getVisibleSignatures(this);
   }
 
@@ -510,21 +490,19 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return this;
   }
 
-  @Nullable
   @Override
-  public GrModifierList getModifierList() {
-    return getStubOrPsiChild(GroovyElementTypes.MODIFIERS);
+  public @Nullable GrModifierList getModifierList() {
+    return getStubOrPsiChild(GroovyStubElementTypes.MODIFIER_LIST);
   }
 
   @Override
   public boolean hasModifierProperty(@NonNls @NotNull String name) {
-    PsiModifierList modifierList = getModifierList();
-    return modifierList != null && modifierList.hasModifierProperty(name);
+    GrModifierList modifierList = getModifierList();
+    return modifierList != null && GrModifierListUtil.hasModifierProperty(modifierList, name, false);
   }
 
-  @Nullable
   @Override
-  public GrDocComment getDocComment() {
+  public @Nullable GrDocComment getDocComment() {
     return GrDocCommentUtil.findDocComment(this);
   }
 
@@ -542,15 +520,13 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return getTypeParameters().length > 0;
   }
 
-  @Nullable
   @Override
-  public GrTypeParameterList getTypeParameterList() {
-    return getStubOrPsiChild(GroovyElementTypes.TYPE_PARAMETER_LIST);
+  public @Nullable GrTypeParameterList getTypeParameterList() {
+    return getStubOrPsiChild(GroovyEmptyStubElementTypes.TYPE_PARAMETER_LIST);
   }
 
-  @NotNull
   @Override
-  public GrTypeParameter[] getTypeParameters() {
+  public GrTypeParameter @NotNull [] getTypeParameters() {
     final GrTypeParameterList list = getTypeParameterList();
     if (list != null) {
       return list.getTypeParameters();
@@ -564,12 +540,12 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return true;
   }
 
-  @Nullable
   @Override
-  protected Icon getElementIcon(@IconFlags int flags) {
+  protected @Nullable Icon getElementIcon(@IconFlags int flags) {
     Icon icon = getIconInner();
     final boolean isLocked = (flags & ICON_FLAG_READ_STATUS) != 0 && !isWritable();
-    RowIcon rowIcon = createLayeredIcon(this, icon, ElementPresentationUtil.getFlags(this, isLocked) | getFlagsInner());
+    RowIcon rowIcon = IconManager.getInstance()
+      .createLayeredIcon(this, icon, ElementPresentationUtil.getFlags(this, isLocked) | getFlagsInner());
     if ((flags & ICON_FLAG_VISIBILITY) != 0) {
       VisibilityIcons.setVisibilityIcon(getModifierList(), rowIcon);
     }
@@ -590,6 +566,10 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
 
     if (isEnum()) return JetgroovyIcons.Groovy.Enum;
 
+    if (this instanceof GrRecordDefinition) {
+      return JetgroovyIcons.Groovy.Record;
+    }
+
     if (hasModifierProperty(PsiModifier.ABSTRACT)) return JetgroovyIcons.Groovy.AbstractClass;
 
     return JetgroovyIcons.Groovy.Class;
@@ -597,17 +577,15 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
 
   private boolean isRenameFileOnClassRenaming() {
     final PsiFile file = getContainingFile();
-    if (!(file instanceof GroovyFile)) return false;
-    final GroovyFile groovyFile = (GroovyFile)file;
+    if (!(file instanceof GroovyFile groovyFile)) return false;
     if (groovyFile.isScript()) return false;
     final String name = getName();
     final VirtualFile vFile = groovyFile.getVirtualFile();
     return vFile != null && name != null && name.equals(vFile.getNameWithoutExtension());
   }
 
-  @Nullable
   @Override
-  public PsiElement getOriginalElement() {
+  public @Nullable PsiElement getOriginalElement() {
     return JavaPsiImplementationHelper.getInstance(getProject()).getOriginalClass(this);
   }
 
@@ -690,8 +668,7 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return psiElement;
   }
 
-  @Nullable
-  private static PsiMember getAnyMember(@Nullable PsiElement psiElement) {
+  protected static @Nullable PsiMember getAnyMember(@Nullable PsiElement psiElement) {
     if (psiElement instanceof PsiMember) {
       return (PsiMember)psiElement;
     }
@@ -727,8 +704,11 @@ public abstract class GrTypeDefinitionImpl extends GrStubElementBase<GrTypeDefin
     return -1;
   }
 
-  @Nullable
-  private PsiElement getDefaultAnchor(GrTypeDefinitionBody body, PsiMember member) {
+  public @NotNull List<String> getSyntheticModifiers(@NotNull GrModifierList modifierList) {
+    return myCache.getSyntheticModifiers(modifierList);
+  }
+
+  protected @Nullable PsiElement getDefaultAnchor(GrTypeDefinitionBody body, PsiMember member) {
     GroovyCodeStyleSettingsFacade settings = GroovyCodeStyleSettingsFacade.getInstance(getProject());
 
     int order = getMemberOrderWeight(member, settings);

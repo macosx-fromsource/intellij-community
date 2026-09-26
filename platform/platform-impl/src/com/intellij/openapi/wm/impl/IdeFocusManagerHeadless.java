@@ -1,58 +1,36 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.wm.impl;
 
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.util.ActionCallback;
-import com.intellij.openapi.util.Expirable;
 import com.intellij.openapi.util.ExpirableRunnable;
-import com.intellij.openapi.wm.FocusCommand;
-import com.intellij.openapi.wm.FocusRequestor;
 import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.openapi.wm.IdeFrame;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.KeyEvent;
+import javax.swing.JComponent;
+import java.awt.Component;
+import java.awt.Window;
 
-public class IdeFocusManagerHeadless extends IdeFocusManager {
-
+@ApiStatus.Internal
+public final class IdeFocusManagerHeadless extends IdeFocusManager { // FIXME-ank: reverted final
   public static final IdeFocusManagerHeadless INSTANCE = new IdeFocusManagerHeadless();
 
   @Override
-  @NotNull
-  public ActionCallback requestFocus(@NotNull final Component c, final boolean forced) {
+  public @NotNull ActionCallback requestFocus(final @NotNull Component c, final boolean forced) {
     return ActionCallback.DONE;
   }
 
   @Override
-  @NotNull
-  public ActionCallback requestFocus(@NotNull final FocusCommand command, final boolean forced) {
-    return ActionCallback.DONE;
-  }
-
-  @Override
-  public JComponent getFocusTargetFor(@NotNull final JComponent comp) {
+  public JComponent getFocusTargetFor(final @NotNull JComponent comp) {
     return null;
   }
 
   @Override
-  public void doWhenFocusSettlesDown(@NotNull final Runnable runnable) {
+  public void doWhenFocusSettlesDown(final @NotNull Runnable runnable) {
     runnable.run();
   }
 
@@ -69,54 +47,13 @@ public class IdeFocusManagerHeadless extends IdeFocusManager {
   }
 
   @Override
-  public Component getFocusedDescendantFor(final Component c) {
+  public Component getFocusedDescendantFor(@NotNull Component c) {
     return null;
-  }
-
-  @Override
-  public boolean dispatch(@NotNull KeyEvent e) {
-    return false;
-  }
-
-  @Override
-  public boolean isFocusBeingTransferred() {
-    return false;
-  }
-
-  @Override
-  @NotNull
-  public ActionCallback requestDefaultFocus(boolean forced) {
-    return ActionCallback.DONE;
   }
 
   @Override
   public boolean isFocusTransferEnabled() {
     return true;
-  }
-
-  @NotNull
-  @Override
-  public Expirable getTimestamp(boolean trackOnlyForcedCommands) {
-    return new Expirable() {
-      @Override
-      public boolean isExpired() {
-        return false;
-      }
-    };
-  }
-
-  @NotNull
-  @Override
-  public FocusRequestor getFurtherRequestor() {
-    return this;
-  }
-
-  @Override
-  public void revalidateFocus(@NotNull ExpirableRunnable runnable) {
-  }
-
-  @Override
-  public void setTypeaheadEnabled(boolean enabled) {
   }
 
   @Override
@@ -130,7 +67,7 @@ public class IdeFocusManagerHeadless extends IdeFocusManager {
   }
 
   @Override
-  public Component getLastFocusedFor(IdeFrame frame) {
+  public Component getLastFocusedFor(@Nullable Window frame) {
     return null;
   }
 
@@ -140,10 +77,11 @@ public class IdeFocusManagerHeadless extends IdeFocusManager {
   }
 
   @Override
-  public void toFront(JComponent c) {
+  public @Nullable Window getLastFocusedIdeWindow() {
+    return null;
   }
 
   @Override
-  public void dispose() {
+  public void toFront(JComponent c) {
   }
 }

@@ -20,26 +20,23 @@ import com.intellij.codeInsight.editorActions.ExtendWordSelectionHandlerBase;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrTypeCastExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeElement;
 
 import java.util.List;
 
-/**
- * @author ilyas
- */
-public class GroovyTypeCastSelectioner extends ExtendWordSelectionHandlerBase {
+public final class GroovyTypeCastSelectioner extends ExtendWordSelectionHandlerBase {
   @Override
-  public boolean canSelect(PsiElement e) {
+  public boolean canSelect(@NotNull PsiElement e) {
     return e instanceof GrTypeCastExpression;
   }
 
   @Override
-  public List<TextRange> select(PsiElement e, CharSequence editorText, int cursorOffset, Editor editor) {
+  public List<TextRange> select(@NotNull PsiElement e, @NotNull CharSequence editorText, int cursorOffset, @NotNull Editor editor) {
     List<TextRange> result = super.select(e, editorText, cursorOffset, editor);
 
-    if (e instanceof GrTypeCastExpression) {
-      GrTypeCastExpression castExpression = ((GrTypeCastExpression) e);
+    if (e instanceof GrTypeCastExpression castExpression) {
       GrTypeElement type = castExpression.getCastTypeElement();
       TextRange range = type.getTextRange();
       if (range.contains(cursorOffset)) {

@@ -1,4 +1,4 @@
-// "Replace Stream API chain with loop" "true"
+// "Replace Stream API chain with loop" "true-preview"
 
 import java.util.Objects;
 import java.util.function.DoubleSupplier;
@@ -10,13 +10,13 @@ public class Main {
     DoubleSupplier s = () -> {
         long sum = 0;
         long count = 0;
-        for (String s1 : list) {
-            if (Objects.nonNull(s1)) {
-                sum += s1.length();
+        for (String string : list) {
+            if (string != null) {
+                sum += string.length();
                 count++;
             }
         }
-        return (count == 0 ? 0.0 : (double) sum / count);
+        return count > 0 ? (double) sum / count : 0.0;
     };
     System.out.println(s.getAsDouble());
   }

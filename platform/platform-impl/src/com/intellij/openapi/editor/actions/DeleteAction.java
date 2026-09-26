@@ -1,66 +1,41 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * Created by IntelliJ IDEA.
- * User: max
- * Date: May 13, 2002
- * Time: 8:20:36 PM
- * To change template for new class use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.openapi.editor.actions;
 
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.command.CommandProcessor;
-import com.intellij.openapi.editor.*;
+import com.intellij.openapi.editor.Caret;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.EditorModificationUtil;
+import com.intellij.openapi.editor.FoldRegion;
 import com.intellij.openapi.editor.actionSystem.EditorAction;
 import com.intellij.openapi.editor.actionSystem.EditorWriteActionHandler;
 import com.intellij.openapi.editor.ex.util.EditorUIUtil;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import com.intellij.openapi.ide.CopyPasteManager;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.ui.MacUIUtil;
+import com.intellij.util.DocumentUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 
-public class DeleteAction extends EditorAction {
+public final class DeleteAction extends EditorAction {
   public DeleteAction() {
     super(new Handler());
   }
 
-  private static class Handler extends EditorWriteActionHandler {
-    public Handler() {
-      super(true);
-    }
-
+  @ApiStatus.Internal
+  public static final class Handler extends EditorWriteActionHandler.ForEachCaret {
     @Override
-    public void executeWriteAction(Editor editor, DataContext dataContext) {
+    public void executeWriteAction(@NotNull Editor editor, @NotNull Caret caret, DataContext dataContext) {
       EditorUIUtil.hideCursorInEditor(editor);
       CommandProcessor.getInstance().setCurrentCommandGroupId(EditorActionUtil.DELETE_COMMAND_GROUP);
       CopyPasteManager.getInstance().stopKillRings();
-      SelectionModel selectionModel = editor.getSelectionModel();
-      if (!selectionModel.hasSelection()) {
-        if (editor.getInlayModel().hasInlineElementAt(editor.getCaretModel().getVisualPosition())) {
-          editor.getCaretModel().moveCaretRelatively(1, 0, false, false, EditorUtil.isCurrentCaretPrimary(editor));
-        }
-        else {
-          deleteCharAtCaret(editor);
-        }
+      if (editor.getInlayModel().hasInlineElementAt(editor.getCaretModel().getVisualPosition())) {
+        editor.getCaretModel().moveCaretRelatively(1, 0, false, false, EditorUtil.isCurrentCaretPrimary(editor));
       }
       else {
-        EditorModificationUtil.deleteSelectedText(editor);
+        deleteCharAtCaret(editor);
       }
     }
   }
@@ -104,7 +79,7 @@ public class DeleteAction extends EditorAction {
         editor.getCaretModel().moveToOffset(region.getStartOffset());
       }
       else {
-        document.deleteString(offset, offset + 1);
+        document.deleteString(offset, DocumentUtil.getNextCodePointOffset(document, offset));
       }
       return;
     }

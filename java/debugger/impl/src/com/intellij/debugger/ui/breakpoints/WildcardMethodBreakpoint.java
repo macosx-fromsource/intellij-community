@@ -15,58 +15,55 @@
  */
 package com.intellij.debugger.ui.breakpoints;
 
-import com.intellij.debugger.DebuggerBundle;
 import com.intellij.debugger.DebuggerManagerEx;
+import com.intellij.debugger.JavaDebuggerBundle;
 import com.intellij.debugger.engine.DebugProcess;
 import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.DebuggerManagerThreadImpl;
 import com.intellij.debugger.engine.DebuggerUtils;
 import com.intellij.debugger.engine.evaluation.EvaluateException;
 import com.intellij.debugger.engine.evaluation.EvaluationContextImpl;
+import com.intellij.debugger.engine.events.SuspendContextCommandImpl;
 import com.intellij.debugger.engine.requests.RequestManagerImpl;
-import com.intellij.debugger.impl.DebuggerUtilsEx;
+import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.icons.AllIcons;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMExternalizerUtil;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.PatternUtil;
-import com.intellij.util.StringBuilderSpinAllocator;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
-import com.sun.jdi.AbsentInformationException;
-import com.sun.jdi.Location;
 import com.sun.jdi.Method;
 import com.sun.jdi.ReferenceType;
 import com.sun.jdi.event.LocatableEvent;
-import com.sun.jdi.event.MethodEntryEvent;
-import com.sun.jdi.event.MethodExitEvent;
 import com.sun.jdi.request.MethodEntryRequest;
 import com.sun.jdi.request.MethodExitRequest;
+import one.util.streamex.StreamEx;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.debugger.breakpoints.properties.JavaMethodBreakpointProperties;
 
-import javax.swing.*;
+import javax.swing.Icon;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import java.util.stream.Stream;
 
-public class WildcardMethodBreakpoint extends Breakpoint<JavaMethodBreakpointProperties> {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.ui.breakpoints.ExceptionBreakpoint");
-
-  public static final String JDOM_LABEL = "wildcard_breakpoint";
+public class WildcardMethodBreakpoint extends Breakpoint<JavaMethodBreakpointProperties> implements MethodBreakpointBase {
+  private static final Logger LOG = Logger.getInstance(WildcardMethodBreakpoint.class);
 
   public WildcardMethodBreakpoint(Project project, XBreakpoint<JavaMethodBreakpointProperties> breakpoint) {
     super(project, breakpoint);
   }
 
+  @Override
   public Key<MethodBreakpoint> getCategory() {
     return MethodBreakpoint.CATEGORY;
   }
@@ -77,132 +74,126 @@ public class WildcardMethodBreakpoint extends Breakpoint<JavaMethodBreakpointPro
     setMethodName(methodName);
   }
 
+  @Override
   public String getClassName() {
     return getClassPattern();
   }
 
+  @Override
   public @Nullable String getShortClassName() {
     return getClassName();
   }
 
-  public String getMethodName() {
+  public @NlsSafe String getMethodName() {
     return getProperties().myMethodName;
   }
 
-  public PsiClass getPsiClass() {
-    return ApplicationManager.getApplication().runReadAction(
-      (Computable<PsiClass>)() -> getClassName() != null ? DebuggerUtils.findClass(getClassName(), myProject, GlobalSearchScope.allScope(myProject)) : null);
+  @Override
+  public void disableEmulation() {
+    MethodBreakpointBase.disableEmulation(this);
   }
 
+  @Override
+  public PsiClass getPsiClass() {
+    return ReadAction.compute(() -> getClassName() != null ? DebuggerUtils.findClass(getClassName(), myProject, GlobalSearchScope.allScope(myProject)) : null);
+  }
+
+  @Override
   public String getDisplayName() {
     if (!isValid()) {
-      return DebuggerBundle.message("status.breakpoint.invalid");
+      return JavaDebuggerBundle.message("status.breakpoint.invalid");
     }
-    final StringBuilder buffer = StringBuilderSpinAllocator.alloc();
-    try {
-      buffer.append(getClassPattern());
-      buffer.append(".");
-      buffer.append(getMethodName());
-      buffer.append("()");
-      return buffer.toString();
-    }
-    finally {
-      StringBuilderSpinAllocator.dispose(buffer);
-    }
+    return getClassPattern() + "." + getMethodName() + "()";
   }
 
+  @Override
   public Icon getIcon() {
     if (!isEnabled()) {
       final Breakpoint master = DebuggerManagerEx.getInstanceEx(myProject).getBreakpointManager().findMasterBreakpoint(this);
-      return master == null? AllIcons.Debugger.Db_disabled_method_breakpoint : AllIcons.Debugger.Db_dep_method_breakpoint;
+      return master == null ? AllIcons.Debugger.Db_disabled_method_breakpoint : AllIcons.Debugger.Db_dep_method_breakpoint;
     }
     return AllIcons.Debugger.Db_method_breakpoint;
   }
 
+  @Override
   public void reload() {
   }
 
+  @Override
   public boolean evaluateCondition(EvaluationContextImpl context, LocatableEvent event) throws EvaluateException {
-    return matchesEvent(event) && super.evaluateCondition(context, event);
+    return (isEmulated() || matchesMethod(event.location().method())) && super.evaluateCondition(context, event);
   }
 
+  @Override
   public void createRequest(DebugProcessImpl debugProcess) {
     DebuggerManagerThreadImpl.assertIsManagerThread();
     if (!shouldCreateRequest(debugProcess)) {
       return;
     }
-    try {
-      RequestManagerImpl requestManager = debugProcess.getRequestsManager();
-      if (isWatchEntry()) {
-        MethodEntryRequest entryRequest = MethodBreakpoint.findRequest(debugProcess, MethodEntryRequest.class, this);
-        if (entryRequest == null) {
-          entryRequest = requestManager.createMethodEntryRequest(this);
-        }
-        else {
-          entryRequest.disable();
-        }
-        entryRequest.addClassFilter(getClassPattern());
-        debugProcess.getRequestsManager().enableRequest(entryRequest);
-      }
-      if (isWatchExit()) {
-        MethodExitRequest exitRequest = MethodBreakpoint.findRequest(debugProcess, MethodExitRequest.class, this);
-        if (exitRequest == null) {
-          exitRequest = requestManager.createMethodExitRequest(this);
-        }
-        else {
-          exitRequest.disable();
-        }
-        exitRequest.addClassFilter(getClassPattern());
-        debugProcess.getRequestsManager().enableRequest(exitRequest);
-      }
+    if (isEmulated()) {
+      debugProcess.getRequestsManager().callbackOnPrepareClasses(this, getClassPattern());
+
+      matchingClasses(debugProcess)
+        .filter(ReferenceType::isPrepared)
+        .forEach(aList -> processClassPrepare(debugProcess, aList));
     }
-    catch (Exception e) {
-      LOG.debug(e);
+    else {
+      try {
+        RequestManagerImpl requestManager = debugProcess.getRequestsManager();
+        if (isWatchEntry()) {
+          MethodEntryRequest entryRequest = MethodBreakpoint.findRequest(debugProcess, MethodEntryRequest.class, this);
+          if (entryRequest == null) {
+            entryRequest = requestManager.createMethodEntryRequest(this);
+          }
+          else {
+            entryRequest.disable();
+          }
+          entryRequest.addClassFilter(getClassPattern());
+          debugProcess.getRequestsManager().enableRequest(entryRequest);
+        }
+        if (isWatchExit()) {
+          MethodExitRequest exitRequest = MethodBreakpoint.findRequest(debugProcess, MethodExitRequest.class, this);
+          if (exitRequest == null) {
+            exitRequest = requestManager.createMethodExitRequest(this);
+          }
+          else {
+            exitRequest.disable();
+          }
+          exitRequest.addClassFilter(getClassPattern());
+          debugProcess.getRequestsManager().enableRequest(exitRequest);
+        }
+      }
+      catch (Exception e) {
+        LOG.debug(e);
+      }
     }
   }
 
+  protected boolean stopOnlyInBaseClass() {
+    return false;
+  }
+
+  @Override
   public void processClassPrepare(DebugProcess debugProcess, ReferenceType refType) {
-    // should be emty - does not make sense for this breakpoint
+    if (isEmulated()) {
+      MethodBreakpoint.createRequestForPreparedClassEmulated(this, (DebugProcessImpl)debugProcess, refType, !stopOnlyInBaseClass());
+    }
+    else {
+      // should be empty - does not make sense for this breakpoint
+    }
   }
 
-  public String getEventMessage(LocatableEvent event) {
-    final Location location = event.location();
-    final String locationQName = DebuggerUtilsEx.getLocationMethodQName(location);
-    String locationFileName = "";
-    try {
-      locationFileName = location.sourceName();
-    }
-    catch (AbsentInformationException e) {
-      locationFileName = "";
-    }
-    final int locationLine = location.lineNumber();
-    
-    if (event instanceof MethodEntryEvent) {
-      MethodEntryEvent entryEvent = (MethodEntryEvent)event;
-      final Method method = entryEvent.method();
-      return DebuggerBundle.message(
-        "status.method.entry.breakpoint.reached", 
-        method.declaringType().name() + "." + method.name() + "()",
-        locationQName,
-        locationFileName,
-        locationLine
-      );
-    }
-    
-    if (event instanceof MethodExitEvent) {
-      MethodExitEvent exitEvent = (MethodExitEvent)event;
-      final Method method = exitEvent.method();
-      return DebuggerBundle.message(
-        "status.method.exit.breakpoint.reached", 
-        method.declaringType().name() + "." + method.name() + "()",
-        locationQName,
-        locationFileName,
-        locationLine
-      );
-    }
-    return "";
+  @Override
+  public boolean processLocatableEvent(@NotNull SuspendContextCommandImpl action, LocatableEvent event) throws EventProcessingException {
+    return MethodBreakpointBase.processWithReturnValueCapture(this, action, event, LOG, () -> super.processLocatableEvent(action, event));
   }
 
+  @Override
+  public String getEventMessage(@NotNull LocatableEvent event) {
+    return MethodBreakpoint.getEventMessage(event, "");
+  }
+
+  @Override
   public boolean isValid() {
     return !StringUtil.isEmpty(getClassPattern()) && !StringUtil.isEmpty(getMethodName());
   }
@@ -218,45 +209,57 @@ public class WildcardMethodBreakpoint extends Breakpoint<JavaMethodBreakpointPro
   //  }
   //}
 
+  @Override
   public PsiElement getEvaluationElement() {
     return null;
   }
 
+  @Override
   public void readExternal(Element parentNode) throws InvalidDataException {
     super.readExternal(parentNode);
 
-    //noinspection HardCodedStringLiteral
     String className = parentNode.getAttributeValue("class_name");
     setClassPattern(className);
 
-    //noinspection HardCodedStringLiteral
     String methodName = parentNode.getAttributeValue("method_name");
     setMethodName(methodName);
 
     try {
-      getProperties().WATCH_ENTRY = Boolean.valueOf(JDOMExternalizerUtil.readField(parentNode, "WATCH_ENTRY"));
-    } catch (Exception ignored) {
+      getProperties().WATCH_ENTRY = Boolean.parseBoolean(JDOMExternalizerUtil.readField(parentNode, "WATCH_ENTRY"));
+    }
+    catch (Exception ignored) {
     }
     try {
-      getProperties().WATCH_EXIT = Boolean.valueOf(JDOMExternalizerUtil.readField(parentNode, "WATCH_EXIT"));
-    } catch (Exception ignored) {
+      getProperties().WATCH_EXIT = Boolean.parseBoolean(JDOMExternalizerUtil.readField(parentNode, "WATCH_EXIT"));
+    }
+    catch (Exception ignored) {
     }
 
-    if(className == null || methodName == null) {
+    if (className == null || methodName == null) {
       throw new InvalidDataException();
     }
   }
 
-  public boolean matchesEvent(final LocatableEvent event){
+  protected @NotNull Stream<ReferenceType> matchingClasses(DebugProcessImpl debugProcess) {
+    Pattern pattern = PatternUtil.fromMask(getClassPattern());
+    return VirtualMachineProxyImpl.getCurrent().allClasses().stream()
+      .filter(c -> pattern.matcher(c.name()).matches());
+  }
+
+  @Override
+  public StreamEx<Method> matchingMethods(StreamEx<Method> methods, DebugProcessImpl debugProcess) {
+    return methods.filter(this::matchesMethod);
+  }
+
+  private boolean matchesMethod(Method method) {
     StringBuilder sb = new StringBuilder();
     for (String mask : StringUtil.split(getMethodName(), ",")) {
-      if (sb.length() > 0) {
+      if (!sb.isEmpty()) {
         sb.append('|');
       }
       sb.append('(').append(PatternUtil.convertToRegex(mask)).append(')');
     }
 
-    Method method = event.location().method();
     try {
       return method != null && Pattern.compile(sb.toString()).matcher(method.name()).matches();
     }
@@ -273,23 +276,22 @@ public class WildcardMethodBreakpoint extends Breakpoint<JavaMethodBreakpointPro
     return new WildcardMethodBreakpoint(project, classPattern, methodName, xBreakpoint);
   }
 
-  private boolean isWatchEntry() {
+  @Override
+  public boolean isEmulated() {
+    return getProperties().EMULATED;
+  }
+
+  @Override
+  public boolean isWatchEntry() {
     return getProperties().WATCH_ENTRY;
   }
 
-  private void setWatchEntry(boolean WATCH_ENTRY) {
-    getProperties().WATCH_ENTRY = WATCH_ENTRY;
-  }
-
-  private boolean isWatchExit() {
+  @Override
+  public boolean isWatchExit() {
     return getProperties().WATCH_EXIT;
   }
 
-  private void setWatchExit(boolean WATCH_EXIT) {
-    getProperties().WATCH_EXIT = WATCH_EXIT;
-  }
-
-  private String getClassPattern() {
+  private @NlsSafe String getClassPattern() {
     return getProperties().myClassPattern;
   }
 

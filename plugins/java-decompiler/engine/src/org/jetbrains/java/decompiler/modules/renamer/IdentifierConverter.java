@@ -1,24 +1,8 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.renamer;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
-import org.jetbrains.java.decompiler.main.DecompilerContext;
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.jetbrains.java.decompiler.main.extern.IIdentifierRenamer;
+import org.jetbrains.java.decompiler.main.extern.IMemberIdentifierRenamer;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
 import org.jetbrains.java.decompiler.struct.StructField;
@@ -29,44 +13,34 @@ import org.jetbrains.java.decompiler.struct.gen.NewClassNameBuilder;
 import org.jetbrains.java.decompiler.util.VBStyleCollection;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class IdentifierConverter implements NewClassNameBuilder {
-
-  private StructContext context;
-  private IIdentifierRenamer helper;
-  private PoolInterceptor interceptor;
+  private final StructContext context;
+  private final IMemberIdentifierRenamer helper;
+  private final PoolInterceptor interceptor;
   private List<ClassWrapperNode> rootClasses = new ArrayList<>();
   private List<ClassWrapperNode> rootInterfaces = new ArrayList<>();
   private Map<String, Map<String, String>> interfaceNameMaps = new HashMap<>();
 
-  public void rename(StructContext context) {
+  public IdentifierConverter(StructContext context, IMemberIdentifierRenamer helper, PoolInterceptor interceptor) {
+    this.context = context;
+    this.helper = helper;
+    this.interceptor = interceptor;
+  }
+
+  public void rename() {
     try {
-      this.context = context;
-
-      String user_class = (String)DecompilerContext.getProperty(IFernflowerPreferences.USER_RENAMER_CLASS);
-      if (user_class != null) {
-        try {
-          helper = (IIdentifierRenamer)IdentifierConverter.class.getClassLoader().loadClass(user_class).newInstance();
-        }
-        catch (Exception ignored) { }
-      }
-
-      if (helper == null) {
-        helper = new ConverterHelper();
-      }
-
-      interceptor = new PoolInterceptor(helper);
-
       buildInheritanceTree();
-
       renameAllClasses();
-
       renameInterfaces();
-
       renameClasses();
-
-      DecompilerContext.setPoolInterceptor(interceptor);
       context.reloadContext();
     }
     catch (IOException ex) {
@@ -179,13 +153,13 @@ public class IdentifierConverter implements NewClassNameBuilder {
     String classOldFullName = cl.qualifiedName;
 
     // TODO: rename packages
-    String clSimpleName = ConverterHelper.getSimpleClassName(classOldFullName);
-    if (helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, clSimpleName, null, null)) {
+    String clSimpleName = MemberConverterHelper.getSimpleClassName(classOldFullName);
+    if (helper.toBeRenamed(IMemberIdentifierRenamer.Type.ELEMENT_CLASS, clSimpleName, null, null)) {
       String classNewFullName;
 
       do {
-        String classname = helper.getNextClassName(classOldFullName, ConverterHelper.getSimpleClassName(classOldFullName));
-        classNewFullName = ConverterHelper.replaceSimpleClassName(classOldFullName, classname);
+        String classname = helper.getNextClassName(classOldFullName, MemberConverterHelper.getSimpleClassName(classOldFullName));
+        classNewFullName = MemberConverterHelper.replaceSimpleClassName(classOldFullName, classname);
       }
       while (context.getClasses().containsKey(classNewFullName));
 
@@ -223,7 +197,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
           names.put(key, name);
         }
       }
-      else if (helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, classOldFullName, name, mt.getDescriptor())) {
+      else if (helper.toBeRenamed(IMemberIdentifierRenamer.Type.ELEMENT_METHOD, classOldFullName, name, mt.getDescriptor())) {
         if (isPrivate || !names.containsKey(key)) {
           do {
             name = helper.getNextMethodName(classOldFullName, name, mt.getDescriptor());
@@ -256,7 +230,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
     }
 
     for (StructField fd : cl.getFields()) {
-      if (helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, classOldFullName, fd.getName(), fd.getDescriptor())) {
+      if (helper.toBeRenamed(IMemberIdentifierRenamer.Type.ELEMENT_FIELD, classOldFullName, fd.getName(), fd.getDescriptor())) {
         String newName;
         do {
           newName = helper.getNextFieldName(classOldFullName, fd.getName(), fd.getDescriptor());
@@ -354,7 +328,6 @@ public class IdentifierConverter implements NewClassNameBuilder {
           nodes.put(clStr.qualifiedName, node = new ClassWrapperNode(clStr));
         }
 
-        //noinspection ConstantConditions
         if (child != null) {
           node.addSubclass(child);
         }

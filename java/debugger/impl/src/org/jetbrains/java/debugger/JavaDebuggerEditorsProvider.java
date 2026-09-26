@@ -1,33 +1,25 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.debugger;
 
 import com.intellij.debugger.engine.evaluation.CodeFragmentFactory;
 import com.intellij.debugger.engine.evaluation.TextWithImports;
 import com.intellij.debugger.engine.evaluation.TextWithImportsImpl;
 import com.intellij.debugger.impl.DebuggerUtilsEx;
-import com.intellij.debugger.impl.DebuggerUtilsImpl;
 import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.lang.Language;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
-import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.JavaCodeFragment;
+import com.intellij.psi.JavaCodeFragmentFactory;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiInvalidElementAccessException;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xdebugger.XExpression;
 import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.evaluation.EvaluationMode;
@@ -35,15 +27,14 @@ import com.intellij.xdebugger.evaluation.XDebuggerEditorsProviderBase;
 import com.intellij.xdebugger.impl.breakpoints.XExpressionImpl;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.stream.Collectors;
 
 public class JavaDebuggerEditorsProvider extends XDebuggerEditorsProviderBase {
-  @NotNull
   @Override
-  public FileType getFileType() {
+  public @NotNull FileType getFileType() {
     return JavaFileType.INSTANCE;
   }
 
@@ -55,29 +46,29 @@ public class JavaDebuggerEditorsProvider extends XDebuggerEditorsProviderBase {
     return JavaCodeFragmentFactory.getInstance(project).createExpressionCodeFragment(text, context, null, isPhysical);
   }
 
-  @NotNull
   @Override
-  public Collection<Language> getSupportedLanguages(@Nullable PsiElement context) {
-    return DebuggerUtilsEx.getCodeFragmentFactories(context).stream()
-      .map(factory -> factory.getFileType().getLanguage())
-      .collect(Collectors.toList());
+  public @NotNull @Unmodifiable Collection<Language> getSupportedLanguages(@Nullable PsiElement context) {
+    return ContainerUtil.map(DebuggerUtilsEx.getCodeFragmentFactories(context), factory -> factory.getFileType().getLanguage());
   }
 
-  @NotNull
   @Override
-  public Collection<Language> getSupportedLanguages(@NotNull Project project, @Nullable XSourcePosition sourcePosition) {
+  public @NotNull @Unmodifiable Collection<Language> getSupportedLanguages(@NotNull Project project, @Nullable XSourcePosition sourcePosition) {
     if (sourcePosition != null) {
       return getSupportedLanguages(getContextElement(sourcePosition.getFile(), sourcePosition.getOffset(), project));
     }
     return Collections.emptyList();
   }
 
-  @NotNull
   @Override
-  public XExpression createExpression(@NotNull Project project, @NotNull Document document, @Nullable Language language, @NotNull EvaluationMode mode) {
-    PsiFile psiFile = PsiDocumentManager.getInstance(project).getPsiFile(document);
-    if (psiFile != null) {
-      return new XExpressionImpl(document.getText(), language, StringUtil.nullize(((JavaCodeFragment)psiFile).importsToString()), mode);
+  public @NotNull XExpression createExpression(@NotNull Project project, @NotNull Document document, @Nullable Language language, @NotNull EvaluationMode mode) {
+    try {
+      PsiFile psiFile = ReadAction.computeBlocking(() -> PsiDocumentManager.getInstance(project).getPsiFile(document));
+      if (psiFile instanceof JavaCodeFragment fragment) {
+        return new XExpressionImpl(document.getText(), language, StringUtil.nullize(fragment.importsToString()), mode);
+      }
+    }
+    catch (PsiInvalidElementAccessException e) {
+      Logger.getInstance(JavaDebuggerEditorsProvider.class).error("Cannot create expression, as file is invalid", e);
     }
     return super.createExpression(project, document, language, mode);
   }
@@ -90,20 +81,7 @@ public class JavaDebuggerEditorsProvider extends XDebuggerEditorsProviderBase {
     TextWithImports text = TextWithImportsImpl.fromXExpression(expression);
     if (text != null) {
       CodeFragmentFactory factory = DebuggerUtilsEx.findAppropriateCodeFragmentFactory(text, context);
-      JavaCodeFragment codeFragment = factory.createPresentationCodeFragment(text, context, project);
-
-      if (context != null) {
-        PsiType contextType = context.getUserData(DebuggerUtilsImpl.PSI_TYPE_KEY);
-        if (contextType == null) {
-          PsiClass contextClass = PsiTreeUtil.getNonStrictParentOfType(context, PsiClass.class);
-          if (contextClass != null) {
-            contextType = JavaPsiFacade.getInstance(codeFragment.getProject()).getElementFactory().createType(contextClass);
-          }
-        }
-        codeFragment.setThisType(contextType);
-      }
-
-      return codeFragment;
+      return factory.createPresentationPsiCodeFragment(text, context, project);
     }
     else {
       return super.createExpressionCodeFragment(project, expression, context, isPhysical);

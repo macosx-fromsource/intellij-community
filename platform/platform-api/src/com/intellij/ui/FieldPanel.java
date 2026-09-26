@@ -1,32 +1,21 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui;
 
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
-import com.intellij.ui.components.JBTextField;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.ui.components.fields.ExtendableTextField;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.JButton;
+import javax.swing.JTextField;
 import javax.swing.event.DocumentEvent;
 import java.awt.event.ActionListener;
 
-public class FieldPanel extends AbstractFieldPanel {
+public class FieldPanel extends AbstractFieldPanel implements TextAccessor {
   private final JTextField myTextField;
 
   public FieldPanel() {
-    this(new JBTextField(30));
+    this(new ExtendableTextField(30));
   }
 
   protected FieldPanel(JTextField textField) {
@@ -35,16 +24,17 @@ public class FieldPanel extends AbstractFieldPanel {
     createComponent();
   }
 
-  public FieldPanel(String labelText, final String viewerDialogTitle, ActionListener browseButtonActionListener, final Runnable documentListener) {
-    this(new JBTextField(30), labelText, viewerDialogTitle, browseButtonActionListener, documentListener);
+  public FieldPanel(@NlsContexts.Label String labelText, final @NlsContexts.DialogTitle String viewerDialogTitle, ActionListener browseButtonActionListener, final Runnable documentListener) {
+    this(new ExtendableTextField(30), labelText, viewerDialogTitle, browseButtonActionListener, documentListener);
   }
 
-  public FieldPanel(JTextField textField, String labelText, final String viewerDialogTitle, ActionListener browseButtonActionListener, final Runnable documentListener) {
+  public FieldPanel(JTextField textField, @NlsContexts.Label String labelText, final @NlsContexts.DialogTitle String viewerDialogTitle, ActionListener browseButtonActionListener, final Runnable documentListener) {
     super(textField, labelText, viewerDialogTitle, browseButtonActionListener, documentListener);
     myTextField = textField;
     createComponent();
   }
 
+  @Override
   public void createComponent() {
     super.createComponent();
     TextFieldWithBrowseButton.MyDoClickAction doClickAction = getDoClickAction();
@@ -53,7 +43,8 @@ public class FieldPanel extends AbstractFieldPanel {
     }
 
     myTextField.getDocument().addDocumentListener(new DocumentAdapter() {
-      public void textChanged(DocumentEvent event) {
+      @Override
+      public void textChanged(@NotNull DocumentEvent event) {
         if (getChangeListener() != null) {
           getChangeListener().run();
         }
@@ -61,10 +52,12 @@ public class FieldPanel extends AbstractFieldPanel {
     });
   }
 
+  @Override
   public String getText() {
     return myTextField.getText();
   }
 
+  @Override
   public void setText(String text) {
     myTextField.setText(text);
   }
@@ -73,21 +66,21 @@ public class FieldPanel extends AbstractFieldPanel {
     return myTextField;
   }
 
-  public static FieldPanel create(String labelText, String viewerDialogTitle) {
+  public static FieldPanel create(@NlsContexts.Label String labelText, @NlsContexts.DialogTitle String viewerDialogTitle) {
     return create(labelText, viewerDialogTitle, null, null);
   }
 
-  public static FieldPanel withPaths(String labelText, String viewerDialogTitle) {
+  public static FieldPanel withPaths(@NlsContexts.Label String labelText, @NlsContexts.DialogTitle String viewerDialogTitle) {
     return withPaths(labelText, viewerDialogTitle, null, null);
   }
 
-  public static FieldPanel withPaths(String labelText, String viewerDialogTitle, ActionListener browseButtonActionListener, Runnable documentListener) {
+  public static FieldPanel withPaths(@NlsContexts.Label String labelText, @NlsContexts.DialogTitle String viewerDialogTitle, ActionListener browseButtonActionListener, Runnable documentListener) {
     FieldPanel fieldPanel = create(labelText, viewerDialogTitle, browseButtonActionListener, documentListener);
     InsertPathAction.addTo(fieldPanel.myTextField);
     return fieldPanel;
   }
 
-  private static FieldPanel create(String labelText, String viewerDialogTitle, ActionListener browseButtonActionListener, Runnable documentListener) {
+  private static FieldPanel create(@NlsContexts.Label String labelText, @NlsContexts.DialogTitle String viewerDialogTitle, ActionListener browseButtonActionListener, Runnable documentListener) {
     return new FieldPanel(labelText, viewerDialogTitle, browseButtonActionListener, documentListener);
   }
 

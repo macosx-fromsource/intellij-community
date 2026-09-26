@@ -1,45 +1,24 @@
-/*
- * Copyright 2000-2011 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.text;
 
 import com.intellij.openapi.util.text.CharFilter;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiType;
-import com.intellij.util.StringBuilderSpinAllocator;
+import com.intellij.psi.PsiTypes;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class LiteralFormatUtil {
-  private static final CharFilter UNDERSCORES_FILTER = new CharFilter() {
-    @Override
-    public boolean accept(final char ch) {
-      return ch != '_';
-    }
-  };
+public final class LiteralFormatUtil {
+  private static final CharFilter UNDERSCORES_FILTER = ch -> ch != '_';
 
   private LiteralFormatUtil() { }
 
-  @NotNull
-  public static String removeUnderscores(@NotNull final String text) {
+  public static @NotNull String removeUnderscores(final @NotNull String text) {
     return StringUtil.strip(text, UNDERSCORES_FILTER);
   }
 
-  @NotNull
-  public static String format(@NotNull final String original, @Nullable final PsiType type) {
-    final boolean isFP = PsiType.FLOAT.equals(type) || PsiType.DOUBLE.equals(type);
+  public static @NotNull String format(final @NotNull String original, final @Nullable PsiType type) {
+    final boolean isFP = PsiTypes.floatType().equals(type) || PsiTypes.doubleType().equals(type);
 
     String text = original;
     String prefix = "";
@@ -53,7 +32,7 @@ public class LiteralFormatUtil {
       groupSize = 4;  // hex, bin
     }
 
-    if (text.length() == 0) return original;
+    if (text.isEmpty()) return original;
 
     final char last = text.charAt(text.length() - 1);
     if (StringUtil.containsChar("Ll", last) ||
@@ -63,7 +42,7 @@ public class LiteralFormatUtil {
       text = text.substring(0, pos);
     }
 
-    if (text.length() == 0) return original;
+    if (text.isEmpty()) return original;
 
     boolean hasPoint = false;
     String fractional = "";
@@ -86,22 +65,17 @@ public class LiteralFormatUtil {
       }
     }
 
-    final StringBuilder buffer = StringBuilderSpinAllocator.alloc();
-    try {
-      buffer.append(prefix);
-      appendFromEnd(buffer, text, groupSize);
-      if (isFP) {
-        if (hasPoint) buffer.append('.');
-        appendFromStart(buffer, fractional, groupSize);
-        buffer.append(exponentMark);
-        appendFromEnd(buffer, exponent, 3);  // exponent is always decimal
-      }
-      buffer.append(suffix);
-      return buffer.toString();
+    final StringBuilder buffer = new StringBuilder();
+    buffer.append(prefix);
+    appendFromEnd(buffer, text, groupSize);
+    if (isFP) {
+      if (hasPoint) buffer.append('.');
+      appendFromStart(buffer, fractional, groupSize);
+      buffer.append(exponentMark);
+      appendFromEnd(buffer, exponent, 3);  // exponent is always decimal
     }
-    finally {
-      StringBuilderSpinAllocator.dispose(buffer);
-    }
+    buffer.append(suffix);
+    return buffer.toString();
   }
 
   private static void appendFromEnd(final StringBuilder buffer, final String original, final int groupSize) {
@@ -121,7 +95,7 @@ public class LiteralFormatUtil {
   private static void appendFromStart(final StringBuilder buffer, final String original, final int groupSize) {
     int pointer = 0;
     while (pointer + groupSize < original.length()) {
-      buffer.append(original.substring(pointer, pointer + groupSize));
+      buffer.append(original, pointer, pointer + groupSize);
       buffer.append('_');
       pointer += groupSize;
     }

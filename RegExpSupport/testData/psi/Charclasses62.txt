@@ -3,10 +3,11 @@ REGEXP_FILE
     RegExpBranchImpl: <[a-\w]>
       RegExpClassImpl: <[a-\w]>
         PsiElement(CLASS_BEGIN)('[')
-        RegExpCharRangeImpl: <a-\w>
+        RegExpCharRangeImpl: <a->
           RegExpCharImpl: <a>
             PsiElement(CHARACTER)('a')
           PsiElement(MINUS)('-')
+        PsiErrorElement:'\w' not allowed as end of range
           RegExpSimpleClassImpl: <\w>
             PsiElement(CHAR_CLASS)('\w')
         PsiElement(CLASS_END)(']')

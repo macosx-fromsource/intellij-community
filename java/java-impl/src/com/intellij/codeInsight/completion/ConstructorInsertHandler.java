@@ -1,8 +1,12 @@
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.completion;
 
 import com.intellij.codeInsight.ExpectedTypeInfo;
 import com.intellij.codeInsight.ExpectedTypesProvider;
+import com.intellij.codeInsight.completion.method.JavaMethodCallInsertHandlerHelper;
+import com.intellij.codeInsight.completion.util.MethodParenthesesHandler;
 import com.intellij.codeInsight.generation.GenerateMembersUtil;
+import com.intellij.codeInsight.generation.JavaOverrideImplementMemberChooser;
 import com.intellij.codeInsight.generation.OverrideImplementExploreUtil;
 import com.intellij.codeInsight.generation.OverrideImplementUtil;
 import com.intellij.codeInsight.generation.PsiGenerationInfo;
@@ -11,45 +15,71 @@ import com.intellij.codeInsight.lookup.Lookup;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementDecorator;
 import com.intellij.codeInsight.lookup.PsiTypeLookupItem;
-import com.intellij.codeInsight.template.*;
+import com.intellij.codeInsight.template.Template;
+import com.intellij.codeInsight.template.TemplateBuilderFactory;
+import com.intellij.codeInsight.template.TemplateBuilderImpl;
+import com.intellij.codeInsight.template.TemplateEditingAdapter;
+import com.intellij.codeInsight.template.TemplateManager;
 import com.intellij.codeInsight.template.impl.TemplateManagerImpl;
 import com.intellij.codeInsight.template.impl.TemplateState;
 import com.intellij.featureStatistics.FeatureUsageTracker;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.Result;
-import com.intellij.openapi.application.TransactionGuard;
+import com.intellij.java.JavaBundle;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.ex.ApplicationManagerEx;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.command.UndoConfirmationPolicy;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.RangeMarker;
 import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiAnonymousClass;
+import com.intellij.psi.PsiCallExpression;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpressionList;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiNewExpression;
+import com.intellij.psi.PsiReferenceParameterList;
+import com.intellij.psi.PsiResolveHelper;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeElement;
+import com.intellij.psi.PsiTypes;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.impl.source.PostprocessReformattingAspect;
 import com.intellij.psi.infos.CandidateInfo;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.ThreeState;
+import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.List;
 
-/**
-* @author peter
-*/
-public class ConstructorInsertHandler implements InsertHandler<LookupElementDecorator<LookupElement>> {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.completion.ConstructorInsertHandler");
+public final class ConstructorInsertHandler implements InsertHandler<LookupElementDecorator<LookupElement>> {
+  private static final Logger LOG = Logger.getInstance(ConstructorInsertHandler.class);
   public static final ConstructorInsertHandler SMART_INSTANCE = new ConstructorInsertHandler(true);
   public static final ConstructorInsertHandler BASIC_INSTANCE = new ConstructorInsertHandler(false);
-  static final OffsetKey PARAM_LIST_START = OffsetKey.create("paramListStart");
-  static final OffsetKey PARAM_LIST_END = OffsetKey.create("paramListEnd");
   private final boolean mySmart;
 
   private ConstructorInsertHandler(boolean smart) {
@@ -57,35 +87,30 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
   }
 
   @Override
-  public void handleInsert(InsertionContext context, LookupElementDecorator<LookupElement> item) {
-    @SuppressWarnings({"unchecked"}) final LookupElement delegate = item.getDelegate();
+  public void handleInsert(@NotNull InsertionContext context, @NotNull LookupElementDecorator<LookupElement> item) {
+    final LookupElement delegate = item.getDelegate();
 
     PsiClass psiClass = (PsiClass)item.getObject();
-
+    SmartPsiElementPointer<PsiClass> classPointer = SmartPointerManager.createPointer(psiClass);
     boolean isAbstract = psiClass.hasModifierProperty(PsiModifier.ABSTRACT);
 
-    if (Lookup.REPLACE_SELECT_CHAR == context.getCompletionChar() && context.getOffsetMap().containsOffset(PARAM_LIST_START)) {
-      final int plStart = context.getOffset(PARAM_LIST_START);
-      final int plEnd = context.getOffset(PARAM_LIST_END);
-      if (plStart >= 0 && plEnd >= 0) {
-        context.getDocument().deleteString(plStart, plEnd);
-      }
+    if (Lookup.REPLACE_SELECT_CHAR == context.getCompletionChar()) {
+      JavaClassNameInsertHandler.overwriteTopmostReference(context);
     }
 
     context.commitDocument();
 
     OffsetKey insideRef = context.trackOffset(context.getTailOffset(), false);
 
-    final PsiElement position = SmartCompletionDecorator.getPosition(context, delegate);
+    PsiElement position = context.getFile().findElementAt(context.getStartOffset());
     if (position == null) return;
-    
-    final PsiExpression enclosing = PsiTreeUtil.getContextOfType(position, PsiExpression.class, true);
-    final PsiAnonymousClass anonymousClass = PsiTreeUtil.getParentOfType(position, PsiAnonymousClass.class);
-    final boolean inAnonymous = anonymousClass != null && anonymousClass.getParent() == enclosing;
+
+    PsiAnonymousClass anonymousClass = PsiTreeUtil.getParentOfType(position, PsiAnonymousClass.class);
+    boolean inAnonymous = anonymousClass != null && PsiTreeUtil.isAncestor(anonymousClass.getBaseClassReference(), position, false);
     if (delegate instanceof PsiTypeLookupItem) {
       if (context.getDocument().getTextLength() > context.getTailOffset() &&
           context.getDocument().getCharsSequence().charAt(context.getTailOffset()) == '<') {
-        PsiJavaCodeReferenceElement ref = PsiTreeUtil.findElementOfClassAtOffset(context.getFile(), context.getTailOffset(), PsiJavaCodeReferenceElement.class, false);
+        PsiJavaCodeReferenceElement ref = JavaClassNameInsertHandler.findJavaReference(context.getFile(), context.getTailOffset() - 1);
         if (ref != null) {
           PsiReferenceParameterList parameterList = ref.getParameterList();
           if (parameterList != null && context.getTailOffset() == parameterList.getTextRange().getStartOffset()) {
@@ -99,12 +124,14 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
       PostprocessReformattingAspect.getInstance(context.getProject()).doPostponedFormatting(context.getFile().getViewProvider());
     }
 
-    if (item.getDelegate() instanceof JavaPsiClassReferenceElement) {
-      PsiTypeLookupItem.addImportForItem(context, psiClass);
+    if (item.getDelegate() instanceof JavaPsiClassReferenceElement && classPointer.getElement() != null) {
+      PsiTypeLookupItem.addImportForItem(context, classPointer.getElement());
     }
 
 
-    insertParentheses(context, delegate, psiClass, !inAnonymous && isAbstract);
+    if (classPointer.getElement() != null) {
+      insertParentheses(context, delegate, classPointer.getElement(), !inAnonymous && isAbstract);
+    }
 
     if (inAnonymous) {
       return;
@@ -162,15 +189,15 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
     return false;
   }
 
-  private static void implementMethodsWhenTemplateIsFinished(InsertionContext context, @Nullable final OffsetKey insideBraces) {
+  private static void implementMethodsWhenTemplateIsFinished(InsertionContext context, final @Nullable OffsetKey insideBraces) {
     TemplateState state = TemplateManagerImpl.getTemplateState(context.getEditor());
     if (state != null && insideBraces != null) {
       state.addTemplateStateListener(new TemplateEditingAdapter() {
         @Override
-        public void templateFinished(Template template, boolean brokenOff) {
+        public void templateFinished(@NotNull Template template, boolean brokenOff) {
           if (!brokenOff) {
             context.getEditor().getCaretModel().moveToOffset(context.getOffset(insideBraces));
-            TransactionGuard.getInstance().submitTransactionAndWait(createOverrideRunnable(context.getEditor(), context.getFile(), context.getProject()));
+            createOverrideRunnable(context.getEditor(), context.getFile(), context.getProject()).run();
           }
         }
       });
@@ -184,7 +211,7 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
       return false;
     }
 
-    PsiElement position = SmartCompletionDecorator.getPosition(context, delegate);
+    PsiElement position = context.getFile().findElementAt(context.getStartOffset());
     return position != null &&
            ((PsiTypeLookupItem)delegate).calcGenerics(position, context).isEmpty() &&
            context.getCompletionChar() != '(';
@@ -199,8 +226,7 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
     }
   }
 
-  @Nullable
-  private static PsiExpressionList getEnclosingExpressionList(@NotNull PsiElement element) {
+  private static @Nullable PsiExpressionList getEnclosingExpressionList(@NotNull PsiElement element) {
     if (!(element instanceof PsiAnonymousClass)) {
       return null;
     }
@@ -229,10 +255,10 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
     return false;
   }
 
-  public static boolean insertParentheses(InsertionContext context,
-                                          LookupElement delegate,
-                                          final PsiClass psiClass,
-                                          final boolean forAnonymous) {
+  public static boolean insertParentheses(@NotNull InsertionContext context,
+                                          @NotNull LookupElement delegate,
+                                          @NotNull PsiClass psiClass,
+                                          boolean forAnonymous) {
     if (context.getCompletionChar() == '[') {
       return false;
     }
@@ -241,28 +267,31 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
 
     final PsiElement place = context.getFile().findElementAt(context.getStartOffset());
     assert place != null;
-    boolean hasParams = constructor != null ? constructor.getParameterList().getParametersCount() > 0 : hasConstructorParameters(psiClass, place);
+    ThreeState hasParams = constructor != null ? ThreeState.fromBoolean(!constructor.getParameterList().isEmpty())
+                                               : hasConstructorParameters(psiClass, place);
 
-    JavaCompletionUtil.insertParentheses(context, delegate, false, hasParams, forAnonymous);
+    RangeMarker refEnd = context.getDocument().createRangeMarker(context.getTailOffset(), context.getTailOffset());
+
+    var isVoidMethod = delegate.getObject() instanceof PsiMethod && PsiTypes.voidType().equals(((PsiMethod)delegate.getObject()).getReturnType());
+    JavaFrontendCompletionUtil.insertParentheses(context, delegate, false, hasParams, forAnonymous, isVoidMethod);
+
+    if (constructor != null) {
+      PsiCallExpression call = JavaMethodCallInsertHandlerHelper.findCallAtOffset(context, refEnd.getStartOffset());
+      if (call != null) {
+        CompletionMemory.registerChosenMethod(constructor, call);
+      }
+    }
 
     return true;
   }
 
-  static boolean hasConstructorParameters(PsiClass psiClass, @NotNull PsiElement place) {
-    final PsiResolveHelper resolveHelper = JavaPsiFacade.getInstance(place.getProject()).getResolveHelper();
-    boolean hasParams = false;
-    for (PsiMethod constructor : psiClass.getConstructors()) {
-      if (!resolveHelper.isAccessible(constructor, place, null)) continue;
-      if (constructor.getParameterList().getParametersCount() > 0) {
-        hasParams = true;
-        break;
-      }
-    }
-    return hasParams;
+  static ThreeState hasConstructorParameters(PsiClass psiClass, @NotNull PsiElement place) {
+    PsiResolveHelper resolveHelper = JavaPsiFacade.getInstance(place.getProject()).getResolveHelper();
+    return MethodParenthesesHandler.hasParameters(ContainerUtil.filter(psiClass.getConstructors(),
+                                                                       c -> resolveHelper.isAccessible(c, place, null)));
   }
 
-  @Nullable
-  private static Runnable generateAnonymousBody(final Editor editor, final PsiFile file) {
+  private static @Nullable Runnable generateAnonymousBody(final Editor editor, final PsiFile file) {
     final Project project = file.getProject();
     PsiDocumentManager.getInstance(project).commitAllDocuments();
 
@@ -293,7 +322,8 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
 
     final PsiReferenceParameterList parameterList = parent.getBaseClassReference().getParameterList();
     final PsiTypeElement[] parameters = parameterList != null ? parameterList.getTypeParameterElements() : null;
-    if (shouldStartTypeTemplate(parameters)) {
+    final PsiElement newExpr = parent.getParent();
+    if (newExpr != null && PsiTypesUtil.getExpectedTypeByParent(newExpr) == null && shouldStartTypeTemplate(parameters)) {
       startTemplate(parent, editor, createOverrideRunnable(editor, file, project), parameters);
       return null;
     }
@@ -304,45 +334,58 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
   private static Runnable createOverrideRunnable(final Editor editor, final PsiFile file, final Project project) {
     return () -> {
       TemplateManager.getInstance(project).finishTemplate(editor);
+      if (DumbService.getInstance(project).isDumb()) return;
 
-      PsiDocumentManager.getInstance(project).commitDocument(editor.getDocument());
-      final PsiAnonymousClass
-        aClass = PsiTreeUtil.findElementOfClassAtOffset(file, editor.getCaretModel().getOffset(), PsiAnonymousClass.class, false);
-      if (aClass == null) return;
-      CommandProcessor.getInstance().executeCommand(project, () -> {
-        final Collection<CandidateInfo> candidatesToImplement = OverrideImplementExploreUtil.getMethodsToOverrideImplement(aClass, true);
-        for (Iterator<CandidateInfo> iterator = candidatesToImplement.iterator(); iterator.hasNext(); ) {
-          final CandidateInfo candidate = iterator.next();
-          final PsiElement element = candidate.getElement();
-          if (element instanceof PsiMethod && ((PsiMethod)element).hasModifierProperty(PsiModifier.DEFAULT)) {
-            iterator.remove();
+      int offset = editor.getCaretModel().getOffset();
+      RangeMarker marker = editor.getDocument().createRangeMarker(offset, offset);
+      record OverrideContext(@NotNull PsiAnonymousClass aClass,
+                             @NotNull Collection<CandidateInfo> candidatesToImplement,
+                             @Nullable JavaOverrideImplementMemberChooser.JavaOverrideImplementMemberChooserContainer container) {}
+      ReadAction.nonBlocking(() -> {
+        PsiAnonymousClass anonymousClass = PsiTreeUtil.findElementOfClassAtOffset(file, marker.getStartOffset(), PsiAnonymousClass.class, false);
+        if (anonymousClass == null) return null;
+        final Collection<CandidateInfo> candidatesToImplement = OverrideImplementExploreUtil.getMethodsToOverrideImplement(anonymousClass, true);
+        candidatesToImplement.removeIf(
+            candidate -> candidate.getElement() instanceof PsiMethod method && method.hasModifierProperty(PsiModifier.DEFAULT));
+          JavaOverrideImplementMemberChooser.JavaOverrideImplementMemberChooserContainer container = null;
+          if (candidatesToImplement.isEmpty()) {
+            container = OverrideImplementUtil.prepareChooser(anonymousClass, false);
           }
-        }
-        boolean invokeOverride = candidatesToImplement.isEmpty();
-        if (invokeOverride) {
-          OverrideImplementUtil.chooseAndOverrideOrImplementMethods(project, editor, aClass, false);
-        }
-        else {
-          ApplicationManager.getApplication().runWriteAction(() -> {
-            try {
-              List<PsiMethod> methods = OverrideImplementUtil.overrideOrImplementMethodCandidates(aClass, candidatesToImplement, false);
-              List<PsiGenerationInfo<PsiMethod>> prototypes = OverrideImplementUtil.convert2GenerationInfos(methods);
-              List<PsiGenerationInfo<PsiMethod>> resultMembers =
-                GenerateMembersUtil.insertMembersBeforeAnchor(aClass, null, prototypes);
-              resultMembers.get(0).positionCaret(editor, true);
-            }
-            catch (IncorrectOperationException ioe) {
-              LOG.error(ioe);
-            }
-          });
-        }
-      }, getCommandName(), getCommandName(), UndoConfirmationPolicy.DEFAULT, editor.getDocument());
+          return new OverrideContext(anonymousClass, candidatesToImplement, container);
+      }).withDocumentsCommitted(project)
+        .finishOnUiThread(ModalityState.nonModal(), context -> {
+        marker.dispose();
+        if (context == null) return;
+        CommandProcessor.getInstance().executeCommand(project, () -> {
+          PsiAnonymousClass anonymousClass = context.aClass;
+          boolean invokeOverride = context.candidatesToImplement.isEmpty();
+          if (invokeOverride) {
+            OverrideImplementUtil.showAndPerform(project, editor, anonymousClass, false, context.container);
+          }
+          else {
+            ApplicationManagerEx.getApplicationEx()
+              .runWriteActionWithCancellableProgressInDispatchThread(getCommandName(), project, editor.getComponent(), indicator -> {
+                try {
+                  List<PsiMethod> methods = OverrideImplementUtil.overrideOrImplementMethodCandidates(
+                    anonymousClass, context.candidatesToImplement, false);
+                  List<PsiGenerationInfo<PsiMethod>> prototypes = OverrideImplementUtil.convert2GenerationInfos(methods);
+                  List<PsiGenerationInfo<PsiMethod>> resultMembers =
+                    GenerateMembersUtil.insertMembersBeforeAnchor(anonymousClass, null, prototypes);
+                  resultMembers.get(0).positionCaret(editor, true);
+                }
+                catch (IncorrectOperationException ioe) {
+                  LOG.error(ioe);
+                }
+              });
+          }
+        }, getCommandName(), getCommandName(), UndoConfirmationPolicy.DEFAULT, editor.getDocument());
+      }).submit(AppExecutorUtil.getAppExecutorService());
     };
   }
 
   @Contract("null -> false")
   private static boolean shouldStartTypeTemplate(PsiTypeElement[] parameters) {
-    if (parameters != null && parameters.length > 0) {
+    if (parameters != null) {
       for (PsiTypeElement parameter : parameters) {
         if (parameter.getType().equalsToText(CommonClassNames.JAVA_LANG_OBJECT)) {
           return true;
@@ -352,32 +395,29 @@ public class ConstructorInsertHandler implements InsertHandler<LookupElementDeco
     return false;
   }
 
-  private static void startTemplate(final PsiAnonymousClass aClass, final Editor editor, final Runnable runnable, @NotNull final PsiTypeElement[] parameters) {
+  private static void startTemplate(final PsiAnonymousClass aClass, final Editor editor, final Runnable runnable, final PsiTypeElement @NotNull [] parameters) {
     final Project project = aClass.getProject();
-    new WriteCommandAction(project, getCommandName(), getCommandName()) {
-      @Override
-      protected void run(@NotNull Result result) throws Throwable {
-        PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(editor.getDocument());
-        editor.getCaretModel().moveToOffset(aClass.getTextOffset());
-        final TemplateBuilderImpl templateBuilder = (TemplateBuilderImpl)TemplateBuilderFactory.getInstance().createTemplateBuilder(aClass);
-        for (int i = 0; i < parameters.length; i++) {
-          PsiTypeElement parameter = parameters[i];
-          templateBuilder.replaceElement(parameter, "param" + i, new TypeExpression(project, new PsiType[]{parameter.getType()}), true);
-        }
-        Template template = templateBuilder.buildInlineTemplate();
-        TemplateManager.getInstance(project).startTemplate(editor, template, false, null, new TemplateEditingAdapter() {
-          @Override
-          public void templateFinished(Template template, boolean brokenOff) {
-            if (!brokenOff) {
-              runnable.run();
-            }
-          }
-        });
+    WriteCommandAction.writeCommandAction(project).withName(getCommandName()).withGroupId(getCommandName()).run(() -> {
+      PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(editor.getDocument());
+      editor.getCaretModel().moveToOffset(aClass.getTextOffset());
+      final TemplateBuilderImpl templateBuilder = (TemplateBuilderImpl)TemplateBuilderFactory.getInstance().createTemplateBuilder(aClass);
+      for (int i = 0; i < parameters.length; i++) {
+        PsiTypeElement parameter = parameters[i];
+        templateBuilder.replaceElement(parameter, "param" + i, new TypeExpression(project, new PsiType[]{parameter.getType()}), true);
       }
-    }.execute();
+      Template template = templateBuilder.buildInlineTemplate();
+      TemplateManager.getInstance(project).startTemplate(editor, template, false, null, new TemplateEditingAdapter() {
+        @Override
+        public void templateFinished(@NotNull Template template, boolean brokenOff) {
+          if (!brokenOff) {
+            runnable.run();
+          }
+        }
+      });
+    });
   }
 
-  private static String getCommandName() {
-    return CompletionBundle.message("completion.smart.type.generate.anonymous.body");
+  private static @NlsContexts.Command String getCommandName() {
+    return JavaBundle.message("completion.smart.type.generate.anonymous.body");
   }
 }

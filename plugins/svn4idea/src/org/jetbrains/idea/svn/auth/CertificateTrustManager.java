@@ -1,31 +1,17 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.auth;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.net.ssl.CertificateManager;
 import com.intellij.util.net.ssl.ClientOnlyTrustManager;
+import com.intellij.util.net.ssl.ConfirmingTrustManager;
 import org.apache.http.client.utils.URIBuilder;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.SvnConfiguration;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.auth.ISVNAuthenticationProvider;
+import org.jetbrains.idea.svn.api.Url;
 
-import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 
@@ -36,18 +22,18 @@ import java.security.cert.X509Certificate;
  * - java trust store
  * - "Server Certificates" settings
  * - ask user
- *
- * @author Konstantin Kolosovsky.
  */
 public class CertificateTrustManager extends ClientOnlyTrustManager {
 
   private static final Logger LOG = Logger.getInstance(CertificateTrustManager.class);
 
-  @NotNull private final AuthenticationService myAuthenticationService;
-  @NotNull private final SVNURL myRepositoryUrl;
-  @NotNull private final String myRealm;
+  private static final @NonNls String CMD_SSL_SERVER = "cmd.ssl.server";
 
-  public CertificateTrustManager(@NotNull AuthenticationService authenticationService, @NotNull SVNURL repositoryUrl) {
+  private final @NotNull AuthenticationService myAuthenticationService;
+  private final @NotNull Url myRepositoryUrl;
+  private final @NotNull String myRealm;
+
+  public CertificateTrustManager(@NotNull AuthenticationService authenticationService, @NotNull Url repositoryUrl) {
     myAuthenticationService = authenticationService;
     myRepositoryUrl = repositoryUrl;
     myRealm = new URIBuilder()
@@ -58,7 +44,7 @@ public class CertificateTrustManager extends ClientOnlyTrustManager {
   }
 
   @Override
-  public void checkServerTrusted(@Nullable X509Certificate[] chain, String authType) throws CertificateException {
+  public void checkServerTrusted(X509Certificate @Nullable [] chain, String authType) throws CertificateException {
     if (chain != null && chain.length > 0 && chain[0] != null) {
       X509Certificate certificate = chain[0];
 
@@ -73,17 +59,17 @@ public class CertificateTrustManager extends ClientOnlyTrustManager {
     }
   }
 
-  private boolean checkPassive(@NotNull X509Certificate certificate) throws CertificateEncodingException {
-    Object cachedData = SvnConfiguration.RUNTIME_AUTH_CACHE.getDataWithLowerCheck("svn.ssl.server", myRealm);
+  private boolean checkPassive(@NotNull X509Certificate certificate) {
+    Object cachedData = SvnConfiguration.RUNTIME_AUTH_CACHE.getDataWithLowerCheck(CMD_SSL_SERVER, myRealm);
 
     return certificate.equals(cachedData);
   }
 
-  private static boolean isAcceptedByIdea(@NotNull X509Certificate[] chain, String authType) {
+  private static boolean isAcceptedByIdea(X509Certificate @NotNull [] chain, String authType) {
     boolean result;
 
     try {
-      CertificateManager.getInstance().getTrustManager().checkServerTrusted(chain, authType, false, false);
+      CertificateManager.getInstance().getTrustManager().checkServerTrusted(chain, authType, ConfirmingTrustManager.CertificateConfirmationParameters.doNotAskConfirmation());
       result = true;
     }
     catch (CertificateException e) {
@@ -95,25 +81,24 @@ public class CertificateTrustManager extends ClientOnlyTrustManager {
   }
 
   private void checkActive(@NotNull X509Certificate certificate) throws CertificateException {
-    boolean isStorageEnabled =
-      myAuthenticationService.getAuthenticationManager().getHostOptionsProvider().getHostOptions(myRepositoryUrl).isAuthStorageEnabled();
-    int result = myAuthenticationService.getAuthenticationManager().getInnerProvider()
+    boolean isStorageEnabled = myAuthenticationService.getAuthenticationManager().getHostOptions(myRepositoryUrl).isAuthStorageEnabled();
+    AcceptResult result = myAuthenticationService.getAuthenticationManager().getProvider()
       .acceptServerAuthentication(myRepositoryUrl, myRealm, certificate, isStorageEnabled);
 
     switch (result) {
-      case ISVNAuthenticationProvider.ACCEPTED:
+      case ACCEPTED_PERMANENTLY -> {
         // TODO: --trust-server-cert command line key does not allow caching credentials permanently - so permanent caching should be
         // TODO: separately implemented. Try utilizing "Server Certificates" settings for this.
-      case ISVNAuthenticationProvider.ACCEPTED_TEMPORARY:
+      }
+      case ACCEPTED_TEMPORARILY -> {
         // acknowledge() is called in checkServerTrusted()
-        break;
-      case ISVNAuthenticationProvider.REJECTED:
-        throw new CertificateException("Server SSL certificate rejected");
+      }
+      case REJECTED -> throw new CertificateException("Server SSL certificate rejected");
     }
   }
 
-  private void acknowledge(@NotNull X509Certificate certificate) throws CertificateEncodingException {
-    myAuthenticationService.getVcs().getSvnConfiguration().acknowledge("cmd.ssl.server", myRealm, certificate);
+  private void acknowledge(@NotNull X509Certificate certificate) {
+    myAuthenticationService.getVcs().getSvnConfiguration().acknowledge(CMD_SSL_SERVER, myRealm, certificate);
   }
 
   @Override

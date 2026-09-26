@@ -1,134 +1,193 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/*
- * Created by IntelliJ IDEA.
- * User: max
- * Date: Nov 4, 2001
- * Time: 5:19:35 PM
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.ui;
 
+import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInspection.CommonProblemDescriptor;
-import com.intellij.codeInspection.ProblemDescriptor;
+import com.intellij.codeInspection.InspectionToolResultExporter;
+import com.intellij.codeInspection.InspectionsBundle;
+import com.intellij.codeInspection.ex.BatchModeDescriptorsUtil;
 import com.intellij.codeInspection.ex.GlobalInspectionContextImpl;
+import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
+import com.intellij.codeInspection.reference.RefElement;
+import com.intellij.codeInspection.reference.RefElementImpl;
 import com.intellij.codeInspection.reference.RefEntity;
+import com.intellij.codeInspection.ui.util.SynchronizedBidiMultiMap;
+import com.intellij.ide.DataManager;
+import com.intellij.ide.IdeTooltipManager;
+import com.intellij.ide.OccurenceNavigator;
+import com.intellij.ide.util.PsiNavigationSupport;
+import com.intellij.openapi.actionSystem.ActionPlaces;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.PlatformCoreDataKeys;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.pom.Navigatable;
 import com.intellij.profile.codeInspection.ui.inspectionsTree.InspectionsConfigTreeComparator;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.util.PsiUtilCore;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.SmartPsiElementPointer;
+import com.intellij.ui.ExperimentalUI;
+import com.intellij.ui.PopupHandler;
+import com.intellij.ui.SmartExpander;
 import com.intellij.ui.TreeSpeedSearch;
+import com.intellij.ui.UIBundle;
+import com.intellij.ui.tree.AsyncTreeModel;
+import com.intellij.ui.tree.TreeCollector.TreePathRoots;
+import com.intellij.ui.tree.TreePathUtil;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.ArrayUtil;
-import com.intellij.util.SmartList;
+import com.intellij.util.ArrayUtilRt;
+import com.intellij.util.EditSourceOnDoubleClickHandler;
+import com.intellij.util.EditSourceOnEnterKeyHandler;
+import com.intellij.util.ObjectUtils;
+import com.intellij.util.OpenSourceUtil;
+import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.util.concurrency.ThreadingAssertions;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.containers.TreeTraversal;
+import com.intellij.util.ui.EdtInvocationManager;
+import com.intellij.util.ui.tree.TreeModelAdapter;
 import com.intellij.util.ui.tree.TreeUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.concurrency.CancellablePromise;
+import org.jetbrains.concurrency.Promise;
 
-import javax.swing.event.TreeExpansionEvent;
-import javax.swing.event.TreeWillExpandListener;
-import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.ExpandVetoException;
-import javax.swing.tree.TreeNode;
+import javax.swing.event.TreeModelEvent;
 import javax.swing.tree.TreePath;
-import java.util.*;
+import java.awt.Component;
+import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+import java.util.stream.Stream;
 
-public class InspectionTree extends Tree {
+import static com.intellij.codeInspection.CommonProblemDescriptor.DESCRIPTOR_COMPARATOR;
+
+@ApiStatus.Internal
+public final class InspectionTree extends Tree {
   private static final Logger LOG = Logger.getInstance(InspectionTree.class);
-  private static final Comparator<CommonProblemDescriptor> DESCRIPTOR_COMPARATOR = (c1, c2) -> {
-    if (c1 instanceof ProblemDescriptor && c2 instanceof ProblemDescriptor) {
-      return PsiUtilCore.compareElementsByPosition(((ProblemDescriptor)c2).getPsiElement(),
-                                                   ((ProblemDescriptor)c1).getPsiElement());
-    }
-    return c1.getDescriptionTemplate().compareTo(c2.getDescriptionTemplate());
-  };
 
-  @NotNull private final GlobalInspectionContextImpl myContext;
-  @NotNull private final ExcludedInspectionTreeNodesManager myExcludedManager;
-  @NotNull private InspectionTreeState myState = new InspectionTreeState();
-  private boolean myQueueUpdate;
+  private final InspectionTreeModel myModel;
 
-  public InspectionTree(@NotNull Project project,
-                        @NotNull GlobalInspectionContextImpl context,
-                        @NotNull InspectionResultsView view) {
-    setModel(new DefaultTreeModel(new InspectionRootNode(project, new InspectionTreeUpdater(view))));
-    myContext = context;
-    myExcludedManager = view.getExcludedManager();
+  private final OccurenceNavigator myOccurenceNavigator = new MyOccurrenceNavigator();
+  private final InspectionResultsView myView;
+  private final Map<ProblemDescriptionNode, CancellablePromise<String>> scheduledTooltipTasks = new ConcurrentHashMap<>();
+
+  public InspectionTree(@NotNull InspectionResultsView view) {
+    myView = view;
+    Disposer.register(myView, () -> {
+      scheduledTooltipTasks.forEach((node, promise) -> promise.cancel());
+      scheduledTooltipTasks.clear();
+    });
+
+    myModel = new InspectionTreeModel();
+    Disposer.register(view, myModel);
+    setModel(new AsyncTreeModel(myModel, false, view));
 
     setCellRenderer(new InspectionTreeCellRenderer(view));
-    setRootVisible(false);
-    setShowsRootHandles(true);
-    UIUtil.setLineStyleAngled(this);
-    addTreeWillExpandListener(new ExpandListener());
+    setRootVisible(true);
+    if (!ApplicationManager.getApplication().isUnitTestMode()) {
+      getSelectionModel().addTreeSelectionListener(e -> {
+        if (!myView.isDisposed()) {
+          WriteIntentReadAction.run(() -> {
+            myView.syncRightPanel();
+            if (myView.isAutoScrollMode()) {
+              OpenSourceUtil.openSourcesFrom(DataManager.getInstance().getDataContext(this), false);
+            }
+          });
+        }
+      });
 
-    myState.getExpandedUserObjects().add(project);
+      EditSourceOnDoubleClickHandler.install(this);
+      EditSourceOnEnterKeyHandler.install(this);
+      TreeUtil.installActions(this);
+      PopupHandler.installPopupMenu(this, IdeActions.INSPECTION_TOOL_WINDOW_TREE_POPUP, ActionPlaces.CODE_INSPECTION);
+      TreeSpeedSearch.installOn(this, false, o -> InspectionsConfigTreeComparator.getDisplayTextToSort(o.getLastPathComponent().toString()));
+    }
 
-    TreeUtil.installActions(this);
-    new TreeSpeedSearch(this, o -> InspectionsConfigTreeComparator.getDisplayTextToSort(o.getLastPathComponent().toString()));
-
-    addTreeSelectionListener(e -> {
-      TreePath newSelection = e.getNewLeadSelectionPath();
-      if (newSelection != null && !isUnderQueueUpdate()) {
-        myState.setSelectionPath(newSelection);
+    getModel().addTreeModelListener(new TreeModelAdapter() {
+      //TODO the same as DiscoveredTestTree (see setRootVisible)
+      boolean myAlreadyDone;
+      @Override
+      protected void process(@NotNull TreeModelEvent event, @NotNull EventType type) {
+        if (!myAlreadyDone && getSelectionCount() == 0) {
+          myAlreadyDone = true;
+          EdtInvocationManager.getInstance().invokeLater(() -> {
+            expandPath(new TreePath(myModel.getRoot()));
+            SmartExpander.installOn(InspectionTree.this);
+            if (!myView.isDisposed()) {
+              ReadAction.runBlocking(() -> myView.syncRightPanel());
+            }
+          });
+        }
       }
     });
   }
 
-  public void setQueueUpdate(boolean queueUpdate) {
-    myQueueUpdate = queueUpdate;
-  }
-
-  public boolean isUnderQueueUpdate() {
-    return myQueueUpdate;
-  }
-
-  public void removeAllNodes() {
-    getRoot().removeAllChildren();
-    ApplicationManager.getApplication().invokeLater(() -> nodeStructureChanged(getRoot()));
-  }
-
   public InspectionTreeNode getRoot() {
-    return (InspectionTreeNode)getModel().getRoot();
+    return myModel.getRoot();
   }
 
-  @Nullable
-  public String[] getSelectedGroupPath() {
-    final TreePath[] paths = getSelectionPaths();
-    if (paths == null) return null;
-    final TreePath commonPath = TreeUtil.findCommonPath(paths);
+  public InspectionTreeModel getInspectionTreeModel() {
+    return myModel;
+  }
+
+  void removeAllNodes() {
+    myModel.clearTree();
+  }
+
+  public String @Nullable [] getSelectedGroupPath() {
+    TreePath commonPath = TreePathUtil.findCommonAncestor(getSelectionPaths());
+    if (commonPath == null) return null;
     for (Object n : commonPath.getPath()) {
-      if (n instanceof InspectionGroupNode) {
-        return ((InspectionGroupNode)n).getGroupPath();
+      if (n instanceof InspectionGroupNode node) {
+        return getGroupPath(node);
       }
     }
     return null;
   }
 
-  @Nullable
-  public InspectionToolWrapper getSelectedToolWrapper(boolean allowDummy) {
-    final TreePath[] paths = getSelectionPaths();
-    if (paths == null) return null;
-    InspectionToolWrapper toolWrapper = null;
+  public @Nullable InspectionToolWrapper<?,?> getSelectedToolWrapper(boolean allowDummy) {
+    return getSelectedToolWrapper(allowDummy, getSelectionPaths());
+  }
+
+  @Nullable InspectionToolWrapper<?,?> getSelectedToolWrapper(boolean allowDummy, TreePath @Nullable [] paths) {
+    InspectionProfileImpl profile = myView.getCurrentProfile();
+    if (profile == null) return null;
+    String singleToolName = profile.getSingleTool();
+    if (paths == null) {
+      if (singleToolName != null) {
+        InspectionToolWrapper<?,?> tool = profile.getInspectionTool(singleToolName, myView.getProject());
+        LOG.assertTrue(tool != null);
+        return tool;
+      }
+      return null;
+    }
+    InspectionToolWrapper<?,?> resultWrapper = null;
     for (TreePath path : paths) {
       Object[] nodes = path.getPath();
       for (int j = nodes.length - 1; j >= 0; j--) {
@@ -136,164 +195,291 @@ public class InspectionTree extends Tree {
         if (node instanceof InspectionGroupNode) {
           return null;
         }
-        if (node instanceof InspectionNode) {
-          InspectionToolWrapper wrapper = ((InspectionNode)node).getToolWrapper();
-          if (!allowDummy && getContext().getPresentation(wrapper).isDummy()) {
-            continue;
-          }
-          if (toolWrapper == null) {
-            toolWrapper = wrapper;
-          }
-          else if (toolWrapper != wrapper) {
-            return null;
-          }
-          break;
+        InspectionToolWrapper<?,?> wrapper = null;
+        if (node instanceof InspectionNode n) {
+          wrapper = n.getToolWrapper();
+        } else if (node instanceof SuppressableInspectionTreeNode n) {
+          wrapper = n.getPresentation().getToolWrapper();
         }
+        if (wrapper == null || !allowDummy && getContext().getPresentation(wrapper).isDummy()) {
+          continue;
+        }
+        if (resultWrapper == null) {
+          resultWrapper = wrapper;
+        }
+        else if (resultWrapper != wrapper) {
+          return null;
+        }
+        break;
       }
     }
 
-    return toolWrapper;
-  }
-
-  @Nullable
-  public RefEntity getCommonSelectedElement() {
-    final Object node = getCommonSelectedNode();
-    return node instanceof RefElementNode ? ((RefElementNode)node).getElement() : null;
-  }
-
-  @Nullable
-  private Object getCommonSelectedNode() {
-    final TreePath[] paths = getSelectionPaths();
-    if (paths == null) return null;
-    final Object[][] resolvedPaths = new Object[paths.length][];
-    for (int i = 0; i < paths.length; i++) {
-      TreePath path = paths[i];
-      resolvedPaths[i] = path.getPath();
+    if (resultWrapper == null && singleToolName != null) {
+      InspectionToolWrapper<?,?> tool = profile.getInspectionTool(singleToolName, myView.getProject());
+      LOG.assertTrue(tool != null);
+      return tool;
     }
 
-    Object currentCommonNode = null;
-    for (int i = 0; i < resolvedPaths[0].length; i++) {
-      final Object currentNode = resolvedPaths[0][i];
-      for (int j = 1; j < resolvedPaths.length; j++) {
-        final Object o = resolvedPaths[j][i];
-        if (!o.equals(currentNode)) {
-          return currentCommonNode;
+    return resultWrapper;
+  }
+
+  public static @Nullable InspectionToolWrapper<?, ?> findWrapper(Object[] selectedNode) {
+    InspectionToolWrapper<?, ?> resultWrapper = null;
+    for (Object node : selectedNode) {
+      if (node instanceof InspectionGroupNode) {
+        return null;
+      }
+
+      InspectionToolWrapper<?,?> wrapper = null;
+      if (node instanceof InspectionNode n) {
+        wrapper = n.getToolWrapper();
+      }
+      else if (node instanceof SuppressableInspectionTreeNode n) {
+        wrapper = n.getPresentation().getToolWrapper();
+      }
+      if (wrapper != null) {
+        if (resultWrapper == null) {
+          resultWrapper = wrapper;
+        }
+        else if (resultWrapper != wrapper) {
+          return null;
         }
       }
-      currentCommonNode = currentNode;
     }
-    return currentCommonNode;
+    return resultWrapper;
+  }
+
+  private static @Nullable InspectionToolWrapper<?,?> getToolWrapper(InspectionTreeNode node) {
+    while (node != null) {
+      if (node instanceof InspectionNode n) {
+        return n.getToolWrapper();
+      }
+      else if (node instanceof SuppressableInspectionTreeNode n) {
+        return n.getPresentation().getToolWrapper();
+      }
+      node = node.getParent();
+    }
+    return null;
+  }
+
+  private @Nullable InspectionToolWrapper<?, ?> getSingleToolWrapper() {
+    InspectionProfileImpl profile = myView.getCurrentProfile();
+    if (profile == null) return null;
+    String singleToolName = profile.getSingleTool();
+    if (singleToolName == null) return null;
+    InspectionToolWrapper<?,?> tool = profile.getInspectionTool(singleToolName, myView.getProject());
+    LOG.assertTrue(tool != null);
+    return tool;
+  }
+
+  @Override
+  public String getToolTipText(MouseEvent e) {
+    TreePath path = getPathForLocation(e.getX(), e.getY());
+    if (path == null) return null;
+    Object lastComponent = path.getLastPathComponent();
+    if (!(lastComponent instanceof ProblemDescriptionNode node)) return null;
+
+    if (!node.needCalculateTooltip()) return node.getToolTipText();
+
+    Promise<@NlsContexts.Tooltip String> tooltipLazy = scheduledTooltipTasks.computeIfAbsent(node, key -> {
+      IdeTooltipManager tooltipManager = IdeTooltipManager.getInstance();
+      Component component = e.getComponent();
+
+      return ReadAction.nonBlocking(() -> node.getToolTipText())
+        .finishOnUiThread(ModalityState.any(), tooltipText -> tooltipManager.updateShownTooltip(component))
+        .submit(AppExecutorUtil.getAppExecutorService())
+        .onError(throwable -> {
+          if (!(throwable instanceof CancellationException)) {
+            LOG.error("Exception in ProblemDescriptionNode#getToolTipText", throwable);
+          }
+          scheduledTooltipTasks.remove(node);
+        })
+        .onSuccess(tooltipText -> scheduledTooltipTasks.remove(node));
+    });
+
+    if (tooltipLazy.isSucceeded()) {
+      try {
+        return tooltipLazy.blockingGet(0);
+      }
+      catch (TimeoutException | ExecutionException error) {
+        LOG.error(error);
+      }
+    }
+    return UIBundle.message("crumbs.calculating.tooltip");
+  }
+
+  @Nullable RefEntity getCommonSelectedElement() {
+    TreePath[] paths = getSelectionPaths();
+    TreePath ancestor = TreePathUtil.findCommonAncestor(paths);
+    if (ancestor == null) return null;
+    return ancestor.getLastPathComponent() instanceof RefElementNode n ? n.getElement() : null;
+  }
+
+  public RefEntity @NotNull [] getSelectedElements() {
+    return getSelectedElements(true);
+  }
+
+  public RefEntity @NotNull [] getSelectedElements(boolean allowResolved) {
+    TreePath[] selectionPaths = getSelectionPaths();
+    if (selectionPaths == null) return RefEntity.EMPTY_ELEMENTS_ARRAY;
+    return getElementsFromSelection(selectionPaths, allowResolved);
+  }
+
+  RefEntity @NotNull [] getElementsFromSelection(TreePath @NotNull [] selectionPaths) {
+    return getElementsFromSelection(selectionPaths, true);
+  }
+
+  private RefEntity @NotNull [] getElementsFromSelection(TreePath @NotNull [] selectionPaths, boolean allowResolved) {
+    InspectionToolWrapper<?,?> toolWrapper = getSelectedToolWrapper(true, selectionPaths);
+    if (toolWrapper == null) return RefEntity.EMPTY_ELEMENTS_ARRAY;
+    Set<RefEntity> result = new LinkedHashSet<>();
+    for (TreePath selectionPath : selectionPaths) {
+      InspectionTreeNode node = (InspectionTreeNode)selectionPath.getLastPathComponent();
+      addElementsInNode(node, result, allowResolved);
+    }
+    return ArrayUtil.reverseArray(result.toArray(RefEntity.EMPTY_ELEMENTS_ARRAY));
   }
 
   @NotNull
-  public RefEntity[] getSelectedElements() {
-    TreePath[] selectionPaths = getSelectionPaths();
-    if (selectionPaths != null) {
-      InspectionToolWrapper toolWrapper = getSelectedToolWrapper(true);
-      if (toolWrapper == null) return RefEntity.EMPTY_ELEMENTS_ARRAY;
-
-      Set<RefEntity> result = new LinkedHashSet<>();
-      for (TreePath selectionPath : selectionPaths) {
-        final InspectionTreeNode node = (InspectionTreeNode)selectionPath.getLastPathComponent();
-        addElementsInNode(node, result);
-      }
-      return ArrayUtil.reverseArray(result.toArray(new RefEntity[result.size()]));
-    }
-    return RefEntity.EMPTY_ELEMENTS_ARRAY;
+  OccurenceNavigator getOccurenceNavigator() {
+    return myOccurenceNavigator;
   }
 
-  private static void addElementsInNode(InspectionTreeNode node, Set<RefEntity> out) {
+  public void selectNode(@NotNull InspectionTreeNode node) {
+    TreePath path = TreePathUtil.pathToTreeNode(node);
+    if (path != null) TreeUtil.promiseSelect(this, path);
+  }
+
+  private static void addElementsInNode(@NotNull InspectionTreeNode node, @NotNull Set<? super RefEntity> out, boolean allowResolved) {
     if (!node.isValid()) return;
-    if (node instanceof RefElementNode) {
-      final RefEntity element = ((RefElementNode)node).getElement();
-      out.add(element);
+    if (node instanceof RefElementNode refNode) {
+      if (isNodeValidAndIncluded(refNode, allowResolved)) {
+        out.add(refNode.getElement());
+      }
     }
-    if (node instanceof ProblemDescriptionNode) {
-      final RefEntity element = ((ProblemDescriptionNode)node).getElement();
-      out.add(element);
-    }
-    final Enumeration children = node.children();
-    while (children.hasMoreElements()) {
-      InspectionTreeNode child = (InspectionTreeNode)children.nextElement();
-      addElementsInNode(child, out);
-    }
-  }
-
-  public CommonProblemDescriptor[] getAllValidSelectedDescriptors() {
-    return getSelectedDescriptors(false, null, true, false);
-  }
-
-  public CommonProblemDescriptor[] getSelectedDescriptors() {
-    return getSelectedDescriptors(false, null, false, false);
-  }
-
-  public CommonProblemDescriptor[] getSelectedDescriptors(boolean sortedByPosition,
-                                                          @Nullable Set<VirtualFile> readOnlyFilesSink,
-                                                          boolean allowResolved,
-                                                          boolean allowSuppressed) {
-    final TreePath[] paths = getSelectionPaths();
-    if (paths == null) return CommonProblemDescriptor.EMPTY_ARRAY;
-    final TreePath[] selectionPaths = TreeUtil.selectMaximals(paths);
-    final List<CommonProblemDescriptor> descriptors = new ArrayList<>();
-
-    MultiMap<Object, ProblemDescriptionNode> parentToChildNode = new MultiMap<>();
-    final List<InspectionTreeNode> nonDescriptorNodes = new SmartList<>();
-    for (TreePath path : selectionPaths) {
-      final Object[] pathAsArray = path.getPath();
-      final int length = pathAsArray.length;
-      final Object node = pathAsArray[length - 1];
-      if (node instanceof ProblemDescriptionNode) {
-        if (isNodeValidAndIncluded((ProblemDescriptionNode)node, allowResolved, allowSuppressed)) {
-          if (length >= 2) {
-            parentToChildNode.putValue(pathAsArray[length - 2], (ProblemDescriptionNode)node);
-          } else {
-            parentToChildNode.putValue(node, (ProblemDescriptionNode)node);
-          }
-        }
-      } else {
-        nonDescriptorNodes.add((InspectionTreeNode)node);
+    if (node instanceof ProblemDescriptionNode problemNode) {
+      if (isNodeValidAndIncluded(problemNode, allowResolved)) {
+        out.add(problemNode.getElement());
       }
     }
 
-    for (InspectionTreeNode node : nonDescriptorNodes) {
-      processChildDescriptorsDeep(node, descriptors, sortedByPosition, allowResolved, allowSuppressed, readOnlyFilesSink);
+    for (InspectionTreeNode child : node.getChildren()) {
+      addElementsInNode(child, out, allowResolved);
     }
-
-    for (Map.Entry<Object, Collection<ProblemDescriptionNode>> entry : parentToChildNode.entrySet()) {
-      final Collection<ProblemDescriptionNode> siblings = entry.getValue();
-      if (siblings.size() == 1) {
-        final ProblemDescriptionNode descriptorNode = ContainerUtil.getFirstItem(siblings);
-        LOG.assertTrue(descriptorNode != null);
-        CommonProblemDescriptor descriptor = descriptorNode.getDescriptor();
-        if (descriptor != null) {
-          descriptors.add(descriptor);
-          if (readOnlyFilesSink != null) {
-            collectReadOnlyFiles(descriptor, readOnlyFilesSink);
-          }
-        }
-      } else {
-        List<CommonProblemDescriptor> currentDescriptors = new ArrayList<>();
-        for (ProblemDescriptionNode sibling : siblings) {
-          final CommonProblemDescriptor descriptor = sibling.getDescriptor();
-          if (descriptor != null) {
-            if (readOnlyFilesSink != null) {
-              collectReadOnlyFiles(descriptor, readOnlyFilesSink);
-            }
-            currentDescriptors.add(descriptor);
-          }
-        }
-        if (sortedByPosition) {
-          Collections.sort(currentDescriptors, DESCRIPTOR_COMPARATOR);
-        }
-        descriptors.addAll(currentDescriptors);
-      }
-    }
-
-    return descriptors.toArray(new CommonProblemDescriptor[descriptors.size()]);
   }
 
-  public boolean areDescriptorNodesSelected() {
-    final TreePath[] paths = getSelectionPaths();
+  CommonProblemDescriptor @NotNull [] getAllValidSelectedDescriptors() {
+    return BatchModeDescriptorsUtil.flattenDescriptors(getSelectedDescriptorPacks(false, null, true, null));
+  }
+
+  CommonProblemDescriptor @NotNull [] getSelectedDescriptors() {
+    return BatchModeDescriptorsUtil.flattenDescriptors(getSelectedDescriptorPacks(false, null, false, null));
+  }
+
+  public @NotNull List<CommonProblemDescriptor[]> getSelectedDescriptorPacks(boolean sortedByPosition,
+                                                                             @Nullable Set<? super VirtualFile> readOnlyFilesSink,
+                                                                             boolean allowResolved,
+                                                                             TreePath[] paths) {
+    if (paths == null) {
+      ThreadingAssertions.assertEventDispatchThread();
+      paths = getSelectionPaths();
+    }
+    if (paths == null) return Collections.emptyList();
+    // key can be node or VirtualFile (if problem descriptor node parent is a file/member RefElementNode).
+    //TODO expected thread
+    List<InspectionTreeNode> nodes = ContainerUtil.map(paths, p -> (InspectionTreeNode)p.getLastPathComponent());
+    return getSelectedDescriptors(sortedByPosition, readOnlyFilesSink, allowResolved, nodes);
+  }
+
+   public CommonProblemDescriptor @NotNull [] getSelectedDescriptors(AnActionEvent e) {
+     Object[] selectedNodes = e.getData(PlatformCoreDataKeys.SELECTED_ITEMS);
+     if (selectedNodes == null) {
+       return CommonProblemDescriptor.EMPTY_ARRAY;
+     }
+     List<CommonProblemDescriptor[]> descriptors =
+       getSelectedDescriptors(false, null, false, ContainerUtil.map(selectedNodes, o -> (InspectionTreeNode)o));
+     return BatchModeDescriptorsUtil.flattenDescriptors(descriptors);
+  }
+  
+  private @NotNull List<CommonProblemDescriptor[]> getSelectedDescriptors(boolean sortedByPosition,
+                                                                          @Nullable Set<? super VirtualFile> readOnlyFilesSink,
+                                                                          boolean allowResolved,
+                                                                          @NotNull List<? extends InspectionTreeNode> nodes) {
+    MultiMap<Object, CommonProblemDescriptor> parentToChildNode = new MultiMap<>();
+    TreeTraversal.PLAIN_BFS.traversal(
+        nodes,
+      (InspectionTreeNode n) -> myModel.getChildren(n))
+      .filter(ProblemDescriptionNode.class)
+      .filter(node -> node.getDescriptor() != null && isNodeValidAndIncluded(node, allowResolved))
+      .consumeEach(node -> {
+        Object key = getVirtualFileOrEntity(node.getElement());
+        parentToChildNode.putValue(key, node.getDescriptor());
+      });
+    List<CommonProblemDescriptor[]> descriptors = new ArrayList<>();
+    for (Map.Entry<Object, Collection<CommonProblemDescriptor>> entry : parentToChildNode.entrySet()) {
+      Object key = entry.getKey();
+      if (readOnlyFilesSink != null && key instanceof VirtualFile file && !file.isWritable()) {
+        readOnlyFilesSink.add(file);
+      }
+      Stream<CommonProblemDescriptor> stream = entry.getValue().stream();
+      if (sortedByPosition) {
+        stream = stream.sorted(DESCRIPTOR_COMPARATOR);
+      }
+      descriptors.add(stream.distinct().toArray(CommonProblemDescriptor.ARRAY_FACTORY::create));
+    }
+
+    return descriptors;
+  }
+
+  @Override
+  public TreePath @Nullable [] getSelectionPaths() {
+    ThreadingAssertions.assertEventDispatchThread();
+    return super.getSelectionPaths();
+  }
+
+  @NotNull
+  InspectionTreeNode getToolProblemsRootNode(@NotNull InspectionToolWrapper<?,?> toolWrapper,
+                                             @NotNull HighlightDisplayLevel errorLevel,
+                                             boolean groupedBySeverity,
+                                             boolean isSingleInspectionRun) {
+    InspectionTreeNode parent = getToolParentNode(toolWrapper, errorLevel, groupedBySeverity, isSingleInspectionRun);
+    if (isSingleInspectionRun) {
+      return parent;
+    }
+    return myModel.createInspectionNode(toolWrapper, myView.getCurrentProfile(), parent);
+  }
+
+  private @NotNull InspectionTreeNode getToolParentNode(@NotNull InspectionToolWrapper<?,?> toolWrapper,
+                                                        @NotNull HighlightDisplayLevel errorLevel,
+                                                        boolean groupedBySeverity,
+                                                        boolean isSingleInspectionRun) {
+    //synchronize
+    if (!groupedBySeverity && isSingleInspectionRun) {
+      return myModel.getRoot();
+    }
+
+    InspectionTreeNode currentNode = groupedBySeverity
+                                     ? myModel.createSeverityGroupNode(myView.getCurrentProfile().getProfileManager().getSeverityRegistrar(),
+                                                                       errorLevel,
+                                                                       myModel.getRoot())
+                                     : myModel.getRoot();
+
+    if (isSingleInspectionRun) return currentNode;
+
+    String[] groupPath = toolWrapper.getGroupPath();
+    if (groupPath.length == 0) {
+      LOG.error("groupPath is empty for tool: " + toolWrapper.getShortName() + ", class: " + toolWrapper.getTool().getClass());
+    }
+
+    for (@Nls String subGroup : groupPath) {
+      currentNode = myModel.createGroupNode(subGroup, currentNode);
+    }
+
+    return currentNode;
+  }
+
+  boolean areDescriptorNodesSelected() {
+    TreePath[] paths = getSelectionPaths();
     if (paths == null) return false;
     for (TreePath path : paths) {
       if (!(path.getLastPathComponent() instanceof ProblemDescriptionNode)) {
@@ -303,114 +489,321 @@ public class InspectionTree extends Tree {
     return true;
   }
 
-  public int getSelectedProblemCount(boolean allowSuppressed) {
+  int getSelectedProblemCount() {
     int count = 0;
-    for (TreePath path : TreeUtil.selectMaximals(getSelectionPaths())) {
-      count += ((InspectionTreeNode)path.getLastPathComponent()).getProblemCount(allowSuppressed);
+    for (TreePath path : TreePathRoots.collect(getSelectionPaths())) {
+      LevelAndCount[] levels = ((InspectionTreeNode)path.getLastPathComponent()).getProblemLevels();
+      for (LevelAndCount level : levels) {
+        count += level.getCount();
+      }
     }
     return count;
   }
 
-  private void processChildDescriptorsDeep(InspectionTreeNode node,
-                                           List<CommonProblemDescriptor> descriptors,
-                                           boolean sortedByPosition,
-                                           boolean allowResolved,
-                                           boolean allowSuppressed,
-                                           @Nullable Set<VirtualFile> readOnlyFilesSink) {
-    List<CommonProblemDescriptor> descriptorChildren = null;
-    for (int i = 0; i < node.getChildCount(); i++) {
-      final TreeNode child = node.getChildAt(i);
-      if (child instanceof ProblemDescriptionNode) {
-        if (isNodeValidAndIncluded((ProblemDescriptionNode)child, allowResolved, allowSuppressed)) {
-          if (sortedByPosition) {
-            if (descriptorChildren == null) {
-              descriptorChildren = new ArrayList<>();
-            }
-            descriptorChildren.add(((ProblemDescriptionNode)child).getDescriptor());
-          } else {
-            descriptors.add(((ProblemDescriptionNode)child).getDescriptor());
-          }
-        }
-      }
-      else {
-        processChildDescriptorsDeep((InspectionTreeNode)child, descriptors, sortedByPosition, allowResolved, allowSuppressed, readOnlyFilesSink);
-      }
-    }
-
-    if (descriptorChildren != null) {
-      if (descriptorChildren.size() > 1) {
-        Collections.sort(descriptorChildren, DESCRIPTOR_COMPARATOR);
-      }
-      if (readOnlyFilesSink != null) {
-        collectReadOnlyFiles(descriptorChildren, readOnlyFilesSink);
-      }
-
-      descriptors.addAll(descriptorChildren);
-    }
-  }
-
-  private boolean isNodeValidAndIncluded(ProblemDescriptionNode node, boolean allowResolved, boolean allowSuppressed) {
+  private static boolean isNodeValidAndIncluded(SuppressableInspectionTreeNode node, boolean allowResolved) {
     return node.isValid() && (allowResolved ||
-                              (!node.isExcluded(myExcludedManager) &&
-                               (!node.isAlreadySuppressedFromView() || (allowSuppressed && !node.getAvailableSuppressActions().isEmpty())) &&
+                              (!node.isExcluded() &&
+                               !node.isAlreadySuppressedFromView() &&
                                !node.isQuickFixAppliedFromView()));
   }
 
-  private void nodeStructureChanged(InspectionTreeNode node) {
-    ((DefaultTreeModel)getModel()).nodeStructureChanged(node);
-  }
+  public void removeSelectedProblems() {
+    ThreadingAssertions.assertEventDispatchThread();
+    if (!getContext().getUIOptions().FILTER_RESOLVED_ITEMS) return;
+    TreePath[] selected = getSelectionPaths();
+    if (selected == null) return;
+    Set<InspectionTreeNode> processedNodes = new HashSet<>();
+    List<InspectionTreeNode> toRemove = new ArrayList<>();
+    for (TreePath path : selected) {
+      Object[] nodePath = path.getPath();
 
-  public void queueUpdate() {
-    ((InspectionRootNode) getRoot()).getUpdater().update(null, true);
-  }
+      // ignore root
+      for (int i = 1; i < nodePath.length; i++) {
+        InspectionTreeNode node = (InspectionTreeNode) nodePath[i];
+        if (!processedNodes.add(node)) continue;
 
-  public void restoreExpansionAndSelection(boolean treeNodesMightChange) {
-    myState.restoreExpansionAndSelection(this, treeNodesMightChange);
-  }
-
-  public void setState(@NotNull InspectionTreeState state) {
-    myState = state;
-  }
-
-  public InspectionTreeState getTreeState() {
-    return myState;
-  }
-
-  public void setTreeState(@NotNull InspectionTreeState treeState) {
-    myState = treeState;
-  }
-
-  private class ExpandListener implements TreeWillExpandListener {
-    @Override
-    public void treeWillExpand(TreeExpansionEvent event) throws ExpandVetoException {
-      final InspectionTreeNode node = (InspectionTreeNode)event.getPath().getLastPathComponent();
-      myState.getExpandedUserObjects().add(node.getUserObject());
-    }
-
-    @Override
-    public void treeWillCollapse(TreeExpansionEvent event) throws ExpandVetoException {
-      InspectionTreeNode node = (InspectionTreeNode)event.getPath().getLastPathComponent();
-      myState.getExpandedUserObjects().remove(node.getUserObject());
-    }
-  }
-
-  @NotNull
-  public GlobalInspectionContextImpl getContext() {
-    return myContext;
-  }
-
-  private static void collectReadOnlyFiles(@NotNull Collection<CommonProblemDescriptor> descriptors, @NotNull Set<VirtualFile> readOnlySink) {
-    for (CommonProblemDescriptor descriptor : descriptors) {
-      collectReadOnlyFiles(descriptor, readOnlySink);
-    }
-  }
-
-  private static void collectReadOnlyFiles(@NotNull CommonProblemDescriptor descriptor, @NotNull Set<VirtualFile> readOnlySink) {
-    if (descriptor instanceof ProblemDescriptor) {
-      PsiElement psiElement = ((ProblemDescriptor)descriptor).getPsiElement();
-      if (psiElement != null && !psiElement.isWritable()) {
-        readOnlySink.add(psiElement.getContainingFile().getVirtualFile());
+        if (shouldDelete(node)) {
+          toRemove.add(node);
+          break;
+        }
       }
+    }
+
+    if (toRemove.isEmpty()) return;
+
+    TreePath pathToSelect = null;
+    if (selected.length == 1) {
+      InspectionTreeNode nextNode = myModel
+        .traverseFrom((InspectionTreeNode) selected[0].getLastPathComponent(), true)
+        .filter(n -> !shouldDelete(n)).first();
+      if (nextNode != null) pathToSelect = TreeUtil.getPathFromRoot(nextNode);
+    } else {
+      TreePath commonAliveAncestorPath = TreePathUtil.findCommonAncestor(selected);
+      while (commonAliveAncestorPath != null && shouldDelete((InspectionTreeNode) commonAliveAncestorPath.getLastPathComponent())) {
+        commonAliveAncestorPath = commonAliveAncestorPath.getParentPath();
+      }
+      if (commonAliveAncestorPath != null) pathToSelect = commonAliveAncestorPath;
+    }
+
+    for (InspectionTreeNode node : toRemove) {
+      InspectionTreeNode parent = node.getParent();
+      if (parent != null) {
+        myModel.remove(node);
+      }
+    }
+
+    TreeUtil.selectPath(this, pathToSelect);
+
+    revalidate();
+    repaint();
+  }
+
+  private boolean shouldDelete(InspectionTreeNode node) {
+    if (node instanceof RefElementNode refElementNode) {
+      InspectionToolPresentation presentation = refElementNode.getPresentation();
+      RefEntity element = refElementNode.getElement();
+      if (element == null ||
+          presentation.isProblemResolved(element) ||
+          presentation.isExcluded(element) ||
+          presentation.isSuppressed(element)) {
+        return true;
+      }
+      List<? extends InspectionTreeNode> children = node.getChildren();
+      return !children.isEmpty() && ContainerUtil.and(children, this::shouldDelete);
+    }
+    if (node instanceof ProblemDescriptionNode problemDescriptionNode) {
+      CommonProblemDescriptor descriptor = problemDescriptionNode.getDescriptor();
+      InspectionToolPresentation presentation = problemDescriptionNode.getPresentation();
+      return descriptor == null || presentation.isExcluded(descriptor) || presentation.isProblemResolved(descriptor);
+    }
+    if (node instanceof InspectionGroupNode
+        || node instanceof InspectionSeverityGroupNode
+        || node instanceof InspectionModuleNode
+        || node instanceof InspectionPackageNode) {
+      return ContainerUtil.and(node.getChildren(), this::shouldDelete);
+    }
+    if (node instanceof InspectionNode inspectionNode) {
+      InspectionToolResultExporter presentation = myView.getGlobalInspectionContext().getPresentation(inspectionNode.getToolWrapper());
+      SynchronizedBidiMultiMap<RefEntity, CommonProblemDescriptor> problemElements = presentation.getProblemElements();
+      if (problemElements.isEmpty()) {
+        return true;
+      }
+      return ContainerUtil.and(problemElements.keys(), entity -> presentation.isExcluded(entity));
+    }
+    return false;
+  }
+
+  public @NotNull GlobalInspectionContextImpl getContext() {
+    return myView.getGlobalInspectionContext();
+  }
+
+  private static String @NotNull [] getGroupPath(@NotNull InspectionGroupNode node) {
+    List<String> path = new ArrayList<>(2);
+    while (true) {
+      InspectionTreeNode parent = node.getParent();
+      if (!(parent instanceof InspectionGroupNode groupNode)) break;
+      node = groupNode;
+      path.add(node.getSubGroup());
+    }
+    return ArrayUtilRt.toStringArray(path);
+  }
+
+  private static @Nullable Object getVirtualFileOrEntity(@Nullable RefEntity entity) {
+    if (entity instanceof RefElement element) {
+      SmartPsiElementPointer<?> pointer = element.getPointer();
+      if (pointer != null) {
+        VirtualFile file = pointer.getVirtualFile();
+        if (file != null) {
+          return file;
+        }
+      }
+    }
+    return entity;
+  }
+
+  public static @Nullable PsiElement getSelectedElement(@NotNull AnActionEvent e) {
+    PsiElement element = e.getData(CommonDataKeys.PSI_ELEMENT);
+    if (element != null) {
+      return element;
+    }
+    RefEntity[] entities = getSelectedRefElements(e);
+    RefEntity refEntity = ContainerUtil.find(entities, entity -> entity instanceof RefElement);
+    return refEntity != null ? ((RefElement)refEntity).getPsiElement() : null;
+  }
+
+  public static RefEntity @NotNull [] getSelectedRefElements(@NotNull AnActionEvent e) {
+    Object[] nodes = e.getData(PlatformCoreDataKeys.SELECTED_ITEMS);
+    if (nodes != null) {
+      HashSet<RefEntity> entities = new HashSet<>();
+      for (Object node : nodes) {
+        addElementsInNode((InspectionTreeNode)node, entities, true);
+      }
+      return entities.toArray(entities.toArray(RefEntity.EMPTY_ELEMENTS_ARRAY));
+    }
+    return RefEntity.EMPTY_ELEMENTS_ARRAY;
+  }
+
+  private final class MyOccurrenceNavigator implements OccurenceNavigator {
+    @Override
+    public boolean hasNextOccurence() {
+      return getNextOccurrence(true) != null;
+    }
+
+    @Override
+    public boolean hasPreviousOccurence() {
+      return getNextOccurrence(false) != null;
+    }
+
+    @Override
+    public OccurenceInfo goNextOccurence() {
+      return goNextOccurrence(true);
+    }
+
+    @Override
+    public OccurenceInfo goPreviousOccurence() {
+      return goNextOccurrence(false);
+    }
+
+    private @Nullable OccurenceInfo goNextOccurrence(boolean next) {
+      InspectionTreeNode node = getNextOccurrence(next);
+      if (node == null) return null;
+      selectNode(node);
+      return Registry.is("ide.usages.next.previous.occurrence.only.show.in.preview") && InspectionTree.this.isShowing()
+             ? null
+             : new OccurenceInfo(createDescriptorForNode(node), -1, -1);
+    }
+
+    private @Nullable InspectionTreeNode getNextOccurrence(boolean next) {
+      InspectionTreeNode selected = ObjectUtils.notNull(getSelectedNode(), getRoot());
+      InspectionTreeNode node = selected;
+      while (true) {
+        node = next ? next(node) : prev(node);
+        if (node == null || node == selected) return null;
+        if (isOccurrenceNode(node)) return node;
+      }
+    }
+    
+    @Override
+    public @NotNull String getNextOccurenceActionName() {
+      return InspectionsBundle.message(ExperimentalUI.isNewUI() ? "inspection.action.go.next.new" : "inspection.action.go.next");
+    }
+
+    @Override
+    public @NotNull String getPreviousOccurenceActionName() {
+      return InspectionsBundle.message(ExperimentalUI.isNewUI() ? "inspection.action.go.prev.new" : "inspection.action.go.prev");
+    }
+
+    /**
+     * Next node (depth-first pre-order traversal)
+     * @param node  the node to start from
+     * @return the next node, or null if the specified node was the last node in the tree.
+     */
+    private static InspectionTreeNode next(InspectionTreeNode node) {
+      InspectionTreeNode.Children children = node.myChildren;
+      // if node has children: take first child
+      if (children != null && children.myChildren.length > 0) return children.myChildren[0];
+      
+      while (true) {
+        // otherwise: take next sibling (or next sibling of parent (or next sibling of parent))
+        InspectionTreeNode parent = node.myParent;
+        if (parent == null) return TreeUtil.isCyclicScrollingAllowed() ? node : null;
+        InspectionTreeNode.Children siblings = parent.myChildren;
+        assert siblings != null;
+        int index = Arrays.binarySearch(siblings.myChildren, node, InspectionResultsViewComparator.INSTANCE);
+        assert index >= 0;
+        index++;
+        if (siblings.myChildren.length > index) return siblings.myChildren[index];
+        node = parent;
+      }
+    }
+
+    /**
+     * Previous node (depth-first post-order traversal)
+     * @param node  the node to start from
+     * @return the previous node, or null if the specified node was the first (root) node in the tree.
+     */
+    private static InspectionTreeNode prev(InspectionTreeNode node) {
+      InspectionTreeNode parent = node.myParent;
+      InspectionTreeNode sibling;
+      if (parent != null) {
+        InspectionTreeNode.Children siblings = parent.myChildren;
+        assert siblings != null;
+        int index = Arrays.binarySearch(siblings.myChildren, node, InspectionResultsViewComparator.INSTANCE);
+        assert index >= 0;
+        index--;
+        if (index < 0) return parent; // if no sibling: go up.
+        sibling = siblings.myChildren[index];
+      }
+      else if (TreeUtil.isCyclicScrollingAllowed()) {
+        sibling = node;
+      }
+      else {
+        return null;
+      }
+      InspectionTreeNode.Children children = sibling.myChildren;
+      while (children != null && children.myChildren.length > 0) {
+        // if sibling: get its last child (of last child (of last child))
+        sibling = children.myChildren[children.myChildren.length - 1];
+        children = sibling.myChildren;
+      }
+      return sibling;
+    }
+
+    private InspectionTreeNode getSelectedNode() {
+      TreePath path = getSelectionPath();
+      if (path == null) return null;
+      return (InspectionTreeNode)path.getLastPathComponent();
+    }
+
+    private boolean isOccurrenceNode(@NotNull InspectionTreeNode node) {
+      if (node.isExcluded()) return false;
+      if (node instanceof RefElementNode refNode) {
+        if (!(refNode.getElement() instanceof RefElementImpl element) ||
+            !element.isValid() ||
+            !element.isSuspicious() ||
+            !element.getRefManager().isDeclarationsFound() ||
+            element.isEntry()) {
+          return false;
+        }
+        InspectionToolWrapper<?, ?> wrapper = getToolWrapper(node);
+        if (wrapper == null) wrapper = getSingleToolWrapper();
+        return wrapper != null && wrapper.getShortName().contains("unused");
+      }
+      return node instanceof ProblemDescriptionNode;
+    }
+
+    private static @Nullable Navigatable createDescriptorForNode(@NotNull InspectionTreeNode node) {
+      if (node.isExcluded()) return null;
+      if (node instanceof RefElementNode refNode) {
+        RefEntity element = refNode.getElement();
+        if (element == null || !element.isValid()) return null;
+        if (element instanceof RefElement ref) {
+          return getOpenFileDescriptor(ref);
+        }
+      }
+      else if (node instanceof ProblemDescriptionNode problemNode) {
+        boolean isValid = problemNode.isValid() && (!problemNode.isQuickFixAppliedFromView() ||
+                                                    problemNode.calculateIsValid());
+        return isValid
+               ? navigate(problemNode.getDescriptor())
+               : InspectionResultsViewUtil.getNavigatableForInvalidNode(problemNode);
+      }
+      return null;
+    }
+
+    private static @Nullable Navigatable navigate(CommonProblemDescriptor descriptor) {
+      return InspectionResultsView.getSelectedNavigatable(descriptor);
+    }
+
+    private static @Nullable Navigatable getOpenFileDescriptor(@NotNull RefElement refElement) {
+      PsiElement psiElement = refElement.getPsiElement();
+      if (psiElement == null) return null;
+      PsiFile containingFile = psiElement.getContainingFile();
+      if (containingFile == null) return null;
+      VirtualFile file = containingFile.getVirtualFile();
+      if (file == null) return null;
+      return PsiNavigationSupport.getInstance().createNavigatable(refElement.getRefManager().getProject(), file,
+                                                                  psiElement.getTextOffset());
     }
   }
 }

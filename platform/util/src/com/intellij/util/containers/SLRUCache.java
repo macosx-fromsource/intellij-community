@@ -1,44 +1,33 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 /*
  * @author max
  */
 package com.intellij.util.containers;
 
+import com.intellij.util.NotNullFunction;
 import com.intellij.util.containers.hash.EqualityPolicy;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public abstract class SLRUCache<K, V> extends SLRUMap<K,V> {
-  protected SLRUCache(final int protectedQueueSize, final int probationalQueueSize) {
+import java.util.function.Function;
+
+@ApiStatus.Internal
+public abstract class SLRUCache<K, V> extends SLRUMap<K, V> {
+  protected SLRUCache(int protectedQueueSize, int probationalQueueSize) {
     super(protectedQueueSize, probationalQueueSize);
   }
 
-  protected SLRUCache(final int protectedQueueSize, final int probationalQueueSize, EqualityPolicy<K> hashingStrategy) {
+  protected SLRUCache(int protectedQueueSize, int probationalQueueSize, @NotNull EqualityPolicy<? super K> hashingStrategy) {
     super(protectedQueueSize, probationalQueueSize, hashingStrategy);
   }
 
-  @NotNull
-  public abstract V createValue(K key);
+  public abstract @NotNull V createValue(K key);
 
   @Override
-  @NotNull
-  public V get(K key) {
-    V value = super.get(key);
+  public @NotNull V get(K key) {
+    V value = getIfCached(key);
     if (value != null) {
       return value;
     }
@@ -49,9 +38,31 @@ public abstract class SLRUCache<K, V> extends SLRUMap<K,V> {
     return value;
   }
 
-  @Nullable
-  public V getIfCached(K key) {
+  public @Nullable V getIfCached(K key) {
     return super.get(key);
   }
 
+  public static @NotNull <K, V> SLRUCache<K, V> slruCache(int protectedQueueSize,
+                                                          int probationalQueueSize,
+                                                          @NotNull Function<@NotNull K, @NotNull V> valueProducer) {
+    return new SLRUCache<K, V>(protectedQueueSize, probationalQueueSize) {
+      @Override
+      public @NotNull V createValue(K key) {
+        return valueProducer.apply(key);
+      }
+    };
+  }
+
+  /**
+   * @deprecated Use Caffeine.
+   */
+  @ApiStatus.ScheduledForRemoval
+  @Deprecated
+  public static @NotNull <K, V> SLRUCache<K, V> create(
+    int protectedQueueSize,
+    int probationalQueueSize,
+    @SuppressWarnings("UsagesOfObsoleteApi") @NotNull NotNullFunction<? super K, ? extends V> valueProducer
+  ) {
+    return slruCache(protectedQueueSize, probationalQueueSize, valueProducer::fun);
+  }
 }

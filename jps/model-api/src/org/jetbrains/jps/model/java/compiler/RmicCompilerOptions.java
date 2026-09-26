@@ -15,10 +15,12 @@
  */
 package org.jetbrains.jps.model.java.compiler;
 
+import org.jetbrains.annotations.ApiStatus;
+
 /**
  * @author Eugene Zhuravlev
- *         Date: 9/28/12
  */
+@ApiStatus.Internal
 public class RmicCompilerOptions extends JpsJavaCompilerOptions{
   public boolean IS_EANABLED = false;
   public boolean GENERATE_IIOP_STUBS = false;

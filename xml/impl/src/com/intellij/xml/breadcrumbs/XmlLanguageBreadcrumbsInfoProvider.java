@@ -1,25 +1,5 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * Created by IntelliJ IDEA.
- * User: spleaner
- * Date: Jun 19, 2007
- * Time: 4:44:25 PM
- */
 package com.intellij.xml.breadcrumbs;
 
 import com.intellij.lang.Language;
@@ -29,13 +9,14 @@ import com.intellij.lang.xml.XMLLanguage;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlTag;
+import com.intellij.ui.breadcrumbs.BreadcrumbsProvider;
 import com.intellij.xml.util.HtmlUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class XmlLanguageBreadcrumbsInfoProvider extends BreadcrumbsInfoProvider {
+public class XmlLanguageBreadcrumbsInfoProvider implements BreadcrumbsProvider {
   @Override
-  public boolean acceptElement(@NotNull final PsiElement e) {
+  public boolean acceptElement(final @NotNull PsiElement e) {
     return e instanceof XmlTag && e.isValid();
   }
 
@@ -45,17 +26,27 @@ public class XmlLanguageBreadcrumbsInfoProvider extends BreadcrumbsInfoProvider 
   }
 
   @Override
-  @NotNull
-  public String getElementInfo(@NotNull final PsiElement e) {
+  public @NotNull String getElementInfo(final @NotNull PsiElement e) {
+    return getInfo(e);
+  }
+
+  public static @NotNull String getInfo(@NotNull PsiElement e) {
     final XmlTag tag = (XmlTag)e;
     final boolean addHtmlInfo = e.getContainingFile().getLanguage() != XMLLanguage.INSTANCE;
     return addHtmlInfo ? HtmlUtil.getTagPresentation(tag) : tag.getName();
   }
 
   @Override
-  @Nullable
-  public String getElementTooltip(@NotNull final PsiElement e) {
-    final XmlTag tag = (XmlTag)e;
+  public @Nullable String getElementTooltip(final @NotNull PsiElement e) {
+    return getTooltip((XmlTag)e);
+  }
+
+  @Override
+  public boolean isShownByDefault() {
+    return false;
+  }
+
+  public static @NotNull String getTooltip(@NotNull XmlTag tag) {
     final StringBuilder result = new StringBuilder("&lt;");
     result.append(tag.getName());
     final XmlAttribute[] attributes = tag.getAttributes();

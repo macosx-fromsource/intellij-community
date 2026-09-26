@@ -5,7 +5,7 @@
 "%()s" % {'': "name"} #ok
 <warning descr="Format specifier character missing">'test%(name)'</warning> % {'name': 23} #There are no format specifier character
 'work%*d' % (2, 34) #ok
-<warning descr="Can't use '*' in formats when using a mapping">'work%(name)*d'</warning> % (12, 32) #Can't use '*' in formats when using a mapping
+<warning descr="Cannot use '*' in formats when using a mapping">'work%(name)*d'</warning> % (12, 32) #Can't use '*' in formats when using a mapping
 '%*.*d' % (2, 5, 5) #ok
 '%*.*d' % (<warning descr="Too few arguments for format string">2, 4</warning>) #Too few arguments for format string
 '%*.*d' % (<warning descr="Too many arguments for format string">2, 4, 5, 6</warning>) #Too many arguments for format string
@@ -15,7 +15,7 @@
 '%%%(name)ld' % {'name': 12} #ok
 "%(name)f(name)" % <warning descr="Format requires a mapping">23.2</warning> #Format requires a mapping
 "%(name)f(name)" % (<warning descr="Format requires a mapping">23.2</warning>) #Format requires a mapping
-'%d%d' % <warning descr="Format doesn't require a mapping">{'name1': 2, 'name2': 3}</warning> #Format doesn't require a mapping
+'%d%d' % <warning descr="Format does not require a mapping">{'name1': 2, 'name2': 3}</warning> #Format doesn't require a mapping
 '%12.2f' % 2.74 #ok
 'Hello world' % () #ok
 'Hello world' % [] #ok
@@ -23,7 +23,7 @@
 '%d%d' % ((5), (5)) #ok
 "%(name)d %(name)d" % {"name": 43} #ok
 "%(name)d" % {'a': 4, "name": 5} #ok
-'%% name %(name)c' % <warning descr="Key 'name' has no following argument">{'a': 4}</warning> #Key 'name' has no following argument
+'%% name %(name)c' % <warning descr="Key 'name' has no corresponding argument">{'a': 4}</warning> #Key 'name' has no following argument
 '%d %u %f %F %s %r' % (2, 3, 4.1, 4.0, "name", "str") #ok
 '%d %d %d' % (4, <warning descr="Unexpected type str">"a"</warning>, <warning descr="Unexpected type str">"b"</warning>) #Unexpected type
 '%f %f %f' % (4, 5, <warning descr="Unexpected type str">"test"</warning>) #Unexpected type
@@ -82,6 +82,8 @@ def bar():
 
 a = ('a', 1) if 1 else ('b', 2)
 "%s is %d" % a # ok, must infer unified tuple type
+#  Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+
 #PY-3064, because original type of a is tuple, not list
 a = (1,2,3)
 print '%d:%d' % a[:2]
@@ -100,9 +102,9 @@ print '%d, %d, %d, %d' % <warning descr="Too few arguments for format string">my
 
 # PY-12801
 print '%d %s' % ((42,) + ('spam',))
-print '%d %s' % (<warning descr="Unexpected type str">('ham',) + ('spam',)</warning>)
-print '%d %s' % (<warning descr="Too few arguments for format string">(42,) + ()</warning>)
-print '%d' % (<warning descr="Too many arguments for format string">(42,) + ('spam',)</warning>)
+print '%d %s' % (<warning descr="Unexpected type (Literal['ham'], Literal['spam'])">('ham',) + ('spam',)</warning>)
+print '%d %s' % (<warning descr="Too few arguments for format string"><warning descr="Unexpected type (Literal[42],)">(42,) + ()</warning></warning>)
+print '%d' % (<warning descr="Too many arguments for format string"><warning descr="Unexpected type (Literal[42], Literal['spam'])">(42,) + ('spam',)</warning></warning>)
 
 # PY-11274
 import collections

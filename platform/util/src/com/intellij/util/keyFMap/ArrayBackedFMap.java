@@ -1,117 +1,97 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.keyFMap;
 
 import com.intellij.openapi.util.Key;
 import com.intellij.util.ArrayUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
-public class ArrayBackedFMap implements KeyFMap {
-  static final int ARRAY_THRESHOLD = 8;
-  private final int[] keys;
-  private final Object[] values;
+import java.util.Arrays;
 
-  ArrayBackedFMap(@NotNull int[] keys, @NotNull Object[] values) {
+@ApiStatus.Internal
+public class ArrayBackedFMap implements KeyFMap {
+  public static final int ARRAY_THRESHOLD = 8;
+  // Invariant: keys are always sorted, never mutated inplace
+  protected final int[] keys;
+  protected final @NotNull Object @NotNull [] values; //never mutated inplace
+
+  protected ArrayBackedFMap(int @NotNull [] keys, @NotNull Object @NotNull [] values) {
     this.keys = keys;
     this.values = values;
   }
 
-  @NotNull
   @Override
-  public <V> KeyFMap plus(@NotNull Key<V> key, @NotNull V value) {
-    int oldSize = size();
+  public @NotNull <V> KeyFMap plus(@NotNull Key<V> key, @NotNull V value) {
     int keyCode = key.hashCode();
-    int[] newKeys = null;
-    Object[] newValues = null;
-    int i;
-    for (i = 0; i < oldSize; i++) {
-      int oldKey = keys[i];
-      if (keyCode == oldKey) {
-        if (value == values[i]) return this;
-        newKeys = new int[oldSize];
-        newValues = new Object[oldSize];
-        System.arraycopy(keys, 0, newKeys, 0, oldSize);
-        System.arraycopy(values, 0, newValues, 0, oldSize);
-        newValues[i] = value;
-        break;
+    int keyPos = indexOf(keyCode);
+    if (keyPos >= 0) {
+      if (values[keyPos] == value) {
+        return this;
       }
+      Object[] newValues = values.clone();
+      newValues[keyPos] = value;
+      // Can reuse keys as it is never mutated
+      return new ArrayBackedFMap(keys, newValues);
     }
-    if (i == oldSize) {
-      if (oldSize == ARRAY_THRESHOLD) {
-        return new MapBackedFMap(keys, keyCode, values, value);
-      }
-      newKeys = ArrayUtil.append(keys, keyCode);
-      newValues = ArrayUtil.append(values, value, ArrayUtil.OBJECT_ARRAY_FACTORY);
+    if (keys.length < ARRAY_THRESHOLD) {
+      int[] newKeys = ArrayUtil.insert(keys, -keyPos - 1, keyCode);
+      Object[] newValues = ArrayUtil.insert(values, -keyPos - 1, value);
+      return new ArrayBackedFMap(newKeys, newValues);
     }
-    return new ArrayBackedFMap(newKeys, newValues);
+    return new MapBackedFMap(keys, keyCode, values, value);
   }
 
-  private int size() {
+  @Override
+  public int size() {
     return keys.length;
   }
 
-  @NotNull
+  private int indexOf(int keyCode) {
+    for (int i = 0; i < keys.length; i++) {
+      int key = keys[i];
+      if (key == keyCode) return i;
+      if (key > keyCode) return -i-1;
+    }
+    return -keys.length - 1;
+  }
+
   @Override
-  public KeyFMap minus(@NotNull Key<?> key) {
-    int oldSize = size();
-    int keyCode = key.hashCode();
-    for (int i = 0; i< oldSize; i++) {
-      int oldKey = keys[i];
-      if (keyCode == oldKey) {
-        if (oldSize == 3) {
-          int i1 = (2-i)/2;
-          int i2 = 3 - (i+2)/2;
-          Key<Object> key1 = Key.getKeyByIndex(keys[i1]);
-          Key<Object> key2 = Key.getKeyByIndex(keys[i2]);
-          if (key1 == null && key2 == null) return EMPTY_MAP;
-          if (key1 == null) return new OneElementFMap<Object>(key2, values[i2]);
-          if (key2 == null) return new OneElementFMap<Object>(key1, values[i1]);
-          return new PairElementsFMap(key1, values[i1], key2, values[i2]);
-        }
-        int[] newKeys = ArrayUtil.remove(keys, i);
-        Object[] newValues = ArrayUtil.remove(values, i, ArrayUtil.OBJECT_ARRAY_FACTORY);
-        return new ArrayBackedFMap(newKeys, newValues);
+  public @NotNull KeyFMap minus(@NotNull Key<?> key) {
+    int i = indexOf(key.hashCode());
+    if (i >= 0) {
+      if (keys.length == 3) {
+        int otherI1 = (2 - i) / 2;
+        int otherI2 = 3 - (i + 2) / 2;
+        Key<Object> key1 = Key.getKeyByIndex(keys[otherI1]);
+        Key<Object> key2 = Key.getKeyByIndex(keys[otherI2]);
+        if (key1 == null && key2 == null) return EMPTY_MAP;
+        if (key1 == null) return new OneElementFMap(key2, values[otherI2]);
+        if (key2 == null) return new OneElementFMap(key1, values[otherI1]);
+        return new PairElementsFMap(key1, values[otherI1], key2, values[otherI2]);
       }
+      int[] newKeys = ArrayUtil.remove(keys, i);
+      Object[] newValues = ArrayUtil.remove(values, i, ArrayUtil.OBJECT_ARRAY_FACTORY);
+      return new ArrayBackedFMap(newKeys, newValues);
     }
     return this;
   }
 
   @Override
   public <V> V get(@NotNull Key<V> key) {
-    int oldSize = size();
-    int keyCode = key.hashCode();
-    for (int i = 0; i < oldSize; i++) {
-      int oldKey = keys[i];
-      if (keyCode == oldKey) {
-        //noinspection unchecked
-        return (V)values[i];
-      }
-    }
-    return null;
+    int i = indexOf(key.hashCode());
+    //noinspection unchecked
+    return i < 0 ? null : (V) values[i];
   }
 
   @Override
   public String toString() {
-    String s = "";
+    StringBuilder s = new StringBuilder("{");
     for (int i = 0; i < keys.length; i++) {
       int key = keys[i];
       Object value = values[i];
-      s += (s.isEmpty() ? "" : ", ") + Key.getKeyByIndex(key) + " -> " + value;
+      s.append(s.length() == 1 ? "" : ", ").append(Key.getKeyByIndex(key)).append("=").append(value);
     }
-    return "(" + s + ")";
+    return s.append("}").toString();
   }
 
   @Override
@@ -119,30 +99,72 @@ public class ArrayBackedFMap implements KeyFMap {
     return false;
   }
 
-  @NotNull
-  public int[] getKeyIds() {
-    return keys;
+  @Override
+  public int getValueIdentityHashCode() {
+    int hash = 0;
+    for (int i = 0; i < keys.length; i++) {
+      hash = hash * 31 + keys[i];
+      hash = hash * 31 + System.identityHashCode(values[i]);
+    }
+    return hash;
   }
 
-  @NotNull
   @Override
-  public Key[] getKeys() {
+  public @NotNull Key<?> @NotNull [] getKeys() {
     return getKeysByIndices(keys);
   }
 
-  @NotNull
-  public Object[] getValues() {
-    return values;
+  public static @NotNull Key<?> @NotNull [] getKeysByIndices(int @NotNull [] indexes) {
+    Key<?>[] result = new Key[indexes.length];
+
+    int o = 0;
+    for (int index : indexes) {
+      Key<Object> key = Key.getKeyByIndex(index);
+      if (key != null) {
+        result[o++] = key;
+      }
+    }
+    return o == result.length ? result : Arrays.copyOf(result, o);
   }
 
-  @NotNull
-  static Key[] getKeysByIndices(int[] indexes) {
-    Key[] result = new Key[indexes.length];
-
-    for (int i =0; i < indexes.length; i++) {
-      result[i] = Key.getKeyByIndex(indexes[i]);
+  @Override
+  public int hashCode() {
+    int hash = 0;
+    int length = keys.length;
+    for (int i = 0; i < length; i++) {
+      // key index is its hashcode
+      hash += keys[i] ^ values[i].hashCode();
     }
+    return hash;
+  }
 
-    return result;
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || o.getClass() != ArrayBackedFMap.class) return false;
+
+    ArrayBackedFMap map = (ArrayBackedFMap)o;
+    if (map.keys.length != keys.length) return false;
+
+    int length = keys.length;
+    for (int i = 0; i < length; i++) {
+      if (keys[i] != map.keys[i] || !values[i].equals(map.values[i])) return false;
+    }
+    return true;
+  }
+
+  @Override
+  public boolean equalsByReference(@NotNull KeyFMap o) {
+    if (this == o) return true;
+    if (o.getClass() != ArrayBackedFMap.class) return false;
+
+    ArrayBackedFMap map = (ArrayBackedFMap)o;
+    if (map.keys.length != keys.length) return false;
+
+    int length = keys.length;
+    for (int i = 0; i < length; i++) {
+      if (keys[i] != map.keys[i] || values[i] != map.values[i]) return false;
+    }
+    return true;
   }
 }

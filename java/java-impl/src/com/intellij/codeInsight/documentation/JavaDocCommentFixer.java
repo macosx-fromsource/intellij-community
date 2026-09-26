@@ -1,53 +1,56 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.documentation;
 
-import com.intellij.codeInspection.InspectionManager;
+import com.intellij.codeInspection.InspectionEngine;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.QuickFix;
-import com.intellij.codeInspection.javaDoc.JavaDocLocalInspection;
+import com.intellij.codeInspection.ex.LocalInspectionToolWrapper;
 import com.intellij.codeInspection.javaDoc.JavaDocReferenceInspection;
+import com.intellij.codeInspection.javaDoc.JavadocDeclarationInspection;
+import com.intellij.codeInspection.javaDoc.MissingJavadocInspection;
 import com.intellij.javadoc.JavadocNavigationDelegate;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.RangeMarker;
+import com.intellij.openapi.progress.EmptyProgressIndicator;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiComment;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaDocumentedElement;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiTypeParameter;
+import com.intellij.psi.PsiTypeParameterListOwner;
 import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.javadoc.PsiDocTag;
 import com.intellij.psi.javadoc.PsiDocTagValue;
-import com.intellij.psi.javadoc.PsiDocToken;
-import com.intellij.util.containers.ContainerUtilRt;
+import com.intellij.util.PairProcessor;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.CharArrayUtil;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
-/**
- * @author Denis Zhdanov
- * @since 9/20/12 8:44 PM
- */
-public class JavaDocCommentFixer implements DocCommentFixer {
-
-  @NotNull private static final String PARAM_TAG = "@param";
+public final class JavaDocCommentFixer implements DocCommentFixer {
+  private static final String PARAM_TAG = "@param";
+  private static final String PARAM_TAG_NAME = "param";
 
   /**
-   * Lists tags eligible for moving caret to after javadoc fixing. The main idea is that we want to locate caret at the 
+   * Lists tags eligible for moving caret to after javadoc fixing. The main idea is that we want to locate caret at the
    * incomplete tag description after fixing the doc comment.
    * <p/>
    * Example:
@@ -64,88 +67,77 @@ public class JavaDocCommentFixer implements DocCommentFixer {
    *   }
    * </pre>
    */
-  @NotNull private static final Set<String> CARET_ANCHOR_TAGS = ContainerUtilRt.newHashSet(PARAM_TAG, "@throws", "@return");
+  private static final Set<String> CARET_ANCHOR_TAGS = ContainerUtil.newHashSet(PARAM_TAG, "@throws", "@return");
 
-  @NotNull private static final Comparator<PsiElement> COMPARATOR =
-    (e1, e2) -> e2.getTextRange().getEndOffset() - e1.getTextRange().getEndOffset();
-
-  @NotNull private static final String PARAM_TAG_NAME = "param";
+  private static final Comparator<TextRange> COMPARATOR = (e1, e2) -> e2.getEndOffset() - e1.getEndOffset();
 
   @Override
   public void fixComment(@NotNull Project project, @NotNull Editor editor, @NotNull PsiComment comment) {
-    if (!(comment instanceof PsiDocComment)) {
+    if (!(comment instanceof PsiDocComment docComment)) {
       return;
     }
 
-    PsiDocComment docComment = (PsiDocComment)comment;
     PsiJavaDocumentedElement owner = docComment.getOwner();
-    if (owner == null) {
-      return;
-    }
-    
-    PsiFile file = comment.getContainingFile();
-    if (file == null) {
-      return;
-    }
-    
-    JavaDocReferenceInspection referenceInspection = new JavaDocReferenceInspection();
-    JavaDocLocalInspection localInspection = getDocLocalInspection();
+    if (owner == null) return;
+    PsiFile file = owner.getContainingFile();
+    if (file == null) return;
 
-    InspectionManager inspectionManager = InspectionManager.getInstance(project);
-    ProblemDescriptor[] referenceProblems = null;
-    ProblemDescriptor[] otherProblems = null;
-    if (owner instanceof PsiClass) {
-      referenceProblems = referenceInspection.checkClass(((PsiClass)owner), inspectionManager, false);
-      otherProblems = localInspection.checkClass(((PsiClass)owner), inspectionManager, false);
-    }
-    else if (owner instanceof PsiField) {
-      referenceProblems = referenceInspection.checkField(((PsiField)owner), inspectionManager, false);
-      otherProblems = localInspection.checkField(((PsiField)owner), inspectionManager, false);
-    }
-    else if (owner instanceof PsiMethod) {
-      referenceProblems = referenceInspection.checkMethod((PsiMethod)owner, inspectionManager, false);
-      otherProblems = localInspection.checkMethod((PsiMethod)owner, inspectionManager, false);
-    }
+    Document document = file.getFileDocument();
+    ProgressManager.getInstance().runProcess(()->{
+      Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> referenceProblems =
+        InspectionEngine.inspectElements(Collections.singletonList(new LocalInspectionToolWrapper(new JavaDocReferenceInspection())), file,
+                                         file.getTextRange(),
+                                         true, false, Collections.singletonList(owner), PairProcessor.alwaysTrue());
 
-    if (referenceProblems != null) {
-      fixReferenceProblems(referenceProblems, project);
-    }
-    if (otherProblems != null) {
-      fixCommonProblems(otherProblems, comment, editor.getDocument(), project);
-    }
-    
-    PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(editor.getDocument());
-    ensureContentOrdered(docComment, editor.getDocument());
-    locateCaret(docComment, editor, file);
+      List<LocalInspectionToolWrapper> toolWrappers = List.of(
+        new LocalInspectionToolWrapper(getMissingJavadocInspection()), new LocalInspectionToolWrapper(getJavadocDeclarationInspection())
+      );
+      Map<LocalInspectionToolWrapper, List<ProblemDescriptor>> commonProblems =
+        InspectionEngine.inspectElements(toolWrappers, file, file.getTextRange(), true, true,
+                                         Collections.singletonList(owner), PairProcessor.alwaysTrue());
+      if (!referenceProblems.isEmpty()) {
+        fixReferenceProblems(ContainerUtil.flatten(referenceProblems.values()), project);
+      }
+      if (!commonProblems.isEmpty()) {
+        fixCommonProblems(ContainerUtil.flatten(commonProblems.values()), owner, document, project);
+      }
+    }, new EmptyProgressIndicator());
+
+    PsiDocumentManager.getInstance(project).doPostponedOperationsAndUnblockDocument(document);
+    ensureContentOrdered(Objects.requireNonNull(owner.getDocComment()), document);
+    locateCaret(Objects.requireNonNull(owner.getDocComment()), editor, file);
   }
 
-  @NotNull
-  private static JavaDocLocalInspection getDocLocalInspection() {
-    JavaDocLocalInspection localInspection = new JavaDocLocalInspection();
+  private static @NotNull MissingJavadocInspection getMissingJavadocInspection() {
+    MissingJavadocInspection localInspection = new MissingJavadocInspection();
 
     //region visibility
-    localInspection.TOP_LEVEL_CLASS_OPTIONS.ACCESS_JAVADOC_REQUIRED_FOR = PsiModifier.PRIVATE;
-    localInspection.INNER_CLASS_OPTIONS.ACCESS_JAVADOC_REQUIRED_FOR = PsiModifier.PRIVATE;
-    localInspection.FIELD_OPTIONS.ACCESS_JAVADOC_REQUIRED_FOR = PsiModifier.PRIVATE;
-    localInspection.METHOD_OPTIONS.ACCESS_JAVADOC_REQUIRED_FOR = PsiModifier.PRIVATE;
+    localInspection.TOP_LEVEL_CLASS_SETTINGS.MINIMAL_VISIBILITY = PsiModifier.PRIVATE;
+    localInspection.INNER_CLASS_SETTINGS.MINIMAL_VISIBILITY = PsiModifier.PRIVATE;
+    localInspection.FIELD_SETTINGS.MINIMAL_VISIBILITY = PsiModifier.PRIVATE;
+    localInspection.METHOD_SETTINGS.MINIMAL_VISIBILITY = PsiModifier.PRIVATE;
     //endregion
-    
-    localInspection.setIgnoreEmptyDescriptions(true);
 
     //region class type arguments
-    if (!localInspection.TOP_LEVEL_CLASS_OPTIONS.REQUIRED_TAGS.contains(PARAM_TAG)) {
-      localInspection.TOP_LEVEL_CLASS_OPTIONS.REQUIRED_TAGS += PARAM_TAG;
+    if (!localInspection.TOP_LEVEL_CLASS_SETTINGS.isTagRequired(PARAM_TAG)) {
+      localInspection.TOP_LEVEL_CLASS_SETTINGS.setTagRequired(PARAM_TAG, true);
     }
-    if (!localInspection.INNER_CLASS_OPTIONS.REQUIRED_TAGS.contains(PARAM_TAG)) {
-      localInspection.INNER_CLASS_OPTIONS.REQUIRED_TAGS += PARAM_TAG;
+    if (!localInspection.INNER_CLASS_SETTINGS.isTagRequired(PARAM_TAG)) {
+      localInspection.INNER_CLASS_SETTINGS.setTagRequired(PARAM_TAG, true);
     }
     //endregion
-    
+
+    return localInspection;
+  }
+
+  private static @NotNull JavadocDeclarationInspection getJavadocDeclarationInspection() {
+    JavadocDeclarationInspection localInspection = new JavadocDeclarationInspection();
+    localInspection.setIgnoreEmptyDescriptions(true);
     return localInspection;
   }
 
   @SuppressWarnings("unchecked")
-  private static void fixReferenceProblems(@NotNull ProblemDescriptor[] problems, @NotNull Project project) {
+  private static void fixReferenceProblems(@NotNull List<? extends ProblemDescriptor> problems, @NotNull Project project) {
     for (ProblemDescriptor problem : problems) {
       QuickFix[] fixes = problem.getFixes();
       if (fixes != null) {
@@ -158,75 +150,96 @@ public class JavaDocCommentFixer implements DocCommentFixer {
    * This fixer is based on existing javadoc inspections - there are two of them. One detects invalid references (to nonexistent
    * method parameter or non-declared checked exception). Another one handles all other cases (parameter documentation is missing;
    * parameter doesn't have a description etc). This method handles result of the second exception
-   * 
-   * @param problems  detected problems
-   * @param comment   target comment to fix
-   * @param document  target document which contains text of the comment being fixed
-   * @param project   current project
+   *
+   * @param problems detected problems
+   * @param commentOwner owner of the comment to fix
+   * @param document target document which contains text of the comment being fixed
+   * @param project  current project
    */
   @SuppressWarnings("unchecked")
-  private static void fixCommonProblems(@NotNull ProblemDescriptor[] problems,
-                                        @NotNull PsiComment comment,
-                                        @NotNull final Document document,
-                                        @NotNull Project project)
-  {
-    List<PsiElement> toRemove = new ArrayList<>();
+  private static void fixCommonProblems(@NotNull List<? extends ProblemDescriptor> problems,
+                                        @NotNull PsiJavaDocumentedElement commentOwner,
+                                        final @NotNull Document document,
+                                        @NotNull Project project) {
+    PsiDocComment comment = commentOwner.getDocComment();
+    if (comment == null) return;
+
+    List<RangeMarker> toRemove = new ArrayList<>();
+    List<ProblemDescriptor> problemsToApply = new ArrayList<>();
     for (ProblemDescriptor problem : problems) {
       PsiElement element = problem.getPsiElement();
       if (element == null) {
         continue;
       }
-      if ((!(element instanceof PsiDocToken) || !JavaDocTokenType.DOC_COMMENT_START.equals(((PsiDocToken)element).getTokenType())) &&
-          comment.getTextRange().contains(element.getTextRange())) {
+      if ((element != comment.getFirstChild()) && comment.getTextRange().contains(element.getTextRange())) {
         // Unnecessary element like '@return' at the void method's javadoc.
         for (PsiElement e = element; e != null; e = e.getParent()) {
           if (e instanceof PsiDocTag) {
-            toRemove.add(e);
+            toRemove.add(document.createRangeMarker(e.getTextRange()));
             break;
           }
         }
       }
       else {
-        // Problems like 'missing @param'.
-        QuickFix[] fixes = problem.getFixes();
-        if (fixes != null && fixes.length > 0) {
-          fixes[0].applyFix(project, problem);
-        }
+        problemsToApply.add(problem);
       }
     }
-    
-    if (toRemove.isEmpty()) {
-      return;
+
+    for (ProblemDescriptor problem : problemsToApply) {
+      // Problems like 'missing @param'.
+      QuickFix[] fixes = problem.getFixes();
+      if (fixes != null && fixes.length > 0) {
+        fixes[0].applyFix(project, problem);
+      }
     }
-    if (toRemove.size() > 1) {
-      Collections.sort(toRemove, COMPARATOR);
-    }
+    comment = commentOwner.getDocComment();
 
     PsiDocumentManager psiDocumentManager = PsiDocumentManager.getInstance(project);
+    if (toRemove.isEmpty()) {
+      psiDocumentManager.commitDocument(document);
+      return;
+    }
+
     psiDocumentManager.doPostponedOperationsAndUnblockDocument(document);
     CharSequence text = document.getCharsSequence();
-    for (PsiElement element : toRemove) {
-      int startOffset = element.getTextRange().getStartOffset();
+    List<TextRange> toDelete = new ArrayList<>();
+    for (RangeMarker rangeMarker : toRemove) {
+      TextRange range = rangeMarker.getTextRange();
+      int startOffset = range.getStartOffset();
       int startLine = document.getLineNumber(startOffset);
       int i = CharArrayUtil.shiftBackward(text, startOffset - 1, " \t");
       if (i >= 0) {
         char c = text.charAt(i);
-        if (c == '*') {
-          i = CharArrayUtil.shiftBackward(text, i - 1, " \t");
+        if (!comment.isMarkdownComment()) {
+          if (c == '*') {
+            i = CharArrayUtil.shiftBackward(text, i - 1, " \t");
+          }
+        }
+        else {
+          if (c == '/') {
+            i = CharArrayUtil.shiftBackward(text, i - 1, " \t/");
+          }
         }
       }
       if (i >= 0 && text.charAt(i) == '\n') {
         startOffset = Math.max(i, document.getLineStartOffset(startLine) - 1);
       }
 
-      int endOffset = element.getTextRange().getEndOffset();
+      int endOffset = range.getEndOffset();
       // Javadoc PSI is awkward, it includes next line text before the next tag. That's why we need to strip it.
-      i = CharArrayUtil.shiftBackward(text, endOffset - 1, " \t*");
+      i = findBackwardOffset(text, endOffset - 1, comment.isMarkdownComment());
       if (i > 0 && text.charAt(i) == '\n') {
         endOffset = i;
       }
-      document.deleteString(startOffset, endOffset);
+      toDelete.add(new TextRange(startOffset, endOffset));
+      rangeMarker.dispose();
     }
+
+    toDelete.sort(COMPARATOR);
+    for (TextRange range : toDelete) {
+      document.deleteString(range.getStartOffset(), range.getEndOffset());
+    }
+
     psiDocumentManager.commitDocument(document);
   }
 
@@ -245,7 +258,7 @@ public class JavaDocCommentFixer implements DocCommentFixer {
       String paramName = valueElement.getText();
       if (paramName != null) {
         current.add(paramName);
-        tagInfoByName.put(paramName, parseTagValue(tag, document));
+        tagInfoByName.put(paramName, parseTagValue(comment, tag, document));
       }
     }
     //endregion
@@ -293,25 +306,26 @@ public class JavaDocCommentFixer implements DocCommentFixer {
     //endregion
   }
 
-  @NotNull
-  private static Pair<TextRange, String> parseTagValue(@NotNull PsiDocTag tag, @NotNull Document document) {
+  private static @NotNull Pair<TextRange, String> parseTagValue(@NotNull PsiDocComment comment,
+                                                                @NotNull PsiDocTag tag,
+                                                                @NotNull Document document) {
     PsiDocTagValue valueElement = tag.getValueElement();
     assert valueElement != null;
-    
+
     int startOffset = valueElement.getTextRange().getStartOffset();
     int endOffset = tag.getTextRange().getEndOffset();
     // Javadoc PSI is rather weird...
     CharSequence text = document.getCharsSequence();
-    int i = CharArrayUtil.shiftBackward(text, endOffset - 1, " \t*");
+    int i = findBackwardOffset(text, endOffset - 1, comment.isMarkdownComment());
     if (i > 0 && text.charAt(i) == '\n') {
       endOffset = i;
     }
-    
+
     return Pair.create(TextRange.create(startOffset, endOffset), text.subSequence(startOffset, endOffset).toString());
   }
-  
+
   private static void locateCaret(@NotNull PsiDocComment comment, @NotNull Editor editor, @NotNull PsiFile file) {
-    Document document = editor.getDocument();
+    Document document = file.getFileDocument();
     int lineToNavigate = -1;
     for (PsiDocTag tag : comment.getTags()) {
       PsiElement nameElement = tag.getNameElement();
@@ -320,22 +334,20 @@ public class JavaDocCommentFixer implements DocCommentFixer {
       }
       boolean good = false;
       PsiElement[] dataElements = tag.getDataElements();
-      if (dataElements != null) {
-        PsiDocTagValue valueElement = tag.getValueElement();
-        for (PsiElement element : dataElements) {
-          if (element == valueElement) {
-            continue;
-          }
-          if (!StringUtil.isEmptyOrSpaces(element.getText())) {
-            good = true;
-            break;
-          }
+      PsiDocTagValue valueElement = tag.getValueElement();
+      for (PsiElement element : dataElements) {
+        if (element == valueElement) {
+          continue;
+        }
+        if (!StringUtil.isEmptyOrSpaces(element.getText())) {
+          good = true;
+          break;
         }
       }
       if (!good) {
         int offset = tag.getTextRange().getEndOffset();
         CharSequence text = document.getCharsSequence();
-        int i = CharArrayUtil.shiftBackward(text, offset - 1, " \t*");
+        int i = findBackwardOffset(text, offset - 1, comment.isMarkdownComment());
         if (i > 0 && text.charAt(i) == '\n') {
           offset = i - 1;
         }
@@ -348,5 +360,10 @@ public class JavaDocCommentFixer implements DocCommentFixer {
       editor.getCaretModel().moveToOffset(document.getLineEndOffset(lineToNavigate));
       JavadocNavigationDelegate.navigateToLineEnd(editor, file);
     }
+  }
+
+  /// @return the new offset, taking into account the start of a comment line
+  private static int findBackwardOffset(@NotNull CharSequence text, int offset, boolean isMarkdown) {
+    return CharArrayUtil.shiftBackward(text, offset, isMarkdown ? " \t/" : " \t*");
   }
 }

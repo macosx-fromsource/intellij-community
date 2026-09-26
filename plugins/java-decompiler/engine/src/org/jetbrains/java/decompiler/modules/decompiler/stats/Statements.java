@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.stats;
 
 import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
@@ -20,9 +6,9 @@ import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
-import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
+import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersion;
 
-public class Statements {
+public final class Statements {
   public static Statement findFirstData(Statement stat) {
     if (stat.getExprents() != null) {
       return stat;
@@ -31,27 +17,19 @@ public class Statements {
       return null;
     }
 
-    switch (stat.type) {
-      case Statement.TYPE_SEQUENCE:
-      case Statement.TYPE_IF:
-      case Statement.TYPE_ROOT:
-      case Statement.TYPE_SWITCH:
-      case Statement.TYPE_SYNCRONIZED:
-        return findFirstData(stat.getFirst());
-      default:
-        return null;
-    }
+    return switch (stat.type) {
+      case SEQUENCE, IF, ROOT, SWITCH, SYNCHRONIZED -> findFirstData(stat.getFirst());
+      default -> null;
+    };
   }
 
   public static boolean isInvocationInitConstructor(InvocationExprent inv, MethodWrapper method, ClassWrapper wrapper, boolean withThis) {
-    if (inv.getFunctype() == InvocationExprent.TYP_INIT && inv.getInstance().type == Exprent.EXPRENT_VAR) {
+    if (inv.getFuncType() == InvocationExprent.TYPE_INIT && inv.getInstance().type == Exprent.EXPRENT_VAR) {
       VarExprent instVar = (VarExprent)inv.getInstance();
-      VarVersionPair varPair = new VarVersionPair(instVar);
-      String classname = method.varproc.getThisVars().get(varPair);
-      if (classname != null) { // any this instance. TODO: Restrict to current class?
-        if (withThis || !wrapper.getClassStruct().qualifiedName.equals(inv.getClassname())) {
-          return true;
-        }
+      VarVersion varPair = new VarVersion(instVar);
+      String className = method.varproc.getThisVars().get(varPair);
+      if (className != null) { // any this instance. TODO: Restrict to current class?
+        return withThis || !wrapper.getClassStruct().qualifiedName.equals(inv.getClassName());
       }
     }
 

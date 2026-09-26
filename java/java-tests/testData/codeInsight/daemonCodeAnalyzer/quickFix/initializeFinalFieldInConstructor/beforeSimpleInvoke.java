@@ -1,5 +1,5 @@
-// "Initialize in constructor" "true"
-class A {
+// "Initialize in constructor" "true-preview"
+class Main {
   private final int v<caret>ar;
 
   private Main() {

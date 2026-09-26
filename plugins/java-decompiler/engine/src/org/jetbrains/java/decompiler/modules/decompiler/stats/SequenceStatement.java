@@ -1,25 +1,12 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.stats;
 
-import org.jetbrains.java.decompiler.main.TextBuffer;
 import org.jetbrains.java.decompiler.main.collectors.BytecodeMappingTracer;
 import org.jetbrains.java.decompiler.modules.decompiler.DecHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeType;
+import org.jetbrains.java.decompiler.util.TextBuffer;
 
 import java.util.Arrays;
 import java.util.List;
@@ -33,10 +20,10 @@ public class SequenceStatement extends Statement {
   // *****************************************************************************
 
   private SequenceStatement() {
-    type = Statement.TYPE_SEQUENCE;
+    super(StatementType.SEQUENCE);
   }
 
-  public SequenceStatement(List<Statement> lst) {
+  public SequenceStatement(List<? extends Statement> lst) {
 
     this();
 
@@ -53,11 +40,11 @@ public class SequenceStatement extends Statement {
 
     this(Arrays.asList(head, tail));
 
-    List<StatEdge> lstSuccs = tail.getSuccessorEdges(STATEDGE_DIRECT_ALL);
+    List<StatEdge> lstSuccs = tail.getSuccessorEdges(EdgeType.DIRECT_ALL);
     if (!lstSuccs.isEmpty()) {
       StatEdge edge = lstSuccs.get(0);
 
-      if (edge.getType() == StatEdge.TYPE_REGULAR && edge.getDestination() != head) {
+      if (edge.getType() == EdgeType.REGULAR && edge.getDestination() != head) {
         post = edge.getDestination();
       }
     }
@@ -70,24 +57,24 @@ public class SequenceStatement extends Statement {
 
   public static Statement isHead2Block(Statement head) {
 
-    if (head.getLastBasicType() != Statement.LASTBASICTYPE_GENERAL) {
+    if (head.getLastBasicType() != StatementType.GENERAL) {
       return null;
     }
 
     // at most one outgoing edge
     StatEdge edge = null;
-    List<StatEdge> lstSuccs = head.getSuccessorEdges(STATEDGE_DIRECT_ALL);
+    List<StatEdge> lstSuccs = head.getSuccessorEdges(EdgeType.DIRECT_ALL);
     if (!lstSuccs.isEmpty()) {
       edge = lstSuccs.get(0);
     }
 
-    if (edge != null && edge.getType() == StatEdge.TYPE_REGULAR) {
+    if (edge != null && edge.getType() == EdgeType.REGULAR) {
       Statement stat = edge.getDestination();
 
-      if (stat != head && stat.getPredecessorEdges(StatEdge.TYPE_REGULAR).size() == 1
+      if (stat != head && stat.getPredecessorEdges(EdgeType.REGULAR).size() == 1
           && !stat.isMonitorEnter()) {
 
-        if (stat.getLastBasicType() == Statement.LASTBASICTYPE_GENERAL) {
+        if (stat.getLastBasicType() == StatementType.GENERAL) {
           if (DecHelper.checkStatementExceptions(Arrays.asList(head, stat))) {
             return new SequenceStatement(head, stat);
           }
@@ -98,42 +85,44 @@ public class SequenceStatement extends Statement {
     return null;
   }
 
+  @Override
   public TextBuffer toJava(int indent, BytecodeMappingTracer tracer) {
     TextBuffer buf = new TextBuffer();
-    boolean islabeled = isLabeled();
+    boolean isLabeled = isLabeled();
 
     buf.append(ExprProcessor.listToJava(varDefinitions, indent, tracer));
 
-    if (islabeled) {
-      buf.appendIndent(indent++).append("label").append(this.id.toString()).append(": {").appendLineSeparator();
+    if (isLabeled) {
+      buf.appendIndent(indent++).append("label").append(Integer.toString(id)).append(": {").appendLineSeparator();
       tracer.incrementCurrentSourceLine();
     }
 
-    boolean notempty = false;
+    boolean notEmpty = false;
 
     for (int i = 0; i < stats.size(); i++) {
 
-      Statement st = stats.get(i);
+      Statement stat = stats.get(i);
 
-      if (i > 0 && notempty) {
+      if (i > 0 && notEmpty) {
         buf.appendLineSeparator();
         tracer.incrementCurrentSourceLine();
       }
 
-      TextBuffer str = ExprProcessor.jmpWrapper(st, indent, false, tracer);
+      TextBuffer str = ExprProcessor.jmpWrapper(stat, indent, false, tracer);
       buf.append(str);
 
-      notempty = !str.containsOnlyWhitespaces();
+      notEmpty = !str.containsOnlyWhitespaces();
     }
 
-    if (islabeled) {
-      buf.appendIndent(indent-1).append("}").appendLineSeparator();
+    if (isLabeled) {
+      buf.appendIndent(indent - 1).append("}").appendLineSeparator();
       tracer.incrementCurrentSourceLine();
     }
 
     return buf;
   }
 
+  @Override
   public Statement getSimpleCopy() {
     return new SequenceStatement();
   }

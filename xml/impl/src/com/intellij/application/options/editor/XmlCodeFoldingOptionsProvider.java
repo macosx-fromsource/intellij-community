@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,19 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 14-Feb-2008
- */
 package com.intellij.application.options.editor;
 
-import com.intellij.openapi.application.ApplicationBundle;
 import com.intellij.openapi.options.BeanConfigurable;
+import com.intellij.xml.XmlBundle;
+import com.intellij.xml.XmlCoreBundle;
 
 public class XmlCodeFoldingOptionsProvider extends BeanConfigurable<XmlFoldingSettings.State> implements CodeFoldingOptionsProvider {
   public XmlCodeFoldingOptionsProvider() {
-    super(XmlFoldingSettings.getInstance().getState());
+    super(XmlFoldingSettings.getInstance().getState(), XmlCoreBundle.message("options.xml.display.name"));
     XmlFoldingSettings settings = XmlFoldingSettings.getInstance();
-    checkBox(ApplicationBundle.message("checkbox.collapse.xml.tags"), settings::isCollapseXmlTags, value->settings.getState().COLLAPSE_XML_TAGS=value);
-    checkBox(ApplicationBundle.message("checkbox.collapse.html.style.attribute"),settings::isCollapseHtmlStyleAttribute, value->settings.getState().COLLAPSE_HTML_STYLE_ATTRIBUTE=value);
-    checkBox(ApplicationBundle.message("checkbox.collapse.entities"),settings::isCollapseEntities, value->settings.getState().COLLAPSE_ENTITIES=value);
-    checkBox(ApplicationBundle.message("checkbox.collapse.data.uri"),settings::isCollapseDataUri, value->settings.getState().COLLAPSE_DATA_URI=value);
+    checkBox(XmlBundle.message("checkbox.collapse.xml.tags"), settings::isCollapseXmlTags, value->settings.getState().COLLAPSE_XML_TAGS=value);
+    checkBox(XmlBundle.message("checkbox.collapse.html.style.attribute"),settings::isCollapseHtmlStyleAttribute, value->settings.getState().COLLAPSE_HTML_STYLE_ATTRIBUTE=value);
+    checkBox(XmlBundle.message("checkbox.collapse.entities"),settings::isCollapseEntities, value->settings.getState().COLLAPSE_ENTITIES=value);
+    checkBox(XmlBundle.message("checkbox.collapse.data.uri"),settings::isCollapseDataUri, value->settings.getState().COLLAPSE_DATA_URI=value);
   }
 }

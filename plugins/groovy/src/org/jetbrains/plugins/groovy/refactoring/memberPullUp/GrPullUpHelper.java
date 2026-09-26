@@ -1,30 +1,37 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.refactoring.memberPullUp;
 
 import com.intellij.codeInsight.AnnotationUtil;
-import com.intellij.codeInsight.intention.AddAnnotationFix;
+import com.intellij.codeInsight.intention.AddAnnotationPsiFix;
 import com.intellij.lang.Language;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
-import com.intellij.psi.*;
-import com.intellij.psi.codeStyle.CodeStyleSettings;
-import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
+import com.intellij.pom.java.JavaFeature;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.JVMElementFactories;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiModifierListOwner;
+import com.intellij.psi.PsiNameValuePair;
+import com.intellij.psi.PsiNamedElement;
+import com.intellij.psi.PsiQualifiedReferenceElement;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.PsiReferenceList;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeElement;
+import com.intellij.psi.PsiTypeParameter;
+import com.intellij.psi.TokenType;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
+import com.intellij.psi.codeStyle.JavaCodeStyleSettings;
 import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.MethodSignatureUtil;
@@ -46,6 +53,7 @@ import org.jetbrains.plugins.groovy.lang.psi.GrReferenceElement;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElement;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyRecursiveElementVisitor;
+import org.jetbrains.plugins.groovy.lang.psi.api.GroovyResolveResult;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrField;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
@@ -57,14 +65,18 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMe
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrCodeReferenceElement;
 import org.jetbrains.plugins.groovy.lang.psi.impl.PsiImplUtil;
-import org.jetbrains.plugins.groovy.refactoring.GroovyChangeContextUtil;
 import org.jetbrains.plugins.groovy.refactoring.classMembers.GrClassMemberReferenceVisitor;
+import org.jetbrains.plugins.groovy.util.GroovyChangeContextUtil;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-/**
- * Created by Max Medvedev on 10/4/13
- */
+import static org.jetbrains.plugins.groovy.refactoring.GroovyRefactoringUtil.getNewName;
+
 public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
   private static final Logger LOG = Logger.getInstance(GrPullUpHelper.class);
 
@@ -136,7 +148,7 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
         super.visitCodeReferenceElement(refElement);
       }
 
-      private boolean processRef(@NotNull GrReferenceElement<? extends GroovyPsiElement> refElement) {
+      private static boolean processRef(@NotNull GrReferenceElement<? extends GroovyPsiElement> refElement) {
         final PsiElement qualifier = refElement.getQualifier();
         if (qualifier != null) {
           final Boolean preserveQualifier = qualifier.getCopyableUserData(PRESERVE_QUALIFIER);
@@ -208,8 +220,8 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
     }
   }
 
-  private static boolean willBeUsedInSubclass(PsiElement member, Set<PsiMember> movedMembers, PsiClass superclass, PsiClass subclass) {
-    for (PsiReference ref : ReferencesSearch.search(member, new LocalSearchScope(subclass), false)) {
+  private static boolean willBeUsedInSubclass(PsiElement member, Set<? extends PsiMember> movedMembers, PsiClass superclass, PsiClass subclass) {
+    for (PsiReference ref : ReferencesSearch.search(member, new LocalSearchScope(subclass), false).asIterable()) {
       PsiElement element = ref.getElement();
       if (!RefactoringHierarchyUtil.willBeInTargetClass(element, movedMembers, superclass, false)) {
         return true;
@@ -252,12 +264,11 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
 
       final GrMethod movedElement =
         anchor != null ? (GrMethod)myTargetSuperClass.addBefore(methodCopy, anchor) : (GrMethod)myTargetSuperClass.add(methodCopy);
-      CodeStyleSettings styleSettings = CodeStyleSettingsManager.getSettings(method.getProject());
+      JavaCodeStyleSettings styleSettings = JavaCodeStyleSettings.getInstance(method.getContainingFile());
       if (styleSettings.INSERT_OVERRIDE_ANNOTATION) {
-        if (PsiUtil.isLanguageLevel5OrHigher(mySourceClass) && !myTargetSuperClass.isInterface() ||
-            PsiUtil.isLanguageLevel6OrHigher(mySourceClass)) {
-          new AddAnnotationFix(CommonClassNames.JAVA_LANG_OVERRIDE, method)
-            .invoke(method.getProject(), null, mySourceClass.getContainingFile());
+        if (PsiUtil.isAvailable(JavaFeature.ANNOTATIONS, mySourceClass) && !myTargetSuperClass.isInterface() ||
+            PsiUtil.isAvailable(JavaFeature.OVERRIDE_INTERFACE, mySourceClass)) {
+          AddAnnotationPsiFix.addPhysicalAnnotationIfAbsent(CommonClassNames.JAVA_LANG_OVERRIDE, PsiNameValuePair.EMPTY_ARRAY, method.getModifierList());
         }
       }
 
@@ -324,7 +335,7 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
   }
 
   public static void replaceMovedMemberTypeParameters(final PsiElement member,
-                                                      final Iterable<PsiTypeParameter> parametersIterable,
+                                                      final Iterable<? extends PsiTypeParameter> parametersIterable,
                                                       final PsiSubstitutor substitutor,
                                                       final GroovyPsiElementFactory factory) {
     final Map<PsiElement, PsiElement> replacement = new LinkedHashMap<>();
@@ -334,7 +345,7 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
       PsiType type = substitutedType != null ? substitutedType : TypeConversionUtil.erasure(factory.createType(parameter));
 
       PsiElement scopeElement = member instanceof GrField ? member.getParent() : member;
-      for (PsiReference reference : ReferencesSearch.search(parameter, new LocalSearchScope(scopeElement))) {
+      for (PsiReference reference : ReferencesSearch.search(parameter, new LocalSearchScope(scopeElement)).asIterable()) {
         final PsiElement element = reference.getElement();
         final PsiElement parent = element.getParent();
         if (parent instanceof PsiTypeElement) {
@@ -358,18 +369,15 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
   private void fixReferencesToStatic(GroovyPsiElement classMember) throws IncorrectOperationException {
     final StaticReferencesCollector collector = new StaticReferencesCollector(myMembersToMove);
     classMember.accept(collector);
-    ArrayList<GrReferenceElement> refs = collector.getReferences();
-    ArrayList<PsiElement> members = collector.getReferees();
-    ArrayList<PsiClass> classes = collector.getRefereeClasses();
     GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(myProject);
 
-    for (int i = 0; i < refs.size(); i++) {
-      GrReferenceElement ref = refs.get(i);
-      PsiElement namedElement = members.get(i);
-      PsiClass aClass = classes.get(i);
-
+    for (StaticReferenceResult result : collector.results) {
+      GrReferenceElement ref = result.reference;
+      GrMember namedElement = result.referee;
+      PsiClass aClass = result.refereeClass;
       if (namedElement instanceof PsiNamedElement) {
-        GrReferenceExpression newRef = (GrReferenceExpression)factory.createExpressionFromText("a." + ((PsiNamedElement)namedElement).getName(), null);
+        String name = getNewName((PsiNamedElement)namedElement, result.invokedOnProperty);
+        GrReferenceExpression newRef = (GrReferenceExpression)factory.createExpressionFromText("a." + name, null);
         GrExpression qualifier = newRef.getQualifierExpression();
         assert qualifier != null;
         qualifier = (GrExpression)qualifier.replace(factory.createReferenceExpressionFromText(aClass.getQualifiedName()));
@@ -380,43 +388,43 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
     }
   }
 
+  private static final class StaticReferenceResult {
+    final GrReferenceElement<?> reference;
+    final GrMember referee;
+    final PsiClass refereeClass;
+    final boolean invokedOnProperty;
 
-  private class StaticReferencesCollector extends GrClassMemberReferenceVisitor {
-    private final ArrayList<GrReferenceElement> myReferences = new ArrayList<>();
-    private final ArrayList<PsiElement> myReferees = new ArrayList<>();
-    private final ArrayList<PsiClass> myRefereeClasses = new ArrayList<>();
+    private StaticReferenceResult(GrReferenceElement<?> reference, GrMember referee, PsiClass refereeClass, boolean invokedOnProperty) {
+      this.reference = reference;
+      this.referee = referee;
+      this.refereeClass = refereeClass;
+      this.invokedOnProperty = invokedOnProperty;
+    }
+  }
+
+  private final class StaticReferencesCollector extends GrClassMemberReferenceVisitor {
+
     private final Set<PsiMember> myMovedMembers;
+    final List<StaticReferenceResult> results = new ArrayList<>();
 
     private StaticReferencesCollector(Set<PsiMember> movedMembers) {
       super(mySourceClass);
       myMovedMembers = movedMembers;
     }
 
-    public ArrayList<PsiElement> getReferees() {
-      return myReferees;
-    }
-
-    public ArrayList<PsiClass> getRefereeClasses() {
-      return myRefereeClasses;
-    }
-
-    public ArrayList<GrReferenceElement> getReferences() {
-      return myReferences;
-    }
-
     @Override
-    protected void visitClassMemberReferenceElement(GrMember classMember, GrReferenceElement classMemberReference) {
+    protected void visitClassMemberReferenceElement(GrReferenceElement<?> ref, GrMember classMember, GroovyResolveResult resolveResult) {
       if (classMember.hasModifierProperty(PsiModifier.STATIC) /*&& classMemberReference.isQualified()*/) {
         if (!myMovedMembers.contains(classMember) &&
             RefactoringHierarchyUtil.isMemberBetween(myTargetSuperClass, mySourceClass, classMember)) {
-          myReferences.add(classMemberReference);
-          myReferees.add(classMember);
-          myRefereeClasses.add(classMember.getContainingClass());
+          results.add(new StaticReferenceResult(
+            ref, classMember, classMember.getContainingClass(), resolveResult.isInvokedOnProperty()
+          ));
         }
         else if (myMovedMembers.contains(classMember) || myMembersAfterMove.contains(classMember)) {
-          myReferences.add(classMemberReference);
-          myReferees.add(classMember);
-          myRefereeClasses.add(myTargetSuperClass);
+          results.add(new StaticReferenceResult(
+            ref, classMember, myTargetSuperClass, resolveResult.isInvokedOnProperty()
+          ));
         }
       }
     }
@@ -445,8 +453,7 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
 
     private boolean shouldFixSuper(PsiMethod method) {
       for (PsiMember element : myMembersAfterMove) {
-        if (element instanceof PsiMethod) {
-          PsiMethod member = (PsiMethod)element;
+        if (element instanceof PsiMethod member) {
           // if there is such member among moved members, super qualifier
           // should not be removed
           final PsiManager manager = method.getManager();
@@ -586,8 +593,6 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
         }
 
       }
-
-      assert referenceList != null;
       referenceList.add(ref);
     }
   }
@@ -624,8 +629,8 @@ public class GrPullUpHelper implements PullUpHelper<MemberInfo> {
    * @return if removed  - a reference to the class or null if there were no references to this class in the reference list
    */
   public static PsiQualifiedReferenceElement removeFromReferenceList(PsiReferenceList refList, PsiClass aClass) throws IncorrectOperationException {
-    List<? extends PsiQualifiedReferenceElement> refs = Arrays.asList(
-      refList instanceof GrReferenceList ? ((GrReferenceList)refList).getReferenceElementsGroovy() : refList.getReferenceElements());
+    PsiQualifiedReferenceElement[] refs =
+      refList instanceof GrReferenceList ? ((GrReferenceList)refList).getReferenceElementsGroovy() : refList.getReferenceElements();
 
     for (PsiQualifiedReferenceElement ref : refs) {
       if (ref.isReferenceTo(aClass)) {

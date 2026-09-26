@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,20 @@
 package org.jetbrains.plugins.groovy.intentions.control;
 
 import com.intellij.psi.PsiElement;
-import org.jetbrains.plugins.groovy.lang.psi.util.ErrorUtil;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.intentions.base.PsiElementPredicate;
-import org.jetbrains.plugins.groovy.lang.psi.impl.utils.ConditionalUtils;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrIfStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrStatement;
+import org.jetbrains.plugins.groovy.lang.psi.impl.utils.ConditionalUtils;
+import org.jetbrains.plugins.groovy.lang.psi.util.ErrorUtil;
 
 
 class MergeIfAndPredicate implements PsiElementPredicate {
   @Override
-  public boolean satisfiedBy(PsiElement element) {
-    if (!(element instanceof GrIfStatement)) {
+  public boolean satisfiedBy(@NotNull PsiElement element) {
+    if (!(element instanceof GrIfStatement ifStatement)) {
       return false;
     }
-    final GrIfStatement ifStatement = (GrIfStatement) element;
     if (ErrorUtil.containsError(ifStatement)) {
       return false;
     }
@@ -38,7 +38,7 @@ class MergeIfAndPredicate implements PsiElementPredicate {
       return false;
     }
     thenBranch = ConditionalUtils.stripBraces(thenBranch);
-    if (!(thenBranch instanceof GrIfStatement)) {
+    if (!(thenBranch instanceof GrIfStatement childIfStatement)) {
       return false;
     }
     GrStatement elseBranch = ifStatement.getElseBranch();
@@ -48,8 +48,6 @@ class MergeIfAndPredicate implements PsiElementPredicate {
         return false;
       }
     }
-
-    final GrIfStatement childIfStatement = (GrIfStatement) thenBranch;
 
     return childIfStatement.getElseBranch() == null;
   }

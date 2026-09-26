@@ -1,55 +1,63 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.externalDependencies.impl;
 
 import com.intellij.externalDependencies.DependencyOnPlugin;
 import com.intellij.externalDependencies.ExternalDependenciesManager;
 import com.intellij.externalDependencies.ProjectExternalDependency;
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
 import com.intellij.ide.plugins.PluginManagerCore;
-import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.application.ApplicationNamesInfo;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.DialogBuilder;
 import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.ui.*;
+import com.intellij.ui.AnActionButton;
+import com.intellij.ui.AnActionButtonRunnable;
+import com.intellij.ui.CollectionListModel;
+import com.intellij.ui.ColoredListCellRenderer;
+import com.intellij.ui.ComboboxSpeedSearch;
+import com.intellij.ui.DoubleClickListener;
+import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.ToolbarDecorator;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBList;
 import com.intellij.ui.components.JBTextField;
+import com.intellij.ui.dsl.listCellRenderer.BuilderKt;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.ui.FormBuilder;
+import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.UIUtil;
+import com.intellij.xml.util.XmlStringUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JList;
+import javax.swing.JPanel;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseEvent;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 
-/**
- * @author nik
- */
-public class ExternalDependenciesConfigurable implements SearchableConfigurable, Configurable.NoScroll {
+@ApiStatus.Internal
+public final class ExternalDependenciesConfigurable implements SearchableConfigurable {
+  private static final Logger LOG = Logger.getInstance(ExternalDependenciesConfigurable.class);
   private final ExternalDependenciesManager myDependenciesManager;
-  private CollectionListModel<ProjectExternalDependency> myListModel = new CollectionListModel<>();
+  private final CollectionListModel<ProjectExternalDependency> myListModel = new CollectionListModel<>();
   private Map<String, String> myPluginNameById;
 
   public ExternalDependenciesConfigurable(Project project) {
@@ -72,49 +80,45 @@ public class ExternalDependenciesConfigurable implements SearchableConfigurable,
     myDependenciesManager.setAllDependencies(myListModel.getItems());
   }
 
-  @Nls
   @Override
-  public String getDisplayName() {
-    return "Required Plugins";
+  public @Nls String getDisplayName() {
+    return IdeBundle.message("configurable.ExternalDependenciesConfigurable.display.name");
   }
 
-  @Nullable
   @Override
-  public JComponent createComponent() {
-    final JBList dependenciesList = new JBList();
-    dependenciesList.setCellRenderer(new ColoredListCellRendererWrapper<DependencyOnPlugin>() {
+  public @Nullable JComponent createComponent() {
+    JBList<ProjectExternalDependency> dependenciesList = new JBList<>();
+    dependenciesList.setCellRenderer(new ColoredListCellRenderer<>() {
       @Override
-      protected void doCustomize(JList list, DependencyOnPlugin value, int index, boolean selected, boolean hasFocus) {
-        if (value != null) {
+      protected void customizeCellRenderer(@NotNull JList<? extends ProjectExternalDependency> list, ProjectExternalDependency dependency,
+                                           int index, boolean selected, boolean hasFocus) {
+        if (dependency instanceof DependencyOnPlugin value) {
           append(getPluginNameById(value.getPluginId()), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
           String minVersion = value.getMinVersion();
           String maxVersion = value.getMaxVersion();
-          if (minVersion != null || maxVersion != null) {
-            append(", version ");
-          }
           if (minVersion != null && minVersion.equals(maxVersion)) {
-            append(minVersion, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+            append(IdeBundle.message("required.plugin.exact.version", minVersion));
           }
           else if (minVersion != null && maxVersion != null) {
-            append("between ");
-            append(minVersion, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
-            append(" and ");
-            append(maxVersion, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+            append(IdeBundle.message("required.plugin.between.versions", minVersion, maxVersion));
           }
           else if (minVersion != null) {
-            append("at least ");
-            append(minVersion, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+            append(IdeBundle.message("required.plugin.at.least.versions", minVersion));
           }
           else if (maxVersion != null) {
-            append("at most ");
-            append(maxVersion, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+            append(IdeBundle.message("required.plugin.at.most.versions", maxVersion));
           }
+        }
+        else {
+          LOG.error("Unsupported external dependency: " + dependency.getClass());
+          @NlsSafe String dependencyDescription = dependency.toString();
+          append(dependencyDescription);
         }
       }
     });
     new DoubleClickListener() {
       @Override
-      protected boolean onDoubleClick(MouseEvent e) {
+      protected boolean onDoubleClick(@NotNull MouseEvent e) {
         return editSelectedDependency(dependenciesList);
       }
     }.installOn(dependenciesList);
@@ -125,7 +129,7 @@ public class ExternalDependenciesConfigurable implements SearchableConfigurable,
       .setAddAction(new AnActionButtonRunnable() {
         @Override
         public void run(AnActionButton button) {
-          replaceDependency(new DependencyOnPlugin("", null, null, null), dependenciesList);
+          replaceDependency(new DependencyOnPlugin("", null, null), dependenciesList);
         }
       })
       .setEditAction(new AnActionButtonRunnable() {
@@ -135,9 +139,12 @@ public class ExternalDependenciesConfigurable implements SearchableConfigurable,
         }
       })
       .createPanel();
-    return FormBuilder.createFormBuilder()
-      .addLabeledComponentFillVertically("Plugins which are required to work on this project.", dependenciesPanel)
-      .getPanel();
+
+    String text = XmlStringUtil
+      .wrapInHtml(IdeBundle.message("settings.required.plugins.title", ApplicationNamesInfo.getInstance().getFullProductName()));
+    JBLabel label = new JBLabel(text);
+    label.setBorder(JBUI.Borders.emptyBottom(5));
+    return JBUI.Panels.simplePanel(0, UIUtil.DEFAULT_VGAP).addToCenter(dependenciesPanel).addToTop(label);
   }
 
   public boolean editSelectedDependency(JBList dependenciesList) {
@@ -162,64 +169,61 @@ public class ExternalDependenciesConfigurable implements SearchableConfigurable,
     }
   }
 
-  private String getPluginNameById(@NotNull String pluginId) {
+  private @NlsContexts.ListItem String getPluginNameById(@NotNull @NlsSafe String pluginId) {
     return ObjectUtils.notNull(getPluginNameByIdMap().get(pluginId), pluginId);
   }
 
-  private Map<String, String> getPluginNameByIdMap() {
+  private Map<String, @NlsContexts.ListItem String> getPluginNameByIdMap() {
     if (myPluginNameById == null) {
       myPluginNameById = new HashMap<>();
       for (IdeaPluginDescriptor descriptor : PluginManagerCore.getPlugins()) {
-        myPluginNameById.put(descriptor.getPluginId().getIdString(), descriptor.getName());
+        String idString = descriptor.getPluginId().getIdString();
+
+        if (PluginManagerCore.ULTIMATE_PLUGIN_ID.getIdString().equals(idString)) continue;
+
+        //todo change 'name' tag of the core plugin instead
+        String name = PluginManagerCore.CORE_PLUGIN_ID.equals(idString) ? "IDE Core" : descriptor.getName();
+        myPluginNameById.put(idString, name);
       }
     }
     return myPluginNameById;
   }
 
-  @NotNull
   @Override
-  public String getId() {
+  public @NotNull String getId() {
     return "preferences.externalDependencies";
   }
 
-  @Nullable
-  private DependencyOnPlugin editPluginDependency(@NotNull JComponent parent, @NotNull final DependencyOnPlugin original) {
+  private @Nullable DependencyOnPlugin editPluginDependency(@NotNull JComponent parent, final @NotNull DependencyOnPlugin original) {
     List<String> pluginIds = new ArrayList<>(getPluginNameByIdMap().keySet());
     if (!original.getPluginId().isEmpty() && !pluginIds.contains(original.getPluginId())) {
       pluginIds.add(original.getPluginId());
     }
-    Collections.sort(pluginIds, (o1, o2) -> getPluginNameById(o1).compareToIgnoreCase(getPluginNameById(o2)));
+    pluginIds.sort((o1, o2) -> getPluginNameById(o1).compareToIgnoreCase(getPluginNameById(o2)));
 
-    final ComboBox pluginChooser = new ComboBox(ArrayUtilRt.toStringArray(pluginIds), 250);
-    pluginChooser.setRenderer(new ListCellRendererWrapper<String>() {
-      @Override
-      public void customize(JList list, String value, int index, boolean selected, boolean hasFocus) {
-        setText(getPluginNameById(value));
-      }
-    });
-    new ComboboxSpeedSearch(pluginChooser) {
+    ComboBox<String> pluginChooser = new ComboBox<>(ArrayUtilRt.toStringArray(pluginIds), 250);
+    pluginChooser.setRenderer(BuilderKt.textListCellRenderer("", this::getPluginNameById));
+    ComboboxSpeedSearch search = new ComboboxSpeedSearch(pluginChooser, null) {
       @Override
       protected String getElementText(Object element) {
         return getPluginNameById((String)element);
       }
     };
+    search.setupListeners();
     pluginChooser.setSelectedItem(original.getPluginId());
 
-    final JBTextField minVersionField = new JBTextField(StringUtil.notNullize(original.getMinVersion()));
-    final JBTextField maxVersionField = new JBTextField(StringUtil.notNullize(original.getMaxVersion()));
-    final JBTextField channelField = new JBTextField(StringUtil.notNullize(original.getChannel()));
-    minVersionField.getEmptyText().setText("<any>");
-    minVersionField.setColumns(10);
-    maxVersionField.getEmptyText().setText("<any>");
-    maxVersionField.setColumns(10);
-    channelField.setColumns(10);
+    final JBTextField minVersionField = new JBTextField(StringUtil.notNullize(original.getRawMinVersion()));
+    final JBTextField maxVersionField = new JBTextField(StringUtil.notNullize(original.getRawMaxVersion()));
+    minVersionField.getEmptyText().setText(IdeBundle.message("label.version.any"));
+    minVersionField.setColumns(17);
+    maxVersionField.getEmptyText().setText(IdeBundle.message("label.version.any"));
+    maxVersionField.setColumns(17);
     JPanel panel = FormBuilder.createFormBuilder()
-      .addLabeledComponent("Plugin:", pluginChooser)
-      .addLabeledComponent("Minimum version:", minVersionField)
-      .addLabeledComponent("Maximum version:", maxVersionField)
-      .addLabeledComponent("Channel:", channelField)
+      .addLabeledComponent(IdeBundle.message("label.plugin"), pluginChooser)
+      .addLabeledComponent(IdeBundle.message("label.minimum.version"), minVersionField)
+      .addLabeledComponent(IdeBundle.message("label.maximum.version"), maxVersionField)
       .getPanel();
-    final DialogBuilder dialogBuilder = new DialogBuilder(parent).title("Required Plugin").centerPanel(panel);
+    final DialogBuilder dialogBuilder = new DialogBuilder(parent).title(IdeBundle.message("dialog.title.required.plugin")).centerPanel(panel);
     dialogBuilder.setPreferredFocusComponent(pluginChooser);
     pluginChooser.addActionListener(new ActionListener() {
       @Override
@@ -227,22 +231,17 @@ public class ExternalDependenciesConfigurable implements SearchableConfigurable,
         dialogBuilder.setOkActionEnabled(!StringUtil.isEmpty((String)pluginChooser.getSelectedItem()));
       }
     });
+    dialogBuilder.setHelpId("Required_Plugin");
     if (dialogBuilder.show() == DialogWrapper.OK_EXIT_CODE) {
       return new DependencyOnPlugin(((String)pluginChooser.getSelectedItem()),
                                     StringUtil.nullize(minVersionField.getText().trim()),
-                                    StringUtil.nullize(maxVersionField.getText().trim()),
-                                    StringUtil.nullize(channelField.getText().trim()));
+                                    StringUtil.nullize(maxVersionField.getText().trim()));
     }
     return null;
   }
 
-  @Nullable
   @Override
-  public String getHelpTopic() {
+  public @Nullable String getHelpTopic() {
     return "Required_Plugin";
-  }
-
-  @Override
-  public void disposeUIResources() {
   }
 }

@@ -1,4 +1,4 @@
-// "Replace with 'getOrDefault' method call" "true"
+// "Replace with 'getOrDefault()' call" "true"
 import java.util.Map;
 
 public class Main {
@@ -7,7 +7,7 @@ public class Main {
   private String str;
 
   public void testGetOrDefault(Map<String, String> map, String key, Main other) {
-    /* output none */
+      /* output none */
       System.out.println(/* output map value */ map.getOrDefault("k", NONE));
   }
 }

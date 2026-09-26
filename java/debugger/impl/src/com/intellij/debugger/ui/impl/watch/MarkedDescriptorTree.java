@@ -23,18 +23,18 @@ import java.util.Map;
 
 public class MarkedDescriptorTree {
   private final HashMap<NodeDescriptor, Map<DescriptorKey<? extends NodeDescriptor>, NodeDescriptor>> myChildrenMap = new HashMap<>();
-  private final Map<DescriptorKey<? extends NodeDescriptor>, NodeDescriptor> myRootChildren = new com.intellij.util.containers.HashMap<>();
+  private final Map<DescriptorKey<? extends NodeDescriptor>, NodeDescriptor> myRootChildren = new HashMap<>();
 
   public <T extends NodeDescriptor> void addChild(NodeDescriptor parent, T child, DescriptorKey<T> key) {
     Map<DescriptorKey<? extends NodeDescriptor>, NodeDescriptor> children;
 
-    if(parent == null) {
+    if (parent == null) {
       children = myRootChildren;
     }
     else {
       children = myChildrenMap.get(parent);
-      if(children == null) {
-        children = new com.intellij.util.containers.HashMap<>();
+      if (children == null) {
+        children = new HashMap<>();
         myChildrenMap.put(parent, children);
       }
     }
@@ -42,7 +42,7 @@ public class MarkedDescriptorTree {
   }
 
   public <T extends NodeDescriptor> T getChild(NodeDescriptor parent, DescriptorKey<T> key) {
-    if(parent == null) {
+    if (parent == null) {
       return (T)myRootChildren.get(key);
     }
     final Map<DescriptorKey<? extends NodeDescriptor>, NodeDescriptor> map = myChildrenMap.get(parent);

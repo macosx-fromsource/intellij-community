@@ -1,237 +1,420 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.wm.impl.status;
 
-import com.intellij.ide.ui.UISettings;
+import com.intellij.diagnostic.PlatformMemoryUtil;
+import com.intellij.ide.HelpTooltipKt;
+import com.intellij.openapi.ui.GraphicsConfig;
+import com.intellij.openapi.util.registry.Registry;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.openapi.wm.CustomStatusBarWidget;
-import com.intellij.openapi.wm.StatusBar;
-import com.intellij.openapi.wm.StatusBarWidget;
+import com.intellij.platform.util.io.storages.mmapped.MMappedFileStorage;
+import com.intellij.ui.ClickListener;
 import com.intellij.ui.Gray;
+import com.intellij.ui.IslandsState;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.UIBundle;
-import com.intellij.util.concurrency.EdtExecutorService;
+import com.intellij.util.LazyInitializer;
+import com.intellij.util.LazyInitializer.LazyValue;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
+import com.intellij.util.io.DirectByteBufferAllocator;
+import com.intellij.util.io.IOUtil;
+import com.intellij.util.io.StorageLockContext;
+import com.intellij.util.ui.GraphicsUtil;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.Activatable;
 import com.intellij.util.ui.update.UiNotifyConnector;
-import org.jetbrains.annotations.NonNls;
+import com.jetbrains.JBR;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.image.BufferedImage;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import javax.accessibility.AccessibleContext;
+import javax.swing.JComponent;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.Graphics;
+import java.awt.Rectangle;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryType;
+import java.lang.management.MemoryUsage;
+import java.lang.management.ThreadMXBean;
+import java.util.List;
 
-public class MemoryUsagePanel extends JButton implements CustomStatusBarWidget {
-  @NonNls public static final String WIDGET_ID = "Memory";
-  private static final int MEGABYTE = 1024 * 1024;
-  @NonNls private static final String SAMPLE_STRING;
-  
-  static {
-    long maxMemory = Math.min(Runtime.getRuntime().maxMemory() / MEGABYTE, 9999);
-    SAMPLE_STRING = maxMemory + " of " + maxMemory + "M ";
+@ApiStatus.Internal
+public final class MemoryUsagePanel implements CustomStatusBarWidget, Activatable {
+  public static final String WIDGET_ID = "Memory";
+
+  public static final String SHOW_TOTAL_MEMORY_ESTIMATION_REGISTRY_KEY = "idea.memory.usage.show.total.memory.estimation";
+
+  private final LazyValue<MemoryUsagePanelImpl> myComponent = LazyInitializer.create(MemoryUsagePanelImpl::new);
+
+  private final MemoryUsagePanelScheduler scheduler = new MemoryUsagePanelScheduler((data -> {
+    myComponent.get().updateState(data.getAppMemory(), data.getRuntimeMemory(), data.getProcessMemoryStats());
+  }));
+
+  @Override
+  public void showNotify() {
+    scheduler.start();
   }
-  private static final Color USED_COLOR = new JBColor(Gray._185, Gray._110);
-  private static final Color UNUSED_COLOR = new JBColor(Gray._200.withAlpha(100), Gray._90);
 
-  private long myLastTotal = -1;
-  private long myLastUsed = -1;
-  private Image myBufferedImage;
-  private boolean myWasPressed;
-
-  public MemoryUsagePanel() {
-    setOpaque(false);
-    setFocusable(false);
-
-    addActionListener(new ActionListener() {
-      public void actionPerformed(ActionEvent e) {
-        System.gc();
-        updateState();
-      }
-    });
-
-    setBorder(StatusBarWidget.WidgetBorder.INSTANCE);
-    updateUI();
-
-    new UiNotifyConnector(this, new Activatable() {
-      private ScheduledFuture<?> myFuture;
-
-      @Override
-      public void showNotify() {
-        myFuture = EdtExecutorService.getScheduledExecutorInstance().scheduleWithFixedDelay(MemoryUsagePanel.this::updateState,
-                                                                                            1, 5, TimeUnit.SECONDS);
-      }
-
-      @Override
-      public void hideNotify() {
-        if (myFuture != null) {
-          myFuture.cancel(true);
-          myFuture = null;
-        }
-      }
-    });
-
+  @Override
+  public void hideNotify() {
+    scheduler.stop();
   }
 
   @Override
   public void dispose() {
+    scheduler.dispose();
   }
 
   @Override
-  public void install(@NotNull StatusBar statusBar) { }
-
-  @Override
-  @Nullable
-  public WidgetPresentation getPresentation(@NotNull PlatformType type) {
+  public @Nullable WidgetPresentation getPresentation() {
     return null;
   }
 
   @Override
-  @NotNull
-  public String ID() {
+  public @NotNull String ID() {
     return WIDGET_ID;
-  }
-
-  public void setShowing(final boolean showing) {
-    if (showing != isVisible()) {
-      setVisible(showing);
-      revalidate();
-    }
-  }
-
-  @Override
-  public void updateUI() {
-    super.updateUI();
-    setFont(getWidgetFont());
-  }
-
-  private static Font getWidgetFont() {
-    return JBUI.Fonts.label(11);
   }
 
   @Override
   public JComponent getComponent() {
-    return this;
+    return myComponent.get();
   }
 
-  @Override
-  public void paintComponent(final Graphics g) {
-    final boolean pressed = getModel().isPressed();
-    final boolean stateChanged = myWasPressed != pressed;
-    myWasPressed = pressed;
+  public static boolean isInstance(@NotNull JComponent component) {
+    return component instanceof MemoryUsagePanelImpl;
+  }
 
-    if (myBufferedImage == null || stateChanged) {
-      final Dimension size = getSize();
-      final Insets insets = getInsets();
+  // These three methods are purely for internal ABI compatibility, as some plugins use them.
 
-      myBufferedImage = UIUtil.createImage(size.width, size.height, BufferedImage.TYPE_INT_ARGB);
-      final Graphics2D g2 = (Graphics2D)myBufferedImage.getGraphics().create();
+  public void addMouseListener(MouseListener l) {
+    getComponent().addMouseListener(l);
+  }
 
-      final Runtime rt = Runtime.getRuntime();
-      final long maxMem = rt.maxMemory();
-      final long allocatedMem = rt.totalMemory();
-      final long unusedMem = rt.freeMemory();
-      final long usedMem = allocatedMem - unusedMem;
+  public MouseListener[] getMouseListeners() {
+    return getComponent().getMouseListeners();
+  }
 
-      final int totalBarLength = size.width - insets.left - insets.right;
-      final int usedBarLength = (int)(totalBarLength * usedMem / maxMem);
-      final int unusedBarLength = (int)(totalBarLength * unusedMem / maxMem);
-      final int barHeight = Math.max(size.height, getFont().getSize() + 2);
-      final int yOffset = (size.height - barHeight) / 2;
-      final int xOffset = insets.left;
+  public void removeMouseListener(MouseListener l) {
+    getComponent().removeMouseListener(l);
+  }
 
-      // background
-      g2.setColor(UIUtil.getPanelBackground());
-      g2.fillRect(0, 0, size.width, size.height);
+  private final class MemoryUsagePanelImpl extends TextPanel implements WidgetEffectBoundsProvider {
+
+    private final Color myUsedColor = JBColor.namedColor("MemoryIndicator.usedBackground", new JBColor(Gray._185, Gray._110));
+    private final Color myUnusedColor = JBColor.namedColor("MemoryIndicator.allocatedBackground", new JBColor(Gray._215, Gray._90));
+
+    private long lastCommitedMb = -1;
+    private long lastUsedMb = -1;
+
+    private volatile MemoryStats memoryDisplay = new MemoryStats(0, 0, 0);
+
+    MemoryUsagePanelImpl() {
+      setFocusable(false);
+      setTextAlignment(CENTER_ALIGNMENT);
+      new ClickListener() {
+        @Override
+        public boolean onClick(@NotNull MouseEvent event, int clickCount) {
+          if (clickCount == 1) {
+            //noinspection CallToSystemGC
+            System.gc();
+          }
+          else if (clickCount == 2) {
+            if (JBR.isSystemUtilsSupported()) {
+              JBR.getSystemUtils().fullGC();
+            }
+            else {
+              //noinspection CallToSystemGC
+              System.gc();
+            }
+            StorageLockContext.forceDirectMemoryCache();
+            DirectByteBufferAllocator.ALLOCATOR.releaseCachedBuffers();
+            PlatformMemoryUtil.getInstance().trimLinuxNativeHeap();
+          }
+
+          scheduler.request();
+          return true;
+        }
+      }.installOn(this, true);
+      setBorder(JBUI.Borders.empty(0, 2));
+      updateUI();
+
+      UiNotifyConnector.installOn(this, MemoryUsagePanel.this);
+    }
+
+    @Override
+    public Color getBackground() {
+      return null;
+    }
+
+    public void setShowing(boolean showing) {
+      if (showing != isVisible()) {
+        setVisible(showing);
+        revalidate();
+      }
+    }
+
+    @Override
+    public void paintComponent(@NotNull Graphics g) {
+      Dimension size = getSize();
+      int barWidth = size.width;
+
+      var measured = memoryDisplay;
+
+      long usedMem = measured.usedMem;
+      long allocatedMem = measured.allocatedMem;
+      long maxMem = measured.maxMem;
+
+      // `maxMem` is 0 until the first async measurement lands; skip the gauge to avoid division by zero.
+      int usedBarLength = maxMem > 0 ? (int)(barWidth * usedMem / maxMem) : 0;
+      int allocatedBarLength = maxMem > 0 ? (int)(barWidth * allocatedMem / maxMem) : 0;
+
+      boolean isIslandTheme = IslandsState.Companion.isEnabled();
+      int arc = isIslandTheme ? JBUI.scale(6) : 0;
+      int yOffset = isIslandTheme ? JBUI.scale(3) : 0;
+      int hDelta = isIslandTheme ? JBUI.scale(8) : 0;
+
+      GraphicsConfig config = GraphicsUtil.setupAAPainting(g);
+      g.setColor(UIUtil.getPanelBackground());
+      g.fillRoundRect(0, yOffset, barWidth, size.height - hDelta, arc, arc);
+
+      // gauge (allocated)
+      g.setColor(myUnusedColor);
+      g.fillRoundRect(0, yOffset, allocatedBarLength, size.height - hDelta, arc, arc);
 
       // gauge (used)
-      g2.setColor(USED_COLOR);
-      g2.fillRect(xOffset, yOffset, usedBarLength, barHeight);
+      g.setColor(myUsedColor);
+      g.fillRoundRect(0, yOffset, usedBarLength, size.height - hDelta, arc, arc);
+      config.restore();
 
-      // gauge (unused)
-      g2.setColor(UNUSED_COLOR);
-      g2.fillRect(xOffset + usedBarLength, yOffset, unusedBarLength, barHeight);
-
-      // label
-      g2.setFont(getFont());
-      final long used = usedMem / MEGABYTE;
-      final long total = maxMem / MEGABYTE;
-      final String info = UIBundle.message("memory.usage.panel.message.text", used, total);
-      final FontMetrics fontMetrics = g.getFontMetrics();
-      final int infoWidth = fontMetrics.charsWidth(info.toCharArray(), 0, info.length());
-      final int infoHeight = fontMetrics.getAscent();
-      UISettings.setupAntialiasing(g2);
-      final Color fg = pressed ? UIUtil.getLabelDisabledForeground() : JBColor.foreground();
-      g2.setColor(fg);
-      g2.drawString(info, xOffset + (totalBarLength - infoWidth) / 2, yOffset + infoHeight + (barHeight - infoHeight) / 2 - 1);
-
-      g2.dispose();
+      //text
+      super.paintComponent(g);
     }
 
-    UIUtil.drawImage(g, myBufferedImage, 0, 0, null);
-    if (UIUtil.isRetina() && !UIUtil.isUnderDarcula()) {
-      Graphics2D g2 = (Graphics2D)g.create(0, 0, getWidth(), getHeight());
-      g2.scale(0.5, 0.5);
-      g2.setColor(UIUtil.isUnderIntelliJLaF() ? Gray.xC9 : Gray.x91);
-      g2.drawLine(0,0,2 * getWidth(), 0);
-      g2.scale(1, 1);
-      g2.dispose();
+    @Override
+    public @NotNull Rectangle getWidgetEffectBounds() {
+      if (IslandsState.Companion.isEnabled()) {
+        return new Rectangle(0, JBUI.scale(3), getWidth(), getHeight() - JBUI.scale(8));
+      }
+      return new Rectangle(0, 0, getWidth(), getHeight());
+    }
+
+    @Override
+    public @NotNull AccessibleContext getAccessibleContext() {
+      if (accessibleContext == null) {
+        accessibleContext = new AccessibleTextPanel() {
+          @Override
+          public String getAccessibleName() {
+            String text = getText();
+            return text != null
+                   ? UIBundle.message("memory.usage.panel.accessible.name.with.text", text)
+                   : UIBundle.message("memory.usage.panel.accessible.name");
+          }
+        };
+      }
+      return accessibleContext;
+    }
+
+    @Override
+    protected String getTextForPreferredSize() {
+      long maxMemoryMb = Registry.is(SHOW_TOTAL_MEMORY_ESTIMATION_REGISTRY_KEY)
+                         ? toMb(Runtime.getRuntime().maxMemory()) * 2
+                         : toMb(Runtime.getRuntime().maxMemory());
+      long sample = maxMemoryMb < 1000 ? 999 :
+                    maxMemoryMb < 10_000 ? 9_999 : 99_999;
+      //if -Xmx > 100Gb -- well, I'm sorry
+      return " " + UIBundle.message("memory.usage.panel.message.text", sample, sample);
+    }
+
+    @RequiresEdt
+    private void updateState(AppMemoryUsage memoryUsage, MemoryStats runtimeMemory, @Nullable PlatformMemoryUtil.MemoryStats stats) {
+      if (!isShowing()) return;
+
+      // convert to UI-friendly Mb:
+      long heapMaxMb = toMb(memoryUsage.heapMaxBytes);
+      long heapCommitedMb = toMb(memoryUsage.heapCommitedBytes);
+      long heapUsedMb = toMb(memoryUsage.heapUsedBytes);
+
+      long directBuffersUsedMb = toMb(memoryUsage.directByteBuffersBytes);
+      long directBuffersFileCacheUsedMb = toMb(memoryUsage.directBuffersFileCacheUsedBytes);
+
+      long jvmInternalsMb = toMb(memoryUsage.jvmInternalsMemoryBytes);
+      long threadStacksMemoryMb = toMb(memoryUsage.threadStacksBytes);
+
+      long memoryMappedFilesMb = toMb(memoryUsage.memoryMappedFilesBytes);
+      long estimatedTotalMemoryUsedMb = toMb(memoryUsage.estimatedTotalMemoryUsedBytes());
+
+      if (stats != null && stats.getRamMinusFileMappings() == 0) {
+        stats = null; // In old Windows versions `ramMinusFileMappings` always reports 0
+      }
+      long fileMappingsRamMb = toMb(stats != null ? stats.getFileMappingsRam() : 0);
+      long ramMinusFileMappingsMb = toMb(stats != null ? stats.getRamMinusFileMappings() : 0);
+      long ramPlusSwapMinusFileMappings = toMb(stats != null ? stats.getRamPlusSwapMinusFileMappings() : 0);
+
+      var text = Registry.is(SHOW_TOTAL_MEMORY_ESTIMATION_REGISTRY_KEY) ?
+                 UIBundle.message("memory.usage.panel.message.text", heapUsedMb, estimatedTotalMemoryUsedMb) :
+                 UIBundle.message("memory.usage.panel.message.text", heapUsedMb, heapMaxMb);
+
+      if (heapCommitedMb != lastCommitedMb || heapUsedMb != lastUsedMb || !text.equals(getText())) {
+        lastCommitedMb = heapCommitedMb;
+        lastUsedMb = heapUsedMb;
+        setText(text);
+
+        String i18nBundleKey = stats != null ?
+                               "memory.usage.panel.message.tooltip-extended" :
+                               "memory.usage.panel.message.tooltip";
+
+        HelpTooltipKt.setToolTipText(
+          this,
+          HtmlChunk.raw(UIBundle.message(i18nBundleKey,
+                                         heapUsedMb, heapCommitedMb, heapMaxMb,
+                                         directBuffersFileCacheUsedMb, (directBuffersUsedMb - directBuffersFileCacheUsedMb),
+                                         jvmInternalsMb, threadStacksMemoryMb,
+                                         estimatedTotalMemoryUsedMb,
+                                         memoryMappedFilesMb,
+                                         //shown only in .tooltip-extended version:
+                                         fileMappingsRamMb, ramMinusFileMappingsMb, ramPlusSwapMinusFileMappings
+          ))
+        );
+
+        long usedMem;
+        long allocatedMem;
+        long maxMem;
+
+        if (Registry.is(SHOW_TOTAL_MEMORY_ESTIMATION_REGISTRY_KEY)) {
+          // [ heap used | heap commited | total (approx.) commited ]
+          maxMem = toMb(memoryUsage.estimatedTotalMemoryUsedBytes());
+          allocatedMem = toMb(memoryUsage.heapCommitedBytes);
+          usedMem = toMb(memoryUsage.heapUsedBytes);
+        }
+        else {
+          // [ heap used | heap commited | heap max ]
+          maxMem = runtimeMemory.maxMem;
+          allocatedMem = runtimeMemory.allocatedMem;
+          usedMem = runtimeMemory.usedMem;
+        }
+
+        this.memoryDisplay = new MemoryStats(usedMem, allocatedMem, maxMem);
+      }
+
+      repaint();
     }
   }
 
-  @Override
-  public Dimension getPreferredSize() {
-    final Insets insets = getInsets();
-    int width = getFontMetrics(getWidgetFont()).stringWidth(SAMPLE_STRING) + insets.left + insets.right + JBUI.scale(2);
-    int height = getFontMetrics(getWidgetFont()).getHeight() + insets.top + insets.bottom + JBUI.scale(2);
-    return new Dimension(width, height);
-  }
+  private static final MemoryMXBean MEMORY_MX_BEAN = ManagementFactory.getMemoryMXBean();
+  private static final ThreadMXBean THREAD_MX_BEAN = ManagementFactory.getThreadMXBean();
 
-  @Override
-  public Dimension getMinimumSize() {
-    return getPreferredSize();
-  }
+  static AppMemoryUsage calculateMemoryUsage() {
+    MemoryUsage heapMemoryUsage = MEMORY_MX_BEAN.getHeapMemoryUsage();
 
-  @Override
-  public Dimension getMaximumSize() {
-    return getPreferredSize();
-  }
-
-  private void updateState() {
-    if (!isShowing()) {
-      return;
+    long directBuffersUsedByFileCacheBytes = DirectByteBufferAllocator.ALLOCATOR.getStatistics().totalSizeOfBuffersAllocatedInBytes;
+    //RC: counter-intuitively, but memoryMXBean.getNonHeapMemoryUsage() does NOT count direct ByteBuffers.
+    //    nonHeapMemoryUsage is mostly about JVM-internal data structures -- code cache, metaspace, etc.
+    //    Direct ByteBuffers (seems to be) invisible to any public API, so we need some private API for it
+    long directBuffersUsedBytes = IOUtil.directBuffersTotalAllocatedSize();
+    if (directBuffersUsedBytes <= 0) {
+      //can't get value by some reason => use directBuffersUsedByFileCacheBytes as lower bound, better than nothing:
+      directBuffersUsedBytes = directBuffersUsedByFileCacheBytes;
     }
 
-    final Runtime runtime = Runtime.getRuntime();
-    final long total = runtime.totalMemory() / MEGABYTE;
-    final long used = total - runtime.freeMemory() / MEGABYTE;
+    //RC: I know no way to get thread-stack size, but 1Mb seems to be a default stack size for most OSes, so
+    //    lets just assume (1 thread = 1Mb of stack). This seems to be an underestimation: seems like JVM
+    //    provision memory for threads with big margin, and also thread local allocation 'arenas' are not included
+    long threadsStackBytes = THREAD_MX_BEAN.getThreadCount() * (long)IOUtil.MiB;
 
-    if (total != myLastTotal || used != myLastUsed) {
-      myLastTotal = total;
-      myLastUsed = used;
-      UIUtil.invokeLaterIfNeeded(() -> {
-        myBufferedImage = null;
-        repaint();
-      });
+    //pools list could change during execution, so can't be cached once
+    long jvmInternalsMemoryBytes = jvmInternalsMemory(ManagementFactory.getMemoryPoolMXBeans());
 
-      setToolTipText(UIBundle.message("memory.usage.panel.statistics.message", total, used));
+    long memoryMappedFilesBytes = MMappedFileStorage.totalBytesMapped();
+
+    return new AppMemoryUsage(
+      heapMemoryUsage.getMax(), heapMemoryUsage.getCommitted(), heapMemoryUsage.getUsed(),
+      jvmInternalsMemoryBytes,
+      directBuffersUsedBytes, directBuffersUsedByFileCacheBytes,
+      threadsStackBytes,
+      memoryMappedFilesBytes
+    );
+  }
+
+  static final class MemoryStats {
+    final long usedMem;
+    final long allocatedMem;
+    final long maxMem;
+
+    MemoryStats(long usedMem, long allocatedMem, long maxMem) {
+      this.usedMem = usedMem;
+      this.allocatedMem = allocatedMem;
+      this.maxMem = maxMem;
     }
+  }
+
+  static final class AppMemoryUsage {
+    public final long heapMaxBytes;
+    public final long heapCommitedBytes;
+    public final long heapUsedBytes;
+
+    public final long jvmInternalsMemoryBytes;
+    public final long directByteBuffersBytes;
+    public final long directBuffersFileCacheUsedBytes;
+
+    public final long threadStacksBytes;
+
+    public final long memoryMappedFilesBytes;
+
+    private AppMemoryUsage(long heapMaxBytes,
+                           long heapCommitedBytes,
+                           long heapUsedBytes,
+                           long jvmInternalsMemoryBytes,
+                           long directByteBuffersBytes,
+                           long directBuffersFileCacheUsedBytes,
+                           long threadStacksBytes,
+                           long memoryMappedFilesBytes) {
+      this.heapMaxBytes = heapMaxBytes;
+      this.heapCommitedBytes = heapCommitedBytes;
+      this.heapUsedBytes = heapUsedBytes;
+      this.jvmInternalsMemoryBytes = jvmInternalsMemoryBytes;
+      this.directByteBuffersBytes = directByteBuffersBytes;
+      this.directBuffersFileCacheUsedBytes = directBuffersFileCacheUsedBytes;
+      this.threadStacksBytes = threadStacksBytes;
+      this.memoryMappedFilesBytes = memoryMappedFilesBytes;
+    }
+
+    public long estimatedTotalMemoryUsedBytes() {
+      //Should be +/- good estimation:
+      return roundUpTo(
+        heapCommitedBytes + threadStacksBytes + directByteBuffersBytes + jvmInternalsMemoryBytes,
+        100 * IOUtil.MiB //to show too many digits could be confusing for a 'rough estimation'
+      );
+    }
+  }
+
+  private static long jvmInternalsMemory(@NotNull List<MemoryPoolMXBean> memoryPools) {
+    return memoryPools.stream()
+      .filter(pool -> pool.getType() == MemoryType.NON_HEAP)
+      .mapToLong(pool -> pool.getUsage().getUsed())
+      .sum();
+  }
+
+  /** @return value rounded up the nearest bucket up */
+  private static long roundUpTo(long value,
+                                long bucket) {
+    long fraction = value / bucket;
+    long remainder = value % bucket;
+    if (remainder > 0) {
+      return (fraction + 1) * bucket;
+    }
+    else {
+      return value;
+    }
+  }
+
+  private static long toMb(long value) {
+    return value / IOUtil.MiB;
   }
 }

@@ -1,20 +1,7 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.commandLine;
 
+import com.intellij.externalProcessAuthHelper.SshPrompts;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
@@ -22,20 +9,17 @@ import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.WaitForProgressToShow;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.idea.svn.api.Url;
+import org.jetbrains.idea.svn.auth.AcceptResult;
 import org.jetbrains.idea.svn.dialogs.ServerSSHDialog;
 import org.jetbrains.idea.svn.dialogs.SimpleCredentialsDialog;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.auth.ISVNAuthenticationProvider;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static com.intellij.ssh.SSHUtil.PASSPHRASE_PROMPT;
-import static com.intellij.ssh.SSHUtil.PASSWORD_PROMPT;
+import static com.intellij.externalProcessAuthHelper.SshPrompts.PASSPHRASE_PROMPT;
+import static com.intellij.externalProcessAuthHelper.SshPrompts.PASSWORD_PROMPT;
 
-/**
- * @author Konstantin Kolosovsky.
- */
 public class TerminalSshModule extends BaseTerminalModule {
   private static final Pattern UNKNOWN_HOST_MESSAGE =
     Pattern.compile("The authenticity of host \\'((.*) \\((.*)\\))\\' can\\'t be established\\.\\s?");
@@ -58,13 +42,13 @@ public class TerminalSshModule extends BaseTerminalModule {
   private boolean checkPassphrase(@NotNull String line) {
     Matcher matcher = PASSPHRASE_PROMPT.matcher(line);
 
-    return matcher.matches() && handleAuthPrompt(SimpleCredentialsDialog.Mode.SSH_PASSPHRASE, matcher.group(1));
+    return matcher.matches() && handleAuthPrompt(SimpleCredentialsDialog.Mode.SSH_PASSPHRASE, SshPrompts.extractKeyPath(matcher));
   }
 
   private boolean checkPassword(@NotNull String line) {
     Matcher matcher = PASSWORD_PROMPT.matcher(line);
 
-    return matcher.matches() && handleAuthPrompt(SimpleCredentialsDialog.Mode.SSH_PASSWORD, matcher.group(1));
+    return matcher.matches() && handleAuthPrompt(SimpleCredentialsDialog.Mode.SSH_PASSWORD, SshPrompts.extractUsername(matcher));
   }
 
   private boolean checkUnknownHost(@NotNull String line) {
@@ -87,16 +71,13 @@ public class TerminalSshModule extends BaseTerminalModule {
   }
 
   private void handleUnknownHost() {
-    final Project project = myRuntime.getVcs().getProject();
-    final Ref<Integer> answer = new Ref<>();
+    Project project = myRuntime.getVcs().getProject();
+    Ref<AcceptResult> answer = new Ref<>();
 
-    Runnable command = new Runnable() {
-      @Override
-      public void run() {
-        final ServerSSHDialog dialog = new ServerSSHDialog(project, true, unknownHost, fingerprintAlgorithm, hostFingerprint);
-        dialog.show();
-        answer.set(dialog.getResult());
-      }
+    Runnable command = () -> {
+      final ServerSSHDialog dialog = new ServerSSHDialog(project, true, unknownHost, fingerprintAlgorithm, hostFingerprint);
+      dialog.show();
+      answer.set(dialog.getResult());
     };
 
     // Use ModalityState.any() as currently ssh credentials in terminal mode are requested in the thread that reads output and not in
@@ -107,11 +88,11 @@ public class TerminalSshModule extends BaseTerminalModule {
     fingerprintAlgorithm = null;
     hostFingerprint = null;
 
-    sendData(answer.get() == ISVNAuthenticationProvider.REJECTED ? "no" : "yes");
+    sendData(answer.get() == AcceptResult.REJECTED ? "no" : "yes");
   }
 
-  private boolean handleAuthPrompt(@NotNull final SimpleCredentialsDialog.Mode mode, @NotNull final String key) {
-    SVNURL repositoryUrl = myExecutor.getCommand().requireRepositoryUrl();
+  private boolean handleAuthPrompt(final @NotNull SimpleCredentialsDialog.Mode mode, final @NotNull String key) {
+    Url repositoryUrl = myExecutor.getCommand().requireRepositoryUrl();
     String auth = myRuntime.getAuthenticationService().requestSshCredentials(repositoryUrl.toDecodedString(), mode, key);
 
     if (!StringUtil.isEmpty(auth)) {

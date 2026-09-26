@@ -14,7 +14,7 @@ public class JqlBraceMatcher implements PairedBraceMatcher {
   private static final BracePair[] PAIRS = {new BracePair(JqlTokenTypes.LPAR, JqlTokenTypes.RPAR, false)};
 
   @Override
-  public BracePair[] getPairs() {
+  public BracePair @NotNull [] getPairs() {
     return PAIRS;
   }
 

@@ -1,42 +1,54 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.ui.laf.darcula.ui;
 
-import com.intellij.openapi.util.SystemInfo;
+import com.google.common.base.Strings;
+import com.intellij.ui.ComponentUtil;
+import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
-import com.intellij.util.ui.UIUtil;
 
-import javax.swing.*;
+import javax.swing.AbstractButton;
+import javax.swing.CellRendererPane;
+import javax.swing.UIManager;
 import javax.swing.border.Border;
-import javax.swing.plaf.InsetsUIResource;
 import javax.swing.plaf.UIResource;
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Graphics;
+import java.awt.Insets;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * @author Konstantin Bulenkov
  */
+@ApiStatus.Internal
 public class DarculaCheckBoxBorder implements Border, UIResource {
   @Override
-  public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {
-  }
+  public void paintBorder(Component c, Graphics g, int x, int y, int width, int height) {}
 
   @Override
   public Insets getBorderInsets(Component c) {
-    final int a = SystemInfo.isMac || UIUtil.getParentOfType(CellRendererPane.class, c) != null ? 0 : 2;
-    return JBUI.insets(a, a, a, a).asUIResource();
+    if (ComponentUtil.getParentOfType(CellRendererPane.class, c) != null) {
+      return JBInsets.emptyInsets().asUIResource();
+    }
+    Insets result = UIManager.getInsets(borderWidthPropertyName());
+    if (result == null) {
+      return JBUI.insets(1);
+    }
+
+    if (c instanceof AbstractButton button && !Strings.isNullOrEmpty(button.getText())) {
+      if (result instanceof JBInsets jbInsets) {
+        Insets unscaled = jbInsets.getUnscaled();
+        result = new JBInsets(unscaled.top, unscaled.left, unscaled.bottom, 0);
+      }
+      else {
+        //noinspection UseDPIAwareInsets
+        result = new Insets(result.top, result.left, result.bottom, 0);
+      }
+    }
+    return result;
+  }
+
+  protected String borderWidthPropertyName() {
+    return "CheckBox.borderInsets";
   }
 
   @Override

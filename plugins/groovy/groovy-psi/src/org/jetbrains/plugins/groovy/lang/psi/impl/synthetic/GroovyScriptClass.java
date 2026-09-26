@@ -1,32 +1,27 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl.synthetic;
 
 import com.intellij.navigation.ItemPresentation;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
-import com.intellij.psi.impl.ElementBase;
+import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.ResolveState;
+import com.intellij.psi.SyntheticElement;
 import com.intellij.psi.impl.ElementPresentationUtil;
 import com.intellij.psi.impl.JavaPsiImplementationHelper;
 import com.intellij.psi.scope.PsiScopeProcessor;
-import com.intellij.ui.RowIcon;
+import com.intellij.ui.IconManager;
+import com.intellij.ui.icons.RowIcon;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.PathUtil;
+import icons.JetgroovyIcons;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -38,10 +33,12 @@ import org.jetbrains.plugins.groovy.lang.psi.impl.statements.typedef.GrTypeDefin
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.typedef.code.FileCodeMembersProvider;
 import org.jetbrains.plugins.groovy.lang.psi.util.GrClassImplUtil;
 
-import javax.swing.*;
+import javax.swing.Icon;
 
-public class GroovyScriptClass extends GrLightTypeDefinitionBase implements SyntheticElement {
+import static org.jetbrains.plugins.groovy.lang.resolve.ResolveUtilKt.shouldProcessMethods;
+import static org.jetbrains.plugins.groovy.lang.resolve.ResolveUtilKt.shouldProcessProperties;
 
+public final class GroovyScriptClass extends GrLightTypeDefinitionBase implements SyntheticElement {
   private final GroovyFile myFile;
   private final GrTypeDefinitionMembersCache<GroovyScriptClass> myCache;
 
@@ -57,6 +54,9 @@ public class GroovyScriptClass extends GrLightTypeDefinitionBase implements Synt
     if (visitor instanceof JavaElementVisitor) {
       ((JavaElementVisitor)visitor).visitClass(this);
     }
+    else {
+      visitor.visitElement(this);
+    }
   }
 
   @Override
@@ -65,7 +65,7 @@ public class GroovyScriptClass extends GrLightTypeDefinitionBase implements Synt
   }
 
   @Override
-  public GroovyFile getContainingFile() {
+  public @NotNull GroovyFile getContainingFile() {
     return myFile;
   }
 
@@ -84,9 +84,8 @@ public class GroovyScriptClass extends GrLightTypeDefinitionBase implements Synt
     return myFile.isValid() && myFile.isScript();
   }
 
-  @Nullable
   @Override
-  public String getQualifiedName() {
+  public @NotNull String getQualifiedName() {
     return StringUtil.getQualifiedName(myFile.getPackageName(), getName());
   }
 
@@ -110,57 +109,48 @@ public class GroovyScriptClass extends GrLightTypeDefinitionBase implements Synt
     return myFile.addBefore(element, anchor);
   }
 
-  @NotNull
   @Override
-  public PsiClassType[] getExtendsListTypes(boolean includeSynthetic) {
+  public PsiClassType @NotNull [] getExtendsListTypes(boolean includeSynthetic) {
     return myCache.getExtendsListTypes(includeSynthetic);
   }
 
-  @NotNull
   @Override
-  public PsiClassType[] getImplementsListTypes(boolean includeSynthetic) {
+  public PsiClassType @NotNull [] getImplementsListTypes(boolean includeSynthetic) {
     return myCache.getImplementsListTypes(includeSynthetic);
   }
 
-  @NotNull
   @Override
-  public GrField[] getFields() {
+  public GrField @NotNull [] getFields() {
     return myCache.getFields();
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] getMethods() {
+  public PsiMethod @NotNull [] getMethods() {
     return myCache.getMethods();
   }
 
-  @NotNull
   @Override
-  public PsiMethod[] getConstructors() {
+  public PsiMethod @NotNull [] getConstructors() {
     return myCache.getConstructors();
   }
 
-  @NotNull
   @Override
-  public PsiClass[] getInnerClasses() {
+  public PsiClass @NotNull [] getInnerClasses() {
     return myCache.getInnerClasses();
   }
 
-  @NotNull
   @Override
-  public GrField[] getCodeFields() {
+  public GrField @NotNull [] getCodeFields() {
     return GrField.EMPTY_ARRAY;
   }
 
-  @NotNull
   @Override
-  public GrMethod[] getCodeConstructors() {
+  public GrMethod @NotNull [] getCodeConstructors() {
     return GrMethod.EMPTY_ARRAY;
   }
 
-  @NotNull
   @Override
-  public GrMethod[] getCodeMethods() {
+  public GrMethod @NotNull [] getCodeMethods() {
     return myCache.getCodeMethods();
   }
 
@@ -171,8 +161,7 @@ public class GroovyScriptClass extends GrLightTypeDefinitionBase implements Synt
   }
 
   @Override
-  @NotNull
-  public String getName() {
+  public @NotNull @NlsSafe String getName() {
     return FileUtilRt.getNameWithoutExtension(myFile.getName());
   }
 
@@ -183,11 +172,16 @@ public class GroovyScriptClass extends GrLightTypeDefinitionBase implements Synt
   }
 
   @Override
-  public boolean processDeclarations(@NotNull final PsiScopeProcessor processor,
-                                     @NotNull final ResolveState state,
+  public boolean processDeclarations(final @NotNull PsiScopeProcessor processor,
+                                     final @NotNull ResolveState state,
                                      @Nullable PsiElement lastParent,
                                      @NotNull PsiElement place) {
-    return GrClassImplUtil.processDeclarations(this, processor, state, lastParent, place);
+    if (shouldProcessMethods(processor) || shouldProcessProperties(processor)) {
+      return GrClassImplUtil.processDeclarations(this, processor, state, lastParent, place);
+    }
+    else {
+      return true;
+    }
   }
 
   @Override
@@ -218,7 +212,6 @@ public class GroovyScriptClass extends GrLightTypeDefinitionBase implements Synt
   }
 
   @Override
-  @Nullable
   public PsiElement getOriginalElement() {
     return JavaPsiImplementationHelper.getInstance(getProject()).getOriginalClass(this);
   }
@@ -229,10 +222,8 @@ public class GroovyScriptClass extends GrLightTypeDefinitionBase implements Synt
   }
 
   @Override
-  @Nullable
   public Icon getIcon(int flags) {
-    final Icon icon = myFile.getIcon(flags);
-    RowIcon baseIcon = ElementBase.createLayeredIcon(this, icon, 0);
+    RowIcon baseIcon = IconManager.getInstance().createLayeredIcon(this, JetgroovyIcons.Groovy.Class, 0);
     return ElementPresentationUtil.addVisibilityIcon(this, flags, baseIcon);
   }
 

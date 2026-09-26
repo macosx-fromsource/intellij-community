@@ -1,68 +1,87 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.testing;
 
-import com.intellij.execution.configurations.ConfigurationFactory;
 import com.intellij.execution.configurations.ConfigurationType;
+import com.intellij.execution.configurations.ConfigurationTypeBase;
 import com.intellij.execution.configurations.ConfigurationTypeUtil;
 import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NotNullLazyValue;
 import com.jetbrains.python.PyBundle;
+import com.jetbrains.python.icons.PythonIcons;
 import com.jetbrains.python.run.PythonConfigurationFactoryBase;
-import com.jetbrains.python.testing.attest.PythonAtTestRunConfiguration;
+import com.jetbrains.python.testing.autoDetectTests.PyAutoDetectionConfigurationFactory;
 import com.jetbrains.python.testing.doctest.PythonDocTestRunConfiguration;
-import com.jetbrains.python.testing.nosetest.PythonNoseTestRunConfiguration;
-import com.jetbrains.python.testing.pytest.PyTestRunConfiguration;
-import com.jetbrains.python.testing.unittest.PythonUnitTestRunConfiguration;
-import icons.PythonIcons;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import java.util.List;
 
-/**
- * User : catherine
- */
-public class PythonTestConfigurationType implements ConfigurationType {
+public final class PythonTestConfigurationType extends ConfigurationTypeBase {
   public static final String ID = "tests";
 
-  public final PythonDocTestConfigurationFactory PY_DOCTEST_FACTORY = new PythonDocTestConfigurationFactory(this);
-  public final PythonUnitTestConfigurationFactory PY_UNITTEST_FACTORY = new PythonUnitTestConfigurationFactory(this);
-  public final PythonNoseTestConfigurationFactory PY_NOSETEST_FACTORY = new PythonNoseTestConfigurationFactory(this);
-  public final PythonPyTestConfigurationFactory PY_PYTEST_FACTORY = new PythonPyTestConfigurationFactory(this);
-  public final PythonAtTestConfigurationFactory PY_ATTEST_FACTORY = new PythonAtTestConfigurationFactory(this);
+  private final PythonConfigurationFactoryBase myDocTestFactory = new PythonDocTestConfigurationFactory(this);
+  private final PyAutoDetectionConfigurationFactory myAutoFactory = new PyAutoDetectionConfigurationFactory(this);
+  private final PyUnitTestFactory myUnitTestFactory = new PyUnitTestFactory(this);
+  private final PyTestFactory myPyTestFactory = new PyTestFactory(this);
 
-  public static PythonTestConfigurationType getInstance() {
+  private final List<PyAbstractTestFactory<?>> myTypedFactories;
+
+  public static @NotNull PythonTestConfigurationType getInstance() {
     return ConfigurationTypeUtil.findConfigurationType(PythonTestConfigurationType.class);
   }
 
-  private static class PythonUnitTestConfigurationFactory extends PythonConfigurationFactoryBase {
-    protected PythonUnitTestConfigurationFactory(ConfigurationType configurationType) {
-      super(configurationType);
-    }
+  public PythonTestConfigurationType() {
+    super(ID, PyBundle.message("runcfg.test.display_name"), PyBundle.message("runcfg.test.description"),
+          NotNullLazyValue.createValue(() -> PythonIcons.Python.PythonTests));
 
-    @Override
-    public RunConfiguration createTemplateConfiguration(Project project) {
-      return new PythonUnitTestRunConfiguration(project, this);
+    myTypedFactories = List.of(
+      myAutoFactory,
+      myPyTestFactory,
+      new PyNoseTestFactory(this),
+      new PyTrialTestFactory(this),
+      myUnitTestFactory
+    );
+    for (var factory : myTypedFactories) {
+      addFactory(factory);
     }
-
-    @Override
-    public String getName() {
-      return PyBundle.message("runcfg.unittest.display_name");
-    }
+    addFactory(myDocTestFactory);
   }
+
+  public @NotNull PyTestFactory getPyTestFactory() {
+    return myPyTestFactory;
+  }
+
+  public @NotNull PythonConfigurationFactoryBase getDocTestFactory() {
+    return myDocTestFactory;
+  }
+
+  public @NotNull PyUnitTestFactory getUnitTestFactory() {
+    return myUnitTestFactory;
+  }
+
+  public @NotNull PyAutoDetectionConfigurationFactory getAutoDetectFactory() {
+    return myAutoFactory;
+  }
+
+  public @NotNull List<PyAbstractTestFactory<?>> getTypedFactories() {
+    return myTypedFactories;
+  }
+
+  @Override
+  public String getHelpTopic() {
+    return "reference.dialogs.rundebug.tests";
+  }
+
+  @Override
+  public @NotNull String getTag() {
+    return "pythonTest";
+  }
+
+  @Override
+  public boolean isDumbAware() {
+    return true;
+  }
+
 
   private static class PythonDocTestConfigurationFactory extends PythonConfigurationFactoryBase {
     protected PythonDocTestConfigurationFactory(ConfigurationType configurationType) {
@@ -70,88 +89,18 @@ public class PythonTestConfigurationType implements ConfigurationType {
     }
 
     @Override
-    public RunConfiguration createTemplateConfiguration(Project project) {
+    public @NotNull RunConfiguration createTemplateConfiguration(@NotNull Project project) {
       return new PythonDocTestRunConfiguration(project, this);
     }
 
     @Override
-    public String getName() {
+    public @NotNull String getName() {
       return PyBundle.message("runcfg.doctest.display_name");
     }
-  }
-
-  private static class PythonPyTestConfigurationFactory extends PythonConfigurationFactoryBase {
-    protected PythonPyTestConfigurationFactory(ConfigurationType configurationType) {
-      super(configurationType);
-    }
 
     @Override
-    public RunConfiguration createTemplateConfiguration(Project project) {
-      return new PyTestRunConfiguration(project, this);
+    public @NotNull String getId() {
+      return "Doctests";
     }
-
-    @Override
-    public String getName() {
-      return PyBundle.message("runcfg.pytest.display_name");
-    }
-  }
-
-  private static class PythonNoseTestConfigurationFactory extends PythonConfigurationFactoryBase {
-    protected PythonNoseTestConfigurationFactory(ConfigurationType configurationType) {
-      super(configurationType);
-    }
-
-    @Override
-    public RunConfiguration createTemplateConfiguration(Project project) {
-      return new PythonNoseTestRunConfiguration(project, this);
-    }
-
-    @Override
-    public String getName() {
-      return PyBundle.message("runcfg.nosetests.display_name");
-    }
-  }
-
-  private static class PythonAtTestConfigurationFactory extends PythonConfigurationFactoryBase {
-    protected PythonAtTestConfigurationFactory(ConfigurationType configurationType) {
-      super(configurationType);
-    }
-
-    @Override
-    public RunConfiguration createTemplateConfiguration(Project project) {
-      return new PythonAtTestRunConfiguration(project, this);
-    }
-
-    @Override
-    public String getName() {
-      return PyBundle.message("runcfg.attest.display_name");
-    }
-  }
-
-  @Override
-  public String getDisplayName() {
-    return PyBundle.message("runcfg.test.display_name");
-  }
-
-  @Override
-  public String getConfigurationTypeDescription() {
-    return PyBundle.message("runcfg.test.description");
-  }
-
-  @Override
-  public Icon getIcon() {
-    return PythonIcons.Python.PythonTests;
-  }
-
-  @NotNull
-  @Override
-  public String getId() {
-    return ID;
-  }
-
-  @Override
-  public ConfigurationFactory[] getConfigurationFactories() {
-    return new ConfigurationFactory[] {PY_UNITTEST_FACTORY, PY_DOCTEST_FACTORY, PY_NOSETEST_FACTORY,
-        PY_PYTEST_FACTORY, PY_ATTEST_FACTORY};
   }
 }

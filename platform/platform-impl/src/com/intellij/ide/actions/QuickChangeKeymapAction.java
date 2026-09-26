@@ -1,50 +1,57 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.actions;
 
+import com.intellij.icons.AllIcons;
+import com.intellij.ide.IdeBundle;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.remoting.ActionRemoteBehaviorSpecification;
 import com.intellij.openapi.keymap.Keymap;
 import com.intellij.openapi.keymap.KeymapManager;
 import com.intellij.openapi.keymap.ex.KeymapManagerEx;
+import com.intellij.openapi.keymap.impl.KeymapManagerImpl;
+import com.intellij.openapi.keymap.impl.KeymapManagerImplKt;
+import com.intellij.openapi.keymap.impl.ui.KeymapPanel;
+import com.intellij.openapi.keymap.impl.ui.KeymapSchemeManager;
+import com.intellij.openapi.options.ShowSettingsUtil;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
-/**
- * @author max
- */
-public class QuickChangeKeymapAction extends QuickSwitchSchemeAction {
+import java.util.List;
+
+public final class QuickChangeKeymapAction extends QuickSwitchSchemeAction implements ActionRemoteBehaviorSpecification.Frontend {
   @Override
   protected void fillActions(Project project, @NotNull DefaultActionGroup group, @NotNull DataContext dataContext) {
-    KeymapManagerEx manager = (KeymapManagerEx) KeymapManager.getInstance();
+    KeymapManagerImpl manager = (KeymapManagerImpl)KeymapManager.getInstance();
     Keymap current = manager.getActiveKeymap();
-    for (Keymap keymap : manager.getAllKeymaps()) {
-      addKeymapAction(group, manager, current, keymap, false);
+    List<Keymap> list = ContainerUtil.sorted(getUnsortedKeymaps(),
+    KeymapManagerImplKt.getKeymapComparator());
+    for (Keymap keymap : list) {
+      addKeymapAction(group, manager, current, keymap);
     }
+    group.addSeparator();
+    group.add(new DumbAwareAction(IdeBundle.message("keymap.action.configure.keymap")) {
+      @Override
+      public void actionPerformed(@NotNull AnActionEvent e) {
+        ShowSettingsUtil.getInstance().showSettingsDialog(e.getProject(), KeymapPanel.class);
+      }
+    });
+    group.add(new ShowPluginsWithSearchOptionAction(IdeBundle.message("keymap.action.install.keymap"), "/tag:Keymap"));
   }
 
-  private static void addKeymapAction(final DefaultActionGroup group, final KeymapManagerEx manager, final Keymap current, final Keymap keymap, final boolean addScheme) {
-    group.add(new DumbAwareAction(keymap.getPresentableName(), "", keymap == current ? ourCurrentAction : ourNotCurrentAction) {
+  private static @Unmodifiable @NotNull List<Keymap> getUnsortedKeymaps() {
+    return ((KeymapManagerImpl)KeymapManager.getInstance()).getKeymaps(KeymapSchemeManager.FILTER);
+  }
+
+  private static void addKeymapAction(@NotNull DefaultActionGroup group, @NotNull KeymapManagerEx manager, @Nullable Keymap current, @NotNull Keymap keymap) {
+    group.add(new DumbAwareAction(keymap.getPresentableName(), "", keymap == current ? AllIcons.Actions.Forward : ourNotCurrentAction) {
       @Override
-      public void actionPerformed(AnActionEvent e) {
-        if (addScheme) {
-          manager.getSchemeManager().addNewScheme(keymap, false);
-        }
+      public void actionPerformed(@NotNull AnActionEvent e) {
         manager.setActiveKeymap(keymap);
       }
     });
@@ -52,6 +59,7 @@ public class QuickChangeKeymapAction extends QuickSwitchSchemeAction {
 
   @Override
   protected boolean isEnabled() {
-    return ((KeymapManagerEx) KeymapManager.getInstance()).getAllKeymaps().length > 1;
+    // simply show it always instead of asking for keymaps on EDT during update()
+    return true;
   }
 }

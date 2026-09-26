@@ -1,101 +1,227 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.settingsRepository
 
-import com.intellij.configurationStore.StateStorageManagerImpl
 import com.intellij.configurationStore.StreamProvider
-import com.intellij.ide.ApplicationLoadListener
+import com.intellij.configurationStore.schemeManager.SchemeManagerFactoryBase
+import com.intellij.ide.AppLifecycleListener
+import com.intellij.ide.ApplicationLoadHandler
+import com.intellij.ide.BeforeApplicationLoadedEvent
 import com.intellij.openapi.application.Application
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.PathManager
+import com.intellij.openapi.application.ex.ApplicationManagerEx
 import com.intellij.openapi.components.RoamingType
-import com.intellij.openapi.components.stateStore
-import com.intellij.openapi.diagnostic.catchAndLog
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.impl.stores.stateStore
+import com.intellij.openapi.components.service
+import com.intellij.openapi.components.serviceAsync
+import com.intellij.openapi.diagnostic.getOrLogException
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.options.SchemeManagerFactory
 import com.intellij.openapi.progress.runBackgroundableTask
+import com.intellij.openapi.progress.runBlockingCancellable
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.project.impl.ProjectLifecycleListener
-import com.intellij.openapi.util.io.FileUtil
-import com.intellij.util.SingleAlarm
-import com.intellij.util.io.exists
-import com.intellij.util.io.move
+import com.intellij.openapi.project.ProjectCloseListener
+import com.intellij.openapi.util.io.OSAgnosticPathUtil
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.job
+import kotlinx.coroutines.launch
 import org.jetbrains.settingsRepository.git.GitRepositoryManager
 import org.jetbrains.settingsRepository.git.GitRepositoryService
 import org.jetbrains.settingsRepository.git.processChildren
 import java.io.InputStream
 import java.nio.file.Path
-import java.nio.file.Paths
-import kotlin.properties.Delegates
-
-internal const val PLUGIN_NAME = "Settings Repository"
+import kotlin.time.Duration.Companion.milliseconds
 
 internal val LOG = logger<IcsManager>()
 
-val icsManager by lazy(LazyThreadSafetyMode.NONE) {
-  ApplicationLoadListener.EP_NAME.findExtension(IcsApplicationLoadListener::class.java).icsManager
+internal val icsManager by lazy(LazyThreadSafetyMode.NONE) {
+  service<IcsManagerService>().icsManager
 }
 
-class IcsManager(dir: Path) {
-  val credentialsStore = lazy { IcsCredentialsStore() }
+@OptIn(FlowPreview::class)
+class IcsManager @JvmOverloads constructor(
+  dir: Path,
+  @JvmField val coroutineScope: CoroutineScope,
+  val schemeManagerFactory: Lazy<SchemeManagerFactoryBase> = lazy { (SchemeManagerFactory.getInstance() as SchemeManagerFactoryBase) },
+) {
+  internal val credentialsStore = lazy { IcsCredentialsStore() }
 
   val settingsFile: Path = dir.resolve("config.json")
 
-  val settings: IcsSettings
-  val repositoryManager: RepositoryManager = GitRepositoryManager(credentialsStore, dir.resolve("repository"))
-
-  init {
-    settings = try {
-      loadSettings(settingsFile)
-    }
-    catch (e: Exception) {
-      LOG.error(e)
-      IcsSettings()
-    }
+  val settings: IcsSettings = try {
+    loadSettings(settingsFile)
+  }
+  catch (e: Exception) {
+    LOG.error(e)
+    IcsSettings()
   }
 
-  val readOnlySourcesManager = ReadOnlySourcesManager(settings, dir)
+  val repositoryManager: GitRepositoryManager = GitRepositoryManager(credentialsStore, dir.resolve("repository"))
+  val readOnlySourcesManager = ReadOnlySourceManager(this, dir)
 
   val repositoryService: RepositoryService = GitRepositoryService()
 
-  private val commitAlarm = SingleAlarm(Runnable {
-    runBackgroundableTask(icsMessage("task.commit.title")) { indicator ->
-      try {
-        repositoryManager.commit(indicator, fixStateIfCannotCommit = false)
-      }
-      catch (e: Throwable) {
-        LOG.error(e)
-      }
+  private val commitRequests = MutableSharedFlow<Unit>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+  init {
+    coroutineScope.launch {
+      commitRequests
+        .debounce(settings.commitDelay.milliseconds)
+        .collect {
+          @Suppress("DialogTitleCapitalization")
+          runBackgroundableTask(icsMessage("task.commit.title")) {
+            runCatching {
+              runBlockingCancellable {
+                repositoryManager.commit(fixStateIfCannotCommit = false)
+              }
+            }.getOrLogException(LOG)
+          }
+        }
     }
-  }, settings.commitDelay)
 
-  private @Volatile var autoCommitEnabled = true
-
-  @Volatile var repositoryActive = false
-
-  internal val autoSyncManager = AutoSyncManager(this)
-  private val syncManager = SyncManager(this, autoSyncManager)
-
-  private fun scheduleCommit() {
-    if (autoCommitEnabled && !ApplicationManager.getApplication()!!.isUnitTestMode) {
-      commitAlarm.cancelAndRequest()
+    coroutineScope.coroutineContext.job.invokeOnCompletion {
+      repositoryManager.dispose()
     }
   }
 
-  inner class ApplicationLevelProvider : IcsStreamProvider(null) {
-    override fun delete(fileSpec: String, roamingType: RoamingType) {
+  @Volatile
+  private var autoCommitEnabled = true
+
+  @Volatile
+  var isRepositoryActive = false
+
+  val isActive: Boolean
+    get() = isRepositoryActive || readOnlySourcesManager.repositories.isNotEmpty()
+
+  internal val autoSyncManager = AutoSyncManager(this)
+  internal val syncManager = SyncManager(this, autoSyncManager)
+
+  private fun scheduleCommit() {
+    if (autoCommitEnabled && !ApplicationManager.getApplication()!!.isUnitTestMode) {
+      check(commitRequests.tryEmit(Unit))
+    }
+  }
+
+  suspend fun sync(syncType: SyncType, localRepositoryInitializer: (() -> Unit)? = null): Boolean {
+    return syncManager.sync(syncType, localRepositoryInitializer)
+  }
+
+  private fun cancelAndDisableAutoCommit() {
+    if (autoCommitEnabled) {
+      autoCommitEnabled = false
+      check(commitRequests.tryEmit(Unit))
+    }
+  }
+
+  suspend fun runInAutoCommitDisabledMode(task: suspend () -> Unit) {
+    cancelAndDisableAutoCommit()
+    try {
+      task()
+    }
+    finally {
+      autoCommitEnabled = true
+      isRepositoryActive = repositoryManager.isRepositoryExists()
+    }
+  }
+
+  fun runInAutoCommitDisabledModeSync(task: () -> Unit) {
+    cancelAndDisableAutoCommit()
+    try {
+      task()
+    }
+    finally {
+      autoCommitEnabled = true
+      isRepositoryActive = repositoryManager.isRepositoryExists()
+    }
+  }
+
+
+  fun setApplicationLevelStreamProvider() {
+    val storageManager = ApplicationManager.getApplication().stateStore.storageManager
+    // just to be sure
+    storageManager.removeStreamProvider(IcsStreamProvider::class.java)
+    storageManager.addStreamProvider(IcsStreamProvider(), first = true)
+  }
+
+  fun beforeApplicationLoaded(app: Application) {
+    isRepositoryActive = repositoryManager.isRepositoryExists()
+
+    app.stateStore.storageManager.addStreamProvider(IcsStreamProvider())
+
+    val messageBusConnection = app.messageBus.simpleConnect()
+    messageBusConnection.subscribe(AppLifecycleListener.TOPIC, object : AppLifecycleListener {
+      override fun appWillBeClosed(isRestart: Boolean) {
+        autoSyncManager.autoSync(true)
+      }
+    })
+    messageBusConnection.subscribe(ProjectCloseListener.TOPIC, object : ProjectCloseListener {
+      override fun projectClosed(project: Project) {
+        if (!ApplicationManagerEx.getApplicationEx().isExitInProgress) {
+          autoSyncManager.autoSync()
+        }
+      }
+    })
+  }
+
+  inner class IcsStreamProvider : StreamProvider {
+    override val enabled: Boolean
+      get() = this@IcsManager.isActive
+
+    override val isExclusive: Boolean
+      get() = isRepositoryActive
+
+    override fun isApplicable(fileSpec: String, roamingType: RoamingType): Boolean = isRepositoryActive && roamingType.isRoamable
+
+    override fun processChildren(path: String,
+                                 roamingType: RoamingType,
+                                 filter: (name: String) -> Boolean,
+                                 processor: (name: String, input: InputStream, readOnly: Boolean) -> Boolean): Boolean {
+      val fullPath = toRepositoryPath(path, roamingType)
+
+      // first, we must load read-only schemes - scheme could be overridden if bundled or read-only, so, such schemes must be loaded first
+      for (repository in readOnlySourcesManager.repositories) {
+        repository.processChildren(fullPath, filter) { name, input -> processor(name, input, true) }
+      }
+
+      if (!isRepositoryActive) {
+        return false
+      }
+
+      repositoryManager.processChildren(fullPath, filter) { name, input -> processor(name, input, false) }
+      return true
+    }
+
+    override fun write(fileSpec: String, content: ByteArray, roamingType: RoamingType) {
+      if (syncManager.writeAndDeleteProhibited) {
+        throw IllegalStateException("Save is prohibited now")
+      }
+
+      if (doSave(fileSpec, content, roamingType)) {
+        scheduleCommit()
+      }
+    }
+
+    fun doSave(fileSpec: String, content: ByteArray, roamingType: RoamingType): Boolean =
+      repositoryManager.write(toRepositoryPath(fileSpec, roamingType), content)
+
+    override fun read(fileSpec: String, roamingType: RoamingType, consumer: (InputStream?) -> Unit): Boolean {
+      if (!isApplicable(fileSpec, roamingType)) {
+        return false
+      }
+
+      repositoryManager.read(toRepositoryPath(fileSpec, roamingType), consumer)
+      return true
+    }
+
+    override fun delete(fileSpec: String, roamingType: RoamingType): Boolean {
+      if (!isRepositoryActive) {
+        return false
+      }
+
       if (syncManager.writeAndDeleteProhibited) {
         throw IllegalStateException("Delete is prohibited now")
       }
@@ -103,151 +229,37 @@ class IcsManager(dir: Path) {
       if (repositoryManager.delete(toRepositoryPath(fileSpec, roamingType))) {
         scheduleCommit()
       }
-    }
-  }
 
-//  private inner class ProjectLevelProvider(projectId: String) : IcsStreamProvider(projectId) {
-//    override fun isAutoCommit(fileSpec: String, roamingType: RoamingType) = !isProjectOrModuleFile(fileSpec)
-//
-//    override fun isApplicable(fileSpec: String, roamingType: RoamingType): Boolean {
-//      if (isProjectOrModuleFile(fileSpec)) {
-//        // applicable only if file was committed to Settings Server explicitly
-//        return repositoryManager.has(buildPath(fileSpec, roamingType, this.projectId))
-//      }
-//      return settings.shareProjectWorkspace || fileSpec != StoragePathMacros.WORKSPACE_FILE
-//    }
-//  }
-
-  fun sync(syncType: SyncType, project: Project? = null, localRepositoryInitializer: (() -> Unit)? = null) = syncManager.sync(syncType, project, localRepositoryInitializer)
-
-  private fun cancelAndDisableAutoCommit() {
-    if (autoCommitEnabled) {
-      autoCommitEnabled = false
-      commitAlarm.cancel()
-    }
-  }
-
-  fun runInAutoCommitDisabledMode(task: ()->Unit) {
-    cancelAndDisableAutoCommit()
-    try {
-      task()
-    }
-    finally {
-      autoCommitEnabled = true
-      repositoryActive = repositoryManager.isRepositoryExists()
-    }
-  }
-
-  fun newStreamProvider() {
-    val application = ApplicationManager.getApplication()
-    (application.stateStore.stateStorageManager as StateStorageManagerImpl).streamProvider = ApplicationLevelProvider()
-  }
-
-  fun beforeApplicationLoaded(application: Application) {
-    repositoryActive = repositoryManager.isRepositoryExists()
-
-    val storage = application.stateStore.stateStorageManager as StateStorageManagerImpl
-    if (storage.streamProvider == null || !storage.streamProvider!!.enabled) {
-      storage.streamProvider = ApplicationLevelProvider()
+      return true
     }
 
-    autoSyncManager.registerListeners(application)
-
-    application.messageBus.connect().subscribe(ProjectLifecycleListener.TOPIC, object : ProjectLifecycleListener {
-      override fun beforeProjectLoaded(project: Project) {
-        if (project.isDefault) {
-          return
-        }
-
-        //registerProjectLevelProviders(project)
-        autoSyncManager.registerListeners(project)
+    override fun deleteIfObsolete(fileSpec: String, roamingType: RoamingType) {
+      if (roamingType == RoamingType.DISABLED) {
+        delete(fileSpec, roamingType)
       }
-
-      override fun afterProjectClosed(project: Project) {
-        autoSyncManager.autoSync()
-      }
-    })
-  }
-
-  open inner class IcsStreamProvider(protected val projectId: String?) : StreamProvider {
-    override val enabled: Boolean
-      get() = repositoryActive
-
-    override fun isApplicable(fileSpec: String, roamingType: RoamingType): Boolean = enabled
-
-    override fun processChildren(path: String, roamingType: RoamingType, filter: (name: String) -> Boolean, processor: (name: String, input: InputStream, readOnly: Boolean) -> Boolean) {
-      val fullPath = toRepositoryPath(path, roamingType, null)
-
-      // first of all we must load read-only schemes - scheme could be overridden if bundled or read-only, so, such schemes must be loaded first
-      for (repository in readOnlySourcesManager.repositories) {
-        repository.processChildren(fullPath, filter) { name, input -> processor(name, input, true) }
-      }
-
-      repositoryManager.processChildren(fullPath, filter) { name, input -> processor(name, input, false) }
-    }
-
-    override fun write(fileSpec: String, content: ByteArray, size: Int, roamingType: RoamingType) {
-      if (syncManager.writeAndDeleteProhibited) {
-        throw IllegalStateException("Save is prohibited now")
-      }
-
-      if (doSave(fileSpec, content, size, roamingType) && isAutoCommit(fileSpec, roamingType)) {
-        scheduleCommit()
-      }
-    }
-
-    fun doSave(fileSpec: String, content: ByteArray, size: Int, roamingType: RoamingType) = repositoryManager.write(toRepositoryPath(fileSpec, roamingType, projectId), content, size)
-
-    protected open fun isAutoCommit(fileSpec: String, roamingType: RoamingType) = true
-
-    override fun read(fileSpec: String, roamingType: RoamingType) = repositoryManager.read(toRepositoryPath(fileSpec, roamingType, projectId))
-
-    override fun delete(fileSpec: String, roamingType: RoamingType) {
     }
   }
 }
 
-class IcsApplicationLoadListener : ApplicationLoadListener {
-  var icsManager: IcsManager by Delegates.notNull()
-    private set
+@Service
+private class IcsManagerService(private val coroutineScope: CoroutineScope) {
+  lateinit var icsManager: IcsManager
 
-  override fun beforeApplicationLoaded(application: Application, configPath: String) {
+  fun init(app: Application, configPath: Path) {
     val customPath = System.getProperty("ics.settingsRepository")
-    val pluginSystemDir = if (customPath == null) Paths.get(configPath, "settingsRepository") else Paths.get(FileUtil.expandUserHome(customPath))
-    icsManager = IcsManager(pluginSystemDir)
+    val dir = if (customPath == null) configPath.resolve("settingsRepository") else Path.of(OSAgnosticPathUtil.expandUserHome(customPath))
+    val icsManager = IcsManager(dir = dir, coroutineScope = coroutineScope)
+    this.icsManager = icsManager
+    icsManager.beforeApplicationLoaded(app)
+  }
+}
 
-    if (!pluginSystemDir.exists()) {
-      LOG.catchAndLog {
-        val oldPluginDir = Paths.get(PathManager.getSystemPath(), "settingsRepository")
-        if (oldPluginDir.exists()) {
-          oldPluginDir.move(pluginSystemDir)
-        }
-      }
+internal class IcsApplicationLoadListener : ApplicationLoadHandler {
+  override suspend fun beforeApplicationLoaded(event: BeforeApplicationLoadedEvent) {
+    if (event.application.isUnitTestMode) {
+      return
     }
 
-    val repositoryManager = icsManager.repositoryManager
-    if (repositoryManager.isRepositoryExists() && repositoryManager is GitRepositoryManager) {
-      val osFolderName = getOsFolderName()
-
-      val migrateSchemes = repositoryManager.renameDirectory(linkedMapOf(
-          Pair("\$ROOT_CONFIG$", null),
-          Pair("$osFolderName/\$ROOT_CONFIG$", osFolderName),
-
-          Pair("\$APP_CONFIG$", null),
-          Pair("$osFolderName/\$APP_CONFIG$", osFolderName)
-      ), "Get rid of \$ROOT_CONFIG$ and \$APP_CONFIG")
-
-      val migrateKeyMaps = repositoryManager.renameDirectory(linkedMapOf(
-          Pair("$osFolderName/keymaps", "keymaps")
-      ), "Move keymaps to root")
-
-      val removeOtherXml = repositoryManager.delete("other.xml")
-      if (migrateSchemes || migrateKeyMaps || removeOtherXml) {
-        // schedule push to avoid merge conflicts
-        application.invokeLater({ icsManager.autoSyncManager.autoSync(force = true) })
-      }
-    }
-
-    icsManager.beforeApplicationLoaded(application)
+    event.application.serviceAsync<IcsManagerService>().init(event.application, event.configPath)
   }
 }

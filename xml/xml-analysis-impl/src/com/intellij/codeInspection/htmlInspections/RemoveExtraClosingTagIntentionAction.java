@@ -1,22 +1,7 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.codeInspection.htmlInspections;
 
-import com.intellij.codeInsight.daemon.XmlErrorMessages;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
@@ -24,47 +9,45 @@ import com.intellij.lang.ASTNode;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.PsiDocumentManager;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.templateLanguages.OuterLanguageElement;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.xml.XmlChildRole;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.psi.xml.XmlToken;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.xml.analysis.XmlAnalysisBundle;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * @author spleaner
- */
+import java.util.Collection;
+import java.util.Objects;
+
 public class RemoveExtraClosingTagIntentionAction implements LocalQuickFix, IntentionAction {
   @Override
-  @NotNull
-  public String getFamilyName() {
-    return XmlErrorMessages.message("remove.extra.closing.tag.quickfix");
+  public @NotNull String getFamilyName() {
+    return XmlAnalysisBundle.message("xml.quickfix.remove.extra.closing.tag");
   }
 
 
   @Override
-  @NotNull
-  public String getText() {
+  public @NotNull String getText() {
     return getName();
   }
 
   @Override
-  public boolean isAvailable(@NotNull final Project project, final Editor editor, final PsiFile file) {
-    return true;
+  public boolean isAvailable(final @NotNull Project project, final Editor editor, final PsiFile psiFile) {
+    PsiElement psiElement = psiFile.findElementAt(editor.getCaretModel().getOffset());
+    return psiElement instanceof XmlToken && 
+           (psiElement.getParent() instanceof XmlTag || psiElement.getParent() instanceof PsiErrorElement);
   }
 
   @Override
-  public void invoke(@NotNull final Project project, final Editor editor, final PsiFile file) throws IncorrectOperationException {
-    final int offset = editor.getCaretModel().getOffset();
-    final PsiElement psiElement = file.findElementAt(offset);
-    if (psiElement == null || !psiElement.isValid() || !(psiElement instanceof XmlToken)) {
-      return;
-    }
-
-    doFix(psiElement);
+  public void invoke(final @NotNull Project project, final Editor editor, final PsiFile psiFile) throws IncorrectOperationException {
+    doFix(Objects.requireNonNull(psiFile.findElementAt(editor.getCaretModel().getOffset())).getParent());
   }
 
   @Override
@@ -72,20 +55,24 @@ public class RemoveExtraClosingTagIntentionAction implements LocalQuickFix, Inte
     return true;
   }
 
-  private static void doFix(@NotNull final PsiElement element) throws IncorrectOperationException {
-    final XmlToken endNameToken = (XmlToken)element;
-    final PsiElement tagElement = endNameToken.getParent();
-    if (!(tagElement instanceof XmlTag) && !(tagElement instanceof PsiErrorElement)) return;
-
+  private static void doFix(@NotNull PsiElement tagElement) throws IncorrectOperationException {
     if (tagElement instanceof PsiErrorElement) {
-      tagElement.delete();
+      Collection<OuterLanguageElement> outers = PsiTreeUtil.findChildrenOfType(tagElement, OuterLanguageElement.class);
+      String replacement = StringUtil.join(outers, PsiElement::getText, "");
+      Document document = getDocument(tagElement);
+      if (document != null && !replacement.isEmpty()) {
+        TextRange range = tagElement.getTextRange();
+        document.replaceString(range.getStartOffset(), range.getEndOffset(), replacement);
+      } else {
+        tagElement.delete();
+      }
     }
     else {
       final ASTNode astNode = tagElement.getNode();
       if (astNode != null) {
         final ASTNode endTagStart = XmlChildRole.CLOSING_TAG_START_FINDER.findChild(astNode);
         if (endTagStart != null) {
-          final Document document = PsiDocumentManager.getInstance(element.getProject()).getDocument(tagElement.getContainingFile());
+          Document document = getDocument(tagElement);
           if (document != null) {
             document.deleteString(endTagStart.getStartOffset(), tagElement.getLastChild().getTextRange().getEndOffset());
           }
@@ -94,11 +81,15 @@ public class RemoveExtraClosingTagIntentionAction implements LocalQuickFix, Inte
     }
   }
 
+  private static Document getDocument(@NotNull PsiElement tagElement) {
+    return tagElement.getContainingFile().getViewProvider().getDocument();
+  }
+
   @Override
-  public void applyFix(@NotNull final Project project, @NotNull final ProblemDescriptor descriptor) {
+  public void applyFix(final @NotNull Project project, final @NotNull ProblemDescriptor descriptor) {
     final PsiElement element = descriptor.getPsiElement();
     if (!(element instanceof XmlToken)) return;
 
-    doFix(element);
+    doFix(element.getParent());
   }
 }

@@ -20,13 +20,6 @@ import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.xml.XmlTag;
 import org.jetbrains.annotations.NonNls;
 
-/**
- * Created by IntelliJ IDEA.
- * User: ik
- * Date: 30.01.2003
- * Time: 13:57:35
- * To change this template use Options | File Templates.
- */
 public class XmlTextFilter implements ElementFilter {
   protected final String[] myValue;
 
@@ -58,6 +51,7 @@ public class XmlTextFilter implements ElementFilter {
     return false;
   }
 
+  @Override
   public String toString(){
     String ret = "(";
     for(int i = 0; i < myValue.length; i++){

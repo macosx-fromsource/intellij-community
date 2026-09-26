@@ -1,114 +1,164 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.actionSystem.impl;
 
+import com.intellij.diagnostic.UILatencyLogger;
 import com.intellij.ide.DataManager;
-import com.intellij.ide.ui.UISettings;
+import com.intellij.ide.HelpTooltip;
+import com.intellij.ide.IdeEventQueue;
+import com.intellij.internal.inspector.UiInspectorActionUtil;
+import com.intellij.internal.inspector.UiInspectorUtil;
+import com.intellij.lang.Language;
 import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.ActionPopupMenu;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationActivationListener;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.impl.LaterInvocator;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.ui.JBPopupMenu;
-import com.intellij.openapi.util.Getter;
 import com.intellij.openapi.wm.IdeFrame;
+import com.intellij.psi.PsiFile;
+import com.intellij.ui.ComponentUtil;
+import com.intellij.ui.PlaceProvider;
+import com.intellij.ui.awt.RelativePoint;
+import com.intellij.ui.plaf.beg.BegMenuItemUI;
+import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.ReflectionUtil;
+import com.intellij.util.TimeoutUtil;
 import com.intellij.util.messages.MessageBusConnection;
-import com.intellij.util.ui.UIUtil;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JPopupMenu;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Point;
+import java.util.Objects;
+import java.util.function.Supplier;
 
-/**
- * @author Anton Katilin
- * @author Vladimir Kondratyev
- */
-public final class ActionPopupMenuImpl extends ApplicationActivationListener.Adapter implements ActionPopupMenu {
-
+final class ActionPopupMenuImpl implements ActionPopupMenu, ApplicationActivationListener {
+  private static final Logger LOG = Logger.getInstance(ActionPopupMenuImpl.class);
+  private static final IntSet SEEN_ACTION_GROUPS = new IntOpenHashSet(50);
   private final MyMenu myMenu;
   private final ActionManagerImpl myManager;
+
+  private Supplier<? extends DataContext> myDataContextProvider;
   private MessageBusConnection myConnection;
 
-  private final Application myApp;
   private IdeFrame myFrame;
-  @Nullable private Getter<DataContext> myDataContextProvider;
 
-  public ActionPopupMenuImpl(String place, @NotNull ActionGroup group, ActionManagerImpl actionManager, @Nullable PresentationFactory factory) {
+  ActionPopupMenuImpl(@NotNull String place, @NotNull ActionGroup group,
+                      @NotNull ActionManagerImpl actionManager,
+                      @Nullable PresentationFactory factory) {
+    if (ActionPlaces.UNKNOWN.equals(place) || place.isEmpty()) {
+      LOG.warn("Do not use ActionPlaces.UNKNOWN or the empty string. " +
+               "Any string unique enough to deduce the popup menu location will do.", new Throwable("popup menu creation trace"));
+    }
     myManager = actionManager;
     myMenu = new MyMenu(place, group, factory);
-    myApp = ApplicationManager.getApplication();
   }
 
-  public JPopupMenu getComponent() {
+  @Override
+  public @NotNull JPopupMenu getComponent() {
     return myMenu;
   }
 
-  public void setDataContextProvider(@Nullable Getter<DataContext> dataContextProvider) {
-    myDataContextProvider = dataContextProvider;
+  @Override
+  public @NotNull String getPlace() {
+    return myMenu.myPlace;
   }
 
-  private class MyMenu extends JBPopupMenu {
-    private final String myPlace;
-    private final ActionGroup myGroup;
+  @Override
+  public @NotNull ActionGroup getActionGroup() {
+    return myMenu.myGroup;
+  }
+
+  @Override
+  public void setTargetComponent(@NotNull JComponent component) {
+    setDataContext(() -> DataManager.getInstance().getDataContext(component));
+  }
+
+  @Override
+  public void setDataContext(@NotNull Supplier<? extends DataContext> dataProvider) {
+    myDataContextProvider = dataProvider;
+  }
+
+  private final class MyMenu extends JBPopupMenu implements PlaceProvider {
+    private final @NotNull String myPlace;
+    private final @NotNull ActionGroup myGroup;
     private DataContext myContext;
     private final PresentationFactory myPresentationFactory;
+    private final @NotNull MyPopupMenuListener myListener;
+    private long myPopupTriggeredNanos;
 
-    public MyMenu(String place, @NotNull ActionGroup group, @Nullable PresentationFactory factory) {
+    MyMenu(@NotNull String place, @NotNull ActionGroup group, @Nullable PresentationFactory factory) {
       myPlace = place;
       myGroup = group;
       myPresentationFactory = factory != null ? factory : new MenuItemPresentationFactory();
-      addPopupMenuListener(new MyPopupMenuListener());
+      myListener = new MyPopupMenuListener();
+      addPopupMenuListener(myListener);
+      BegMenuItemUI.registerMultiChoiceSupport(this, popupMenu -> {
+        Utils.updateMenuItems(popupMenu, myContext, myPlace, myPresentationFactory);
+      });
+      UiInspectorUtil.registerProvider(this, () -> UiInspectorActionUtil.collectActionGroupInfo(
+        "Menu", myGroup, myPlace, myPresentationFactory));
     }
 
-    public void show(final Component component, int x, int y) {
+    @Override
+    public @NotNull String getPlace() {
+      return myPlace;
+    }
+
+    @Override
+    public void show(@NotNull Component component, int x, int y) throws MenuCancelledControlFlowException {
       if (!component.isShowing()) {
-        //noinspection HardCodedStringLiteral
-        throw new IllegalArgumentException("component must be shown on the screen");
+        throw new IllegalArgumentException("component must be shown on the screen (" + component + ")");
       }
-
-      removeAll();
-
-      // Fill menu. Only after filling menu has non zero size.
+      myPopupTriggeredNanos = IdeEventQueue.getInstance().getPopupTriggerTime();
+      PopupShowingTimeTracker.showElapsedMillisIfConfigured(myPopupTriggeredNanos, this);
 
       int x2 = Math.max(0, Math.min(x, component.getWidth() - 1)); // fit x into [0, width-1]
       int y2 = Math.max(0, Math.min(y, component.getHeight() - 1)); // fit y into [0, height-1]
-
-      myContext = myDataContextProvider != null ? myDataContextProvider.get() : DataManager.getInstance().getDataContext(component, x2, y2);
-      Utils.fillMenu(myGroup, this, true, myPresentationFactory, myContext, myPlace, false, false, LaterInvocator.isInModalContext());
+      myContext = Utils.createAsyncDataContext(
+        myDataContextProvider != null ? myDataContextProvider.get() :
+        DataManager.getInstance().getDataContext(component, x2, y2));
+      updateChildren(new RelativePoint(component, new Point(x, y)));
       if (getComponentCount() == 0) {
+        LOG.warn("'" + myPlace + "' popup menu fails to show: no menu items");
         return;
       }
-      if (myApp != null) {
-        if (myApp.isActive()) {
-          Component frame = UIUtil.findUltimateParent(component);
-          if (frame instanceof IdeFrame) {
-            myFrame = (IdeFrame)frame;
-          }
-          myConnection = myApp.getMessageBus().connect();
-          myConnection.subscribe(ApplicationActivationListener.TOPIC, ActionPopupMenuImpl.this);
-       }
+      if (!component.isShowing()) {
+        LOG.warn("'" + myPlace + "' popup menu fails to show: component is not showing (" + component.getClass().getName() + ")");
+        return;
       }
 
+      Application application = ApplicationManager.getApplication();
+      if (application != null && application.isActive()) {
+        Component parent = ComponentUtil.findUltimateParent(component);
+        myFrame = parent instanceof IdeFrame ? (IdeFrame)parent : null;
+        if (myConnection == null) {
+          myConnection = application.getMessageBus().connect();
+          myConnection.subscribe(ApplicationActivationListener.TOPIC, ActionPopupMenuImpl.this);
+        }
+      }
+      myListener.targetComponent = component;
       super.show(component, x, y);
+    }
+
+    @Override
+    public void addNotify() {
+      super.addNotify();
+      long time = myPopupTriggeredNanos > 0 ? TimeoutUtil.getDurationMillis(myPopupTriggeredNanos) : -1;
+      PsiFile psiFile = CommonDataKeys.PSI_FILE.getData(Utils.getCachedOnlyDataContext(myContext));
+      Language language = psiFile == null ? null : psiFile.getLanguage();
+      boolean coldStart = SEEN_ACTION_GROUPS.add(Objects.hash(myGroup, language));
+      UILatencyLogger.logActionPopupLatency(time, myPlace, coldStart, language);
     }
 
     @Override
@@ -117,41 +167,54 @@ public final class ActionPopupMenuImpl extends ApplicationActivationListener.Ada
       if (!b) ReflectionUtil.resetField(this, "invoker");
     }
 
-    private class MyPopupMenuListener implements PopupMenuListener {
+    private void updateChildren(@Nullable RelativePoint point) throws MenuCancelledControlFlowException {
+      removeAll();
+      Utils.INSTANCE.fillPopupMenu(new ActualActionUiKind.Menu(this, false), myGroup, myPresentationFactory, myContext, myPlace, point);
+    }
+
+    private void disposeMenu() {
+      MessageBusConnection connection = myConnection;
+      myFrame = null;
+      myConnection = null;
+      myManager.removeActionPopup(ActionPopupMenuImpl.this);
+      removeAll();
+      if (connection != null) {
+        connection.disconnect();
+      }
+    }
+
+    private final class MyPopupMenuListener implements PopupMenuListener {
+      Component targetComponent;
+
+      @Override
       public void popupMenuCanceled(PopupMenuEvent e) {
         disposeMenu();
       }
 
+      @Override
       public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+        HelpTooltip.enableTooltip(targetComponent);
+        if (targetComponent instanceof Tree tree) {
+          tree.unblockAutoScrollFromSource();
+        }
         disposeMenu();
       }
 
-      private void disposeMenu() {
-        myManager.removeActionPopup(ActionPopupMenuImpl.this);
-        MyMenu.this.removeAll();
-        if (myConnection != null) {
-          myConnection.disconnect();
+      @Override
+      public void popupMenuWillBecomeVisible(PopupMenuEvent e) throws MenuCancelledControlFlowException {
+        HelpTooltip.disableTooltip(targetComponent);
+        if (getComponentCount() == 0) {
+          updateChildren(null);
         }
-      }
-
-      public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
-        MyMenu.this.removeAll();
-        Utils.fillMenu(myGroup, MyMenu.this, !UISettings.getInstance().DISABLE_MNEMONICS, myPresentationFactory, myContext, myPlace, false,
-                       false, LaterInvocator.isInModalContext());
         myManager.addActionPopup(ActionPopupMenuImpl.this);
       }
     }
   }
 
   @Override
-  public void applicationActivated(IdeFrame ideFrame) {
-  }
-
-  @Override
-  public void applicationDeactivated(IdeFrame ideFrame) {
+  public void applicationDeactivated(@NotNull IdeFrame ideFrame) {
     if (myFrame == ideFrame) {
       myMenu.setVisible(false);
     }
   }
-
 }

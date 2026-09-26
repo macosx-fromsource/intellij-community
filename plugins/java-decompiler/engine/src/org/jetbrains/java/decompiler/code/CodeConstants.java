@@ -1,32 +1,31 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.code;
 
+@SuppressWarnings({"unused", "SpellCheckingInspection"})
 public interface CodeConstants {
-
   // ----------------------------------------------------------------------
   // BYTECODE VERSIONS
   // ----------------------------------------------------------------------
 
-  int BYTECODE_JAVA_LE_4 = 1;
-  int BYTECODE_JAVA_5 = 2;
-  int BYTECODE_JAVA_6 = 3;
-  int BYTECODE_JAVA_7 = 4;
-  int BYTECODE_JAVA_8 = 5;
-  int BYTECODE_JAVA_9 = 6;
+  int BYTECODE_JAVA_LE_4 = 48;
+  int BYTECODE_JAVA_5 = 49;
+  int BYTECODE_JAVA_6 = 50;
+  int BYTECODE_JAVA_7 = 51;
+  int BYTECODE_JAVA_8 = 52;
+  int BYTECODE_JAVA_9 = 53;
+  int BYTECODE_JAVA_10 = 54;
+  int BYTECODE_JAVA_11 = 55;
+  int BYTECODE_JAVA_12 = 56;
+  int BYTECODE_JAVA_13 = 57;
+  int BYTECODE_JAVA_14 = 58;
+  int BYTECODE_JAVA_15 = 59;
+  int BYTECODE_JAVA_16 = 60;
+  int BYTECODE_JAVA_17 = 61;
+  int BYTECODE_JAVA_18 = 62;
+  int BYTECODE_JAVA_19 = 63;
+  int BYTECODE_JAVA_20 = 64;
+  int BYTECODE_JAVA_21 = 65;
+  int BYTECODE_JAVA_22 = 66;
 
   // ----------------------------------------------------------------------
   // VARIABLE TYPES
@@ -65,20 +64,6 @@ public interface CodeConstants {
   int TYPE_FAMILY_OBJECT = 6;
 
   // ----------------------------------------------------------------------
-  // MODULE CONSTANTS
-  // ----------------------------------------------------------------------
-
-  int STACKSIZE_SIMPLE = 1;
-  int STACKSIZE_DOUBLE = 2;
-
-  int VAR_LOCAL = 0;
-  int VAR_STACK = 1;
-
-  int VAR_WRITE = 0;
-  int VAR_READ = 1;
-
-
-  // ----------------------------------------------------------------------
   // ACCESS FLAGS
   // ----------------------------------------------------------------------
 
@@ -88,16 +73,21 @@ public interface CodeConstants {
   int ACC_STATIC = 0x0008;
   int ACC_FINAL = 0x0010;
   int ACC_SYNCHRONIZED = 0x0020;
+  int ACC_OPEN = 0x0020;
+  int ACC_TRANSITIVE = 0x0020;
+  int ACC_VOLATILE = 0x0040;
+  int ACC_BRIDGE = 0x0040;
+  int ACC_STATIC_PHASE = 0x0040;
+  int ACC_TRANSIENT = 0x0080;
+  int ACC_VARARGS = 0x0080;
   int ACC_NATIVE = 0x0100;
   int ACC_ABSTRACT = 0x0400;
   int ACC_STRICT = 0x0800;
-  int ACC_VOLATILE = 0x0040;
-  int ACC_BRIDGE = 0x0040;
-  int ACC_TRANSIENT = 0x0080;
-  int ACC_VARARGS = 0x0080;
   int ACC_SYNTHETIC = 0x1000;
   int ACC_ANNOTATION = 0x2000;
   int ACC_ENUM = 0x4000;
+  int ACC_MANDATED = 0x8000;
+  int ACC_MODULE = 0x8000;
 
   // ----------------------------------------------------------------------
   // CLASS FLAGS
@@ -105,17 +95,6 @@ public interface CodeConstants {
 
   int ACC_SUPER = 0x0020;
   int ACC_INTERFACE = 0x0200;
-
-
-  // ----------------------------------------------------------------------
-  // DEPENDENCY CONSTANTS
-  // ----------------------------------------------------------------------
-
-  int DEP_CONSTANT = 0;
-  int DEP_UNKNOWN = 1;
-  int DEP_GENERAL = 2;
-  int DEP_PARAMS = 4;
-  int DEP_STATIC = 8;
 
   // ----------------------------------------------------------------------
   // INSTRUCTION GROUPS
@@ -145,7 +124,10 @@ public interface CodeConstants {
   int CONSTANT_NameAndType = 12;
   int CONSTANT_MethodHandle = 15;
   int CONSTANT_MethodType = 16;
+  int CONSTANT_Dynamic = 17;
   int CONSTANT_InvokeDynamic = 18;
+  int CONSTANT_Module = 19;
+  int CONSTANT_Package = 20;
 
   // ----------------------------------------------------------------------
   // MethodHandle reference_kind values
@@ -352,7 +334,6 @@ public interface CodeConstants {
   int opc_invokestatic = 184;
   int opc_invokeinterface = 185;
   int opc_invokedynamic = 186;
-  int opc_xxxunusedxxx = 186;
   int opc_new = 187;
   int opc_newarray = 188;
   int opc_anewarray = 189;
@@ -369,7 +350,6 @@ public interface CodeConstants {
   int opc_goto_w = 200;
   int opc_jsr_w = 201;
 
-  @SuppressWarnings("SpellCheckingInspection")
   String CLINIT_NAME = "<clinit>";
   String INIT_NAME = "<init>";
 }

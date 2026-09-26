@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,30 +22,25 @@ import com.intellij.ui.components.JBList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
 import java.util.Arrays;
 import java.util.List;
 
 @SkipInHeadlessEnvironment
 public class FinderRecursivePanelSelectionUpdateTest extends LightPlatformTestCase {
 
-  public void testUpdate() throws InterruptedException {
+  public void testUpdate() {
     StringFinderRecursivePanel panel_0 = new StringFinderRecursivePanel(getProject());
     disposeOnTearDown(panel_0);
-
-    final StringFinderRecursivePanel panel_1 = new StringFinderRecursivePanel(panel_0);
-    panel_1.setSecondComponent(panel_0);
     panel_0.setTestSelectedIndex(0);
 
-    final StringFinderRecursivePanel panel_2 = new StringFinderRecursivePanel(panel_1);
-    panel_1.setSecondComponent(panel_2);
+    final StringFinderRecursivePanel panel_1 = new StringFinderRecursivePanel(panel_0);
     panel_1.setTestSelectedIndex(1);
 
-    final StringFinderRecursivePanel panel_3 = new StringFinderRecursivePanel(panel_2);
-    panel_2.setSecondComponent(panel_3);
+    final StringFinderRecursivePanel panel_2 = new StringFinderRecursivePanel(panel_1);
     panel_2.setTestSelectedIndex(2);
 
-    panel_3.setSecondComponent(new StringFinderRecursivePanel(panel_3));
+    final StringFinderRecursivePanel panel_3 = new StringFinderRecursivePanel(panel_2);
     panel_3.setTestSelectedIndex(3);
 
     panel_0.updatePanel();
@@ -56,18 +51,17 @@ public class FinderRecursivePanelSelectionUpdateTest extends LightPlatformTestCa
     assertEquals("d", panel_3.getSelectedValue());
   }
 
-
   @SuppressWarnings("InnerClassMayBeStatic")
   private class StringFinderRecursivePanel extends FinderRecursivePanel<String> {
 
-    private JBList<String> myList;
+    private JBList<String> myTestList;
 
     private StringFinderRecursivePanel(Project project) {
       super(project, "fooPanel");
       initPanel();
     }
 
-    public StringFinderRecursivePanel(StringFinderRecursivePanel panel) {
+    StringFinderRecursivePanel(StringFinderRecursivePanel panel) {
       super(panel);
       initPanel();
     }
@@ -80,30 +74,30 @@ public class FinderRecursivePanelSelectionUpdateTest extends LightPlatformTestCa
 
     @NotNull
     @Override
-    protected String getItemText(String s) {
+    protected String getItemText(@NotNull String s) {
       return s;
     }
 
     @Override
-    protected boolean hasChildren(String s) {
+    protected boolean hasChildren(@NotNull String s) {
       return true;
     }
 
     @Nullable
     @Override
-    protected JComponent createRightComponent(String s) {
+    protected JComponent createRightComponent(@NotNull String s) {
       return null;
     }
 
     @Override
     protected JBList<String> createList() {
-      myList = super.createList();
-      ((CollectionListModel<String>)myList.getModel()).replaceAll(getListItems());
-      return myList;
+      myTestList = super.createList();
+      ((CollectionListModel<String>)myTestList.getModel()).replaceAll(getListItems());
+      return myTestList;
     }
 
     private void setTestSelectedIndex(int index) {
-      myList.setSelectedIndex(index);
+      myTestList.setSelectedIndex(index);
     }
   }
 }

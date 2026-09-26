@@ -1,17 +1,18 @@
-// "Move assignment to field declaration" "true"
+// "Move assignment to field declaration" "true-preview"
 
 class X {
-  Object f = new Runnable() {
-    void x(int p) {
-      int f = p;
-    }
+    // Create default runnable
+    Object f = new Runnable() {
+      void x(int p) {
+        int f = p;
+      }
 
-    public void run() {
+      public void run() {
 
-    }
-  };
+      }
+    };
   X() {
-      <caret>//
+    <caret>  //
   }
 
   void x() {

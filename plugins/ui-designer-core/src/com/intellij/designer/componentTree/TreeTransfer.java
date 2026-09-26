@@ -17,7 +17,8 @@ package com.intellij.designer.componentTree;
 
 import com.intellij.ide.dnd.FileCopyPasteUtil;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.TransferHandler;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
 import java.awt.datatransfer.UnsupportedFlavorException;
@@ -30,7 +31,7 @@ import java.io.IOException;
 public final class TreeTransfer extends TransferHandler implements Transferable {
   private static final DataFlavor DATA_FLAVOR = FileCopyPasteUtil.createDataFlavor(DataFlavor.javaJVMLocalObjectMimeType, Class.class);
 
-  private Object myData;
+  private final Object myData;
 
   public TreeTransfer(Class data) {
     myData = data;

@@ -1,8 +1,8 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.properties.xml;
 
 import com.intellij.lang.properties.IProperty;
 import com.intellij.lang.properties.psi.PropertiesFile;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.pom.PomRenameableTarget;
 import com.intellij.pom.references.PomService;
 import com.intellij.psi.PsiElement;
@@ -14,16 +14,14 @@ import com.intellij.util.PlatformIcons;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.Icon;
 
 /**
  * @author Dmitry Avdeev
- *         Date: 7/26/11
  */
 public class XmlProperty implements IProperty, PomRenameableTarget, PsiTarget {
 
-  @NotNull
-  private final XmlTag myTag;
+  private final @NotNull XmlTag myTag;
   private final XmlPropertiesFileImpl myPropertiesFile;
 
   public XmlProperty(@NotNull XmlTag tag, XmlPropertiesFileImpl xmlPropertiesFile) {
@@ -81,9 +79,8 @@ public class XmlProperty implements IProperty, PomRenameableTarget, PsiTarget {
     return null;
   }
 
-  @NotNull
   @Override
-  public PsiElement getPsiElement() {
+  public @NotNull PsiElement getPsiElement() {
     return PomService.convertToPsi(this);
   }
 
@@ -112,9 +109,8 @@ public class XmlProperty implements IProperty, PomRenameableTarget, PsiTarget {
     return myTag.isValid();
   }
 
-  @NotNull
   @Override
-  public PsiElement getNavigationElement() {
+  public @NotNull PsiElement getNavigationElement() {
     return myTag;
   }
 

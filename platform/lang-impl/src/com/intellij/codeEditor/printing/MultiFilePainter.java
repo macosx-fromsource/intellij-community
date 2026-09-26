@@ -1,39 +1,26 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeEditor.printing;
 
-import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.progress.ProcessCanceledException;
-import com.intellij.openapi.util.Pair;
 import com.intellij.psi.PsiFile;
 
-import java.awt.*;
+import java.awt.Graphics;
 import java.awt.print.PageFormat;
 import java.awt.print.Printable;
 import java.awt.print.PrinterException;
 import java.util.List;
 
-class MultiFilePainter extends BasePainter {
-  private final List<Pair<PsiFile, Editor>> myFilesList;
+final class MultiFilePainter extends BasePainter {
+  private final List<? extends PsiFile> myFilesList;
+  private final boolean myEvenNumberOfPagesPerFile;
   private int myFileIndex = 0;
   private int myStartPageIndex = 0;
   private TextPainter myTextPainter = null;
+  private int myLargestPrintedPage = -1;
 
-  public MultiFilePainter(List<Pair<PsiFile, Editor>> filesList) {
+  MultiFilePainter(List<? extends PsiFile> filesList, boolean evenNumberOfPagesPerFile) {
     myFilesList = filesList;
+    myEvenNumberOfPagesPerFile = evenNumberOfPagesPerFile;
   }
 
   @Override
@@ -43,8 +30,8 @@ class MultiFilePainter extends BasePainter {
     }
     while (myFileIndex < myFilesList.size()) {
       if (myTextPainter == null) {
-        Pair<PsiFile, Editor> pair = myFilesList.get(myFileIndex);
-        myTextPainter = PrintManager.initTextPainter(pair.first, pair.second);
+        PsiFile psiFile = myFilesList.get(myFileIndex);
+        myTextPainter = TextPrintHandler.initTextPainter(psiFile);
       }
       if (myTextPainter != null) {
         myTextPainter.setProgress(myProgress);
@@ -59,13 +46,19 @@ class MultiFilePainter extends BasePainter {
           return Printable.NO_SUCH_PAGE;
         }
         if (ret == Printable.PAGE_EXISTS) {
+          myLargestPrintedPage = pageIndex;
           return Printable.PAGE_EXISTS;
+        }
+        if (myEvenNumberOfPagesPerFile && pageIndex == (myLargestPrintedPage + 1) && (pageIndex % 2) == 1 &&
+            myFileIndex < (myFilesList.size() - 1)) {
+          return PAGE_EXISTS;
         }
         myTextPainter.dispose();
         myTextPainter = null;
         myStartPageIndex = pageIndex;
       }
       myFileIndex++;
+      myLargestPrintedPage = -1;
     }
     return Printable.NO_SUCH_PAGE;
   }

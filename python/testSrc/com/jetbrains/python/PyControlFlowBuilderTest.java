@@ -1,41 +1,32 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python;
 
+import com.jetbrains.python.allure.Components;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
 import com.intellij.codeInsight.controlflow.ControlFlow;
-import com.intellij.codeInsight.controlflow.Instruction;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.VfsUtil;
-import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.testFramework.LightProjectDescriptor;
+import com.intellij.testFramework.UsefulTestCase;
 import com.jetbrains.python.codeInsight.controlflow.ControlFlowCache;
 import com.jetbrains.python.codeInsight.controlflow.ScopeOwner;
 import com.jetbrains.python.fixtures.LightMarkedTestCase;
-import com.jetbrains.python.fixtures.PyTestCase;
 import com.jetbrains.python.psi.LanguageLevel;
 import com.jetbrains.python.psi.PyClass;
 import com.jetbrains.python.psi.PyFile;
 import com.jetbrains.python.psi.PyFunction;
-import junit.framework.Assert;
+import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
-
-/**
- * @author oleg
- */
+@Subsystems.CodeInsight
+@Components.Parsing
+@Layers.Functional
 public class PyControlFlowBuilderTest extends LightMarkedTestCase {
+
+  @Override
+  protected @Nullable LightProjectDescriptor getProjectDescriptor() {
+    return ourPy2Descriptor;
+  }
 
   @Override
   public String getTestDataPath() {
@@ -43,7 +34,7 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   }
 
   private void doTest() {
-    final String testName = getTestName(false).toLowerCase();
+    final String testName = getTestName(false);
     configureByFile(testName + ".py");
     final ControlFlow flow = ControlFlowCache.getControlFlow((PyFile)myFile);
     final String fullPath = getTestDataPath() + testName + ".txt";
@@ -55,6 +46,10 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   }
 
   public void testAssertFalse() {
+    doTest();
+  }
+
+  public void testPass() {
     doTest();
   }
 
@@ -129,8 +124,18 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   public void testForIf() {
     doTest();
   }
+  
+  // PY-80824
+  public void testIfFor() {
+    doTest();
+  }
 
   public void testForReturn() {
+    doTest();
+  }
+  
+  // PY-80564
+  public void testReturnComprehensionFromExcept() {
     doTest();
   }
 
@@ -169,11 +174,11 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   public void testManyIfs() {
     doTest();
   }
-  
+
   public void testSuperclass() {
     doTest();
   }
-  
+
   public void testDefaultParameterValue() {
     doTest();
   }
@@ -181,7 +186,7 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   public void testLambdaDefaultParameter() {
     doTest();
   }
-  
+
   public void testDecorator() {
     doTestFirstStatement();
   }
@@ -189,19 +194,13 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   public void testSetComprehension() {
     doTest();
   }
-  
+
   public void testTypeAnnotations() {
-    setLanguageLevel(LanguageLevel.PYTHON30);
-    try {
-      doTest();
-    }
-    finally {
-      setLanguageLevel(null);
-    }
+    doTest();
   }
 
   public void testQualifiedSelfReference() {
-    final String testName = getTestName(false).toLowerCase();
+    final String testName = getTestName(false);
     configureByFile(testName + ".py");
     final String fullPath = getTestDataPath() + testName + ".txt";
     final PyClass pyClass = ((PyFile) myFile).getTopLevelClasses().get(0);
@@ -210,7 +209,7 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   }
 
   public void testSelf() {
-    final String testName = getTestName(false).toLowerCase();
+    final String testName = getTestName(false);
     configureByFile(testName + ".py");
     final String fullPath = getTestDataPath() + testName + ".txt";
     final PyClass pyClass = ((PyFile) myFile).getTopLevelClasses().get(0);
@@ -219,7 +218,7 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   }
 
   public void testTryBreak() {
-    final String testName = getTestName(false).toLowerCase();
+    final String testName = getTestName(false);
     configureByFile(testName + ".py");
     final ControlFlow flow = ControlFlowCache.getControlFlow((PyFunction)((PyFile)myFile).getStatements().get(0));
     final String fullPath = getTestDataPath() + testName + ".txt";
@@ -244,8 +243,375 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
     runWithLanguageLevel(LanguageLevel.PYTHON36, this::doTest);
   }
 
+  // PY-21175
+  public void testImplicitNegativeTypeAssertionAfterIf() {
+    doTest();
+  }
+
+  // PY-21175
+  public void testImplicitNegativeTypeAssertionAfterTwoNestedIf() {
+    doTest();
+  }
+
+  // PY-20889
+  public void testTypesInAndBooleanExpression() {
+    doTest();
+  }
+
+  // PY-20889
+  public void testTypesInOrBooleanExpression() {
+    doTest();
+  }
+
+  // PY-25974
+  public void testAndBooleanExpression() {
+    doTest();
+  }
+
+  // PY-25974
+  public void testOrBooleanExpression() {
+    doTest();
+  }
+
+  // PY-14840
+  // PY-22003
+  public void testPositiveIteration() {
+    doTest();
+  }
+
+  // PY-24750
+  public void testIfFalse() {
+    doTest();
+  }
+
+  // PY-24750
+  public void testIfTrue() {
+    doTest();
+  }
+
+  // PY-24750
+  public void testIfElifTrue() {
+    doTest();
+  }
+
+  // PY-24750
+  public void testIfElifFalse() {
+    doTest();
+  }
+
+  // PY-28972
+  public void testWhileTrueElse() {
+    doTest();
+  }
+
+  // PY-13919
+  public void testWithRaiseException() {
+    doTest();
+  }
+
+  // PY-37718
+  public void testWithAssert() {
+    doTest();
+  }
+  
+  // PY-37718
+  public void testWithAssertFalse() {
+    doTest();
+  }
+
+  // PY-51564
+  public void testWithSeveralContextsAssert() {
+    doTest();
+  }
+
+  // PY-29767
+  public void testContinueInPositiveIteration() {
+    doTest();
+  }
+
+  // PY-33886
+  public void testAssignmentExpression() {
+    doTest();
+  }
+
+  // PY-4537
+  public void testDelete() {
+    doTest();
+  }
+
+  // PY-4537
+  public void testDeleteSubscriptionAndSlice() {
+    doTest();
+  }
+
+  // PY-39262
+  public void testAssignmentExpressionInsideBinaryInWhile() {
+    doTest();
+  }
+
+  // PY-39262
+  public void testAssignmentExpressionInsideBinaryInWhileElse() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseCapturePattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseWildcardPattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseLiteralPattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseBindingSequencePattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementTwoClausesCapturePatternFirst() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementTwoClausesCapturePatternLast() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseAliasedRefutableOrPattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseRefutableOrPattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseIrrefutableOrPatternCaptureVariantFirst() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseIrrefutableOrPatternCaptureVariantLast() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseRefutableOrPatternWithNonBindingVariants() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseRefutableOrPatternWithWildcard() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseSequencePatternWithSingleOrPattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseNestedOrPatterns() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseClassPattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseMappingPattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseSequencePattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseParenthesizedCapturePattern() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseNamedSingleStarPatternIsIrrefutable() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseWildcardSingleStarPatternIsIrrefutable() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseDoubleStarPatternIsIrrefutable() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementClauseWithBreak() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementClauseWithContinue() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementClauseWithReturn() {
+    doTestFirstStatement();
+  }
+
+  // PY-48760
+  public void testMatchStatementNestedMatchStatementLastInClause() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementNestedMatchStatement() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseTrivialGuard() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseDisjunctionGuard() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseConjunctionGuard() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseDisjunctionConjunctionGuard() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseRefutablePatternAndConjunctionGuard() {
+    doTest();
+  }
+
+  // PY-48760
+  public void testMatchStatementSingleClauseGuardWithNonTopLevelDisjunction() {
+    doTest();
+  }
+
+  // PY-7758
+  public void testControlFlowIsAbruptAfterExit() {
+    doTest();
+  }
+
+  // PY-7758
+  public void testControlFlowIsAbruptAfterSysExit() {
+    doTest();
+  }
+
+  public void testTypeGuard() {
+    doTest();
+  }
+
+  public void testTypeGuardConjunct() {
+    doTest();
+  }
+
+  public void testTypeGuardWhile() {
+    doTest();
+  }
+
+  // PY-23859
+  public void testControlFlowIsAbruptAfterSelfFail() {
+    final String testName = getTestName(false);
+    configureByFile(testName + ".py");
+    final String fullPath = getTestDataPath() + testName + ".txt";
+    final PyClass pyClass = ((PyFile)myFile).getTopLevelClasses().get(0);
+    final ControlFlow flow = ControlFlowCache.getControlFlow(pyClass.getMethods()[0]);
+    check(fullPath, flow);
+  }
+
+  // PY-24273
+  public void testControlFlowIsAbruptAfterNoReturn() {
+    doTest();
+  }
+
+  // TODO migrate this test class to Python 3 SDK by default to make this test work
+  // PY-53703
+  //public void testControlFlowIsAbruptAfterNever() {
+  //  doTest();
+  //}
+
+  // PY-61878
+  public void testTypeAliasStatement() {
+    doTest();
+  }
+
+  // PY-61878
+  public void testTypeAliasStatementWithTypeParameterList() {
+    doTestFirstStatement();
+  }
+
+  // PY-61877
+  public void testTypeParameterListInFunctionDeclaration() {
+    doTestFirstStatement();
+  }
+
+  // PY-61877
+  public void testTypeParameterListInClassDeclaration() {
+    doTestFirstStatement();
+  }
+
+  public void testFunctionAnnotationsAndParameterDefaultsAreExcludedFromItsGraph() {
+    doTestFirstStatement();
+  }
+
+  public void testFunctionAnnotationsAndParameterDefaultsAreIncludedInEnclosingScopeGraph() {
+    doTest();
+  }
+
+  // PY-61877 PY-82699
+  public void testNewStyleGenericFunctionAnnotationsAreNotIncludedInItsGraph() {
+    doTestFirstStatement();
+  }
+
+  // PY-61877
+  public void testNewStyleGenericFunctionAnnotationsAreNotIncludedInEnclosingScopeGraph() {
+    doTest();
+  }
+
+  // PY-79910
+  public void testTryExceptNoFinally() {
+    doTest();
+  }
+
+  // PY-80471
+  public void testWhileInsideIfTrue() {
+    doTest();
+  }
+
+  // PY-80733
+  public void testWhileTrueBreakInsideExcept() {
+    doTest();
+  }
+
   private void doTestFirstStatement() {
-    final String testName = getTestName(false).toLowerCase();
+    final String testName = getTestName(false);
     configureByFile(testName + ".py");
     final String fullPath = getTestDataPath() + testName + ".txt";
     final ControlFlow flow = ControlFlowCache.getControlFlow((ScopeOwner)((PyFile)myFile).getStatements().get(0));
@@ -253,18 +619,7 @@ public class PyControlFlowBuilderTest extends LightMarkedTestCase {
   }
 
   private static void check(final String fullPath, final ControlFlow flow) {
-    final StringBuffer buffer = new StringBuffer();
-    final Instruction[] instructions = flow.getInstructions();
-    for (Instruction instruction : instructions) {
-      buffer.append(instruction).append("\n");
-    }
-    final VirtualFile vFile = PyTestCase.getVirtualFileByName(fullPath);
-    try {
-      final String fileText = StringUtil.convertLineSeparators(VfsUtil.loadText(vFile), "\n");
-      Assert.assertEquals(fileText.trim(), buffer.toString().trim());
-    }
-    catch (IOException e) {
-      throw new RuntimeException(e);
-    }
+    final String actualCFG = StringUtil.join(flow.getInstructions(), Object::toString, "\n");
+    UsefulTestCase.assertSameLinesWithFile(fullPath, actualCFG, true);
   }
 }

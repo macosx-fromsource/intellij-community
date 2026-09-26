@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.dialogs;
 
 import com.intellij.openapi.Disposable;
@@ -21,11 +7,16 @@ import com.intellij.util.NotNullFunction;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.SvnVcs;
-import org.jetbrains.idea.svn.dialogs.browserCache.*;
-import org.tmatesoft.svn.core.SVNURL;
+import org.jetbrains.idea.svn.api.Url;
+import org.jetbrains.idea.svn.dialogs.browserCache.CacheLoader;
+import org.jetbrains.idea.svn.dialogs.browserCache.Expander;
+import org.jetbrains.idea.svn.dialogs.browserCache.KeepingExpandedExpander;
+import org.jetbrains.idea.svn.dialogs.browserCache.KeepingSelectionExpander;
+import org.jetbrains.idea.svn.dialogs.browserCache.Loader;
 
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
 
@@ -57,19 +48,19 @@ public class RepositoryTreeModel extends DefaultTreeModel implements Disposable 
     myIsShowFiles = showFiles;
   }
 
-  public void setRoots(SVNURL[] urls) {
+  public void setRoots(Url[] urls) {
     final RepositoryTreeRootNode rootNode = new RepositoryTreeRootNode(this, urls);
     Disposer.register(this, rootNode);
     setRoot(rootNode);
   }
 
-  public void setSingleRoot(SVNURL url) {
+  public void setSingleRoot(Url url) {
     final RepositoryTreeNode rootNode = new RepositoryTreeNode(this, null, url, url);
     Disposer.register(this, rootNode);
     setRoot(rootNode);
   }
 
-  private boolean hasRoot(SVNURL url) {
+  private boolean hasRoot(Url url) {
     if (getRoot()instanceof RepositoryTreeNode) {
       return ((RepositoryTreeNode) getRoot()).getUserObject().equals(url);
     }
@@ -85,18 +76,17 @@ public class RepositoryTreeModel extends DefaultTreeModel implements Disposable 
 
   public TreeNode[] getPathToSubRoot(final TreeNode node) {
     final TreeNode[] path = getPathToRoot(node);
-    final TreeNode[] result = new TreeNode[path.length - 1];
-    System.arraycopy(path, 1, result, 0, path.length - 1);
+    final TreeNode[] result = Arrays.copyOfRange(path, 1, path.length);
     return result;
   }
 
-  public void addRoot(SVNURL url) {
+  public void addRoot(Url url) {
     if (!hasRoot(url)) {
       ((RepositoryTreeRootNode) getRoot()).addRoot(url);
     }
   }
 
-  public void removeRoot(SVNURL url) {
+  public void removeRoot(Url url) {
     RepositoryTreeRootNode root = (RepositoryTreeRootNode) getRoot();
     for (int i = 0; i < root.getChildCount(); i++) {
       RepositoryTreeNode node = (RepositoryTreeNode) root.getChildAt(i);
@@ -110,6 +100,7 @@ public class RepositoryTreeModel extends DefaultTreeModel implements Disposable 
     return myVCS;
   }
 
+  @Override
   public void dispose() {
     myIsDisposed = true;
   }
@@ -122,13 +113,11 @@ public class RepositoryTreeModel extends DefaultTreeModel implements Disposable 
     return myCacheLoader;
   }
 
-  @NotNull
-  public Expander getLazyLoadingExpander() {
+  public @NotNull Expander getLazyLoadingExpander() {
     return myDefaultExpanderFactory.fun(myBrowser);
   }
 
-  @NotNull
-  public Expander getSelectionKeepingExpander() {
+  public @NotNull Expander getSelectionKeepingExpander() {
     return new KeepingSelectionExpander(myBrowser);
   }
 
@@ -136,17 +125,14 @@ public class RepositoryTreeModel extends DefaultTreeModel implements Disposable 
     myDefaultExpanderFactory = defaultExpanderFactory;
   }
 
-  @Nullable
-  public RepositoryTreeNode findByUrl(final RepositoryTreeNode oldNode) {
+  public @Nullable RepositoryTreeNode findByUrl(final RepositoryTreeNode oldNode) {
     if (oldNode.getParent() == null) {
       return oldNode;
     }
 
     TreeNode[] oldPath = getPathToRoot(oldNode);
     if (! (oldPath[0] instanceof RepositoryTreeNode)) {
-      final TreeNode[] result = new TreeNode[oldPath.length - 1];
-      System.arraycopy(oldPath, 1, result, 0, oldPath.length - 1);
-      oldPath = result;
+      oldPath = Arrays.copyOfRange(oldPath, 1, oldPath.length);
     }
 
     TreeNode root = (TreeNode) getRoot();
@@ -155,13 +141,13 @@ public class RepositoryTreeModel extends DefaultTreeModel implements Disposable 
       root = null;
       while (children.hasMoreElements()) {
         TreeNode node = (TreeNode) children.nextElement();
-        if ((node instanceof RepositoryTreeNode) && (((RepositoryTreeNode) node).getURL().equals(((RepositoryTreeNode) oldPath[0]).getURL()))) {
+        if ((node instanceof RepositoryTreeNode treeNode) && (treeNode.getURL().equals(((RepositoryTreeNode) oldPath[0]).getURL()))) {
           root = node;
           break;
         }
       }
     } else {
-      if ((root == null) || (! ((RepositoryTreeNode) root).getURL().equals(((RepositoryTreeNode) oldPath[0]).getURL()))) {
+      if (!((RepositoryTreeNode) root).getURL().equals(((RepositoryTreeNode) oldPath[0]).getURL())) {
         return null;
       }
     }
@@ -180,8 +166,7 @@ public class RepositoryTreeModel extends DefaultTreeModel implements Disposable 
     return (RepositoryTreeNode) root;
   }
 
-  @Nullable
-  private RepositoryTreeNode getChild(final RepositoryTreeNode node, final SVNURL url) {
+  private static @Nullable RepositoryTreeNode getChild(final RepositoryTreeNode node, final Url url) {
     final List<RepositoryTreeNode> children = node.getAlreadyLoadedChildren();
     for (RepositoryTreeNode child : children) {
       if (child.getURL().equals(url)) {

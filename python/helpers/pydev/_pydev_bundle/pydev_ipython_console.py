@@ -1,57 +1,44 @@
 import sys
 from _pydev_bundle.pydev_console_utils import BaseInterpreterInterface
-
-import os
-import traceback
+from _pydev_bundle.pydev_ipython_console_011 import get_pydev_ipython_frontend
+from _pydev_bundle.pydev_ipython_console_011 import get_ipython_hidden_vars
 
 # Uncomment to force PyDev standard shell.
 # raise ImportError()
 
-from _pydev_bundle.pydev_ipython_console_011 import get_pydev_frontend
-from _pydevd_bundle.pydevd_constants import dict_iter_items
-
 #=======================================================================================================================
-# InterpreterInterface
+# IPythonInterpreterInterface
 #=======================================================================================================================
-class InterpreterInterface(BaseInterpreterInterface):
+class IPythonInterpreterInterface(BaseInterpreterInterface):
     '''
         The methods in this class should be registered in the xml-rpc server.
     '''
 
-    def __init__(self, host, client_port, mainThread, show_banner=True):
-        BaseInterpreterInterface.__init__(self, mainThread)
-        self.client_port = client_port
-        self.host = host
-        self.interpreter = get_pydev_frontend(host, client_port, show_banner=show_banner)
+    def __init__(self, main_thread, show_banner=True, connect_status_queue=None, rpc_client=None):
+        BaseInterpreterInterface.__init__(self, main_thread, connect_status_queue, rpc_client)
+        self.interpreter = get_pydev_ipython_frontend(rpc_client)
         self._input_error_printed = False
         self.notification_succeeded = False
         self.notification_tries = 0
         self.notification_max_tries = 3
-
-        self.notify_about_magic()
+        self.show_banner = show_banner
 
     def get_greeting_msg(self):
         return self.interpreter.get_greeting_msg()
 
-    def do_add_exec(self, codeFragment):
+    def do_add_exec(self, code_fragment):
         self.notify_about_magic()
-        if (codeFragment.text.rstrip().endswith('??')):
+        if code_fragment.text.rstrip().endswith('??'):
             print('IPython-->')
         try:
-            res = bool(self.interpreter.add_exec(codeFragment.text))
+            more, exception_occurred = self.interpreter.add_exec(code_fragment.text)
         finally:
-            if (codeFragment.text.rstrip().endswith('??')):
+            if code_fragment.text.rstrip().endswith('??'):
                 print('<--IPython')
-
-        return res
-
+        return bool(more), exception_occurred
 
     def get_namespace(self):
         return self.interpreter.get_namespace()
-
-
-    def getCompletions(self, text, act_tok):
-        return self.interpreter.getCompletions(text, act_tok)
 
     def close(self):
         sys.exit(0)
@@ -61,32 +48,22 @@ class InterpreterInterface(BaseInterpreterInterface):
             self.notification_tries+=1
             if self.notification_tries>self.notification_max_tries:
                 return
-            completions = self.getCompletions("%", "%")
+            completions = self.do_get_completions("%", "%")
             magic_commands = [x[0] for x in completions]
 
             server = self.get_server()
 
             if server is not None:
                 try:
-                    server.NotifyAboutMagic(magic_commands, self.interpreter.is_automagic())
+                    server.notifyAboutMagic(magic_commands, self.interpreter.is_automagic())
                     self.notification_succeeded = True
                 except :
                     self.notification_succeeded = False
 
     def get_ipython_hidden_vars_dict(self):
-        try:
-            useful_ipython_vars = ['_', '__']
-            if hasattr(self.interpreter, 'ipython') and hasattr(self.interpreter.ipython, 'user_ns_hidden'):
-                user_ns_hidden = self.interpreter.ipython.user_ns_hidden
-                if isinstance(user_ns_hidden, dict):
-                    # Since IPython 2 dict `user_ns_hidden` contains hidden variables and values
-                    user_hidden_dict = user_ns_hidden
-                else:
-                    # In IPython 1.x `user_ns_hidden` used to be a set with names of hidden variables
-                    user_hidden_dict = dict([(key, val) for key, val in dict_iter_items(self.interpreter.ipython.user_ns)
-                                             if key in user_ns_hidden])
-                return dict([(key, val) for key, val in dict_iter_items(user_hidden_dict) if key not in useful_ipython_vars])
-        except:
-            # Getting IPython variables shouldn't break loading frame variables
-            traceback.print_exc()
+        if hasattr(self.interpreter, 'ipython') and hasattr(self.interpreter.ipython, 'user_ns_hidden'):
+            ipython_shell = self.interpreter.ipython
+            return get_ipython_hidden_vars(ipython_shell)
 
+    def notify_first_command_executed(self):
+        self.interpreter.ipython.patch_stdout_if_needed()

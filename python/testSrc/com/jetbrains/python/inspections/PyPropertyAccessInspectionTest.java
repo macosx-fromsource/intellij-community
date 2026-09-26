@@ -1,27 +1,16 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.inspections;
 
-import com.jetbrains.python.fixtures.PyTestCase;
-import com.jetbrains.python.psi.LanguageLevel;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
 
-/**
- * @author yole
- */
-public class PyPropertyAccessInspectionTest extends PyTestCase {
+import com.jetbrains.python.fixtures.PyInspectionTestCase;
+import org.jetbrains.annotations.NotNull;
+
+
+@Subsystems.Inspections
+@Layers.Functional
+public class PyPropertyAccessInspectionTest extends PyInspectionTestCase {
   public void testTest() {
     doTest();
   }
@@ -31,10 +20,43 @@ public class PyPropertyAccessInspectionTest extends PyTestCase {
     doTest();
   }
 
-  private void doTest() {
-    setLanguageLevel(LanguageLevel.PYTHON26);
-    myFixture.configureByFile("inspections/PyPropertyAccessInspection/" + getTestName(true) + ".py");
-    myFixture.enableInspections(PyPropertyAccessInspection.class);
-    myFixture.checkHighlighting(true, false, false);
+  // PY-20322
+  public void testAbcAbstractProperty() {
+    doTest();
+  }
+
+  // PY-28206
+  public void testSlotOverridesProperty() {
+    doTestByText(
+      """
+        class A(object):
+            @property
+            def name(self):
+                return 'a'
+
+        class B(A):
+            __slots__ = ('name',)
+
+            def __init__(self, name):
+                self.name = name"""
+    );
+  }
+
+  public void testCachedProperty() {
+    doMultiFileTest();
+  }
+
+  public void testDjangoCachedProperty() {
+    doMultiFileTest();
+  }
+
+  public void testKombuCachedProperty() {
+    doMultiFileTest();
+  }
+
+  @NotNull
+  @Override
+  protected Class<? extends PyInspection> getInspectionClass() {
+    return PyPropertyAccessInspection.class;
   }
 }

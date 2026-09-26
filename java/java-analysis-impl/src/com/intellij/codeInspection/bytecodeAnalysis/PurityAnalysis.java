@@ -1,78 +1,98 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.bytecodeAnalysis;
 
 import com.intellij.codeInspection.bytecodeAnalysis.asm.ASMUtils;
-import com.intellij.openapi.util.Couple;
+import com.intellij.codeInspection.bytecodeAnalysis.asm.LiteAnalyzer;
+import com.intellij.codeInspection.dataFlow.ContractReturnValue;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.util.ArrayUtil;
+import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.org.objectweb.asm.Opcodes;
 import org.jetbrains.org.objectweb.asm.Type;
-import org.jetbrains.org.objectweb.asm.tree.*;
+import org.jetbrains.org.objectweb.asm.tree.AbstractInsnNode;
+import org.jetbrains.org.objectweb.asm.tree.FieldInsnNode;
+import org.jetbrains.org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.jetbrains.org.objectweb.asm.tree.LdcInsnNode;
+import org.jetbrains.org.objectweb.asm.tree.MethodInsnNode;
+import org.jetbrains.org.objectweb.asm.tree.MethodNode;
 import org.jetbrains.org.objectweb.asm.tree.analysis.Analyzer;
 import org.jetbrains.org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.jetbrains.org.objectweb.asm.tree.analysis.Interpreter;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 /**
  * Produces equations for inference of @Contract(pure=true) annotations.
  * Scala source at https://github.com/ilya-klyuchnikov/faba
  * Algorithm: https://github.com/ilya-klyuchnikov/faba/blob/ef1c15b4758517652e939f67099bbec0260e9e68/notes/purity.md
  */
-public class PurityAnalysis {
-  static final Set<EffectQuantum> topEffect = Collections.singleton(EffectQuantum.TopEffectQuantum);
-  static final Set<HEffectQuantum> topHEffect = Collections.singleton(HEffectQuantum.TopEffectQuantum);
-
+public final class PurityAnalysis {
   static final int UN_ANALYZABLE_FLAG = Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE | Opcodes.ACC_INTERFACE;
 
-  @NotNull
-  public static Equation analyze(Method method, MethodNode methodNode, boolean stable) {
-    Key key = new Key(method, Direction.Pure, stable);
-    Set<EffectQuantum> hardCodedSolution = HardCodedPurity.getHardCodedSolution(key);
+  /**
+   * @param method     a method descriptor
+   * @param methodNode an ASM MethodNode
+   * @param stable     whether a method is stable (e.g. final or declared in final class)
+   * @param jsr        whether jsr is possible in a current method
+   * @return a purity equation or null for top result (either impure or unknown, impurity assumed)
+   */
+  static @Nullable Equation analyze(Member method, MethodNode methodNode, boolean stable, boolean jsr) {
+    EKey key = new EKey(method, Direction.Pure, stable);
+    Effects hardCodedSolution = HardCodedPurity.getInstance().getHardCodedSolution(method);
     if (hardCodedSolution != null) {
-      return new Equation(key, new Effects(hardCodedSolution));
+      return new Equation(key, hardCodedSolution);
     }
 
-    if ((methodNode.access & UN_ANALYZABLE_FLAG) != 0) {
-      return new Equation(key, new Effects(topEffect));
+    if ((methodNode.access & UN_ANALYZABLE_FLAG) != 0) return null;
+    if (methodNode.instructions.size() > 1000) {
+      // Skip purity analysis for very long methods, as it's rarely useful
+      return null;
     }
 
     DataInterpreter dataInterpreter = new DataInterpreter(methodNode);
     try {
-      new Analyzer<>(dataInterpreter).analyze("this", methodNode);
+      if (jsr) {
+        new Analyzer<>(dataInterpreter).analyze("this", methodNode);
+      }
+      else {
+        new LiteAnalyzer<>(dataInterpreter).analyze("this", methodNode);
+      }
     }
     catch (AnalyzerException e) {
-      return new Equation(key, new Effects(topEffect));
+      return null;
     }
     EffectQuantum[] quanta = dataInterpreter.effects;
-    Set<EffectQuantum> effects = new HashSet<>();
+    DataValue returnValue = dataInterpreter.returnValue == null ? DataValue.UnknownDataValue1 : dataInterpreter.returnValue;
+    List<EffectQuantum> effects = new ArrayList<>();
     for (EffectQuantum effectQuantum : quanta) {
       if (effectQuantum != null) {
         if (effectQuantum == EffectQuantum.TopEffectQuantum) {
-          return new Equation(key, new Effects(topEffect));
+          return returnValue == DataValue.UnknownDataValue1 ? null : new Equation(key, new Effects(returnValue, Effects.TOP_EFFECTS));
         }
         effects.add(effectQuantum);
       }
     }
-    return new Equation(key, new Effects(effects));
+    return new Equation(key, new Effects(returnValue, Set.copyOf(effects)));
   }
 }
 
 // data for data analysis
 abstract class DataValue implements org.jetbrains.org.objectweb.asm.tree.analysis.Value {
+  public static final DataValue[] EMPTY = new DataValue[0];
+
   private final int myHash;
 
   DataValue(int hash) {
@@ -84,10 +104,32 @@ abstract class DataValue implements org.jetbrains.org.objectweb.asm.tree.analysi
     return myHash;
   }
 
+  Stream<EKey> dependencies() {
+    return Stream.empty();
+  }
+
+  void processDependencies(Consumer<EKey> consumer) {
+    
+  }
+
+  public ContractReturnValue asContractReturnValue() {
+    return ContractReturnValue.returnAny();
+  }
+
   static final DataValue ThisDataValue = new DataValue(-1) {
     @Override
     public int getSize() {
       return 1;
+    }
+
+    @Override
+    public ContractReturnValue asContractReturnValue() {
+      return ContractReturnValue.returnThis();
+    }
+
+    @Override
+    public String toString() {
+      return "DataValue: this";
     }
   };
   static final DataValue LocalDataValue = new DataValue(-2) {
@@ -95,13 +137,42 @@ abstract class DataValue implements org.jetbrains.org.objectweb.asm.tree.analysi
     public int getSize() {
       return 1;
     }
+
+    @Override
+    public ContractReturnValue asContractReturnValue() {
+      return ContractReturnValue.returnNew();
+    }
+
+    @Override
+    public String toString() {
+      return "DataValue: local";
+    }
   };
-  static class ParameterDataValue extends DataValue {
+
+  static final class ParameterDataValue extends DataValue {
+    static final ParameterDataValue PARAM0 = new ParameterDataValue(0);
+    static final ParameterDataValue PARAM1 = new ParameterDataValue(1);
+    static final ParameterDataValue PARAM2 = new ParameterDataValue(2);
+
     final int n;
 
-    ParameterDataValue(int n) {
+    private ParameterDataValue(int n) {
       super(n);
       this.n = n;
+    }
+
+    @Override
+    public ContractReturnValue asContractReturnValue() {
+      return ContractReturnValue.returnParameter(n);
+    }
+
+    static ParameterDataValue create(int n) {
+      return switch (n) {
+        case 0 -> PARAM0;
+        case 1 -> PARAM1;
+        case 2 -> PARAM2;
+        default -> new ParameterDataValue(n);
+      };
     }
 
     @Override
@@ -114,15 +185,61 @@ abstract class DataValue implements org.jetbrains.org.objectweb.asm.tree.analysi
       if (this == o) return true;
       if (o == null || getClass() != o.getClass()) return false;
       ParameterDataValue that = (ParameterDataValue)o;
-      if (n != that.n) return false;
-      return true;
+      return n == that.n;
     }
 
+    @Override
+    public String toString() {
+      return "DataValue: arg#" + n;
+    }
   }
+
+  static class ReturnDataValue extends DataValue {
+    final EKey key;
+
+    ReturnDataValue(EKey key) {
+      super(key.hashCode());
+      this.key = key;
+    }
+
+    @Override
+    public int getSize() {
+      return 1;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      if (o == null || getClass() != o.getClass()) return false;
+      ReturnDataValue that = (ReturnDataValue)o;
+      return key.equals(that.key);
+    }
+
+    @Override
+    Stream<EKey> dependencies() {
+      return Stream.of(key);
+    }
+
+    @Override
+    void processDependencies(Consumer<EKey> consumer) {
+      consumer.accept(key);
+    }
+
+    @Override
+    public String toString() {
+      return "Return of: " + key;
+    }
+  }
+
   static final DataValue OwnedDataValue = new DataValue(-3) {
     @Override
     public int getSize() {
       return 1;
+    }
+
+    @Override
+    public String toString() {
+      return "DataValue: owned";
     }
   };
   static final DataValue UnknownDataValue1 = new DataValue(-4) {
@@ -130,41 +247,38 @@ abstract class DataValue implements org.jetbrains.org.objectweb.asm.tree.analysi
     public int getSize() {
       return 1;
     }
+
+    @Override
+    public String toString() {
+      return "DataValue: unknown (1-slot)";
+    }
   };
   static final DataValue UnknownDataValue2 = new DataValue(-5) {
     @Override
     public int getSize() {
       return 2;
     }
+
+    @Override
+    public String toString() {
+      return "DataValue: unknown (2-slot)";
+    }
   };
 }
 
-interface EffectQuantum {
-  EffectQuantum TopEffectQuantum = new EffectQuantum() {};
-  EffectQuantum ThisChangeQuantum = new EffectQuantum() {};
-  class ParamChangeQuantum implements EffectQuantum {
-    final int n;
-    public ParamChangeQuantum(int n) {
-      this.n = n;
-    }
-  }
-  class CallQuantum implements EffectQuantum {
-    final Key key;
-    final DataValue[] data;
-    final boolean isStatic;
-    public CallQuantum(Key key, DataValue[] data, boolean isStatic) {
-      this.key = key;
-      this.data = data;
-      this.isStatic = isStatic;
-    }
-  }
-}
-
-abstract class HEffectQuantum {
+abstract class EffectQuantum {
   private final int myHash;
 
-  HEffectQuantum(int hash) {
+  EffectQuantum(int hash) {
     myHash = hash;
+  }
+
+  Stream<EKey> dependencies() {
+    return Stream.empty();
+  }
+
+  void processDependencies(Consumer<EKey> consumer) {
+    
   }
 
   @Override
@@ -172,11 +286,81 @@ abstract class HEffectQuantum {
     return myHash;
   }
 
-  static final HEffectQuantum TopEffectQuantum = new HEffectQuantum(-1) {};
-  static final HEffectQuantum ThisChangeQuantum = new HEffectQuantum(-2) {};
-  static class ParamChangeQuantum extends HEffectQuantum {
+  static final EffectQuantum TopEffectQuantum = new EffectQuantum(-1) {
+    @Override
+    public String toString() {
+      return "Top";
+    }
+  };
+  static final EffectQuantum ThisChangeQuantum = new EffectQuantum(-2) {
+    @Override
+    public String toString() {
+      return "Changes this";
+    }
+  };
+
+  static final class FieldReadQuantum extends EffectQuantum {
+    final @NotNull EKey key;
+    FieldReadQuantum(@NotNull EKey key) {
+      super(key.hashCode());
+      this.key = key;
+    }
+
+    @Override
+    Stream<EKey> dependencies() {
+      return Stream.of(key);
+    }
+
+    @Override
+    void processDependencies(Consumer<EKey> consumer) {
+      consumer.accept(key);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      return o != null && getClass() == o.getClass() && key.equals(((FieldReadQuantum)o).key);
+    }
+
+    @Override
+    public String toString() {
+      return "Reads field " + key;
+    }
+  }
+
+  static final class ReturnChangeQuantum extends EffectQuantum {
+    final @NotNull EKey key;
+    ReturnChangeQuantum(@NotNull EKey key) {
+      super(key.hashCode());
+      this.key = key;
+    }
+
+    @Override
+    Stream<EKey> dependencies() {
+      return Stream.of(key);
+    }
+
+    @Override
+    void processDependencies(Consumer<EKey> consumer) {
+      consumer.accept(key);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) return true;
+      return o != null && getClass() == o.getClass() && key.equals(((ReturnChangeQuantum)o).key);
+    }
+
+    @Override
+    public String toString() {
+      return "Changes return value of " + key;
+    }
+  }
+
+  static final class ParamChangeQuantum extends EffectQuantum {
     final int n;
-    public ParamChangeQuantum(int n) {
+
+    ParamChangeQuantum(int n) {
       super(n);
       this.n = n;
     }
@@ -184,23 +368,24 @@ abstract class HEffectQuantum {
     @Override
     public boolean equals(Object o) {
       if (this == o) return true;
-      if (o == null || getClass() != o.getClass()) return false;
+      return o != null && getClass() == o.getClass() && n == ((ParamChangeQuantum)o).n;
+    }
 
-      ParamChangeQuantum that = (ParamChangeQuantum)o;
-
-      if (n != that.n) return false;
-
-      return true;
+    @Override
+    public String toString() {
+      return "Changes param#" + n;
     }
   }
-  static class CallQuantum extends HEffectQuantum {
-    final HKey key;
+
+  static final class CallQuantum extends EffectQuantum {
+    final EKey key;
     final DataValue[] data;
     final boolean isStatic;
-    public CallQuantum(HKey key, DataValue[] data, boolean isStatic) {
+
+    CallQuantum(EKey key, DataValue[] data, boolean isStatic) {
       super((key.hashCode() * 31 + Arrays.hashCode(data)) * 31 + (isStatic ? 1 : 0));
       this.key = key;
-      this.data = data;
+      this.data = data.length == 0 ? DataValue.EMPTY : data;
       this.isStatic = isStatic;
     }
 
@@ -213,392 +398,417 @@ abstract class HEffectQuantum {
 
       if (isStatic != that.isStatic) return false;
       if (!key.equals(that.key)) return false;
-      // Probably incorrect - comparing Object[] arrays with Arrays.equals
       if (!Arrays.equals(data, that.data)) return false;
-
       return true;
+    }
+
+    @Override
+    Stream<EKey> dependencies() {
+      return StreamEx.of(data).flatMap(DataValue::dependencies).prepend(key);
+    }
+
+    @Override
+    void processDependencies(Consumer<EKey> consumer) {
+      consumer.accept(key);
+      for (DataValue datum : data) {
+        datum.processDependencies(consumer);
+      }
+    }
+
+    @Override
+    public String toString() {
+      return "Calls " + key;
     }
   }
 }
 
 class DataInterpreter extends Interpreter<DataValue> {
-  private int called = -1;
   private final MethodNode methodNode;
-  private final int shift;
-  final int rangeStart;
-  final int rangeEnd;
-  final int arity;
+  private int param = -1;
   final EffectQuantum[] effects;
+  DataValue returnValue = null;
 
   protected DataInterpreter(MethodNode methodNode) {
     super(Opcodes.API_VERSION);
     this.methodNode = methodNode;
-    shift = (methodNode.access & Opcodes.ACC_STATIC) == 0 ? 2 : 1;
-    arity = Type.getArgumentTypes(methodNode.desc).length;
-    rangeStart = shift;
-    rangeEnd = arity + shift;
-    effects = new EffectQuantum[methodNode.instructions.size()];
+    this.effects = new EffectQuantum[methodNode.instructions.size()];
+  }
+
+  @Override
+  public DataValue newParameterValue(boolean isInstanceMethod, int local, Type type) {
+    param++;
+    if (ASMUtils.isThisType(type)) return DataValue.ThisDataValue;
+    int n = isInstanceMethod ? param - 1 : param;
+    if (n >= 0 && ASMUtils.isReferenceType(type)) {
+      return DataValue.ParameterDataValue.create(n);
+    }
+    return newValue(type);
   }
 
   @Override
   public DataValue newValue(Type type) {
-    if (type == null) {
-      return DataValue.UnknownDataValue1;
-    }
-    called += 1;
-    if (type.toString().equals("Lthis;")) {
-      return DataValue.ThisDataValue;
-    } else if (called < rangeEnd && rangeStart <= called) {
-      if (type == Type.VOID_TYPE) {
-        return null;
-      } else if (ASMUtils.isReferenceType(type)) {
-        return new DataValue.ParameterDataValue(called - shift);
-      } else {
-        return type.getSize() == 1 ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
-      }
-    } else {
-      if (type == Type.VOID_TYPE) {
-        return null;
-      } else {
-        return type.getSize() == 1 ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
-      }
-    }
+    if (type == null) return DataValue.UnknownDataValue1;
+    if (type == Type.VOID_TYPE) return null;
+    if (ASMUtils.isThisType(type)) return DataValue.ThisDataValue;
+    return type.getSize() == 1 ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
   }
 
   @Override
-  public DataValue newOperation(AbstractInsnNode insn) throws AnalyzerException {
+  public DataValue newOperation(AbstractInsnNode insn) {
     switch (insn.getOpcode()) {
-      case Opcodes.NEW:
+      case Opcodes.NEW -> {
         return DataValue.LocalDataValue;
-      case Opcodes.LCONST_0:
-      case Opcodes.LCONST_1:
-      case Opcodes.DCONST_0:
-      case Opcodes.DCONST_1:
+      }
+      case Opcodes.LCONST_0, Opcodes.LCONST_1, Opcodes.DCONST_0, Opcodes.DCONST_1 -> {
         return DataValue.UnknownDataValue2;
-      case Opcodes.LDC:
+      }
+      case Opcodes.LDC -> {
         Object cst = ((LdcInsnNode)insn).cst;
         int size = (cst instanceof Long || cst instanceof Double) ? 2 : 1;
         return size == 1 ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
-      case Opcodes.GETSTATIC:
-        size = Type.getType(((FieldInsnNode)insn).desc).getSize();
+      }
+      case Opcodes.GETSTATIC -> {
+        FieldInsnNode fieldInsn = (FieldInsnNode)insn;
+        Member method = new Member(fieldInsn.owner, fieldInsn.name, fieldInsn.desc);
+        EKey key = new EKey(method, Direction.Volatile, true);
+        effects[methodNode.instructions.indexOf(insn)] = new EffectQuantum.FieldReadQuantum(key);
+        int size = Type.getType(((FieldInsnNode)insn).desc).getSize();
         return size == 1 ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
-      default:
+      }
+      default -> {
         return DataValue.UnknownDataValue1;
+      }
     }
   }
 
   @Override
-  public DataValue binaryOperation(AbstractInsnNode insn, DataValue value1, DataValue value2) throws AnalyzerException {
-    switch (insn.getOpcode()) {
-      case Opcodes.LALOAD:
-      case Opcodes.DALOAD:
-      case Opcodes.LADD:
-      case Opcodes.DADD:
-      case Opcodes.LSUB:
-      case Opcodes.DSUB:
-      case Opcodes.LMUL:
-      case Opcodes.DMUL:
-      case Opcodes.LDIV:
-      case Opcodes.DDIV:
-      case Opcodes.LREM:
-      case Opcodes.LSHL:
-      case Opcodes.LSHR:
-      case Opcodes.LUSHR:
-      case Opcodes.LAND:
-      case Opcodes.LOR:
-      case Opcodes.LXOR:
-        return DataValue.UnknownDataValue2;
-      case Opcodes.PUTFIELD:
-        final EffectQuantum effectQuantum;
-        if (value1 == DataValue.ThisDataValue || value1 == DataValue.OwnedDataValue) {
-          effectQuantum = EffectQuantum.ThisChangeQuantum;
-        } else if (value1 == DataValue.LocalDataValue) {
-          effectQuantum = null;
-        } else if (value1 instanceof DataValue.ParameterDataValue) {
-          effectQuantum = new EffectQuantum.ParamChangeQuantum(((DataValue.ParameterDataValue)value1).n);
-        } else {
-          effectQuantum = EffectQuantum.TopEffectQuantum;
-        }
+  public DataValue binaryOperation(AbstractInsnNode insn, DataValue value1, DataValue value2) {
+    return switch (insn.getOpcode()) {
+      case Opcodes.LALOAD, Opcodes.DALOAD, Opcodes.LADD, Opcodes.DADD, Opcodes.LSUB, Opcodes.DSUB, Opcodes.LMUL,
+        Opcodes.DMUL, Opcodes.LDIV, Opcodes.DDIV, Opcodes.LREM, Opcodes.LSHL, Opcodes.LSHR, Opcodes.LUSHR,
+        Opcodes.LAND, Opcodes.LOR, Opcodes.LXOR -> DataValue.UnknownDataValue2;
+      case Opcodes.PUTFIELD -> {
+        final EffectQuantum effectQuantum = getChangeQuantum(value1);
         int insnIndex = methodNode.instructions.indexOf(insn);
         effects[insnIndex] = effectQuantum;
-        return DataValue.UnknownDataValue1;
-      default:
-        return DataValue.UnknownDataValue1;
+        yield DataValue.UnknownDataValue1;
+      }
+      default -> DataValue.UnknownDataValue1;
+    };
+  }
+
+  private static @Nullable EffectQuantum getChangeQuantum(DataValue value) {
+    if (value == DataValue.ThisDataValue || value == DataValue.OwnedDataValue) {
+      return EffectQuantum.ThisChangeQuantum;
     }
+    if (value == DataValue.LocalDataValue) {
+      return null;
+    }
+    if (value instanceof DataValue.ParameterDataValue) {
+      return new EffectQuantum.ParamChangeQuantum(((DataValue.ParameterDataValue)value).n);
+    }
+    if (value instanceof DataValue.ReturnDataValue) {
+      return new EffectQuantum.ReturnChangeQuantum(((DataValue.ReturnDataValue)value).key);
+    }
+    return EffectQuantum.TopEffectQuantum;
   }
 
   @Override
-  public DataValue copyOperation(AbstractInsnNode insn, DataValue value) throws AnalyzerException {
+  public DataValue copyOperation(AbstractInsnNode insn, DataValue value) {
     return value;
   }
 
   @Override
-  public DataValue naryOperation(AbstractInsnNode insn, List<? extends DataValue> values) throws AnalyzerException {
+  public DataValue naryOperation(AbstractInsnNode insn, List<? extends DataValue> values) {
     int insnIndex = methodNode.instructions.indexOf(insn);
     int opCode = insn.getOpcode();
     switch (opCode) {
-      case Opcodes.MULTIANEWARRAY:
+      case Opcodes.MULTIANEWARRAY -> {
         return DataValue.LocalDataValue;
-      case Opcodes.INVOKEDYNAMIC:
-        effects[insnIndex] = EffectQuantum.TopEffectQuantum;
-        return (ASMUtils.getReturnSizeFast(((InvokeDynamicInsnNode)insn).desc) == 1) ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
-      case Opcodes.INVOKEVIRTUAL:
-      case Opcodes.INVOKESPECIAL:
-      case Opcodes.INVOKESTATIC:
-      case Opcodes.INVOKEINTERFACE:
+      }
+      case Opcodes.INVOKEDYNAMIC -> {
+        // Lambda creation (w/o invocation) and StringConcatFactory have no side-effect
+        InvokeDynamicInsnNode indy = (InvokeDynamicInsnNode)insn;
+        if (LambdaIndy.from(indy) == null && !ClassDataIndexer.STRING_CONCAT_FACTORY.equals(indy.bsm.getOwner())) {
+          effects[insnIndex] = EffectQuantum.TopEffectQuantum;
+        }
+        return (ASMUtils.getReturnSizeFast((indy).desc) == 1) ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
+      }
+      case Opcodes.INVOKEVIRTUAL, Opcodes.INVOKESPECIAL, Opcodes.INVOKESTATIC, Opcodes.INVOKEINTERFACE -> {
         boolean stable = opCode == Opcodes.INVOKESPECIAL || opCode == Opcodes.INVOKESTATIC;
         MethodInsnNode mNode = ((MethodInsnNode)insn);
-        DataValue[] data = values.toArray(new DataValue[values.size()]);
-        Key key = new Key(new Method(mNode.owner, mNode.name, mNode.desc), Direction.Pure, stable);
-        effects[insnIndex] = new EffectQuantum.CallQuantum(key, data, opCode == Opcodes.INVOKESTATIC);
-        return (ASMUtils.getReturnSizeFast(mNode.desc) == 1) ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
+        DataValue[] data = values.toArray(DataValue.EMPTY);
+        Member method = new Member(mNode.owner, mNode.name, mNode.desc);
+        EKey key = new EKey(method, Direction.Pure, stable);
+        EffectQuantum quantum = new EffectQuantum.CallQuantum(key, data, opCode == Opcodes.INVOKESTATIC);
+        DataValue result;
+        if (ASMUtils.getReturnSizeFast(mNode.desc) == 1) {
+          if (ASMUtils.isReferenceReturnType(mNode.desc)) {
+            result = new DataValue.ReturnDataValue(key);
+          }
+          else {
+            result = DataValue.UnknownDataValue1;
+          }
+        }
+        else {
+          result = DataValue.UnknownDataValue2;
+        }
+        if (HardCodedPurity.getInstance().isPureMethod(method)) {
+          quantum = null;
+          result = HardCodedPurity.getInstance().getReturnValueForPureMethod(method);
+        }
+        else if (HardCodedPurity.getInstance().isThisChangingMethod(method)) {
+          DataValue receiver = ArrayUtil.getFirstElement(data);
+          if (receiver == DataValue.ThisDataValue) {
+            quantum = EffectQuantum.ThisChangeQuantum;
+          }
+          else if (receiver == DataValue.LocalDataValue || receiver == DataValue.OwnedDataValue) {
+            quantum = null;
+          }
+          else if (receiver instanceof DataValue.ParameterDataValue) {
+            quantum = new EffectQuantum.ParamChangeQuantum(((DataValue.ParameterDataValue)receiver).n);
+          }
+          if (HardCodedPurity.getInstance().isBuilderChainCall(method)) {
+            // mostly to support string concatenation
+            result = receiver;
+          }
+        }
+        effects[insnIndex] = quantum;
+        return result;
+      }
     }
     return null;
   }
 
   @Override
-  public DataValue unaryOperation(AbstractInsnNode insn, DataValue value) throws AnalyzerException {
+  public DataValue unaryOperation(AbstractInsnNode insn, DataValue value) {
 
     switch (insn.getOpcode()) {
-      case Opcodes.LNEG:
-      case Opcodes.DNEG:
-      case Opcodes.I2L:
-      case Opcodes.I2D:
-      case Opcodes.L2D:
-      case Opcodes.F2L:
-      case Opcodes.F2D:
-      case Opcodes.D2L:
+      case Opcodes.LNEG, Opcodes.DNEG, Opcodes.I2L, Opcodes.I2D, Opcodes.L2D, Opcodes.F2L, Opcodes.F2D, Opcodes.D2L -> {
         return DataValue.UnknownDataValue2;
-      case Opcodes.GETFIELD:
+      }
+      case Opcodes.GETFIELD -> {
         FieldInsnNode fieldInsn = ((FieldInsnNode)insn);
-        if (value == DataValue.ThisDataValue && HardCodedPurity.ownedFields.contains(new Couple<>(fieldInsn.owner, fieldInsn.name))) {
+        Member method = new Member(fieldInsn.owner, fieldInsn.name, fieldInsn.desc);
+        EKey key = new EKey(method, Direction.Volatile, true);
+        effects[methodNode.instructions.indexOf(insn)] = new EffectQuantum.FieldReadQuantum(key);
+        if (value == DataValue.ThisDataValue && HardCodedPurity.getInstance().isOwnedField(fieldInsn)) {
           return DataValue.OwnedDataValue;
-        } else {
+        }
+        else {
           return ASMUtils.getSizeFast(fieldInsn.desc) == 1 ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
         }
-      case Opcodes.CHECKCAST:
+      }
+      case Opcodes.CHECKCAST -> {
         return value;
-      case Opcodes.PUTSTATIC:
+      }
+      case Opcodes.PUTSTATIC -> {
         int insnIndex = methodNode.instructions.indexOf(insn);
         effects[insnIndex] = EffectQuantum.TopEffectQuantum;
         return DataValue.UnknownDataValue1;
-      case Opcodes.NEWARRAY:
-      case Opcodes.ANEWARRAY:
+      }
+      case Opcodes.NEWARRAY, Opcodes.ANEWARRAY -> {
         return DataValue.LocalDataValue;
-      default:
+      }
+      default -> {
         return DataValue.UnknownDataValue1;
+      }
     }
   }
 
   @Override
-  public DataValue ternaryOperation(AbstractInsnNode insn, DataValue value1, DataValue value2, DataValue value3) throws AnalyzerException {
+  public DataValue ternaryOperation(AbstractInsnNode insn, DataValue value1, DataValue value2, DataValue value3) {
     int insnIndex = methodNode.instructions.indexOf(insn);
-    if (value1 == DataValue.ThisDataValue || value1 == DataValue.OwnedDataValue) {
-      effects[insnIndex] = EffectQuantum.ThisChangeQuantum;
-    } else if (value1 instanceof DataValue.ParameterDataValue) {
-      effects[insnIndex] = new EffectQuantum.ParamChangeQuantum(((DataValue.ParameterDataValue)value1).n);
-    } else if (value1 == DataValue.LocalDataValue) {
-      effects[insnIndex] = null;
-    } else {
-      effects[insnIndex] = EffectQuantum.TopEffectQuantum;
-    }
+    effects[insnIndex] = getChangeQuantum(value1);
     return DataValue.UnknownDataValue1;
   }
 
   @Override
-  public void returnOperation(AbstractInsnNode insn, DataValue value, DataValue expected) throws AnalyzerException {
-
+  public void returnOperation(AbstractInsnNode insn, DataValue value, DataValue expected) {
+    if (insn.getOpcode() == Opcodes.ARETURN) {
+      if (returnValue == null) {
+        returnValue = value;
+      }
+      else if (!returnValue.equals(value)) {
+        returnValue = DataValue.UnknownDataValue1;
+      }
+    }
   }
 
   @Override
   public DataValue merge(DataValue v1, DataValue v2) {
     if (v1.equals(v2)) {
       return v1;
-    } else {
+    }
+    else {
       int size = Math.min(v1.getSize(), v2.getSize());
       return size == 1 ? DataValue.UnknownDataValue1 : DataValue.UnknownDataValue2;
     }
   }
 }
 
-final class HardCodedPurity {
-  static Set<Couple<String>> ownedFields = new HashSet<>();
-  static Map<Method, Set<EffectQuantum>> solutions = new HashMap<>();
-  static Set<EffectQuantum> thisChange = Collections.singleton(EffectQuantum.ThisChangeQuantum);
-  static {
-    ownedFields.add(new Couple<>("java/lang/AbstractStringBuilder", "value"));
-
-    solutions.put(new Method("java/lang/Throwable", "fillInStackTrace", "(I)Ljava/lang/Throwable;"), thisChange);
-    solutions.put(new Method("java/lang/System", "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V"), Collections.<EffectQuantum>singleton(new EffectQuantum.ParamChangeQuantum(2)));
-    solutions.put(new Method("java/lang/AbstractStringBuilder", "expandCapacity", "(I)V"), thisChange);
-    solutions.put(new Method("java/lang/StringBuilder", "expandCapacity", "(I)V"), thisChange);
-    solutions.put(new Method("java/lang/StringBuffer", "expandCapacity", "(I)V"), thisChange);
-    solutions.put(new Method("java/lang/StringIndexOutOfBoundsException", "<init>", "(I)V"), thisChange);
-  }
-
-  static Set<EffectQuantum> getHardCodedSolution(Key key) {
-    Method method = key.method;
-    if (method.methodName.equals("fillInStackTrace") && method.methodDesc.equals("()Ljava/lang/Throwable;")) {
-      return thisChange;
-    }
-    return solutions.get(key.method);
-  }
-
-  static Set<EffectQuantum> getHardCodedSolution(HKey key) {
-    // TODO: implement the logic as in https://github.com/ilya-klyuchnikov/faba/blob/2ffab410416e0a9f8e35d5071df50bcf27b1e149/src/main/scala/asm/purity.scala#L238
-    // The problem with porting logic from Scala version "as is" is that in Scala version original keys (Key) are used.
-    // Here (in IDEA) the hashed keys (HKey) are used. In a general hashed keys may lead to collisions.
-    // So in order to port the logic, hardcoded solutions should be used with stable keys,
-    // that is - during analysis - com.intellij.codeInspection.bytecodeAnalysis.DataInterpreter.naryOperation
-    return null;
-  }
-}
-
 final class PuritySolver {
-  private HashMap<HKey, Set<HEffectQuantum>> solved = new HashMap<>();
-  private HashMap<HKey, Set<HKey>> dependencies = new HashMap<>();
-  private final Stack<HKey> moving = new Stack<>();
-  private HashMap<HKey, Set<HEffectQuantum>> pending = new HashMap<>();
+  final HashMap<EKey, Effects> solved = new HashMap<>();
+  private final HashMap<EKey, Set<EKey>> dependencies = new HashMap<>();
+  private final ArrayDeque<EKey> moving = new ArrayDeque<>();
+  final HashMap<EKey, Effects> pending = new HashMap<>();
 
-  void addEquation(HKey key, Set<HEffectQuantum> effects) {
-    Set<HKey> callKeys = new HashSet<>();
-    for (HEffectQuantum effect : effects) {
-      if (effect instanceof HEffectQuantum.CallQuantum) {
-        callKeys.add(((HEffectQuantum.CallQuantum)effect).key);
-      }
-    }
-
-    if (callKeys.isEmpty()) {
+  void addEquation(EKey key, Effects effects) {
+    boolean[] hasDeps = {false};
+    effects.processDependencies(depKey -> {
+      hasDeps[0] = true;
+      dependencies.computeIfAbsent(depKey, k -> new HashSet<>()).add(key);
+    });
+    if (hasDeps[0]) {
+      pending.put(key, effects);
+    } else {
       solved.put(key, effects);
       moving.add(key);
-    } else {
-      pending.put(key, effects);
-      for (HKey callKey : callKeys) {
-        Set<HKey> deps = dependencies.get(callKey);
-        if (deps == null) {
-          deps = new HashSet<>();
-          dependencies.put(callKey, deps);
-        }
-        deps.add(key);
-      }
     }
   }
 
-  public Map<HKey, Set<HEffectQuantum>> solve() {
+  public Map<EKey, Effects> solve() {
     while (!moving.isEmpty()) {
-      HKey key = moving.pop();
-      Set<HEffectQuantum> effects = solved.get(key);
+      EKey key = moving.pop();
+      Effects effects = solved.get(key);
 
-      HKey[] propagateKeys;
-      Set[] propagateEffects;
+      EKey[] propagateKeys;
+      Effects[] propagateEffects;
 
       if (key.stable) {
-        propagateKeys = new HKey[]{key, key.mkUnstable()};
-        propagateEffects = new Set[]{effects, effects};
+        propagateKeys = new EKey[]{key, key.mkUnstable()};
+        propagateEffects = new Effects[]{effects, effects};
       }
       else {
-        propagateKeys = new HKey[]{key.mkStable(), key};
-        propagateEffects = new Set[]{effects, mkUnstableEffects(key)};
+        propagateKeys = new EKey[]{key.mkStable(), key};
+        propagateEffects = new Effects[]{effects, new Effects(DataValue.UnknownDataValue1, Effects.TOP_EFFECTS)};
       }
       for (int i = 0; i < propagateKeys.length; i++) {
-        HKey pKey = propagateKeys[i];
-        Set<HEffectQuantum> pEffects = propagateEffects[i];
-        Set<HKey> dKeys = dependencies.remove(pKey);
+        ProgressManager.checkCanceled();
+        EKey pKey = propagateKeys[i];
+        Effects pEffects = propagateEffects[i];
+        Set<EKey> dKeys = dependencies.remove(pKey);
         if (dKeys != null) {
-          for (HKey dKey : dKeys) {
-            Set<HEffectQuantum> dEffects = pending.remove(dKey);
+          for (EKey dKey : dKeys) {
+            Effects dEffects = pending.remove(dKey);
             if (dEffects == null) {
               // already solved, for example, solution is top
               continue;
             }
-            Set<HKey> callKeys = new HashSet<>();
-            Set<HEffectQuantum> newEffects = new HashSet<>();
-            Set<HEffectQuantum> delta = null;
+            Set<EffectQuantum> newEffects = new HashSet<>();
+            Set<EffectQuantum> delta = null;
+            DataValue returnValue = substitute(dEffects.returnValue, pKey, pEffects);
 
-            for (HEffectQuantum dEffect : dEffects) {
-              if (dEffect instanceof HEffectQuantum.CallQuantum) {
-                HEffectQuantum.CallQuantum call = ((HEffectQuantum.CallQuantum)dEffect);
+            for (EffectQuantum dEffect : dEffects.effects) {
+              if (dEffect instanceof EffectQuantum.CallQuantum) {
+                EffectQuantum.CallQuantum call = substitute((EffectQuantum.CallQuantum)dEffect, pKey, pEffects);
                 if (call.key.equals(pKey)) {
                   delta = substitute(pEffects, call.data, call.isStatic);
+                  if (delta.equals(Effects.TOP_EFFECTS)) {
+                    newEffects = delta;
+                    break;
+                  }
                   newEffects.addAll(delta);
                 }
                 else {
-                  callKeys.add(call.key);
                   newEffects.add(call);
                 }
+                continue;
               }
-              else {
-                newEffects.add(dEffect);
+              if (dEffect instanceof EffectQuantum.ReturnChangeQuantum retChange && retChange.key.equals(pKey)) {
+                if (pEffects.returnValue != DataValue.LocalDataValue) {
+                  newEffects = delta = Effects.TOP_EFFECTS;
+                  break;
+                }
+                continue;
               }
+              if (dEffect instanceof EffectQuantum.FieldReadQuantum && ((EffectQuantum.FieldReadQuantum)dEffect).key.equals(pKey)) {
+                newEffects.addAll(pEffects.effects);
+                continue;
+              }
+              newEffects.add(dEffect);
             }
 
-            if (PurityAnalysis.topHEffect.equals(delta)) {
-              solved.put(dKey, PurityAnalysis.topHEffect);
-              moving.push(dKey);
-            }
-            else if (callKeys.isEmpty()) {
-              solved.put(dKey, newEffects);
+            if (Effects.TOP_EFFECTS.equals(delta) && returnValue.equals(DataValue.UnknownDataValue1)) {
+              solved.put(dKey, new Effects(returnValue, Effects.TOP_EFFECTS));
               moving.push(dKey);
             }
             else {
-              pending.put(dKey, newEffects);
+              Effects result = new Effects(returnValue, newEffects);
+              if (result.dependencies().findFirst().isPresent()) {
+                pending.put(dKey, result);
+              }
+              else {
+                solved.put(dKey, result);
+                moving.push(dKey);
+              }
             }
           }
-
-
         }
       }
-
     }
     return solved;
   }
 
-  private Set<HEffectQuantum> substitute(Set<HEffectQuantum> effects, DataValue[] data, boolean isStatic) {
-    if (effects.isEmpty() || PurityAnalysis.topHEffect.equals(effects)) {
-      return effects;
-    }
-    else {
-      Set<HEffectQuantum> newEffects = new HashSet<>();
-      int shift = isStatic ? 0 : 1;
-      for (HEffectQuantum effect : effects) {
-        if (effect == HEffectQuantum.ThisChangeQuantum) {
-          DataValue thisArg = data[0];
-          if (thisArg == DataValue.ThisDataValue || thisArg == DataValue.OwnedDataValue) {
-            newEffects.add(HEffectQuantum.ThisChangeQuantum);
-          }
-          else if (thisArg == DataValue.LocalDataValue) {
-            // nothing
-          }
-          else if (thisArg instanceof DataValue.ParameterDataValue) {
-            newEffects.add(new HEffectQuantum.ParamChangeQuantum(((DataValue.ParameterDataValue)thisArg).n));
-          }
-          else {
-            return PurityAnalysis.topHEffect;
-          }
-        }
-        else if (effect instanceof HEffectQuantum.ParamChangeQuantum) {
-          HEffectQuantum.ParamChangeQuantum paramChange = ((HEffectQuantum.ParamChangeQuantum)effect);
-          DataValue paramArg = data[paramChange.n + shift];
-          if (paramArg == DataValue.ThisDataValue || paramArg == DataValue.OwnedDataValue) {
-            newEffects.add(HEffectQuantum.ThisChangeQuantum);
-          }
-          else if (paramArg == DataValue.LocalDataValue) {
-            // nothing
-          }
-          else if (paramArg instanceof DataValue.ParameterDataValue) {
-            newEffects.add(new HEffectQuantum.ParamChangeQuantum(((DataValue.ParameterDataValue)paramArg).n));
-          }
-          else {
-            return PurityAnalysis.topHEffect;
-          }
-        }
+  public void addPlainFieldEquations(Predicate<? super MemberDescriptor> plainByDefault) {
+    for (EKey key : dependencies.keySet()) {
+      if (key.getDirection() == Direction.Volatile && plainByDefault.test(key.member)) {
+        // Absent fields are considered non-volatile
+        solved.putIfAbsent(key, new Effects(DataValue.UnknownDataValue1, Collections.emptySet()));
+        moving.add(key);
       }
-      return newEffects;
     }
   }
 
-  private static Set mkUnstableEffects(HKey key) {
-    Set<EffectQuantum> hardcodedEffects = HardCodedPurity.getHardCodedSolution(key);
-    return hardcodedEffects == null ? PurityAnalysis.topHEffect : hardcodedEffects;
+  private static EffectQuantum.CallQuantum substitute(EffectQuantum.CallQuantum call, EKey pKey, Effects pEffects) {
+    List<DataValue> list = new ArrayList<>();
+    boolean same = true;
+    for (DataValue value : call.data) {
+      DataValue newValue = substitute(value, pKey, pEffects);
+      same &= newValue.equals(value);
+      list.add(newValue);
+    }
+    return same ? call : new EffectQuantum.CallQuantum(call.key, list.toArray(DataValue.EMPTY), call.isStatic);
+  }
+
+  private static DataValue substitute(DataValue value, EKey key, Effects effects) {
+    if (value instanceof DataValue.ReturnDataValue && ((DataValue.ReturnDataValue)value).key.equals(key)) {
+      return effects.returnValue == DataValue.LocalDataValue ? DataValue.LocalDataValue : DataValue.UnknownDataValue1;
+    }
+    return value;
+  }
+
+  private static Set<EffectQuantum> substitute(Effects effects, DataValue[] data, boolean isStatic) {
+    if (effects.effects.isEmpty() || Effects.TOP_EFFECTS.equals(effects.effects)) {
+      return effects.effects;
+    }
+    Set<EffectQuantum> newEffects = new HashSet<>(effects.effects.size());
+    int shift = isStatic ? 0 : 1;
+    for (EffectQuantum effect : effects.effects) {
+      DataValue arg = null;
+      if (effect == EffectQuantum.ThisChangeQuantum) {
+        arg = data[0];
+      }
+      else if (effect instanceof EffectQuantum.ParamChangeQuantum paramChange) {
+        arg = data[paramChange.n + shift];
+      }
+      if (arg == null || arg == DataValue.LocalDataValue) {
+        continue;
+      }
+      if (arg == DataValue.ThisDataValue || arg == DataValue.OwnedDataValue) {
+        newEffects.add(EffectQuantum.ThisChangeQuantum);
+        continue;
+      }
+      if (arg instanceof DataValue.ParameterDataValue) {
+        newEffects.add(new EffectQuantum.ParamChangeQuantum(((DataValue.ParameterDataValue)arg).n));
+        continue;
+      }
+      if (arg instanceof DataValue.ReturnDataValue) {
+        newEffects.add(new EffectQuantum.ReturnChangeQuantum(((DataValue.ReturnDataValue)arg).key));
+        continue;
+      }
+      return Effects.TOP_EFFECTS;
+    }
+    return newEffects;
   }
 }

@@ -17,33 +17,48 @@ package com.intellij.openapi.roots.libraries;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.roots.OrderRootType;
+import com.intellij.openapi.roots.ProjectModelElement;
 import com.intellij.openapi.roots.RootProvider;
 import com.intellij.openapi.util.JDOMExternalizable;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- *  @author dsl
- */
-public interface Library extends JDOMExternalizable, Disposable {
+@ApiStatus.NonExtendable
+public interface Library extends JDOMExternalizable, ProjectModelElement {
   Library[] EMPTY_ARRAY = new Library[0];
 
-  @Nullable String getName();
+  /**
+   * Returns name for the library or {@code null} if the library doesn't have a name (it's possible to create a module level library without
+   * specifying a name for it).
+   */
+  @Nullable @NlsSafe
+  String getName();
 
-  @NotNull String[] getUrls(@NotNull OrderRootType rootType);
+  /**
+   * Returns name of the library to show in UI. If the library has a {@link #getName() name} specified by user it is returned; for unnamed
+   * module-level library name of its first file is returned.
+   */
+  @NotNull @Nls String getPresentableName();
 
-  @NotNull VirtualFile[] getFiles(@NotNull OrderRootType rootType);
+  String @NotNull [] getUrls(@NotNull OrderRootType rootType);
+
+  VirtualFile @NotNull [] getFiles(@NotNull OrderRootType rootType);
 
   /**
    * As soon as you obtaining modifiable model you will have to commit it or call Disposer.dispose(model)!
    */
-  @NotNull ModifiableModel getModifiableModel();
+  @NotNull
+  ModifiableModel getModifiableModel();
 
   LibraryTable getTable();
 
-  @NotNull RootProvider getRootProvider();
+  @NotNull
+  RootProvider getRootProvider();
 
   boolean isJarDirectory(@NotNull String url);
 
@@ -51,8 +66,15 @@ public interface Library extends JDOMExternalizable, Disposable {
 
   boolean isValid(@NotNull String url, @NotNull OrderRootType rootType);
 
+  /**
+   * Compares the content of the current instance of the library with the given one.
+   * @param library to compare with
+   * @return true if the content is same
+   */
+  boolean hasSameContent(@NotNull Library library);
+
   interface ModifiableModel extends Disposable {
-    @NotNull String[] getUrls(@NotNull OrderRootType rootType);
+    String @NotNull [] getUrls(@NotNull OrderRootType rootType);
 
     void setName(String name);
 
@@ -78,7 +100,7 @@ public interface Library extends JDOMExternalizable, Disposable {
 
     void commit();
 
-    @NotNull VirtualFile[] getFiles(@NotNull OrderRootType rootType);
+    VirtualFile @NotNull [] getFiles(@NotNull OrderRootType rootType);
 
     boolean isChanged();
 

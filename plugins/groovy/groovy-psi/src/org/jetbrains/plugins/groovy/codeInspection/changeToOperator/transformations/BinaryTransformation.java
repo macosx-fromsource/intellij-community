@@ -1,54 +1,32 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.codeInspection.changeToOperator.transformations;
 
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.plugins.groovy.codeInspection.changeToOperator.data.MethodCallData;
-import org.jetbrains.plugins.groovy.codeInspection.changeToOperator.data.OptionsData;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.plugins.groovy.codeInspection.changeToOperator.ChangeToOperatorInspection.Options;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall;
 
-import static java.lang.String.format;
+import java.util.Objects;
 
 /**
  * e.g.
- * a.equals(b)  → (a == b)
- * !a.equals(b) → (a != b)
+ * a.equals(b)  -> (a == b)
+ * !a.equals(b) -> (a != b)
  */
-abstract class BinaryTransformation extends Transformation {
+@ApiStatus.Internal
+public abstract class BinaryTransformation extends Transformation {
+
+  protected @NotNull GrExpression getLhs(@NotNull GrMethodCall methodCall) {
+    return Objects.requireNonNull(getBase(methodCall));
+  }
+
+  protected @NotNull GrExpression getRhs(@NotNull GrMethodCall methodCall) {
+    return getArgument(methodCall, 0);
+  }
 
   @Override
-  @Nullable
-  public String getReplacement(MethodCallData methodInfo, OptionsData optionsData) {
-    String lhs = getLhs(methodInfo);
-    String operator = getOperator(methodInfo, optionsData);
-    String rhs = getRhs(methodInfo);
-    if (lhs == null || operator == null || rhs == null) return null;
-
-    return format("%s %s %s", lhs, operator, rhs);
-  }
-
-  @Nullable
-  protected String getLhs(MethodCallData methodInfo) {
-    return methodInfo.getBase();
-  }
-
-  @Nullable
-  protected abstract String getOperator(MethodCallData methodInfo, OptionsData optionsData);
-
-  @Nullable
-  protected String getRhs(MethodCallData methodInfo) {
-    return methodInfo.getArgument(0);
+  public boolean couldApplyInternal(@NotNull GrMethodCall methodCall, @NotNull Options options) {
+    return getBase(methodCall) != null && checkArgumentsCount(methodCall, 1);
   }
 }

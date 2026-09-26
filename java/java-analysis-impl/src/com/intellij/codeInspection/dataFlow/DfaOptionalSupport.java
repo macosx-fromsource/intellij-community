@@ -1,48 +1,45 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.dataFlow;
 
+import com.intellij.codeInspection.CommonQuickFixBundle;
 import com.intellij.codeInspection.LocalQuickFix;
-import com.intellij.codeInspection.ProblemDescriptor;
-import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.codeInspection.dataFlow.jvm.SpecialField;
+import com.intellij.codeInspection.dataFlow.types.DfType;
+import com.intellij.codeInspection.dataFlow.types.DfTypes;
+import com.intellij.codeInspection.util.OptionalUtil;
+import com.intellij.modcommand.ModPsiUpdater;
+import com.intellij.modcommand.PsiUpdateModCommandQuickFix;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiExpressionList;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodCallExpression;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
+import com.siyeh.ig.psiutils.ExpressionUtils;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * @author anet, peter
  */
-public class DfaOptionalSupport {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.dataFlow.DfaOptionalSupport");
-  private static final String GUAVA_OPTIONAL = "com.google.common.base.Optional";
+public final class DfaOptionalSupport {
 
-  @Nullable
-  static LocalQuickFix registerReplaceOptionalOfWithOfNullableFix(@NotNull PsiExpression qualifier) {
-    final PsiElement call = findCallExpression(qualifier);
-    final PsiMethod method = call == null ? null : ((PsiMethodCallExpression)call).resolveMethod();
+  @ApiStatus.Internal
+  public static @Nullable LocalQuickFix registerReplaceOptionalOfWithOfNullableFix(@NotNull PsiExpression qualifier) {
+    final PsiMethodCallExpression call = findCallExpression(qualifier);
+    final PsiMethod method = call == null ? null : call.resolveMethod();
     final PsiClass containingClass = method == null ? null : method.getContainingClass();
     if (containingClass != null && "of".equals(method.getName())) {
       final String qualifiedName = containingClass.getQualifiedName();
       if (CommonClassNames.JAVA_UTIL_OPTIONAL.equals(qualifiedName)) {
         return new ReplaceOptionalCallFix("ofNullable", false);
       }
-      if (GUAVA_OPTIONAL.equals(qualifiedName)) {
+      if (OptionalUtil.GUAVA_OPTIONAL.equals(qualifiedName)) {
         return new ReplaceOptionalCallFix("fromNullable", false);
       }
     }
@@ -59,65 +56,49 @@ public class DfaOptionalSupport {
     }
     return null;
   }
-  private static boolean isJdkOptional(@NotNull PsiElement anchor) {
-    final PsiElement parent = findCallExpression(anchor);
-    PsiMethod method = parent == null ? null : resolveOfNullable(findCallExpression(anchor));
-    return method != null && "ofNullable".equals(method.getName());
+
+  public static @Nullable LocalQuickFix createReplaceOptionalOfNullableWithEmptyFix(@NotNull PsiElement anchor) {
+    final PsiMethodCallExpression parent = findCallExpression(anchor);
+    if (parent == null) return null;
+    boolean jdkOptional = OptionalUtil.JDK_OPTIONAL_OF_NULLABLE.test(parent);
+    return new ReplaceOptionalCallFix(jdkOptional ? "empty" : "absent", true);
   }
 
-  @NotNull
-  static LocalQuickFix createReplaceOptionalOfNullableWithEmptyFix(@NotNull PsiElement anchor) {
-    return new ReplaceOptionalCallFix(isJdkOptional(anchor) ? "empty" : "absent", true);
-  }
-
-  @NotNull
-  static LocalQuickFix createReplaceOptionalOfNullableWithOfFix() {
+  public static @Nullable LocalQuickFix createReplaceOptionalOfNullableWithOfFix(@NotNull PsiElement anchor) {
+    final PsiMethodCallExpression parent = findCallExpression(anchor);
+    if (parent == null) return null;
     return new ReplaceOptionalCallFix("of", false);
   }
 
-  @Nullable
-  public static PsiMethod resolveOfNullable(@NotNull PsiMethodCallExpression expression) {
-    String name = expression.getMethodExpression().getReferenceName();
-    if ("ofNullable".equals(name) || "fromNullable".equals(name)) {
-      PsiMethod method = expression.resolveMethod();
-      PsiClass psiClass = method == null ? null : method.getContainingClass();
-      String qname = psiClass == null ? null : psiClass.getQualifiedName();
-      if (CommonClassNames.JAVA_UTIL_OPTIONAL.equals(qname) || GUAVA_OPTIONAL.equals(qname)) {
-        return method;
-      }
-    }
-    return null;
+  /**
+   * Creates a DfType which represents present or absent optional (non-null)
+   * @param present whether the value should be present
+   * @return a DfType representing an Optional
+   */
+  public static @NotNull DfType getOptionalValue(boolean present) {
+    DfType valueType = present ? DfTypes.NOT_NULL_OBJECT : DfTypes.NULL;
+    return SpecialField.OPTIONAL_VALUE.asDfType(valueType);
   }
 
-  private static class ReplaceOptionalCallFix implements LocalQuickFix {
+  private static class ReplaceOptionalCallFix extends PsiUpdateModCommandQuickFix {
     private final String myTargetMethodName;
     private final boolean myClearArguments;
 
-    public ReplaceOptionalCallFix(final String targetMethodName, boolean clearArguments) {
+    ReplaceOptionalCallFix(final String targetMethodName, boolean clearArguments) {
       myTargetMethodName = targetMethodName;
       myClearArguments = clearArguments;
     }
 
-    @NotNull
     @Override
-    public String getFamilyName() {
-      return "Replace with '." + myTargetMethodName + "()'";
+    public @NotNull String getFamilyName() {
+      return CommonQuickFixBundle.message("fix.replace.with.x", "." + myTargetMethodName + "()");
     }
 
     @Override
-    public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-      final PsiMethodCallExpression
-        methodCallExpression = PsiTreeUtil.getParentOfType(descriptor.getPsiElement(), PsiMethodCallExpression.class);
+    protected void applyFix(@NotNull Project project, @NotNull PsiElement element, @NotNull ModPsiUpdater updater) {
+      final PsiMethodCallExpression methodCallExpression = PsiTreeUtil.getParentOfType(element, PsiMethodCallExpression.class);
       if (methodCallExpression != null) {
-        final PsiElement ofNullableExprName =
-          ((PsiMethodCallExpression)JavaPsiFacade.getElementFactory(project)
-            .createExpressionFromText("Optional." + myTargetMethodName + "(null)", null)).getMethodExpression();
-        final PsiElement referenceNameElement = methodCallExpression.getMethodExpression().getReferenceNameElement();
-        if (referenceNameElement != null) {
-          final PsiElement ofNullableNameElement = ((PsiReferenceExpression)ofNullableExprName).getReferenceNameElement();
-          LOG.assertTrue(ofNullableNameElement != null);
-          referenceNameElement.replace(ofNullableNameElement);
-        }
+        ExpressionUtils.bindCallTo(methodCallExpression, myTargetMethodName);
         if (myClearArguments) {
           PsiExpressionList argList = methodCallExpression.getArgumentList();
           PsiExpression[] args = argList.getExpressions();

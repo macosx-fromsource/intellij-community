@@ -1,35 +1,25 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/*
- * @author max
- */
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
 import com.intellij.psi.impl.source.SourceTreeToPsiMap;
 import com.intellij.psi.impl.source.tree.CompositeElement;
 import com.intellij.psi.impl.source.tree.TreeCopyHandler;
 import com.intellij.psi.impl.source.tree.TreeElement;
+import com.intellij.psi.tree.IElementType;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.parser.GroovyElementTypes;
+import org.jetbrains.plugins.groovy.lang.parser.GroovyStubElementTypes;
 import org.jetbrains.plugins.groovy.lang.psi.GrReferenceElement;
 import org.jetbrains.plugins.groovy.lang.psi.api.GroovyResolveResult;
 import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.imports.GrImportStatement;
@@ -37,13 +27,10 @@ import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
 
 import java.util.Map;
 
-/**
- * @author peter
- */
-public class GroovyChangeUtilSupport implements TreeCopyHandler {
+public final class GroovyChangeUtilSupport implements TreeCopyHandler {
 
   @Override
-  public TreeElement decodeInformation(TreeElement element, final Map<Object, Object> decodingState) {
+  public TreeElement decodeInformation(@NotNull TreeElement element, final @NotNull Map<Object, Object> decodingState) {
     if (element instanceof CompositeElement) {
       if (element.getElementType() == GroovyElementTypes.REFERENCE_ELEMENT || element.getElementType() == GroovyElementTypes.REFERENCE_EXPRESSION) {
         GrReferenceElement ref = (GrReferenceElement)SourceTreeToPsiMap.treeElementToPsi(element);
@@ -70,23 +57,21 @@ public class GroovyChangeUtilSupport implements TreeCopyHandler {
   }
 
   @Override
-  public void encodeInformation(final TreeElement element, final ASTNode original, final Map<Object, Object> encodingState) {
-    if (original instanceof CompositeElement) {
-      if (original.getElementType() == GroovyElementTypes.REFERENCE_ELEMENT ||
-          original.getElementType() == GroovyElementTypes.REFERENCE_EXPRESSION) {
+  public void encodeInformation(final @NotNull TreeElement element, final @NotNull ASTNode original, final @NotNull Map<Object, Object> encodingState) {
+    if (original instanceof CompositeElement && !isInsideImport(original)) {
+      IElementType elementType = original.getElementType();
+      if (elementType == GroovyElementTypes.REFERENCE_ELEMENT || elementType == GroovyElementTypes.REFERENCE_EXPRESSION) {
         PsiElement psi = original.getPsi();
         Project project = psi.getProject();
         if (!PsiUtil.isThisOrSuperRef(psi) && project.isInitialized() && !DumbService.isDumb(project)) {
-          final GroovyResolveResult result = ((GrReferenceElement)psi).advancedResolve();
-          if (result != null) {
-            final PsiElement target = result.getElement();
+          final GroovyResolveResult result = ((GrReferenceElement<?>)psi).advancedResolve();
+          final PsiElement target = result.getElement();
 
-            if (target instanceof PsiClass ||
-                (target instanceof PsiMethod || target instanceof PsiField) &&
-                ((PsiMember)target).hasModifierProperty(PsiModifier.STATIC) &&
-                result.getCurrentFileResolveContext() instanceof GrImportStatement) {
-              element.putCopyableUserData(REFERENCED_MEMBER_KEY, (PsiMember)target);
-            }
+          if (target instanceof PsiClass ||
+              (target instanceof PsiMethod || target instanceof PsiField) &&
+              ((PsiMember)target).hasModifierProperty(PsiModifier.STATIC) &&
+              result.getCurrentFileResolveContext() instanceof GrImportStatement) {
+            element.putCopyableUserData(REFERENCED_MEMBER_KEY, (PsiMember)target);
           }
         }
       }
@@ -94,4 +79,11 @@ public class GroovyChangeUtilSupport implements TreeCopyHandler {
   }
 
   private static final Key<PsiMember> REFERENCED_MEMBER_KEY = Key.create("REFERENCED_MEMBER_KEY");
+
+  private static boolean isInsideImport(ASTNode node) {
+    while (node != null && node.getElementType() == GroovyElementTypes.REFERENCE_ELEMENT) {
+      node = node.getTreeParent();
+    }
+    return node != null && node.getElementType() == GroovyStubElementTypes.IMPORT;
+  }
 }

@@ -20,113 +20,115 @@ import org.intellij.lang.xpath.psi.XPathBinaryExpression;
 import org.intellij.lang.xpath.psi.XPathExpression;
 import org.intellij.lang.xpath.psi.XPathType;
 
-import static org.intellij.lang.xpath.psi.XPath2Type.*;
+import static org.intellij.lang.xpath.psi.XPath2Type.DATE;
+import static org.intellij.lang.xpath.psi.XPath2Type.DATETIME;
+import static org.intellij.lang.xpath.psi.XPath2Type.DAYTIMEDURATION;
+import static org.intellij.lang.xpath.psi.XPath2Type.DECIMAL;
+import static org.intellij.lang.xpath.psi.XPath2Type.DOUBLE;
+import static org.intellij.lang.xpath.psi.XPath2Type.INTEGER;
+import static org.intellij.lang.xpath.psi.XPath2Type.TIME;
+import static org.intellij.lang.xpath.psi.XPath2Type.YEARMONTHDURATION;
 
-/*
-* Created by IntelliJ IDEA.
-* User: sweinreuter
-* Date: 10.03.11
-*/
 public class XPath2ExpressionTest extends TestBase {
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    TestNamespaceContext.install(getTestRootDisposable());
+    TestNamespaceContext.install(myFixture.getTestRootDisposable());
   }
 
-  public void testIntegerPlusInteger() throws Throwable {
+  public void testIntegerPlusInteger() {
    assertEquals(INTEGER, doTest(true));
   }
 
-  public void testIntegerPlusDecimal() throws Throwable {
+  public void testIntegerPlusDecimal() {
     assertEquals(DECIMAL, doTest(true));
   }
 
-  public void testIntegerPlusDouble() throws Throwable {
+  public void testIntegerPlusDouble() {
     assertEquals(DOUBLE, doTest(true));
   }
 
-  public void testIntegerIdivInteger() throws Throwable {
+  public void testIntegerIdivInteger() {
     assertEquals(INTEGER, doTest(true));
   }
 
-  public void testIntegerDivInteger() throws Throwable {
+  public void testIntegerDivInteger() {
     assertEquals(DECIMAL, doTest(true));
   }
 
-  public void testDoubleDivInteger() throws Throwable {
+  public void testDoubleDivInteger() {
     assertEquals(DOUBLE, doTest(true));
   }
 
-  public void testDatePlusYmd() throws Throwable {
+  public void testDatePlusYmd() {
     assertEquals(DATE, doTest(true));
   }
 
-  public void testDatePlusDtd() throws Throwable {
+  public void testDatePlusDtd() {
     assertEquals(DATE, doTest(true));
   }
 
-  public void testTimePlusDtd() throws Throwable {
+  public void testTimePlusDtd() {
     assertEquals(TIME, doTest(true));
   }
 
-  public void testDateTimePlusYmd() throws Throwable {
+  public void testDateTimePlusYmd() {
     assertEquals(DATETIME, doTest(true));
   }
 
-  public void testDateTimePlusDtd() throws Throwable {
+  public void testDateTimePlusDtd() {
     assertEquals(DATETIME, doTest(true));
   }
 
-  public void testYmdPlusYmd() throws Throwable {
+  public void testYmdPlusYmd() {
     assertEquals(YEARMONTHDURATION, doTest(true));
   }
 
-  public void testDtdPlusDtd() throws Throwable {
+  public void testDtdPlusDtd() {
     assertEquals(DAYTIMEDURATION, doTest(true));
   }
 
-  public void testDoubleMinusInteger() throws Throwable {
+  public void testDoubleMinusInteger() {
     assertEquals(DOUBLE, doTest(true));
   }
 
-  public void testDateMinusDate() throws Throwable {
+  public void testDateMinusDate() {
     assertEquals(DAYTIMEDURATION, doTest(true));
   }
 
-  public void testDateMinusYmd() throws Throwable {
+  public void testDateMinusYmd() {
     assertEquals(DATE, doTest(false));
   }
 
-  public void testDateMinusDtd() throws Throwable {
+  public void testDateMinusDtd() {
     assertEquals(DATE, doTest(false));
   }
 
-  public void testTimeMinusTime() throws Throwable {
+  public void testTimeMinusTime() {
     assertEquals(DAYTIMEDURATION, doTest(true));
   }
 
-  public void testTimeMinusDtd() throws Throwable {
+  public void testTimeMinusDtd() {
     assertEquals(TIME, doTest(false));
   }
 
-  public void testYmdMinusYmd() throws Throwable {
+  public void testYmdMinusYmd() {
     assertEquals(YEARMONTHDURATION, doTest(true));
   }
 
-  public void testDoubleMultInteger() throws Throwable {
+  public void testDoubleMultInteger() {
     assertEquals(DOUBLE, doTest(true));
   }
 
-  public void testYmdMultInteger() throws Throwable {
+  public void testYmdMultInteger() {
     assertEquals(YEARMONTHDURATION, doTest(true));
   }
 
-  public void testYmdMultDecimal() throws Throwable {
+  public void testYmdMultDecimal() {
     assertEquals(YEARMONTHDURATION, doTest(true));
   }
 
-  protected XPathType doTest(boolean symmetric) throws Throwable {
+  protected XPathType doTest(boolean symmetric) {
     myFixture.configureByFile(getTestFileName() + ".xpath2");
 
     final XPathExpression expression = getExpression();
@@ -134,8 +136,7 @@ public class XPath2ExpressionTest extends TestBase {
     // all these cases must be green
     myFixture.checkHighlighting();
 
-    if (symmetric && expression instanceof XPathBinaryExpression) {
-      final XPathBinaryExpression expr = (XPathBinaryExpression)expression;
+    if (symmetric && expression instanceof XPathBinaryExpression expr) {
       if (expr.getLOperand().getType() != expr.getROperand().getType()) {
         myFixture.configureByText(XPathFileType.XPATH2,
                                   expr.getROperand().getText() + " " + expr.getOperationSign() + " " + expr.getLOperand().getText());
@@ -153,7 +154,7 @@ public class XPath2ExpressionTest extends TestBase {
     return type;
   }
 
-  private XPathExpression getExpression() throws NoSuchMethodException {
+  private XPathExpression getExpression() {
     final XPathFile file = (XPathFile)myFixture.getFile();
     final XPathExpression expression = file.getExpression();
     assertNotNull(expression);

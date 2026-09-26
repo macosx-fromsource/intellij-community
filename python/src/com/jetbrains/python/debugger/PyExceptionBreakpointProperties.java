@@ -1,29 +1,15 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.debugger;
 
 import com.intellij.util.xmlb.annotations.Attribute;
 import com.jetbrains.python.debugger.pydev.AddExceptionBreakpointCommand;
 import com.jetbrains.python.debugger.pydev.ExceptionBreakpointCommand;
 import com.jetbrains.python.debugger.pydev.RemoteDebugger;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-/**
- * @author traff
- */
+@ApiStatus.Internal
 public class PyExceptionBreakpointProperties extends ExceptionBreakpointProperties<PyExceptionBreakpointProperties> {
   @Attribute("notifyOnlyOnFirst")
   public boolean myNotifyOnlyOnFirst;
@@ -31,16 +17,20 @@ public class PyExceptionBreakpointProperties extends ExceptionBreakpointProperti
   public boolean myNotifyOnTerminate;
   @Attribute("ignoreLibraries")
   public boolean myIgnoreLibraries;
+  public @Nullable String myCondition;
+  public @Nullable String myLogExpression;
 
 
   @SuppressWarnings({"UnusedDeclaration"})
   public PyExceptionBreakpointProperties() {
   }
 
-  public PyExceptionBreakpointProperties(@NotNull final String exception) {
+  public PyExceptionBreakpointProperties(final @NotNull String exception) {
     myException = exception;
     myNotifyOnTerminate = true;
     myIgnoreLibraries = false;
+    myCondition = null;
+    myLogExpression = null;
   }
 
   @Override
@@ -49,7 +39,7 @@ public class PyExceptionBreakpointProperties extends ExceptionBreakpointProperti
   }
 
   @Override
-  public void loadState(final PyExceptionBreakpointProperties state) {
+  public void loadState(final @NotNull PyExceptionBreakpointProperties state) {
     myException = state.myException;
     myNotifyOnlyOnFirst = state.myNotifyOnlyOnFirst;
     myNotifyOnTerminate = state.myNotifyOnTerminate;
@@ -80,13 +70,35 @@ public class PyExceptionBreakpointProperties extends ExceptionBreakpointProperti
     return myIgnoreLibraries;
   }
 
+  public @Nullable String getCondition() {
+    return myCondition;
+  }
+
+  @Override
+  public void setCondition(@Nullable String condition) {
+    myCondition = condition;
+  }
+
+  public @Nullable String getLogExpression() {
+    return myLogExpression;
+  }
+
+  @Override
+  public void setLogExpression(@Nullable String logExpression) {
+    myLogExpression = logExpression;
+  }
+
+  @Override
   public String getExceptionBreakpointId() {
     return "python-" + myException;
   }
 
   @Override
   public ExceptionBreakpointCommand createAddCommand(RemoteDebugger debugger) {
-    return ExceptionBreakpointCommand.addExceptionBreakpointCommand(debugger, getExceptionBreakpointId(),
+    return ExceptionBreakpointCommand.addExceptionBreakpointCommand(debugger,
+                                                                    getExceptionBreakpointId(),
+                                                                    getCondition(),
+                                                                    getLogExpression(),
                                                                     new AddExceptionBreakpointCommand.ExceptionBreakpointNotifyPolicy(
                                                                       isNotifyOnTerminate(), isNotifyOnlyOnFirst(), isIgnoreLibraries()));
   }

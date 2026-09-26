@@ -1,46 +1,31 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.controlFlow;
 
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.ArrayUtilRt;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 
-/**
- * @author Pavel.Dolgov
- */
-class InstructionKey implements Comparable<InstructionKey> {
+final class InstructionKey implements Comparable<InstructionKey> {
   private final int myOffset;
   private final int[] myCallStack; // shared between instructions on the same stack level
 
-  private InstructionKey(int offset, @NotNull int[] callStack) {
+  private InstructionKey(int offset, int @NotNull [] callStack) {
     myOffset = offset;
     myCallStack = callStack;
   }
 
-  @NotNull
-  static InstructionKey create(int offset) {
-    return new InstructionKey(offset, ArrayUtil.EMPTY_INT_ARRAY);
+  static @NotNull InstructionKey create(int offset) {
+    return new InstructionKey(offset, ArrayUtilRt.EMPTY_INT_ARRAY);
   }
 
+  @NotNull
   InstructionKey next(int nextOffset) {
     return new InstructionKey(nextOffset, myCallStack);
   }
 
+  @NotNull
   InstructionKey push(int nextOffset, int returnOffset) {
     if(myCallStack.length > 100) { // normally it's way below 100, as it's the number of levels of nested 'finally' blocks
       throw new OverflowException(myOffset); // most likely the graph traversal is in an endless loop
@@ -49,6 +34,7 @@ class InstructionKey implements Comparable<InstructionKey> {
     return new InstructionKey(nextOffset, nextStack);
   }
 
+  @NotNull
   InstructionKey pop(int overriddenOffset) {
     int returnOffset = myCallStack[myCallStack.length - 1];
     int[] nextStack = ArrayUtil.realloc(myCallStack, myCallStack.length - 1);
@@ -60,8 +46,7 @@ class InstructionKey implements Comparable<InstructionKey> {
     return myOffset;
   }
 
-  @NotNull
-  int[] getCallStack() {
+  int @NotNull [] getCallStack() {
     return myCallStack;
   }
 
@@ -105,7 +90,7 @@ class InstructionKey implements Comparable<InstructionKey> {
   }
 
   static class OverflowException extends RuntimeException {
-    public OverflowException(int offset) {
+    OverflowException(int offset) {
       super("Instruction key overflow at offset " + offset);
     }
   }

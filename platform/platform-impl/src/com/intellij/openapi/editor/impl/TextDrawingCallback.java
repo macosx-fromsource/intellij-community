@@ -17,7 +17,8 @@ package com.intellij.openapi.editor.impl;
 
 import org.jetbrains.annotations.NotNull;
 
-import java.awt.*;
+import java.awt.Color;
+import java.awt.Graphics;
 
 /**
  * IDEA editors use highly-optimized drawing algorithm that is tuned for painting large amounts of text data.
@@ -27,24 +28,21 @@ import java.awt.*;
  * to the code that knows how to do that.
  * <p/>
  * Current interface defines a contract for such a text drawing delegation task.
- *
- * @author Denis Zhdanov
- * @since Jul 1, 2010 8:01:30 PM
  */
 public interface TextDrawingCallback {
 
   /**
-   * Asks to draw symbols from <code>[start; end)</code> range of given char array at given graphics buffer using given
+   * Asks to draw symbols from {@code [start; end)} range of given char array at given graphics buffer using given
    * font info and color.
    *
    * @param g         graphics buffer to use
    * @param data      target symbols holder
    * @param start     start offset within the symbols holder to use (inclusive)
    * @param end       end offset within the symbols holder to use (inclusive)
-   * @param x         <code>'x'</code> coordinate to use as a start position at the given graphics buffer
-   * @param y         <code>'y'</code> coordinate to use as a start position at the given graphics buffer
+   * @param x         {@code 'x'} coordinate to use as a start position at the given graphics buffer
+   * @param y         {@code 'y'} coordinate to use as a start position at the given graphics buffer
    * @param fontInfo  font info to use during drawing target text at the given graphics buffer
    * @param color     color to use during drawing target text at the given graphics buffer
    */
-  void drawChars(@NotNull Graphics g, @NotNull char[] data, int start, int end, int x, int y, Color color, FontInfo fontInfo);
+  void drawChars(@NotNull Graphics g, char @NotNull [] data, int start, int end, int x, int y, @NotNull Color color, @NotNull FontInfo fontInfo);
 }

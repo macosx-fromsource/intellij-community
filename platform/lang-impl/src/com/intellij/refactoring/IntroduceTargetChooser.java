@@ -1,185 +1,189 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.refactoring;
 
+import com.intellij.codeInsight.navigation.NavigationUtil;
 import com.intellij.codeInsight.unwrap.ScopeHighlighter;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.ui.popup.JBPopupAdapter;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.popup.IPopupChooserBuilder;
+import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.openapi.ui.popup.JBPopupListener;
 import com.intellij.openapi.ui.popup.LightweightWindowEvent;
+import com.intellij.openapi.ui.popup.ListItemDescriptorAdapter;
+import com.intellij.openapi.ui.popup.PopupChooserBuilder;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Pass;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
 import com.intellij.refactoring.introduce.IntroduceTarget;
 import com.intellij.refactoring.introduce.PsiIntroduceTarget;
-import com.intellij.ui.JBColor;
-import com.intellij.ui.components.JBList;
+import com.intellij.ui.popup.list.GroupedItemsListRenderer;
 import com.intellij.util.Function;
 import com.intellij.util.NotNullFunction;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.ui.accessibility.AccessibleContextUtil;
-import org.jetbrains.annotations.Nls;
+import com.intellij.util.ui.UiReadExecutor;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import javax.swing.ListSelectionModel;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
-public class IntroduceTargetChooser {
+public final class IntroduceTargetChooser {
   private IntroduceTargetChooser() {
   }
 
   public static <T extends PsiElement> void showChooser(@NotNull Editor editor,
-                                                        @NotNull List<T> expressions,
-                                                        @NotNull Pass<T> callback,
-                                                        @NotNull Function<T, String> renderer) {
-    showChooser(editor, expressions, callback, renderer, "Expressions");
+                                                        @NotNull List<? extends T> expressions,
+                                                        @NotNull Pass<? super T> callback,
+                                                        @NotNull Function<? super T, String> renderer) {
+    showChooser(editor, expressions, callback, renderer, RefactoringBundle.message("introduce.target.chooser.expressions.title"));
   }
 
   public static <T extends PsiElement> void showChooser(@NotNull Editor editor,
-                                                        @NotNull List<T> expressions,
-                                                        @NotNull Pass<T> callback,
-                                                        @NotNull Function<T, String> renderer,
-                                                        @NotNull @Nls String title) {
+                                                        @NotNull List<? extends T> expressions,
+                                                        @NotNull Pass<? super T> callback,
+                                                        @NotNull Function<? super T, String> renderer,
+                                                        @NotNull @NlsContexts.PopupTitle String title) {
     showChooser(editor, expressions, callback, renderer, title, ScopeHighlighter.NATURAL_RANGER);
   }
 
   public static <T extends PsiElement> void showChooser(@NotNull Editor editor,
-                                                        @NotNull List<T> expressions,
-                                                        @NotNull Pass<T> callback,
-                                                        @NotNull Function<T, String> renderer,
-                                                        @NotNull @Nls String title,
-                                                        @NotNull NotNullFunction<PsiElement, TextRange> ranger) {
+                                                        @NotNull List<? extends T> expressions,
+                                                        @NotNull Pass<? super T> callback,
+                                                        @NotNull Function<? super T, String> renderer,
+                                                        @NotNull @NlsContexts.PopupTitle String title,
+                                                        @NotNull NotNullFunction<? super PsiElement, ? extends TextRange> ranger) {
     showChooser(editor, expressions, callback, renderer, title, -1, ranger);
   }
 
   public static <T extends PsiElement> void showChooser(@NotNull Editor editor,
-                                                        @NotNull List<T> expressions,
-                                                        @NotNull Pass<T> callback,
-                                                        @NotNull Function<T, String> renderer,
-                                                        @NotNull @Nls String title,
+                                                        @Unmodifiable
+                                                        @NotNull List<? extends T> expressions,
+                                                        @NotNull Pass<? super T> callback,
+                                                        @NotNull Function<? super T, String> renderer,
+                                                        @NotNull @NlsContexts.PopupTitle String title,
                                                         int selection,
-                                                        @NotNull NotNullFunction<PsiElement, TextRange> ranger) {
-    List<MyIntroduceTarget<T>> targets = ContainerUtil.map(expressions, t -> new MyIntroduceTarget<>(t, ranger, renderer));
-    Pass<MyIntroduceTarget<T>> callbackWrapper = new Pass<MyIntroduceTarget<T>>() {
-      @Override
-      public void pass(MyIntroduceTarget<T> target) {
-        callback.pass(target.getPlace());
-      }
-    };
-    showIntroduceTargetChooser(editor, targets, callbackWrapper, title, selection);
+                                                        @NotNull NotNullFunction<? super PsiElement, ? extends TextRange> ranger) {
+
+    if (ApplicationManager.getApplication().isHeadlessEnvironment()) {
+      List<MyIntroduceTarget<T>> targets = ContainerUtil.map(expressions, t -> new MyIntroduceTarget<>(t, ranger.fun(t), renderer.fun(t)));
+      showIntroduceTargetChooser(editor, targets, target -> callback.accept(target.getPlace()), title, selection);
+    }
+    else {
+      ReadAction.nonBlocking(() -> ContainerUtil.map(expressions, t -> new MyIntroduceTarget<>(t, ranger.fun(t), renderer.fun(t))))
+        .finishOnUiThread(ModalityState.nonModal(), targets ->
+          showIntroduceTargetChooser(editor, targets, target -> callback.accept(target.getPlace()), title, selection))
+        .expireWhen(() -> editor.isDisposed())
+        .submit(AppExecutorUtil.getAppExecutorService());
+    }
   }
 
   public static <T extends IntroduceTarget> void showIntroduceTargetChooser(@NotNull Editor editor,
-                                                                            @NotNull List<T> expressions,
-                                                                            @NotNull Pass<T> callback,
-                                                                            @NotNull @Nls String title,
+                                                                            @NotNull List<? extends T> expressions,
+                                                                            @NotNull Consumer<? super T> callback,
+                                                                            @NotNull @NlsContexts.PopupTitle String title,
                                                                             int selection) {
+    showIntroduceTargetChooser(editor, expressions, callback, title, null, selection);
+  }
 
+  public static <T extends IntroduceTarget> void showIntroduceTargetChooser(@NotNull Editor editor,
+                                                                            @NotNull List<? extends T> expressions,
+                                                                            @NotNull Consumer<? super T> callback,
+                                                                            @NotNull @NlsContexts.PopupTitle String title,
+                                                                            @Nullable JComponent southComponent,
+                                                                            int selection) {
+    AtomicReference<ScopeHighlighter> highlighter = new AtomicReference<>(new ScopeHighlighter(editor));
+    Disposable disposable = Disposer.newDisposable();
+    UiReadExecutor executor = UiReadExecutor.conflatedUiReadExecutor(editor.getComponent(), disposable, "introduce target chooser");
 
-    final ScopeHighlighter highlighter = new ScopeHighlighter(editor);
-    final DefaultListModel model = new DefaultListModel();
-    for (T expr : expressions) {
-      model.addElement(expr);
-    }
-    final JList list = new JBList(model);
-    // Set the accessible name so that screen readers announce the list tile (e.g. "Expression Types list").
-    AccessibleContextUtil.setName(list, title);
-    list.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-    if (selection > -1) list.setSelectedIndex(selection);
-    list.setCellRenderer(new DefaultListCellRenderer() {
-
-      @Override
-      public Component getListCellRendererComponent(final JList list,
-                                                    final Object value,
-                                                    final int index,
-                                                    final boolean isSelected,
-                                                    final boolean cellHasFocus) {
-        final Component rendererComponent = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-        final IntroduceTarget expr = (T)value;
-        if (expr.isValid()) {
-          String text = expr.render();
-          int firstNewLinePos = text.indexOf('\n');
-          String trimmedText = text.substring(0, firstNewLinePos != -1 ? firstNewLinePos : Math.min(100, text.length()));
-          if (trimmedText.length() != text.length()) trimmedText += " ...";
-          setText(trimmedText);
-        }
-        else {
-          setForeground(JBColor.RED);
-          setText("Invalid");
-        }
-        return rendererComponent;
-      }
-    });
-
-    list.addListSelectionListener(e -> {
-      highlighter.dropHighlight();
-      final int index = list.getSelectedIndex();
-      if (index < 0) return;
-      final T expr = (T)model.get(index);
-      if (expr.isValid()) {
-        TextRange range = expr.getTextRange();
-        highlighter.highlight(Pair.create(range, Collections.singletonList(range)));
-      }
-    });
-
-    JBPopupFactory.getInstance().createListPopupBuilder(list)
+    IPopupChooserBuilder<T> builder = JBPopupFactory.getInstance().<T>createPopupChooserBuilder(expressions)
+      .setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
+      .setSelectedValue(expressions.get(selection > -1 ? selection : 0), true)
+      .setAccessibleName(title)
       .setTitle(title)
       .setMovable(false)
       .setResizable(false)
       .setRequestFocus(true)
-      .setItemChoosenCallback(() -> {
-        T expr = (T)list.getSelectedValue();
-        if (expr != null && expr.isValid()) {
-          callback.pass(expr);
+      .setItemSelectedCallback(expr -> {
+        ScopeHighlighter h = highlighter.get();
+        if (h == null) return;
+        executor.executeWithReadAccess(() -> {
+          h.dropHighlight();
+          if (expr != null && expr.isValid()) {
+            TextRange range = expr.getTextRange();
+            h.highlight(Pair.create(range, Collections.singletonList(range)));
+          }
+        });
+      })
+      .setItemChosenCallback(expr -> {
+        if (expr.isValid()) {
+          callback.accept(expr);
         }
       })
-      .addListener(new JBPopupAdapter() {
+      .addListener(new JBPopupListener() {
         @Override
-        public void onClosed(LightweightWindowEvent event) {
-          highlighter.dropHighlight();
+        public void onClosed(@NotNull LightweightWindowEvent event) {
+          highlighter.getAndSet(null).dropHighlight();
         }
       })
-      .createPopup().showInBestPositionFor(editor);
+      .setRenderer(new GroupedItemsListRenderer<>(new ListItemDescriptorAdapter<>() {
+        @Override
+        public String getTextFor(T value) {
+          String text = value.render();
+          int firstNewLinePos = text.indexOf('\n');
+          String trimmedText = text.substring(0, firstNewLinePos != -1 ? firstNewLinePos : Math.min(100, text.length()));
+          if (trimmedText.length() != text.length()) trimmedText += " ...";
+          return trimmedText;
+        }
+      }));
+    if (southComponent != null && builder instanceof PopupChooserBuilder) {
+      ((PopupChooserBuilder<T>)builder).setSouthComponent(southComponent);
+    }
+    JBPopup popup = builder.createPopup();
+    Disposer.register(popup, disposable);
+    popup.showInBestPositionFor(editor);
+    Project project = editor.getProject();
+    if (project != null && !popup.isDisposed()) {
+      NavigationUtil.hidePopupIfDumbModeStarts(popup, project);
+    }
   }
 
-  private static class MyIntroduceTarget<T extends PsiElement> extends PsiIntroduceTarget<T> {
-    private final NotNullFunction<PsiElement, TextRange> myRanger;
-    private final Function<T, String> myRenderer;
+  private static final class MyIntroduceTarget<T extends PsiElement> extends PsiIntroduceTarget<T> {
+    private final TextRange myTextRange;
+    private final String myText;
 
-    public MyIntroduceTarget(@NotNull T psi,
-                             @NotNull NotNullFunction<PsiElement, TextRange> ranger,
-                             @NotNull Function<T, String> renderer) {
+    MyIntroduceTarget(@NotNull T psi, @NotNull TextRange range, @NotNull String text) {
       super(psi);
-      myRanger = ranger;
-      myRenderer = renderer;
+      myTextRange = range;
+      myText = text;
     }
 
-    @NotNull
     @Override
-    public TextRange getTextRange() {
-      return myRanger.fun(getPlace());
+    public @NotNull TextRange getTextRange() {
+      return myTextRange;
     }
 
-    @NotNull
     @Override
-    public String render() {
-      return myRenderer.fun(getPlace());
+    public @NotNull String render() {
+      return myText;
+    }
+
+    @Override
+    public String toString() {
+      return myText;
     }
   }
 }

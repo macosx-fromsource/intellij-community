@@ -1,48 +1,27 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.textarea;
 
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.RangeMarker;
-import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.UserDataHolderBase;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.text.BadLocationException;
+import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
-import java.beans.PropertyChangeListener;
 
-/**
- * @author yole
- */
-public class TextComponentDocument extends UserDataHolderBase implements Document {
+
+class TextComponentDocument extends UserDataHolderBase implements com.intellij.openapi.editor.Document {
   private final JTextComponent myTextComponent;
 
-  public TextComponentDocument(final JTextComponent textComponent) {
+  TextComponentDocument(final JTextComponent textComponent) {
     myTextComponent = textComponent;
   }
 
-  @NotNull
   @Override
-  public String getText() {
+  public @NotNull CharSequence getImmutableCharSequence() {
     try {
-      final javax.swing.text.Document document = myTextComponent.getDocument();
+      final Document document = myTextComponent.getDocument();
       return document.getText(0, document.getLength());
     }
     catch (BadLocationException e) {
@@ -50,34 +29,15 @@ public class TextComponentDocument extends UserDataHolderBase implements Documen
     }
   }
 
-  @NotNull
   @Override
-  public String getText(@NotNull TextRange range) {
+  public @NotNull String getText(@NotNull TextRange range) {
     try {
-      final javax.swing.text.Document document = myTextComponent.getDocument();
+      final Document document = myTextComponent.getDocument();
       return document.getText(range.getStartOffset(), range.getLength());
     }
     catch (BadLocationException e) {
       throw new RuntimeException(e);
     }
-  }
-
-  @Override
-  @NotNull
-  public CharSequence getCharsSequence() {
-    return getText();
-  }
-
-  @NotNull
-  @Override
-  public CharSequence getImmutableCharSequence() {
-    return getText();
-  }
-
-  @Override
-  @NotNull
-  public char[] getChars() {
-    throw new UnsupportedOperationException("Not implemented");
   }
 
   @Override
@@ -106,7 +66,7 @@ public class TextComponentDocument extends UserDataHolderBase implements Documen
   }
 
   @Override
-  public void insertString(final int offset, @NotNull final CharSequence s) {
+  public void insertString(final int offset, final @NotNull CharSequence s) {
     try {
       myTextComponent.getDocument().insertString(offset, s.toString(), null);
     }
@@ -126,8 +86,8 @@ public class TextComponentDocument extends UserDataHolderBase implements Documen
   }
 
   @Override
-  public void replaceString(final int startOffset, final int endOffset, @NotNull final CharSequence s) {
-    final javax.swing.text.Document document = myTextComponent.getDocument();
+  public void replaceString(final int startOffset, final int endOffset, final @NotNull CharSequence s) {
+    final Document document = myTextComponent.getDocument();
     try {
       document.remove(startOffset, endOffset-startOffset);
       document.insertString(startOffset, s.toString(), null);
@@ -143,106 +103,22 @@ public class TextComponentDocument extends UserDataHolderBase implements Documen
   }
 
   @Override
+  public @NotNull RangeMarker createRangeMarker(int startOffset, int endOffset, boolean surviveOnExternalChange) {
+    throw new UnsupportedOperationException("Not implemented");
+  }
+
+  @Override
+  public @NotNull RangeMarker createGuardedBlock(int startOffset, int endOffset) {
+    throw new UnsupportedOperationException("Not implemented");
+  }
+
+  @Override
+  public void setText(@NotNull CharSequence text) {
+    throw new UnsupportedOperationException("Not implemented");
+  }
+
+  @Override
   public long getModificationStamp() {
     throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void fireReadOnlyModificationAttempt() {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void addDocumentListener(@NotNull final DocumentListener listener) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void addDocumentListener(@NotNull final DocumentListener listener, @NotNull final Disposable parentDisposable) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void removeDocumentListener(@NotNull final DocumentListener listener) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  @NotNull
-  public RangeMarker createRangeMarker(final int startOffset, final int endOffset) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  @NotNull
-  public RangeMarker createRangeMarker(final int startOffset, final int endOffset, final boolean surviveOnExternalChange) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void addPropertyChangeListener(@NotNull final PropertyChangeListener listener) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void removePropertyChangeListener(@NotNull final PropertyChangeListener listener) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void setReadOnly(final boolean isReadOnly) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  @NotNull
-  public RangeMarker createGuardedBlock(final int startOffset, final int endOffset) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void removeGuardedBlock(@NotNull final RangeMarker block) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  @Nullable
-  public RangeMarker getOffsetGuard(final int offset) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  @Nullable
-  public RangeMarker getRangeGuard(final int start, final int end) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void startGuardedBlockChecking() {
-  }
-
-  @Override
-  public void stopGuardedBlockChecking() {
-  }
-
-  @Override
-  public void setCyclicBufferSize(final int bufferSize) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public void setText(@NotNull final CharSequence text) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  @NotNull
-  public RangeMarker createRangeMarker(@NotNull final TextRange textRange) {
-    throw new UnsupportedOperationException("Not implemented");
-  }
-
-  @Override
-  public int getLineSeparatorLength(final int line) {
-    return 0;
   }
 }

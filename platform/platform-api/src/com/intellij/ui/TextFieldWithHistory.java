@@ -17,13 +17,16 @@ package com.intellij.ui;
 
 import com.intellij.openapi.fileChooser.FileTextField;
 import com.intellij.openapi.ui.ComboBox;
+import com.intellij.openapi.util.NlsSafe;
 
-import javax.swing.*;
+import javax.swing.AbstractListModel;
+import javax.swing.ComboBoxModel;
+import javax.swing.JTextField;
 import javax.swing.event.DocumentListener;
-import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public class TextFieldWithHistory extends ComboBox {
   private int myHistorySize = 5;
@@ -33,12 +36,6 @@ public class TextFieldWithHistory extends ComboBox {
     myModel = new MyModel();
     setModel(myModel);
     setEditable(true);
-  }
-
-  // API compatibility with 7.0.1
-  @SuppressWarnings({"UnusedDeclaration"})
-  public TextFieldWithHistory(boolean cropList) {
-    this();
   }
 
   public void addDocumentListener(DocumentListener listener) {
@@ -77,10 +74,11 @@ public class TextFieldWithHistory extends ComboBox {
     getTextEditor().setText(aText);
   }
 
-  public String getText() {
+  public @NlsSafe String getText() {
     return getTextEditor().getText();
   }
 
+  @Override
   public void removeNotify() {
     super.removeNotify();
     hidePopup();
@@ -94,6 +92,7 @@ public class TextFieldWithHistory extends ComboBox {
   public void addCurrentTextToHistory() {
     final String item = getText();
     myModel.addElement(item);
+    myModel.setSelectedItem(item);
   }
 
   public void selectText() {
@@ -121,10 +120,12 @@ public class TextFieldWithHistory extends ComboBox {
 
     private Object mySelectedItem;
 
+    @Override
     public Object getElementAt(int index) {
       return myFullList.get(index);
     }
 
+    @Override
     public int getSize() {
       return Math.min(myHistorySize == -1 ? Integer.MAX_VALUE : myHistorySize, myFullList.size());
     }
@@ -132,7 +133,7 @@ public class TextFieldWithHistory extends ComboBox {
     public void addElement(Object obj) {
       String newItem = ((String)obj).trim();
 
-      if (0 == newItem.length()) {
+      if (newItem.isEmpty()) {
         return;
       }
 
@@ -149,13 +150,17 @@ public class TextFieldWithHistory extends ComboBox {
       fireIntervalAdded(this, index, index);
     }
 
+    @Override
     public Object getSelectedItem() {
       return mySelectedItem;
     }
 
+    @Override
     public void setSelectedItem(Object anItem) {
-      mySelectedItem = anItem;
-      fireContentsChanged();
+      if (!Objects.equals(anItem, mySelectedItem)) {
+        mySelectedItem = anItem;
+        fireContentsChanged();
+      }
     }
 
     public void fireContentsChanged() {
@@ -169,12 +174,6 @@ public class TextFieldWithHistory extends ComboBox {
     public void setItems(List<String> aList) {
       myFullList = new ArrayList<>(aList);
       fireContentsChanged();
-    }
-  }
-
-  protected static class TextFieldWithProcessing extends JTextField {
-    public void processKeyEvent(KeyEvent e) {
-      super.processKeyEvent(e);
     }
   }
 }

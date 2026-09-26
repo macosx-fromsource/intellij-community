@@ -1,24 +1,15 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ui;
 
 import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.text.StringUtil;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JCheckBox;
+import javax.swing.JTable;
+import javax.swing.JViewport;
+import javax.swing.ListSelectionModel;
+import javax.swing.SwingUtilities;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.event.TableModelEvent;
@@ -26,14 +17,15 @@ import javax.swing.event.TableModelListener;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumnModel;
 import javax.swing.table.TableModel;
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 
 public class TableExpandableItemsHandler extends AbstractExpandableItemsHandler<TableCell, JTable> {
   protected TableExpandableItemsHandler(final JTable table) {
     super(table);
-
     final ListSelectionListener selectionListener = new ListSelectionListener() {
       @Override
       public void valueChanged(ListSelectionEvent e) {
@@ -102,8 +94,8 @@ public class TableExpandableItemsHandler extends AbstractExpandableItemsHandler<
     return myComponent.getCellRect(tableCellKey.row, tableCellKey.column, false);
   }
 
-  @Nullable
-  public Pair<Component, Rectangle> getCellRendererAndBounds(TableCell key) {
+  @Override
+  public @Nullable Pair<Component, Rectangle> getCellRendererAndBounds(TableCell key) {
     if (key.row < 0 || key.row >= myComponent.getRowCount() ||
         key.column < 0 || key.column >= myComponent.getColumnCount() ||
         key.row == myComponent.getEditingRow() && key.column == myComponent.getEditingColumn() ||
@@ -113,11 +105,15 @@ public class TableExpandableItemsHandler extends AbstractExpandableItemsHandler<
 
     Rectangle cellRect = getCellRect(key);
     Component renderer = myComponent.prepareRenderer(myComponent.getCellRenderer(key.row, key.column), key.row, key.column);
+    Component unwrapped = ExpandedItemRendererComponentWrapper.unwrap(renderer);
+    if (unwrapped instanceof JCheckBox && StringUtil.isEmptyOrSpaces(((JCheckBox)unwrapped).getText())) return null;
+    AppUIUtil.targetToDevice(renderer, myComponent);
     cellRect.width = renderer.getPreferredSize().width;
 
     return Pair.create(renderer, cellRect);
   }
 
+  @Override
   public Rectangle getVisibleRect(TableCell key) {
     Rectangle columnVisibleRect = myComponent.getVisibleRect();
     Rectangle cellRect = getCellRect(key);
@@ -127,6 +123,22 @@ public class TableExpandableItemsHandler extends AbstractExpandableItemsHandler<
     return columnVisibleRect;
   }
 
+  @Override
+  public boolean isEnabled() {
+    // tables without scroll pane do not repaint rows correctly (BasicTableUI.paint:1868-1872)
+    return super.isEnabled() && myComponent.getParent() instanceof JViewport;
+  }
+
+  @Override
+  public void setEnabled(boolean enabled) {
+    super.setEnabled(enabled);
+    JTableHeader header = myComponent.getTableHeader();
+    if (header instanceof ComponentWithExpandableItems<?>) {
+      ((ComponentWithExpandableItems<?>)header).setExpandableItemsEnabled(enabled);
+    }
+  }
+
+  @Override
   public TableCell getCellKeyForPoint(Point point) {
     int rowIndex = myComponent.rowAtPoint(point);
     if (rowIndex == -1) {

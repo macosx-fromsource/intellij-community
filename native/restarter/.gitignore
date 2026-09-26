@@ -1,9 +1,2 @@
-Debug
-Release
-_UpgradeReport_Files
-*.suo
-*.vcxproj.user
-UpgradeLog.xml
-ipch
-*.sdf
-xuserdata
+/.idea/
+/target/

@@ -1,46 +1,71 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs;
 
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.CalledInAny;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
+import java.awt.Color;
 
-/**
- * @author mike
- */
 public abstract class FileStatusManager {
-  public static FileStatusManager getInstance(Project project) {
-    return project.getComponent(FileStatusManager.class);
+  protected static final Logger LOG = Logger.getInstance(FileStatusManager.class);
+
+  public static FileStatusManager getInstance(@NotNull Project project) {
+    if (project.isDefault()) {
+      LOG.error("Can't create FileStatusManager for default project");
+      return new DefaultFileStatusManager();
+    }
+    return project.getService(FileStatusManager.class);
   }
 
-  public abstract FileStatus getStatus(@NotNull VirtualFile virtualFile);
+  @ApiStatus.Internal
+  protected FileStatusManager() {
+  }
 
+  /**
+   * Returns color that is associated with passed file in vcs subsystem.
+   * <p>
+   * Users are discouraged from comparing returned value with a constant, because it might be vcs-specific {@link org.zmlx.hg4idea.provider.HgChangeProvider#RENAMED}
+   * or affected by other means {@link com.intellij.openapi.vcs.changes.conflicts.ChangelistConflictFileStatusProvider#MODIFIED_OUTSIDE}.
+   *
+   * @see com.intellij.openapi.vcs.changes.ChangeListManager#getStatus
+   * @see FileStatusFactory
+   * @see com.intellij.openapi.vcs.impl.FileStatusProvider
+   * @see FileStatusListener
+   */
+  @CalledInAny
+  public abstract @NotNull FileStatus getStatus(@NotNull VirtualFile file);
+
+  /**
+   * Notify VCS that file statuses might have changed and need to be updated.
+   * <p>
+   * Not to be confused with {@link FileStatusListener#fileStatusChanged}.
+   * This method can be used by {@link com.intellij.openapi.vcs.impl.FileStatusProvider} implementations to notify VCS about the change
+   * in {@link com.intellij.openapi.vcs.impl.FileStatusProvider#getFileStatus(VirtualFile)} output.
+   * {@link FileStatusListener#fileStatusChanged} is used by VCS to notify {@link FileStatusManager#getStatus(VirtualFile)} users about the change.
+   */
+  @CalledInAny
   public abstract void fileStatusesChanged();
 
-  public abstract void fileStatusChanged(VirtualFile file);
+  @CalledInAny
+  public abstract void fileStatusChanged(@Nullable VirtualFile file);
 
-  public abstract void addFileStatusListener(@NotNull FileStatusListener listener);
+  public void addFileStatusListener(@NotNull FileStatusListener listener, @NotNull Disposable parentDisposable) {
+  }
 
-  public abstract void addFileStatusListener(@NotNull FileStatusListener listener, @NotNull Disposable parentDisposable);
+  public @Nullable Color getNotChangedDirectoryColor(@NotNull VirtualFile file) {
+    return getRecursiveStatus(file).getColor();
+  }
 
-  public abstract void removeFileStatusListener(@NotNull FileStatusListener listener);
-
-  public abstract Color getNotChangedDirectoryColor(@NotNull VirtualFile vf);
+  /**
+   * @see VcsConfiguration#SHOW_DIRTY_RECURSIVELY
+   * @see FileStatus#NOT_CHANGED_IMMEDIATE
+   * @see FileStatus#NOT_CHANGED_RECURSIVE
+   */
+  public abstract @NotNull FileStatus getRecursiveStatus(@NotNull VirtualFile file);
 }

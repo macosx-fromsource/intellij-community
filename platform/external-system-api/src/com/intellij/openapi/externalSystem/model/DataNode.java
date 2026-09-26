@@ -1,35 +1,28 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.externalSystem.model;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.openapi.util.UserDataHolderEx;
-import com.intellij.openapi.util.io.StreamUtil;
-import com.intellij.util.containers.ContainerUtilRt;
+import com.intellij.util.ObjectUtils;
+import com.intellij.util.concurrency.AtomicFieldUpdater;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.*;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.Proxy;
-import java.util.*;
+import java.io.Serializable;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
- * This class provides a generic graph infrastructure with ability to store particular data. The main purpose is to 
+ * This class provides a generic graph infrastructure with ability to store particular data. The main purpose is to
  * allow easy extensible data domain construction.
  * <p/>
  * Example: we might want to describe project model like 'project' which has multiple 'module' children where every
@@ -37,164 +30,79 @@ import java.util.*;
  * enhance any project. For example, particular framework can add facet settings as one more 'project' node's child.
  * <p/>
  * Not thread-safe.
- *
- * @author Denis Zhdanov
- * @since 4/12/13 11:53 AM
  */
-public class DataNode<T> implements Serializable, UserDataHolderEx {
-
-  private static final long serialVersionUID = 1L;
+public class DataNode<T> implements UserDataHolderEx, Serializable {
   private static final Logger LOG = Logger.getInstance(DataNode.class);
 
-  @NotNull private final List<DataNode<?>> myChildren = ContainerUtilRt.newArrayList();
-  @NotNull private transient List<DataNode<?>> myChildrenView = Collections.unmodifiableList(myChildren);
-  @NotNull private transient UserDataHolderBase myUserData = new UserDataHolderBase();
+  @SuppressWarnings("NullableProblems") private @NotNull Key<T> key;
 
-  @NotNull private final Key<T> myKey;
-  private transient T myData;
-  private byte[] myRawData;
-  private boolean myIgnored;
+  @SuppressWarnings("FieldMayBeFinal") private transient volatile @Nullable UserDataHolderBase internalUserDataOrNull = null;
+  private static final AtomicFieldUpdater<DataNode, UserDataHolderBase> userDataUpdater
+    = AtomicFieldUpdater.forFieldOfType(DataNode.class, UserDataHolderBase.class);
 
-  @Nullable private DataNode<?> myParent;
+  private @Nullable T data;
+
+  private boolean ignored;
+
+  private transient volatile boolean ready;
+
+  private @Nullable DataNode<?> parent;
+
+  private @Nullable List<DataNode<?>> children;
+  private transient @Nullable List<DataNode<?>> childrenView;
 
   public DataNode(@NotNull Key<T> key, @NotNull T data, @Nullable DataNode<?> parent) {
-    myKey = key;
-    myData = data;
-    myParent = parent;
+    this.key = key;
+    this.data = data;
+    this.parent = parent;
   }
 
-  private DataNode(@NotNull Key<T> key) {
-    myKey = key;
+  public boolean isReady() {
+    return ready;
   }
 
-  @Nullable
-  public DataNode<?> getParent() {
-    return myParent;
+  // deserialization, data decoded on demand
+  private DataNode() {
   }
 
-  @NotNull
-  public <T> DataNode<T> createChild(@NotNull Key<T> key, @NotNull T data) {
+  public @Nullable DataNode<?> getParent() {
+    return parent;
+  }
+
+  public @NotNull <T> DataNode<T> createChild(@NotNull Key<T> key, @NotNull T data) {
     DataNode<T> result = new DataNode<>(key, data, this);
-    myChildren.add(result);
+    doAddChild(result);
     return result;
   }
 
-  @NotNull
-  public Key<T> getKey() {
-    return myKey;
+  public @NotNull Key<T> getKey() {
+    return key;
   }
 
-  @NotNull
-  public T getData() {
-    if (myData == null) {
-      prepareData(getClass().getClassLoader(), Thread.currentThread().getContextClassLoader());
-    }
-    return myData;
+  public @NotNull T getData() {
+    return data;
   }
 
   public boolean isIgnored() {
-    return myIgnored;
+    return ignored;
   }
 
   public void setIgnored(boolean ignored) {
-    myIgnored = ignored;
+    this.ignored = ignored;
   }
 
   /**
-   * This class is a generic holder for any kind of project data. That project data might originate from different locations, e.g.
-   * core ide plugins, non-core ide plugins, third-party plugins etc. That means that when a service from a core plugin needs to
-   * unmarshall {@link DataNode} object, its content should not be unmarshalled as well because its class might be unavailable here.
-   * <p/>
-   * That's why the content is delivered as a raw byte array and this method allows to build actual java object from it using
-   * the right class loader.
-   * <p/>
-   * This method is a no-op if the content is already built.
-   *  
-   * @param loaders  class loaders which are assumed to be able to build object of the target content class
+   * Allows to replace or modify data. If function returns null, data is left unchanged
+   * @param visitor visitor. Must accept argument of type T and return value of type T
    */
-  @SuppressWarnings({"unchecked", "IOResourceOpenedButNotSafelyClosed"})
-  public void prepareData(@NotNull final ClassLoader ... loaders) {
-    if (myData != null) {
+  public void visitData(@Nullable Function visitor) {
+    if (visitor == null) {
       return;
     }
-    ObjectInputStream oIn = null;
-    try {
-      oIn = new ObjectInputStream(new ByteArrayInputStream(myRawData)) {
-        @Override
-        protected Class<?> resolveClass(ObjectStreamClass desc) throws IOException, ClassNotFoundException {
-          String name = desc.getName();
-          for (ClassLoader loader : loaders) {
-            try {
-              return Class.forName(name, false, loader);
-            }
-            catch (ClassNotFoundException e) {
-              // Ignore
-            }
-          }
-          return super.resolveClass(desc);
-        }
-
-        @Override
-        protected Class<?> resolveProxyClass(String[] interfaces) throws IOException, ClassNotFoundException {
-          for (ClassLoader loader : loaders) {
-            try {
-              return doResolveProxyClass(interfaces, loader);
-            }
-            catch (ClassNotFoundException e) {
-              // Ignore
-            }
-          }
-          return super.resolveProxyClass(interfaces);
-        }
-        
-        private Class<?> doResolveProxyClass(@NotNull String[] interfaces, @NotNull ClassLoader loader) throws ClassNotFoundException {
-          ClassLoader nonPublicLoader = null;
-          boolean hasNonPublicInterface = false;
-
-          // define proxy in class loader of non-public interface(s), if any
-          Class[] classObjs = new Class[interfaces.length];
-          for (int i = 0; i < interfaces.length; i++) {
-            Class cl = Class.forName(interfaces[i], false, loader);
-            if ((cl.getModifiers() & Modifier.PUBLIC) == 0) {
-              if (hasNonPublicInterface) {
-                if (nonPublicLoader != cl.getClassLoader()) {
-                  throw new IllegalAccessError(
-                    "conflicting non-public interface class loaders");
-                }
-              } else {
-                nonPublicLoader = cl.getClassLoader();
-                hasNonPublicInterface = true;
-              }
-            }
-            classObjs[i] = cl;
-          }
-          try {
-            return Proxy.getProxyClass(hasNonPublicInterface ? nonPublicLoader : loader, classObjs);
-          }
-          catch (IllegalArgumentException e) {
-            throw new ClassNotFoundException(null, e);
-          }
-        }
-      };
-      myData = (T)oIn.readObject();
-      myRawData = null;
-
-      assert myData != null;
-    }
-    catch (IOException e) {
-      throw new IllegalStateException(
-        String.format("Can't deserialize target data of key '%s'. Given class loaders: %s", myKey, Arrays.toString(loaders)),
-        e
-      );
-    }
-    catch (ClassNotFoundException e) {
-      throw new IllegalStateException(
-        String.format("Can't deserialize target data of key '%s'. Given class loaders: %s", myKey, Arrays.toString(loaders)),
-        e
-      );
-    }
-    finally {
-      StreamUtil.closeStream(oIn);
+    @SuppressWarnings("unchecked")
+    T newData = (T) visitor.apply(getData());
+    if (newData != null) {
+      data = newData;
     }
   }
 
@@ -206,27 +114,25 @@ public class DataNode<T> implements Serializable, UserDataHolderEx {
    * @return data stored for the current key and available via the current node (if any)
    */
   @SuppressWarnings("unchecked")
-  @Nullable
-  public <T> T getData(@NotNull Key<T> key) {
-    if (myKey.equals(key)) {
-      return (T)myData;
+  public @Nullable <T> T getData(@NotNull Key<T> key) {
+    if (this.key.equals(key)) {
+      return (T)data;
     }
-    for (DataNode<?> p = myParent; p != null; p = p.myParent) {
-      if (p.myKey.equals(key)) {
-        return (T)p.myData;
+    for (DataNode<?> p = parent; p != null; p = p.parent) {
+      if (p.key.equals(key)) {
+        return (T)p.data;
       }
     }
     return null;
   }
 
   @SuppressWarnings("unchecked")
-  @Nullable
-  public <T> DataNode<T> getDataNode(@NotNull Key<T> key) {
-    if (myKey.equals(key)) {
+  public @Nullable <T> DataNode<T> getDataNode(@NotNull Key<T> key) {
+    if (this.key.equals(key)) {
       return (DataNode<T>)this;
     }
-    for (DataNode<?> p = myParent; p != null; p = p.myParent) {
-      if (p.myKey.equals(key)) {
+    for (DataNode<?> p = parent; p != null; p = p.parent) {
+      if (p.key.equals(key)) {
         return (DataNode<T>)p;
       }
     }
@@ -234,13 +140,12 @@ public class DataNode<T> implements Serializable, UserDataHolderEx {
   }
 
   @SuppressWarnings("unchecked")
-  @Nullable
-  public <P> DataNode<P> getParent(@NotNull Class<P> dataClass) {
-    if (dataClass.isInstance(myData)) {
+  public @Nullable <P> DataNode<P> getParent(@NotNull Class<P> dataClass) {
+    if (dataClass.isInstance(data)) {
       return (DataNode<P>)this;
     }
-    for (DataNode<?> p = myParent; p != null; p = p.myParent) {
-      if (dataClass.isInstance(p.myData)) {
+    for (DataNode<?> p = parent; p != null; p = p.parent) {
+      if (dataClass.isInstance(p.data)) {
         return (DataNode<P>)p;
       }
     }
@@ -248,54 +153,42 @@ public class DataNode<T> implements Serializable, UserDataHolderEx {
   }
 
   public void addChild(@NotNull DataNode<?> child) {
-    child.myParent = this;
-    myChildren.add(child);
+    child.parent = this;
+    doAddChild(child);
   }
 
-  @NotNull
-  public Collection<DataNode<?>> getChildren() {
-    return myChildrenView;
+  private void doAddChild(@NotNull DataNode<?> child) {
+    if (children == null) {
+      ArrayList<DataNode<?>> newChildren = new ArrayList<>();
+      newChildren.add(child);
+      initChildren(newChildren);
+    }
+    else {
+      children.add(child);
+    }
   }
 
-  private void writeObject(ObjectOutputStream out) throws IOException {
-    try {
-      myRawData = getDataBytes();
-    }
-    catch (IOException e) {
-      LOG.warn("Unable to serialize the data node - " + toString());
-      throw e;
-    }
-    out.defaultWriteObject();
+  private void initChildren(@Nullable ArrayList<DataNode<?>> children) {
+    this.children = children;
+    this.childrenView = null;
   }
 
-  private void readObject(ObjectInputStream in)
-    throws IOException, ClassNotFoundException {
-    in.defaultReadObject();
-    myChildrenView = Collections.unmodifiableList(myChildren);
-    myUserData = new UserDataHolderBase();
-  }
+  public @NotNull Collection<DataNode<?>> getChildren() {
+    if (children == null || children.isEmpty()) return Collections.emptyList();
 
-  public byte[] getDataBytes() throws IOException {
-    if (myRawData != null) return myRawData;
-
-    ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-    ObjectOutputStream oOut = new ObjectOutputStream(bOut);
-    try {
-      oOut.writeObject(myData);
-      final byte[] bytes = bOut.toByteArray();
-      myRawData = bytes;
-      return bytes;
+    List<DataNode<?>> result = childrenView;
+    if (result == null) {
+      result = Collections.unmodifiableList(children);
+      childrenView = result;
     }
-    finally {
-      oOut.close();
-    }
+    return result;
   }
 
   @Override
   public int hashCode() {
     // We can't use myChildren.hashCode() because it iterates whole subtree. This should not produce many collisions because 'getData()'
     // usually refers to different objects
-    return 31 * myKey.hashCode() + getData().hashCode();
+    return 31 * key.hashCode() + getData().hashCode();
   }
 
   @Override
@@ -305,10 +198,12 @@ public class DataNode<T> implements Serializable, UserDataHolderEx {
 
     DataNode node = (DataNode)o;
 
-    if (!myChildren.equals(node.myChildren)) return false;
-    if (!getData().equals(node.getData())) return false;
-    if (!myKey.equals(node.myKey)) return false;
-
+    if (!Objects.equals(key, node.key)) return false;
+    if (!Objects.equals(getData(), node.getData())) return false;
+    if (!Objects.equals(ObjectUtils.notNull(children, Collections.emptyList()),
+                        ObjectUtils.notNull(node.children, Collections.emptyList()))) {
+      return false;
+    }
     return true;
   }
 
@@ -322,89 +217,119 @@ public class DataNode<T> implements Serializable, UserDataHolderEx {
       dataDescription = "failed to load";
       LOG.debug(e);
     }
-    return String.format("%s: %s", myKey, dataDescription);
+    return String.format("%s: %s", key, dataDescription);
   }
 
   public void clear(boolean removeFromGraph) {
-    if (removeFromGraph && myParent != null) {
-      for (Iterator<DataNode<?>> iterator = myParent.myChildren.iterator(); iterator.hasNext(); ) {
+    if (removeFromGraph && parent != null && parent.children != null) {
+      for (Iterator<DataNode<?>> iterator = parent.children.iterator(); iterator.hasNext(); ) {
         DataNode<?> dataNode = iterator.next();
         if (System.identityHashCode(dataNode) == System.identityHashCode(this)) {
           iterator.remove();
+          if (parent.children.isEmpty()) parent.initChildren(null);
           break;
         }
       }
     }
-    myParent = null;
-    myRawData = null;
-    myChildren.clear();
+    parent = null;
+    initChildren(null);
   }
 
-  @NotNull
-  public DataNode<T> graphCopy() {
-    return сopy(this, null);
+  public @NotNull DataNode<T> graphCopy() {
+    return copy(this, null);
   }
 
-  @NotNull
-  public DataNode<T> nodeCopy() {
+  public @NotNull DataNode<T> nodeCopy() {
     return nodeCopy(this);
   }
 
-  @Nullable
   @Override
-  public <U> U getUserData(@NotNull com.intellij.openapi.util.Key<U> key) {
-    return (U)myUserData.getUserData(key);
+  public @Nullable <U> U getUserData(@NotNull com.intellij.openapi.util.Key<U> key) {
+    UserDataHolderBase holder = getUserDataHolder();
+    return holder == null ? null : holder.getUserData(key);
   }
 
   @Override
   public <U> void putUserData(@NotNull com.intellij.openapi.util.Key<U> key, U value) {
-    myUserData.putUserData(key, value);
+    getOrCreateUserDataHolder().putUserData(key, value);
   }
 
   public <U> void removeUserData(@NotNull com.intellij.openapi.util.Key<U> key) {
-    myUserData.putUserData(key, null);
-  }
-
-  @NotNull
-  @Override
-  public <T> T putUserDataIfAbsent(@NotNull com.intellij.openapi.util.Key<T> key, @NotNull T value) {
-    return myUserData.putUserDataIfAbsent(key, value);
+    getOrCreateUserDataHolder().putUserData(key, null);
   }
 
   @Override
-  public <T> boolean replace(@NotNull com.intellij.openapi.util.Key<T> key, @Nullable T oldValue, @Nullable T newValue) {
-    return myUserData.replace(key, oldValue, newValue);
+  public @NotNull <D> D putUserDataIfAbsent(@NotNull com.intellij.openapi.util.Key<D> key, @NotNull D value) {
+    return getOrCreateUserDataHolder().putUserDataIfAbsent(key, value);
+  }
+
+  @Override
+  public <D> boolean replace(@NotNull com.intellij.openapi.util.Key<D> key, @Nullable D oldValue, @Nullable D newValue) {
+    return getOrCreateUserDataHolder().replace(key, oldValue, newValue);
   }
 
   public <T> void putCopyableUserData(@NotNull com.intellij.openapi.util.Key<T> key, T value) {
-    myUserData.putCopyableUserData(key, value);
-  }
-
-  public boolean isUserDataEmpty() {
-    return myUserData.isUserDataEmpty();
+    getOrCreateUserDataHolder().putCopyableUserData(key, value);
   }
 
   public <T> T getCopyableUserData(@NotNull com.intellij.openapi.util.Key<T> key) {
-    return myUserData.getCopyableUserData(key);
+    UserDataHolderBase holder = getUserDataHolder();
+    return holder == null ? null : holder.getCopyableUserData(key);
   }
 
-  @NotNull
-  public static <T> DataNode<T> nodeCopy(@NotNull DataNode<T> dataNode) {
-    DataNode<T> copy = new DataNode<>(dataNode.myKey);
-    copy.myData = dataNode.myData;
-    copy.myRawData = dataNode.myRawData;
-    copy.myIgnored = dataNode.myIgnored;
-    dataNode.myUserData.copyCopyableDataTo(copy.myUserData);
+  public boolean validateData() {
+    if (data == null) {
+      ready = false;
+      clear(true);
+    }
+    else {
+      ready = true;
+    }
+    return ready;
+  }
+
+  public static @NotNull <T> DataNode<T> nodeCopy(@NotNull DataNode<T> dataNode) {
+    DataNode<T> copy = new DataNode<>();
+    copy.key = dataNode.key;
+    copy.data = dataNode.data;
+    copy.ignored = dataNode.ignored;
+    copy.ready = dataNode.ready;
+
+    UserDataHolderBase userData = dataNode.getUserDataHolder();
+    if (userData != null) userData.copyCopyableDataTo(copy.getOrCreateUserDataHolder());
     return copy;
   }
 
-  @NotNull
-  private static <T> DataNode<T> сopy(@NotNull DataNode<T> dataNode, @Nullable DataNode<?> newParent) {
+  private @Nullable UserDataHolderBase getUserDataHolder() {
+    return internalUserDataOrNull;
+  }
+
+  private @NotNull UserDataHolderBase getOrCreateUserDataHolder() {
+    if (internalUserDataOrNull == null) {
+      userDataUpdater.compareAndSet(this, null, new UserDataHolderBase());
+    }
+    //noinspection ConstantConditions
+    return internalUserDataOrNull;
+  }
+
+  private static @NotNull <T> DataNode<T> copy(@NotNull DataNode<T> dataNode, @Nullable DataNode<?> newParent) {
     DataNode<T> copy = nodeCopy(dataNode);
-    copy.myParent = newParent;
-    for (DataNode<?> child : dataNode.myChildren) {
-      copy.addChild(сopy(child, copy));
+    copy.parent = newParent;
+    if (dataNode.children != null) {
+      copy.initChildren(new ArrayList<>(ContainerUtil.map(dataNode.children, child -> copy(child, copy))));
     }
     return copy;
+  }
+
+  public final void visit(@NotNull Consumer<? super DataNode<?>> consumer) {
+    ArrayDeque<DataNode<?>> toProcess = new ArrayDeque<>();
+    toProcess.add(this);
+    DataNode<?> node;
+    while ((node = toProcess.pollFirst()) != null) {
+      consumer.accept(node);
+      if (node.children != null) {
+        toProcess.addAll(node.children);
+      }
+    }
   }
 }

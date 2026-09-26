@@ -1,66 +1,23 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ui;
 
-import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.Action;
-import javax.swing.ActionMap;
+import javax.swing.JComponent;
 import javax.swing.JScrollPane;
-import java.awt.Component;
-import java.awt.KeyboardFocusManager;
-import java.awt.event.ActionEvent;
 
-import static com.intellij.openapi.actionSystem.PlatformDataKeys.CONTEXT_COMPONENT;
-
-/**
- * @author Sergey.Malenkov
- */
-public abstract class ScrollPaneActions extends AnAction {
-  private final String mySwingActionId;
-
-  private ScrollPaneActions(String actionId) {
-    mySwingActionId = actionId;
+@ApiStatus.Internal
+public abstract class ScrollPaneActions extends SwingActionDelegate {
+  private ScrollPaneActions(@NonNls String actionId) {
+    super(actionId);
   }
 
   @Override
-  public void update(AnActionEvent event) {
-    JScrollPane pane = getScrollPane(event);
-    event.getPresentation().setEnabled(pane != null && null != getSwingAction(pane));
-  }
-
-  @Override
-  public void actionPerformed(AnActionEvent event) {
-    JScrollPane pane = getScrollPane(event);
-    if (pane == null) return;
-    Action action = getSwingAction(pane);
-    if (action == null) return;
-    action.actionPerformed(new ActionEvent(pane, ActionEvent.ACTION_PERFORMED, mySwingActionId));
-  }
-
-  private JScrollPane getScrollPane(AnActionEvent event) {
-    Component component = event.getData(CONTEXT_COMPONENT);
-    return UIUtil.getParentOfType(JScrollPane.class, component);
-  }
-
-  private Action getSwingAction(JScrollPane pane) {
-    ActionMap map = pane.getActionMap();
-    return map == null ? null : map.get(mySwingActionId);
+  protected @Nullable JComponent getComponent(AnActionEvent event) {
+    return ComponentUtil.getParentOfType(JScrollPane.class, super.getComponent(event));
   }
 
   public static final class Home extends ScrollPaneActions {

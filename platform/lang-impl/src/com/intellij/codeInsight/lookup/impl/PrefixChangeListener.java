@@ -15,12 +15,22 @@
  */
 package com.intellij.codeInsight.lookup.impl;
 
+/**
+ * Listener for prefix changes in {@link LookupImpl}.
+ *
+ * @see LookupImpl#addPrefixChangeListener
+ */
 public interface PrefixChangeListener {
 
-    void afterAppend(char c);
-    
-    abstract class Adapter implements PrefixChangeListener {
-        @Override
-        public void afterAppend(char c) {}
-    }
+  /** called before the lookup prefix is truncated */
+  default void beforeTruncate() { }
+
+  /** called after the lookup prefix has been truncated */
+  default void afterTruncate() { }
+
+  /** called before {@code c} is appended to the lookup prefix */
+  default void beforeAppend(char c) { }
+
+  /** called after {@code c} has been appended to the lookup prefix */
+  default void afterAppend(char c) { }
 }

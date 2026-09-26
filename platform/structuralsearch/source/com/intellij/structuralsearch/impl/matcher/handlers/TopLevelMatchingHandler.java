@@ -1,31 +1,11 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.impl.matcher.handlers;
 
 import com.intellij.dupLocator.iterators.NodeIterator;
-import com.intellij.dupLocator.iterators.SiblingNodeIterator;
-import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
-import com.intellij.structuralsearch.StructuralSearchUtil;
 import com.intellij.structuralsearch.impl.matcher.MatchContext;
 import com.intellij.structuralsearch.impl.matcher.iterators.SsrFilteringNodeIterator;
 import org.jetbrains.annotations.NotNull;
-
-import java.util.ArrayList;
-import java.util.List;
 
 public final class TopLevelMatchingHandler extends MatchingHandler implements DelegatingHandler {
   private final MatchingHandler delegate;
@@ -36,64 +16,42 @@ public final class TopLevelMatchingHandler extends MatchingHandler implements De
   }
 
   @Override
-  public boolean match(final PsiElement patternNode, final PsiElement matchedNode, final MatchContext matchContext) {
+  public boolean match(PsiElement patternNode, PsiElement matchedNode, @NotNull MatchContext matchContext) {
     final boolean matched = delegate.match(patternNode, matchedNode, matchContext);
 
     if (matched) {
-      List<PsiElement> matchedNodes = matchContext.getMatchedNodes();
-      if (matchedNodes == null) {
-        matchedNodes = new ArrayList<>();
-        matchContext.setMatchedNodes(matchedNodes);
-      }
-
-      PsiElement elementToAdd = matchedNode;
-
-      if (patternNode instanceof PsiComment && StructuralSearchUtil.isDocCommentOwner(matchedNode)) {
-        // psicomment and psidoccomment are placed inside the psimember next to them so
-        // simple topdown matching should do additional "dances" to cover this case.
-        elementToAdd = matchedNode.getFirstChild();
-        assert elementToAdd instanceof PsiComment;
-      }
-
-      matchedNodes.add(elementToAdd);
+      matchContext.addMatchedNode(matchedNode);
     }
 
     if ((!matched || matchContext.getOptions().isRecursiveSearch()) &&
         matchContext.getPattern().getStrategy().continueMatching(matchedNode) &&
         matchContext.shouldRecursivelyMatch()
-       ) {
-      matchContext.getMatcher().matchContext(
-        new SsrFilteringNodeIterator(
-          new SiblingNodeIterator(matchedNode.getFirstChild())
-        )
-      );
+    ) {
+      final PsiElement child = matchedNode.getFirstChild();
+      if (child != null) {
+        matchContext.getMatcher().matchContext(SsrFilteringNodeIterator.create(child));
+      }
     }
     return matched;
   }
 
   @Override
-  public boolean canMatch(PsiElement patternNode, PsiElement matchedNode, MatchContext context) {
+  public boolean canMatch(@NotNull PsiElement patternNode, PsiElement matchedNode, @NotNull MatchContext context) {
     return delegate.canMatch(patternNode, matchedNode, context);
   }
 
   @Override
-  public boolean matchSequentially(final NodeIterator nodes, final NodeIterator nodes2, final MatchContext context) {
-    return delegate.matchSequentially(nodes, nodes2, context);
+  public boolean matchSequentially(@NotNull NodeIterator patternNodes, @NotNull NodeIterator matchNodes, @NotNull MatchContext context) {
+    return delegate.matchSequentially(patternNodes, matchNodes, context);
   }
 
   @Override
-  public boolean match(final PsiElement patternNode,
-                       final PsiElement matchedNode, final int start, final int end, final MatchContext context) {
-    return match(patternNode, matchedNode, context);
-  }
-
-  @Override
-  public boolean isMatchSequentiallySucceeded(final NodeIterator nodes2) {
+  public boolean isMatchSequentiallySucceeded(@NotNull NodeIterator matchNodes) {
     return true;
   }
 
   @Override
-  public boolean shouldAdvanceTheMatchFor(final PsiElement patternElement, final PsiElement matchedElement) {
+  public boolean shouldAdvanceTheMatchFor(PsiElement patternElement, PsiElement matchedElement) {
     return delegate.shouldAdvanceTheMatchFor(patternElement, matchedElement);
   }
 

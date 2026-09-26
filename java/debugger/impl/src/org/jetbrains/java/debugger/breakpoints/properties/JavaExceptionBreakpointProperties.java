@@ -1,60 +1,46 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.debugger.breakpoints.properties;
 
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.ui.classFilter.ClassFilter;
-import com.intellij.util.xmlb.annotations.AbstractCollection;
 import com.intellij.util.xmlb.annotations.Attribute;
 import com.intellij.util.xmlb.annotations.OptionTag;
-import com.intellij.util.xmlb.annotations.Tag;
+import com.intellij.util.xmlb.annotations.XCollection;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * @author egor
- */
+import java.util.Objects;
+
 public class JavaExceptionBreakpointProperties extends JavaBreakpointProperties<JavaExceptionBreakpointProperties> {
-  public boolean NOTIFY_CAUGHT   = true;
+  public boolean NOTIFY_CAUGHT = true;
   public boolean NOTIFY_UNCAUGHT = true;
 
   @Attribute("class")
-  public String myQualifiedName;
+  public @NlsSafe String myQualifiedName;
 
   @Attribute("package")
-  public String myPackageName;
+  public @NlsSafe String myPackageName;
 
   private boolean myCatchFiltersEnabled = false;
   private ClassFilter[] myCatchClassFilters;
   private ClassFilter[] myCatchClassExclusionFilters;
 
-  public JavaExceptionBreakpointProperties(String qualifiedName, String packageName) {
+  public JavaExceptionBreakpointProperties(String qualifiedName) {
     myQualifiedName = qualifiedName;
-    myPackageName = packageName;
+    myPackageName = StringUtil.getPackageName(qualifiedName);
   }
 
   public JavaExceptionBreakpointProperties() {
   }
 
-  @Nullable
   @Override
-  public JavaExceptionBreakpointProperties getState() {
+  public @Nullable JavaExceptionBreakpointProperties getState() {
     return this;
   }
 
   @Override
-  public void loadState(JavaExceptionBreakpointProperties state) {
+  public void loadState(@NotNull JavaExceptionBreakpointProperties state) {
     super.loadState(state);
 
     NOTIFY_CAUGHT = state.NOTIFY_CAUGHT;
@@ -78,8 +64,7 @@ public class JavaExceptionBreakpointProperties extends JavaBreakpointProperties<
     return changed;
   }
 
-  @Tag("catch-class-filters")
-  @AbstractCollection(surroundWithTag = false)
+  @XCollection(propertyElementName = "catch-class-filters")
   public final ClassFilter[] getCatchClassFilters() {
     return myCatchClassFilters != null ? myCatchClassFilters : ClassFilter.EMPTY_ARRAY;
   }
@@ -90,8 +75,7 @@ public class JavaExceptionBreakpointProperties extends JavaBreakpointProperties<
     return changed;
   }
 
-  @Tag("catch-class-exclusion-filters")
-  @AbstractCollection(surroundWithTag = false)
+  @XCollection(propertyElementName = "catch-class-exclusion-filters")
   public ClassFilter[] getCatchClassExclusionFilters() {
     return myCatchClassExclusionFilters != null ? myCatchClassExclusionFilters : ClassFilter.EMPTY_ARRAY;
   }
@@ -100,5 +84,25 @@ public class JavaExceptionBreakpointProperties extends JavaBreakpointProperties<
     boolean changed = !filtersEqual(myCatchClassExclusionFilters, classExclusionFilters);
     myCatchClassExclusionFilters = classExclusionFilters;
     return changed;
+  }
+
+
+  @Override
+  public boolean equals(Object o) {
+    if (!(o instanceof JavaExceptionBreakpointProperties that)) return false;
+    if (!super.equals(o)) return false;
+    return NOTIFY_CAUGHT == that.NOTIFY_CAUGHT &&
+           NOTIFY_UNCAUGHT == that.NOTIFY_UNCAUGHT &&
+           myCatchFiltersEnabled == that.myCatchFiltersEnabled &&
+           Objects.equals(myQualifiedName, that.myQualifiedName) &&
+           Objects.equals(myPackageName, that.myPackageName) &&
+           filtersEqual(myCatchClassFilters, that.myCatchClassFilters) &&
+           filtersEqual(myCatchClassExclusionFilters, that.myCatchClassExclusionFilters);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(super.hashCode(), NOTIFY_CAUGHT, NOTIFY_UNCAUGHT, myQualifiedName, myPackageName, myCatchFiltersEnabled,
+                        filtersHashCode(myCatchClassFilters), filtersHashCode(myCatchClassExclusionFilters));
   }
 }

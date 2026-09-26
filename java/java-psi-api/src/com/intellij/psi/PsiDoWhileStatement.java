@@ -18,19 +18,11 @@ package com.intellij.psi;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Represents a Java <code>do ... while</code> statement.
+ * Represents a Java {@code do ... while} statement.
  */
-public interface PsiDoWhileStatement extends PsiLoopStatement {
+public interface PsiDoWhileStatement extends PsiConditionalLoopStatement {
   /**
-   * Returns the expression representing the exit condition of the loop.
-   *
-   * @return the expression, or null if the statement is incomplete.
-   */
-  @Nullable
-  PsiExpression getCondition();
-
-  /**
-   * Returns the <code>while</code> keyword of the statement.
+   * Returns the {@code while} keyword of the statement.
    *
    * @return the keyword, or null if the statement is incomplete.
    */

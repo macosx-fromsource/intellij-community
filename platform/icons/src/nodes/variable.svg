@@ -1,7 +1,7 @@
-<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-  <title>variable</title>
-  <g id="_Group_" data-name=" Group " opacity="0.6">
-    <circle cx="8" cy="7.99999" r="7" fill="#f4af3d"/>
+<!-- Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="none" fill-rule="evenodd">
+    <path fill="#F4AF3D" fill-opacity=".6" d="M15,8 C15,11.866 11.866,15 8,15 C4.134,15 1,11.866 1,8 C1,4.134 4.134,1 8,1 C11.866,1 15,4.134 15,8"/>
+    <path fill="#231F20" fill-opacity=".7" d="M2.2939,6 L-0.0001,0 L1.2,0 C2.3886,3.13933333 2.98856667,4.73933333 2.9999,4.8 L4.8,0 L5.9999,0 L3.7059,6 L2.2939,6 Z" transform="translate(5 5)"/>
   </g>
-  <path d="M7.29358,11L5,5H6.14985L7.367,8.33879q0.06728,0.18033.159,0.46448T7.70948,9.3825q0.09174,0.29508.1682,0.55738t0.10091,0.39891H8.02141q0.03058-.13661.104-0.39891T8.29055,9.3825q0.09174-.29508.18349-0.57923t0.159-.46448L9.85015,5H11L8.70642,11H7.29358Z" fill="#231f20" opacity="0.6" style="isolation: isolate"/>
 </svg>

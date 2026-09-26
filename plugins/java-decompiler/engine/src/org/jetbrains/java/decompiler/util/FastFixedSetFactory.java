@@ -1,21 +1,11 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.util;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 
 public class FastFixedSetFactory<E> {
 
@@ -57,7 +47,7 @@ public class FastFixedSetFactory<E> {
     return colValuesInternal;
   }
 
-  public static class FastFixedSet<E> implements Iterable<E> {
+  public static final class FastFixedSet<E> implements Iterable<E> {
 
     private final FastFixedSetFactory<E> factory;
 
@@ -77,8 +67,7 @@ public class FastFixedSetFactory<E> {
       FastFixedSet<E> copy = new FastFixedSet<>(factory);
 
       int arrlength = data.length;
-      int[] cpdata = new int[arrlength];
-      System.arraycopy(data, 0, cpdata, 0, arrlength);
+      int[] cpdata = Arrays.copyOf(data, arrlength);
       copy.setData(cpdata);
 
       return copy;
@@ -109,12 +98,6 @@ public class FastFixedSetFactory<E> {
     public void remove(E element) {
       int[] index = colValuesInternal.getWithKey(element);
       data[index[0]] &= ~index[1];
-    }
-
-    public void removeAll(Collection<E> set) {
-      for (E element : set) {
-        remove(element);
-      }
     }
 
     public boolean contains(E element) {
@@ -153,15 +136,6 @@ public class FastFixedSetFactory<E> {
       }
     }
 
-    public void symdiff(FastFixedSet<E> set) {
-      int[] extdata = set.getData();
-      int[] intdata = data;
-
-      for (int i = intdata.length - 1; i >= 0; i--) {
-        intdata[i] ^= extdata[i];
-      }
-    }
-
     public void complement(FastFixedSet<E> set) {
       int[] extdata = set.getData();
       int[] intdata = data;
@@ -172,11 +146,12 @@ public class FastFixedSetFactory<E> {
     }
 
 
+    @Override
     public boolean equals(Object o) {
       if (o == this) return true;
-      if (o == null || !(o instanceof FastFixedSet)) return false;
+      if (!(o instanceof FastFixedSet)) return false;
 
-      int[] extdata = ((FastFixedSet)o).getData();
+      int[] extdata = ((FastFixedSet<?>)o).getData();
       int[] intdata = data;
 
       for (int i = intdata.length - 1; i >= 0; i--) {
@@ -200,6 +175,7 @@ public class FastFixedSetFactory<E> {
       return true;
     }
 
+    @Override
     public Iterator<E> iterator() {
       return new FastFixedSetIterator<>(this);
     }
@@ -207,11 +183,6 @@ public class FastFixedSetFactory<E> {
     public Set<E> toPlainSet() {
       return toPlainCollection(new HashSet<>());
     }
-
-    public List<E> toPlainList() {
-      return toPlainCollection(new ArrayList<>());
-    }
-
 
     private <T extends Collection<E>> T toPlainCollection(T cl) {
 
@@ -233,18 +204,7 @@ public class FastFixedSetFactory<E> {
       return cl;
     }
 
-    public String toBinary() {
-
-      StringBuilder buffer = new StringBuilder();
-      int[] intdata = data;
-
-      for (int i = 0; i < intdata.length; i++) {
-        buffer.append(" ").append(Integer.toBinaryString(intdata[i]));
-      }
-
-      return buffer.toString();
-    }
-
+    @Override
     public String toString() {
 
       StringBuilder buffer = new StringBuilder("{");
@@ -284,7 +244,7 @@ public class FastFixedSetFactory<E> {
     }
   }
 
-  public static class FastFixedSetIterator<E> implements Iterator<E> {
+  public static final class FastFixedSetIterator<E> implements Iterator<E> {
 
     private final VBStyleCollection<int[], E> colValuesInternal;
     private final int[] data;
@@ -331,11 +291,13 @@ public class FastFixedSetFactory<E> {
       return -1;
     }
 
+    @Override
     public boolean hasNext() {
       next_pointer = getNextIndex(pointer);
       return (next_pointer >= 0);
     }
 
+    @Override
     public E next() {
       if (next_pointer >= 0) {
         pointer = next_pointer;
@@ -351,10 +313,10 @@ public class FastFixedSetFactory<E> {
       return pointer < size ? colValuesInternal.getKey(pointer) : null;
     }
 
+    @Override
     public void remove() {
       int[] index = colValuesInternal.get(pointer);
       data[index[0]] &= ~index[1];
     }
   }
 }
-

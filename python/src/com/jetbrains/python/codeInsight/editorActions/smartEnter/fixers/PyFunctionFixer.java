@@ -26,12 +26,6 @@ import com.jetbrains.python.psi.PyParameterList;
 import com.jetbrains.python.psi.impl.PyPsiUtils;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * Created by IntelliJ IDEA.
- * Author: Alexey.Ivanov
- * Date:   16.04.2010
- * Time:   16:59:07
- */
 public class PyFunctionFixer extends PyFixer<PyFunction> {
   public PyFunctionFixer() {
     super(PyFunction.class);

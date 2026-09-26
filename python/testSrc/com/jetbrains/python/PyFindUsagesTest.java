@@ -1,19 +1,9 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python;
+
+import com.jetbrains.python.allure.Components;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
 
 import com.intellij.codeInsight.TargetElementUtil;
 import com.intellij.psi.PsiDocumentManager;
@@ -22,11 +12,16 @@ import com.intellij.usageView.UsageInfo;
 import com.jetbrains.python.fixtures.PyTestCase;
 import com.jetbrains.python.psi.LanguageLevel;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 
-/**
- * @author yole
- */
+
+@Subsystems.CodeInsight
+@Components.FindUsages
+@Layers.Functional
 public class PyFindUsagesTest extends PyTestCase {
   public void testInitUsages() {   // PY-292
     final Collection<UsageInfo> usages = myFixture.testFindUsages("findUsages/InitUsages.py");
@@ -46,6 +41,10 @@ public class PyFindUsagesTest extends PyTestCase {
   public void testImplicitlyResolvedUsages() {
     final Collection<UsageInfo> usages = myFixture.testFindUsages("findUsages/ImplicitlyResolvedUsages.py");
     assertEquals(1, usages.size());
+  }
+  public void testImplicitlyResolvedFieldUsages() {
+    final Collection<UsageInfo> usages = myFixture.testFindUsages("findUsages/ImplicitlyResolvedFieldUsages.py");
+    assertEquals(2, usages.size());
   }
 
   public void testQualifiedVsUnqualifiedUsages() {  // PY-939
@@ -95,8 +94,7 @@ public class PyFindUsagesTest extends PyTestCase {
   private void assertUsages(Collection<UsageInfo> usages, String... usageTexts) {
     assertEquals(usageTexts.length, usages.size());
     List<UsageInfo> sortedUsages = new ArrayList<>(usages);
-    Collections.sort(sortedUsages,
-                     (o1, o2) -> o1.getElement().getTextRange().getStartOffset() - o2.getElement().getTextRange().getStartOffset());
+    Collections.sort(sortedUsages, Comparator.comparingInt(o -> o.getElement().getTextRange().getStartOffset()));
     for (int i = 0; i < usageTexts.length; i++) {
       assertSameUsage(usageTexts[i], sortedUsages.get(i));
     }
@@ -129,13 +127,13 @@ public class PyFindUsagesTest extends PyTestCase {
 
   // PY-7348
   public void testNamespacePackageUsages() {
-    setLanguageLevel(LanguageLevel.PYTHON33);
-    try {
-      final Collection<UsageInfo> usages = findMultiFileUsages("a.py");
-      assertEquals(3, usages.size());
-    } finally {
-      setLanguageLevel(null);
-    }
+    runWithLanguageLevel(
+      LanguageLevel.PYTHON34,
+      () -> {
+        final Collection<UsageInfo> usages = findMultiFileUsages("a.py");
+        assertEquals(3, usages.size());
+      }
+    );
   }
 
   public void testNameShadowing() {  // PY-6241
@@ -156,7 +154,7 @@ public class PyFindUsagesTest extends PyTestCase {
 
   // PY-8604
   public void testOuterVariableInGeneratorPy3() {
-    runWithLanguageLevel(LanguageLevel.PYTHON30,
+    runWithLanguageLevel(LanguageLevel.PYTHON34,
                          () -> assertEquals(4, myFixture.testFindUsages("findUsages/OuterVariableInGenerator.py").size()));
   }
 
@@ -168,7 +166,7 @@ public class PyFindUsagesTest extends PyTestCase {
 
   // PY-18808
   public void testOuterVariableInListComprehensionPy3() {
-    runWithLanguageLevel(LanguageLevel.PYTHON30,
+    runWithLanguageLevel(LanguageLevel.PYTHON34,
                          () -> assertEquals(4, myFixture.testFindUsages("findUsages/OuterVariableInListComprehension.py").size()));
   }
 
@@ -180,7 +178,7 @@ public class PyFindUsagesTest extends PyTestCase {
   }
 
   public void testOverrideVariableByTupleInComprehensionPy3() {
-    runWithLanguageLevel(LanguageLevel.PYTHON30, () -> {
+    runWithLanguageLevel(LanguageLevel.PYTHON34, () -> {
       assertEquals(1, myFixture.testFindUsages("findUsages/OverrideVariableByTupleInComprehension1.py").size());
       assertEquals(2, myFixture.testFindUsages("findUsages/OverrideVariableByTupleInComprehension2.py").size());
     });
@@ -194,10 +192,46 @@ public class PyFindUsagesTest extends PyTestCase {
   }
 
   public void testOverrideVariableInComprehensionPy3() {
-    runWithLanguageLevel(LanguageLevel.PYTHON30, () -> {
+    runWithLanguageLevel(LanguageLevel.PYTHON34, () -> {
       assertEquals(1, myFixture.testFindUsages("findUsages/OverrideVariableInComprehension1.py").size());
       assertEquals(2, myFixture.testFindUsages("findUsages/OverrideVariableInComprehension2.py").size());
     });
+  }
+
+  // PY-26006
+  public void testFunctionUsagesWithSameNameDecorator() {
+    assertEmpty(myFixture.testFindUsages("findUsages/FunctionUsagesWithSameNameDecorator.py"));
+  }
+
+  // PY-27004
+  public void testConstImportedFromAnotherFile() {
+    assertEquals(5,
+                 myFixture.testFindUsages("findUsages/ConstImportedFromAnotherFileDefiner.py", "findUsages/ConstImportedFromAnotherFile.py")
+                   .size());
+  }
+
+  // PY-26881
+  public void testFunctionHasPyiStub() {
+    final Collection<UsageInfo> usages = findMultiFileUsages("lib.py");
+    assertEquals(2, usages.size());
+  }
+
+  // PY-26881
+  public void testClassHasPyiStub() {
+    final Collection<UsageInfo> usages = findMultiFileUsages("parent.py");
+    assertEquals(2, usages.size());
+  }
+
+  // PY-26881
+  public void testClassAttributeHasPyiStub() {
+    final Collection<UsageInfo> usages = findMultiFileUsages("parent.py");
+    assertEquals(3, usages.size());
+  }
+
+  // PY-26881
+  public void testChildClassAttributeHasPyiStub() {
+    final Collection<UsageInfo> usages = findMultiFileUsages("child.py");
+    assertEquals(2, usages.size());
   }
 
   private Collection<UsageInfo> findMultiFileUsages(String filename) {

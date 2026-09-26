@@ -16,6 +16,7 @@
 package org.intellij.lang.regexp.psi.impl;
 
 import com.intellij.lang.ASTNode;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.util.IncorrectOperationException;
@@ -26,64 +27,111 @@ import org.intellij.lang.regexp.psi.RegExpGroup;
 import org.intellij.lang.regexp.psi.RegExpPattern;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class RegExpGroupImpl extends RegExpElementImpl implements RegExpGroup {
   public RegExpGroupImpl(ASTNode astNode) {
     super(astNode);
   }
 
+  @Override
   public void accept(RegExpElementVisitor visitor) {
     visitor.visitRegExpGroup(this);
   }
 
-  public boolean isCapturing() {
-    final ASTNode node = getNode().getFirstChildNode();
-    if (node == null) {
-      return false;
-    }
-    final IElementType type = node.getElementType();
-    return type == RegExpTT.GROUP_BEGIN || type == RegExpTT.RUBY_NAMED_GROUP ||
-           type == RegExpTT.RUBY_QUOTED_NAMED_GROUP || type == RegExpTT.PYTHON_NAMED_GROUP;
-  }
-
-  public boolean isSimple() {
-    final ASTNode node = getNode().getFirstChildNode();
-    return node != null && (node.getElementType() == RegExpTT.GROUP_BEGIN || node.getElementType() == RegExpTT.NON_CAPT_GROUP);
-  }
-
-  public RegExpPattern getPattern() {
+  @Override
+  public @NotNull RegExpPattern getPattern() {
     final ASTNode node = getNode().findChildByType(RegExpElementTypes.PATTERN);
-    return node != null ? (RegExpPattern)node.getPsi() : null;
+    assert node != null;
+    return (RegExpPattern)node.getPsi();
   }
 
-  public boolean isPythonNamedGroup() {
-    return getNode().findChildByType(RegExpTT.PYTHON_NAMED_GROUP) != null;
+  @Override
+  public boolean isCapturing() {
+    final Type type = getType();
+    return type == Type.CAPTURING_GROUP || type == Type.NAMED_GROUP || type == Type.QUOTED_NAMED_GROUP || type == Type.PYTHON_NAMED_GROUP;
   }
 
-  public boolean isRubyNamedGroup() {
-    return getNode().findChildByType(RegExpTT.RUBY_NAMED_GROUP) != null ||
-           getNode().findChildByType(RegExpTT.RUBY_QUOTED_NAMED_GROUP) != null;
+  @Override
+  public boolean isAnyNamedGroup() {
+    final Type type = getType();
+    return type == Type.NAMED_GROUP || type == Type.QUOTED_NAMED_GROUP || type == Type.PYTHON_NAMED_GROUP;
   }
 
-  public boolean isNamedGroup() {
-    return getNode().findChildByType(RegExpTT.RUBY_NAMED_GROUP) != null;
-  }
-
-  public String getGroupName() {
-    if (!isPythonNamedGroup() && !isRubyNamedGroup()) {
-      return null;
+  @Override
+  public @NotNull Type getType() {
+    final IElementType elementType = getNode().getFirstChildNode().getElementType();
+    if (elementType == RegExpTT.GROUP_BEGIN) {
+      return Type.CAPTURING_GROUP;
     }
+    else if (elementType == RegExpTT.RUBY_NAMED_GROUP) {
+      return Type.NAMED_GROUP;
+    }
+    else if (elementType == RegExpTT.PYTHON_NAMED_GROUP) {
+      return Type.PYTHON_NAMED_GROUP;
+    }
+    else if (elementType == RegExpTT.RUBY_QUOTED_NAMED_GROUP) {
+      return Type.QUOTED_NAMED_GROUP;
+    }
+    else if (elementType == RegExpTT.ATOMIC_GROUP) {
+      return Type.ATOMIC;
+    }
+    else if (elementType == RegExpTT.NON_CAPT_GROUP) {
+      return Type.NON_CAPTURING;
+    }
+    else if (elementType == RegExpTT.SET_OPTIONS) {
+      return Type.OPTIONS;
+    }
+    else if (elementType == RegExpTT.POS_LOOKAHEAD) {
+      return Type.POSITIVE_LOOKAHEAD;
+    }
+    else if (elementType == RegExpTT.NEG_LOOKAHEAD) {
+      return Type.NEGATIVE_LOOKAHEAD;
+    }
+    else if (elementType == RegExpTT.POS_LOOKBEHIND) {
+      return Type.POSITIVE_LOOKBEHIND;
+    }
+    else if (elementType == RegExpTT.NEG_LOOKBEHIND) {
+      return Type.NEGATIVE_LOOKBEHIND;
+    }
+    else if (elementType == RegExpTT.PCRE_BRANCH_RESET) {
+      return Type.PCRE_BRANCH_RESET;
+    }
+    throw new AssertionError();
+  }
+
+  @Override
+  public @Nullable PsiElement getNameIdentifier() {
+    final ASTNode nameNode = getNode().findChildByType(RegExpTT.NAME);
+    return nameNode == null ? null : nameNode.getPsi();
+  }
+
+  public static boolean isPcreConditionalGroup(ASTNode node) {
+    return node != null && node.findChildByType(RegExpTT.PCRE_CONDITIONS) != null;
+  }
+
+  public static boolean isPcreDefine(ASTNode node) {
+    return node != null && node.findChildByType(RegExpTT.PCRE_DEFINE) != null;
+  }
+
+  @Override
+  public @Nullable @NlsSafe String getGroupName() {
     final ASTNode nameNode = getNode().findChildByType(RegExpTT.NAME);
     return nameNode != null ? nameNode.getText() : null;
   }
 
   @Override
-  public String getName() {
+  public @Nullable @NlsSafe String getName() {
     return getGroupName();
   }
 
   @Override
   public PsiElement setName(@NonNls @NotNull String name) throws IncorrectOperationException {
     throw new IncorrectOperationException();
+  }
+
+  @Override
+  public int getTextOffset() {
+    return getFirstChild().getNextSibling().getTextOffset();
   }
 }

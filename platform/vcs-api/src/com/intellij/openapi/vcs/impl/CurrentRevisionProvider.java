@@ -18,15 +18,11 @@ package com.intellij.openapi.vcs.impl;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.history.VcsRevisionNumber;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
-
-/**
- * @author irengrig
- *         Date: 6/14/11
- *         Time: 2:19 PM
- */
 public interface CurrentRevisionProvider {
-  VcsRevisionNumber getCurrentRevision() throws VcsException;
-  Pair<VcsRevisionNumber, byte[]> get() throws VcsException, IOException;
+  @NotNull VcsRevisionNumber getCurrentRevision() throws VcsException;
+
+  @NotNull Pair<@NotNull VcsRevisionNumber, byte @Nullable []> get() throws VcsException;
 }

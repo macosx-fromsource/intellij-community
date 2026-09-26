@@ -1,28 +1,16 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.facet.impl.ui.libraries;
 
+import com.google.common.io.BaseEncoding;
 import com.intellij.facet.ui.libraries.LibraryInfo;
 import com.intellij.openapi.roots.libraries.LibraryUtil;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.JarFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.ArrayUtil;
-import org.apache.commons.codec.binary.Hex;
+import com.intellij.util.ArrayUtilRt;
+import com.intellij.util.io.DigestUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -31,9 +19,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * @author nik
- */
 public class RequiredLibrariesInfo {
   private final List<LibraryInfo> myLibraryInfos = new ArrayList<>();
 
@@ -41,13 +26,11 @@ public class RequiredLibrariesInfo {
     myLibraryInfos.addAll(new ArrayList<>(Arrays.asList(libs)));
   }
 
-  @Nullable
-  public RequiredClassesNotFoundInfo checkLibraries(VirtualFile[] libraryFiles) {
+  public @Nullable RequiredClassesNotFoundInfo checkLibraries(VirtualFile[] libraryFiles) {
     return checkLibraries(Arrays.asList(libraryFiles));
   }
 
-  @Nullable
-  public RequiredClassesNotFoundInfo checkLibraries(List<VirtualFile> libraryFiles) {
+  public @Nullable RequiredClassesNotFoundInfo checkLibraries(List<? extends VirtualFile> libraryFiles) {
     List<LibraryInfo> infos = new ArrayList<>();
     List<String> classes = new ArrayList<>();
 
@@ -80,17 +63,16 @@ public class RequiredLibrariesInfo {
     if (infos.isEmpty()) {
       return null;
     }
-    return new RequiredClassesNotFoundInfo(ArrayUtil.toStringArray(classes), infos.toArray(new LibraryInfo[infos.size()]));
+    return new RequiredClassesNotFoundInfo(ArrayUtilRt.toStringArray(classes), infos.toArray(LibraryInfo.EMPTY_ARRAY));
   }
 
-  @Nullable
-  public static String md5(@NotNull VirtualFile file) {
+  public static @Nullable String md5(@NotNull VirtualFile file) {
     try {
-      MessageDigest md5 = MessageDigest.getInstance("MD5");
+      MessageDigest md5 = DigestUtil.md5();
       md5.update(file.contentsToByteArray());
       final byte[] digest = md5.digest();
 
-      return new String(Hex.encodeHex(digest));
+      return BaseEncoding.base16().lowerCase().encode(digest);
     }
     catch (Exception e) {
       return null;
@@ -126,7 +108,7 @@ public class RequiredLibrariesInfo {
       return myLibraryInfos;
     }
 
-    public String getMissingJarsText() {
+    public @NlsSafe String getMissingJarsText() {
       return getLibrariesPresentableText(myLibraryInfos);
     }
   }

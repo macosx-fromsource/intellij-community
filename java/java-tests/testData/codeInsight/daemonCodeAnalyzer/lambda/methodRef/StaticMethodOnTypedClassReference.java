@@ -1,13 +1,10 @@
 class Test<X> {
-
     interface I {
-      void _();
+      void m();
     }
 
-    
-
     void test() {
-      I i1 = <error descr="Parameterized qualifier on static method reference">Test<String>::foo</error>;
+      I i1 = Test<error descr="Parameterized qualifier on static method reference"><String></error>::foo;
       I i2 = Test::foo;
     }
 

@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.completion;
 
 import com.intellij.injected.editor.DocumentWindow;
@@ -21,24 +7,26 @@ import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiCompiledFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.impl.PsiDocumentManagerBase;
+import com.intellij.psi.impl.light.LightElement;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * @author yole
- */
-public class CompletionUtilCoreImpl {
-  @Nullable
-  public static <T extends PsiElement> T getOriginalElement(@NotNull T psi) {
+
+public final class CompletionUtilCoreImpl {
+  public static @Nullable <T extends PsiElement> T getOriginalElement(@NotNull T psi) {
     return getOriginalElement(psi, psi.getContainingFile());
   }
 
-  @Nullable
-  public static <T extends PsiElement> T getOriginalElement(@NotNull T psi, PsiFile containingFile) {
-    if (containingFile == null) return psi;
+  public static @Nullable <T extends PsiElement> T getOriginalElement(@NotNull T psi, PsiFile containingFile) {
+    if (containingFile == null || psi instanceof LightElement) return psi;
 
     PsiFile originalFile = containingFile.getOriginalFile();
+    if (psi == containingFile && psi.getClass().isInstance(originalFile)) {
+      //noinspection unchecked
+      return (T)originalFile;
+    }
     TextRange range;
     if (originalFile != containingFile && !(originalFile instanceof PsiCompiledFile) && (range = psi.getTextRange()) != null) {
       Integer start = range.getStartOffset();
@@ -46,7 +34,7 @@ public class CompletionUtilCoreImpl {
 
       Document document = containingFile.getViewProvider().getDocument();
       if (document != null) {
-        Document hostDocument = document instanceof DocumentWindow ? ((DocumentWindow)document).getDelegate() : document;
+        Document hostDocument = PsiDocumentManagerBase.getTopLevelDocument(document);
         OffsetTranslator translator = hostDocument.getUserData(OffsetTranslator.RANGE_TRANSLATION);
         if (translator != null) {
           if (document instanceof DocumentWindow) {
@@ -73,5 +61,10 @@ public class CompletionUtilCoreImpl {
     }
 
     return psi;
+  }
+
+  public static @NotNull <T extends PsiElement> T getOriginalOrSelf(@NotNull T psi) {
+    final T element = getOriginalElement(psi);
+    return element == null ? psi : element;
   }
 }

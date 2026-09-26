@@ -1,43 +1,24 @@
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.impl.matcher.filters;
 
 import com.intellij.dupLocator.util.NodeFilter;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiTypeElement;
+import com.intellij.psi.PsiTypeParameter;
 
-/**
- * Created by IntelliJ IDEA.
- * User: maxim
- * Date: 03.01.2004
- * Time: 1:06:23
- * To change this template use Options | File Templates.
- */
-public class TypeParameterFilter extends JavaElementVisitor implements NodeFilter {
-  protected boolean result;
+public final class TypeParameterFilter implements NodeFilter {
 
-  @Override public void visitTypeElement(PsiTypeElement psiTypeElement) {
-    result = true;
-  }
-
-  @Override public void visitTypeParameter(PsiTypeParameter psiTypeParameter) {
-    result = true;
-  }
-
-  @Override public void visitReferenceElement(PsiJavaCodeReferenceElement psiJavaCodeReferenceElement) {
-    result = true;
-  }
+  private static final NodeFilter INSTANCE = new TypeParameterFilter();
 
   private TypeParameterFilter() {}
 
-  private static class NodeFilterHolder {
-    private static final NodeFilter instance = new TypeParameterFilter();
+  @Override
+  public boolean accepts(PsiElement element) {
+    return element instanceof PsiTypeElement || element instanceof PsiTypeParameter || element instanceof PsiJavaCodeReferenceElement;
   }
 
   public static NodeFilter getInstance() {
-    return NodeFilterHolder.instance;
-  }
-
-  public boolean accepts(PsiElement element) {
-    result = false;
-    if (element!=null) element.accept(this);
-    return result;
+    return INSTANCE;
   }
 }

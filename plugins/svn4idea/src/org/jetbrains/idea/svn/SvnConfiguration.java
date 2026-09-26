@@ -1,74 +1,57 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn;
 
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.components.*;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.components.StoragePathMacros;
+import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.changes.VcsAnnotationRefresher;
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.api.Depth;
+import org.jetbrains.idea.svn.api.Url;
+import org.jetbrains.idea.svn.auth.AcceptResult;
+import org.jetbrains.idea.svn.auth.AuthenticationData;
+import org.jetbrains.idea.svn.auth.AuthenticationProvider;
 import org.jetbrains.idea.svn.auth.SvnAuthenticationManager;
 import org.jetbrains.idea.svn.auth.SvnAuthenticationProvider;
 import org.jetbrains.idea.svn.auth.SvnInteractiveAuthenticationProvider;
 import org.jetbrains.idea.svn.branchConfig.SvnBranchConfigurationManager;
-import org.jetbrains.idea.svn.config.SvnServerFileKeys;
+import org.jetbrains.idea.svn.config.SvnIniFile;
 import org.jetbrains.idea.svn.diff.DiffOptions;
 import org.jetbrains.idea.svn.update.MergeRootInfo;
 import org.jetbrains.idea.svn.update.UpdateRootInfo;
-import org.tmatesoft.svn.core.SVNErrorMessage;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.auth.ISVNAuthenticationProvider;
-import org.tmatesoft.svn.core.auth.SVNAuthentication;
-import org.tmatesoft.svn.core.internal.wc.ISVNAuthenticationStorage;
-import org.tmatesoft.svn.core.internal.wc.SVNConfigFile;
-import org.tmatesoft.svn.core.internal.wc.SVNFileUtil;
-import org.tmatesoft.svn.core.wc.ISVNOptions;
-import org.tmatesoft.svn.core.wc.SVNWCUtil;
 
 import java.io.File;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeSet;
 
-@State(
-  name = "SvnConfiguration",
-  storages = {@Storage(StoragePathMacros.WORKSPACE_FILE)}
-)
-public class SvnConfiguration implements PersistentStateComponent<SvnConfigurationState> {
+import static org.jetbrains.idea.svn.SvnUtil.USER_CONFIGURATION_PATH;
+import static org.jetbrains.idea.svn.config.ServersFileKeys.GLOBAL_SERVER_GROUP;
+import static org.jetbrains.idea.svn.config.ServersFileKeys.TIMEOUT;
+import static org.jetbrains.idea.svn.config.SvnIniFile.CONFIG_FILE_NAME;
+import static org.jetbrains.idea.svn.config.SvnIniFile.SERVERS_FILE_NAME;
 
-  public final static int ourMaxAnnotateRevisionsDefault = 500;
+@State(name = "SvnConfiguration", storages = @Storage(StoragePathMacros.WORKSPACE_FILE), reportStatistic = false)
+public class SvnConfiguration implements PersistentStateComponent<SvnConfigurationState>, Disposable {
+  public static final int ourMaxAnnotateRevisionsDefault = 500;
 
-  private final static long UPGRADE_TO_15_VERSION_ASKED = 123;
-  private final static long CHANGELIST_SUPPORT = 124;
-  private final static long UPGRADE_TO_16_VERSION_ASKED = 125;
+  private static final long UPGRADE_TO_15_VERSION_ASKED = 123;
+  private static final long CHANGELIST_SUPPORT = 124;
+  private static final long UPGRADE_TO_16_VERSION_ASKED = 125;
 
   private final Project myProject;
-  @NotNull private SvnConfigurationState myState = new SvnConfigurationState();
+  private @NotNull SvnConfigurationState myState = new SvnConfigurationState();
 
-  private ISVNOptions myOptions;
   private SvnAuthenticationManager myAuthManager;
   private SvnAuthenticationManager myPassiveAuthManager;
   private SvnAuthenticationManager myInteractiveManager;
@@ -78,16 +61,11 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
   private final Map<File, MergeRootInfo> myMergeRootInfos = new HashMap<>();
   private final Map<File, UpdateRootInfo> myUpdateRootInfos = new HashMap<>();
   private SvnInteractiveAuthenticationProvider myInteractiveProvider;
-  private IdeaSVNConfigFile myServersFile;
-  private SVNConfigFile myConfigFile;
+  private SvnIniFile myServersFile;
+  private SvnIniFile myConfigFile;
 
-  public boolean isCommandLine() {
-    return UseAcceleration.commandLine.equals(getUseAcceleration());
-  }
-
-  @NotNull
   @Override
-  public SvnConfigurationState getState() {
+  public @NotNull SvnConfigurationState getState() {
     return myState;
   }
 
@@ -105,49 +83,46 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
     }
   }
 
-  @NotNull
-  public DiffOptions getMergeOptions() {
+  public @NotNull DiffOptions getMergeOptions() {
     return new DiffOptions(isIgnoreSpacesInMerge(), isIgnoreSpacesInMerge(), isIgnoreSpacesInMerge());
   }
 
-  @NotNull
-  private IdeaSVNConfigFile getServersFile() {
+  public @NotNull SvnIniFile getServersFile() {
     if (myServersFile == null) {
-      myServersFile = new IdeaSVNConfigFile(new File(getConfigurationDirectory(), IdeaSVNConfigFile.SERVERS_FILE_NAME));
+      myServersFile = new SvnIniFile(getConfigurationPath().resolve(SERVERS_FILE_NAME));
     }
     myServersFile.updateGroups();
 
     return myServersFile;
   }
 
-  @NotNull
-  public SVNConfigFile getConfigFile() {
+  public @NotNull SvnIniFile getConfigFile() {
     if (myConfigFile == null) {
-      myConfigFile = new SVNConfigFile(new File(getConfigurationDirectory(), IdeaSVNConfigFile.CONFIG_FILE_NAME));
+      myConfigFile = new SvnIniFile(getConfigurationPath().resolve(CONFIG_FILE_NAME));
     }
-    
+
     return myConfigFile;
   }
 
-  @NotNull
-  public String getSshTunnelSetting() {
-    // TODO: Check SVNCompositeConfigFile - to utilize both system and user settings
-    return StringUtil.notNullize(getConfigFile().getPropertyValue("tunnels", "ssh"));
+  public @NotNull String getSshTunnelSetting() {
+    // TODO: Utilize both system and user settings
+    return StringUtil.notNullize(getConfigFile().getValue("tunnels", "ssh"));
   }
 
   public void setSshTunnelSetting(@Nullable String value) {
-    getConfigFile().setPropertyValue("tunnels", "ssh", value, true);
+    getConfigFile().setValue("tunnels", "ssh", value);
+    getConfigFile().save();
   }
 
   // uses configuration directory property - it should be saved first
   public void setHttpTimeout(final long value) {
     long cut = value / 1000;
-    getServersFile().setValue("global", SvnServerFileKeys.TIMEOUT, String.valueOf(cut));
+    getServersFile().setValue(GLOBAL_SERVER_GROUP, TIMEOUT, String.valueOf(cut));
     getServersFile().save();
   }
 
   public static SvnConfiguration getInstance(final Project project) {
-    return ServiceManager.getService(project, SvnConfiguration.class);
+    return project.getService(SvnConfiguration.class);
   }
 
   public SvnConfiguration(final Project project) {
@@ -158,7 +133,7 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
     final boolean changed = myState.IGNORE_SPACES_IN_ANNOTATE != value;
     myState.IGNORE_SPACES_IN_ANNOTATE = value;
     if (changed) {
-      getProject().getMessageBus().syncPublisher(VcsAnnotationRefresher.LOCAL_CHANGES_CHANGED).configurationChanged(SvnVcs.getKey());
+      BackgroundTaskUtil.syncPublisher(getProject(), VcsAnnotationRefresher.LOCAL_CHANGES_CHANGED).configurationChanged(SvnVcs.getKey());
     }
   }
 
@@ -206,14 +181,6 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
     myState.UPDATE_DEPTH = updateDepth;
   }
 
-  public UseAcceleration getUseAcceleration() {
-    return myState.accelerationType;
-  }
-
-  public void setUseAcceleration(UseAcceleration useAcceleration) {
-    myState.accelerationType = useAcceleration;
-  }
-
   public boolean isRunUnderTerminal() {
     return myState.runUnderTerminal;
   }
@@ -244,14 +211,6 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
 
   public void setMergeDiffUseAncestry(boolean mergeDiffUseAncestry) {
     myState.MERGE_DIFF_USE_ANCESTRY = mergeDiffUseAncestry;
-  }
-
-  public boolean isUpdateLockOnDemand() {
-    return myState.UPDATE_LOCK_ON_DEMAND;
-  }
-
-  public void setUpdateLockOnDemand(boolean updateLockOnDemand) {
-    myState.UPDATE_LOCK_ON_DEMAND = updateLockOnDemand;
   }
 
   public boolean isIgnoreSpacesInMerge() {
@@ -312,45 +271,47 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
   }
 
   public String getConfigurationDirectory() {
-    if (myState.directory.path == null || isUseDefaultConfiguation()) {
-      myState.directory.path = IdeaSubversionConfigurationDirectory.getPath();
+    if (myState.directory.path == null || isUseDefaultConfiguration()) {
+      myState.directory.path = USER_CONFIGURATION_PATH.getValue().toString();
     }
     return myState.directory.path;
   }
 
-  public boolean isUseDefaultConfiguation() {
+  public @NotNull Path getConfigurationPath() {
+    return Paths.get(getConfigurationDirectory());
+  }
+
+  public boolean isUseDefaultConfiguration() {
     return myState.directory.useDefault;
   }
 
   public void setConfigurationDirParameters(final boolean newUseDefault, final String newConfigurationDirectory) {
-    final String defaultPath = IdeaSubversionConfigurationDirectory.getPath();
-    final String oldEffectivePath = isUseDefaultConfiguation() ? defaultPath : getConfigurationDirectory();
+    final String defaultPath = USER_CONFIGURATION_PATH.getValue().toString();
+    final String oldEffectivePath = isUseDefaultConfiguration() ? defaultPath : getConfigurationDirectory();
     final String newEffectivePath = newUseDefault ? defaultPath : newConfigurationDirectory;
 
-    boolean directoryChanged = !Comparing.equal(getConfigurationDirectory(), newConfigurationDirectory);
+    boolean directoryChanged = !Objects.equals(getConfigurationDirectory(), newConfigurationDirectory);
     if (directoryChanged) {
-      setConfigurationDirectory(newConfigurationDirectory);
+      myState.directory.path = newConfigurationDirectory;
     }
-    boolean usageChanged = isUseDefaultConfiguation() != newUseDefault;
+    boolean usageChanged = isUseDefaultConfiguration() != newUseDefault;
     if (usageChanged) {
-      setUseDefaultConfiguation(newUseDefault);
+      setUseDefaultConfiguration(newUseDefault);
     }
 
     if (directoryChanged || usageChanged) {
-      if (! Comparing.equal(oldEffectivePath, newEffectivePath)) {
+      if (!Objects.equals(oldEffectivePath, newEffectivePath)) {
         clear();
       }
     }
   }
 
-  private void setConfigurationDirectory(String path) {
-    myState.directory.path = path;
-    File dir = path == null ? new File(IdeaSubversionConfigurationDirectory.getPath()) : new File(path);
-    SVNConfigFile.createDefaultConfiguration(dir);
+  @Override
+  public void dispose() {
+    clear();
   }
 
-  public void clear() {
-    myOptions = null;
+  private void clear() {
     myAuthManager = null;
     myPassiveAuthManager = null;
     myInteractiveManager = null;
@@ -358,79 +319,46 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
     RUNTIME_AUTH_CACHE.clear();
   }
 
-  private void setUseDefaultConfiguation(boolean useDefault) {
+  private void setUseDefaultConfiguration(boolean useDefault) {
     myState.directory.useDefault = useDefault;
   }
 
-  public ISVNOptions getOptions() {
-    if (myOptions == null) {
-      File path = new File(getConfigurationDirectory());
-      myOptions = SVNWCUtil.createDefaultOptions(path.getAbsoluteFile(), true);
-    }
-    return myOptions;
-  }
-
-  public SvnAuthenticationManager getAuthenticationManager(final SvnVcs svnVcs) {
+  public SvnAuthenticationManager getAuthenticationManager(@NotNull SvnVcs vcs) {
     if (myAuthManager == null) {
       // reloaded when configuration directory changes
-        myAuthManager = new SvnAuthenticationManager(svnVcs.getProject(), new File(getConfigurationDirectory()));
-      Disposer.register(svnVcs.getProject(), new Disposable() {
-        @Override
-        public void dispose() {
-          myAuthManager = null;
-        }
-      });
-      getInteractiveManager(svnVcs);
+      myAuthManager = new SvnAuthenticationManager(vcs.getProject(), getConfigurationPath());
+      getInteractiveManager(vcs);
       // to init
-      myAuthManager.setAuthenticationProvider(new SvnAuthenticationProvider(svnVcs, myInteractiveProvider, myAuthManager));
-      myAuthManager.setRuntimeStorage(RUNTIME_AUTH_CACHE);
+      myAuthManager.setAuthenticationProvider(new SvnAuthenticationProvider(vcs, myInteractiveProvider, myAuthManager));
     }
     return myAuthManager;
   }
 
-  public SvnAuthenticationManager getPassiveAuthenticationManager(Project project) {
+  public SvnAuthenticationManager getPassiveAuthenticationManager(@NotNull SvnVcs vcs) {
     if (myPassiveAuthManager == null) {
-      myPassiveAuthManager = new SvnAuthenticationManager(project, new File(getConfigurationDirectory()));
-      myPassiveAuthManager.setAuthenticationProvider(new ISVNAuthenticationProvider() {
+      myPassiveAuthManager = new SvnAuthenticationManager(vcs.getProject(), getConfigurationPath());
+      myPassiveAuthManager.setAuthenticationProvider(new AuthenticationProvider() {
         @Override
-        public SVNAuthentication requestClientAuthentication(String kind,
-                                                             SVNURL url,
-                                                             String realm,
-                                                             SVNErrorMessage errorMessage,
-                                                             SVNAuthentication previousAuth,
-                                                             boolean authMayBeStored) {
+        public AuthenticationData requestClientAuthentication(String kind, Url url, String realm, boolean canCache) {
           return null;
         }
 
         @Override
-        public int acceptServerAuthentication(SVNURL url, String realm, Object certificate, boolean resultMayBeStored) {
-          return REJECTED;
+        public AcceptResult acceptServerAuthentication(Url url, String realm, Object certificate, boolean canCache) {
+          return AcceptResult.REJECTED;
         }
       });
-      myPassiveAuthManager.setRuntimeStorage(RUNTIME_AUTH_CACHE);
     }
     return myPassiveAuthManager;
   }
 
-  public SvnAuthenticationManager getInteractiveManager(final SvnVcs svnVcs) {
+  public SvnAuthenticationManager getInteractiveManager(@NotNull SvnVcs vcs) {
     if (myInteractiveManager == null) {
-      myInteractiveManager = new SvnAuthenticationManager(svnVcs.getProject(), new File(getConfigurationDirectory()));
-      myInteractiveManager.setRuntimeStorage(RUNTIME_AUTH_CACHE);
-      myInteractiveProvider = new SvnInteractiveAuthenticationProvider(svnVcs, myInteractiveManager);
+      myInteractiveManager = new SvnAuthenticationManager(vcs.getProject(), getConfigurationPath());
+      myInteractiveProvider = new SvnInteractiveAuthenticationProvider(vcs, myInteractiveManager);
       myInteractiveManager.setAuthenticationProvider(myInteractiveProvider);
     }
     return myInteractiveManager;
-  }
-
-  public void getServerFilesManagers(final Ref<SvnServerFileManager> systemManager, final Ref<SvnServerFileManager> userManager) {
-    // created only if does not exist
-    final File dir = new File(getConfigurationDirectory());
-    if (! dir.exists()) {
-      SVNConfigFile.createDefaultConfiguration(dir);
-    }
-
-    systemManager.set(new SvnServerFileManagerImpl(new IdeaSVNConfigFile(new File(SVNFileUtil.getSystemConfigurationDirectory(), IdeaSVNConfigFile.SERVERS_FILE_NAME))));
-    userManager.set(new SvnServerFileManagerImpl(getServersFile()));
   }
 
   public boolean isAutoUpdateAfterCommit() {
@@ -449,22 +377,21 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
     myState.keepLocks = keepLocks;
   }
 
-  public boolean isIsUseDefaultProxy() {
+  public boolean isUseDefaultProxy() {
     return myState.useDefaultProxy;
   }
 
-  public void setIsUseDefaultProxy(final boolean isUseDefaultProxy) {
+  public void setUseDefaultProxy(final boolean isUseDefaultProxy) {
     myState.useDefaultProxy = isUseDefaultProxy;
   }
 
   // TODO: Rewrite AutoStorage to use MemoryPasswordSafe at least
-  public static class AuthStorage implements ISVNAuthenticationStorage {
+  public static class AuthStorage {
 
-    private final TreeSet<String> myKeys = ContainerUtil.newTreeSet();
-    private final Map<String, Object> myStorage = ContainerUtil.newHashMap();
+    private final @NotNull TreeSet<String> myKeys = new TreeSet<>();
+    private final @NotNull Map<String, Object> myStorage = new HashMap<>();
 
-    @NotNull
-    public static String getKey(@NotNull String type, @NotNull String realm) {
+    public static @NotNull String getKey(@NotNull String type, @NotNull String realm) {
       return type + "$" + realm;
     }
 
@@ -473,7 +400,7 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
       myKeys.clear();
     }
 
-    public synchronized void putData(String kind, String realm, Object data) {
+    public synchronized void putData(@NotNull String kind, @NotNull String realm, @Nullable Object data) {
       String key = getKey(kind, realm);
 
       if (data == null) {
@@ -485,11 +412,7 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
       }
     }
 
-    public synchronized Object getData(String kind, String realm) {
-      return myStorage.get(getKey(kind, realm));
-    }
-
-    public synchronized Object getDataWithLowerCheck(String kind, String realm) {
+    public synchronized @Nullable Object getDataWithLowerCheck(@NotNull String kind, @NotNull String realm) {
       String key = getKey(kind, realm);
       Object result = myStorage.get(key);
 
@@ -505,7 +428,7 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
     }
   }
 
-  public MergeRootInfo getMergeRootInfo(final File file, final SvnVcs svnVcs) {
+  public @NotNull MergeRootInfo getMergeRootInfo(final File file, final SvnVcs svnVcs) {
     if (!myMergeRootInfos.containsKey(file)) {
       myMergeRootInfos.put(file, new MergeRootInfo(file, svnVcs));
     }
@@ -524,11 +447,11 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
     return Collections.unmodifiableMap(myUpdateRootInfos);
   }
 
-  public void acknowledge(final String kind, final String realm, final Object object) {
+  public void acknowledge(@NotNull String kind, @NotNull String realm, @Nullable Object object) {
     RUNTIME_AUTH_CACHE.putData(kind, realm, object);
   }
 
-  public void clearCredentials(final String kind, final String realm) {
+  public void clearCredentials(@NotNull String kind, @NotNull String realm) {
     RUNTIME_AUTH_CACHE.putData(kind, realm, null);
   }
 
@@ -536,18 +459,12 @@ public class SvnConfiguration implements PersistentStateComponent<SvnConfigurati
     RUNTIME_AUTH_CACHE.clear();
   }
 
-
   public int getMaxAnnotateRevisions() {
     return myState.maxAnnotateRevisions;
   }
 
   public void setMaxAnnotateRevisions(int maxAnnotateRevisions) {
     myState.maxAnnotateRevisions = maxAnnotateRevisions;
-  }
-
-  public enum UseAcceleration {
-    commandLine,
-    nothing
   }
 
   public boolean isCleanupRun() {

@@ -1,25 +1,15 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.updater;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-import java.util.Collections;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import static org.junit.Assert.assertEquals;
-
-public class RunnerTest extends UpdaterTestCase {
-  @Test
-  public void testExtractingFiles() throws Exception {
-    String[] args = {"bar", "ignored=xxx;yyy;zzz/zzz", "critical=", "ignored=aaa", "baz", "critical=ccc"};
-    Runner.initLogger();
-
-    assertEquals(Arrays.asList("xxx", "yyy", "zzz/zzz", "aaa"),
-                 Runner.extractArguments(args, "ignored"));
-
-    assertEquals(Arrays.asList("ccc"),
-                 Runner.extractArguments(args, "critical"));
-
-    assertEquals(Collections.<String>emptyList(),
-                 Runner.extractArguments(args, "unknown"));
+class RunnerTest {
+  @Test void extractingArgs() {
+    var args = new String[]{"bar", "ignored=xxx;yyy;zzz/zzz", "critical=", "ignored=aaa", "baz", "critical=ccc"};
+    assertThat(Runner.extractArguments(args, "ignored")).containsExactly("xxx", "yyy", "zzz/zzz", "aaa");
+    assertThat(Runner.extractArguments(args, "critical")).containsExactly("ccc");
+    assertThat(Runner.extractArguments(args, "unknown")).isEmpty();
   }
 }

@@ -1,28 +1,21 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl.synthetic;
 
 import com.intellij.lang.Language;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiAnnotationMemberValue;
+import com.intellij.psi.PsiAnnotationOwner;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiModifierList;
+import com.intellij.psi.PsiNameValuePair;
 import com.intellij.psi.impl.PsiImplUtil;
 import com.intellij.psi.impl.light.LightClassReference;
 import com.intellij.psi.impl.light.LightElement;
-import com.intellij.psi.meta.PsiMetaData;
-import com.intellij.util.containers.ContainerUtilRt;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -36,7 +29,9 @@ import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.annotation.
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrCodeReferenceElement;
 import org.jetbrains.plugins.groovy.lang.psi.impl.AnnotationArgConverter;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author Max Medvedev
@@ -46,45 +41,68 @@ public class GrLightAnnotation extends LightElement implements GrAnnotation {
 
   private final String myQualifiedName;
   private final PsiAnnotationOwner myOwner;
+  private final PsiElement myContext;
   private final GrLightClassReferenceElement myRef;
 
   public GrLightAnnotation(@NotNull PsiManager manager,
                            @NotNull Language language,
                            @NotNull String qualifiedName,
-                           @NotNull PsiAnnotationOwner owner) {
+                           @NotNull PsiModifierList owner) {
     super(manager, language);
     myQualifiedName = qualifiedName;
     myOwner = owner;
+    myContext = owner;
 
     myAnnotationArgList = new GrLightAnnotationArgumentList(manager, language);
     myRef = new GrLightClassReferenceElement(qualifiedName, qualifiedName, this);
   }
 
-  @NotNull
+  public GrLightAnnotation(@NotNull PsiAnnotationOwner owner,
+                           @NotNull PsiElement context,
+                           @NotNull String qualifiedName,
+                           @NotNull Map<String, String> params ) {
+    super(context.getManager(), context.getLanguage());
+    myQualifiedName = qualifiedName;
+    myOwner = owner;
+    myContext = context;
+
+    myAnnotationArgList = new GrLightAnnotationArgumentList(context.getManager(), context.getLanguage());
+    myRef = new GrLightClassReferenceElement(qualifiedName, qualifiedName, this);
+    params.forEach((key, value) -> addAttribute(key, value));
+  }
+
   @Override
-  public GrCodeReferenceElement getClassReference() {
+  public PsiElement getContext() {
+    return myContext;
+  }
+
+  @Override
+  public PsiFile getContainingFile() {
+    return myContext.getContainingFile();
+  }
+
+  @Override
+  public @NotNull GrCodeReferenceElement getClassReference() {
     return myRef;
   }
 
-  @NotNull
   @Override
-  public String getShortName() {
+  public @NotNull String getShortName() {
     return StringUtil.getShortName(myQualifiedName);
   }
 
-  @NotNull
   @Override
-  public GrAnnotationArgumentList getParameterList() {
+  public @NotNull GrAnnotationArgumentList getParameterList() {
     return myAnnotationArgList;
   }
 
   @Override
-  public void accept(GroovyElementVisitor visitor) {
+  public void accept(@NotNull GroovyElementVisitor visitor) {
     visitor.visitAnnotation(this);
   }
 
   @Override
-  public void acceptChildren(GroovyElementVisitor visitor) {
+  public void acceptChildren(@NotNull GroovyElementVisitor visitor) {
     //todo
   }
 
@@ -136,11 +154,6 @@ public class GrLightAnnotation extends LightElement implements GrAnnotation {
     return myOwner;
   }
 
-  @Override
-  public PsiMetaData getMetaData() {
-    return null;
-  }
-
   public void addAttribute(PsiNameValuePair pair) {
     if (pair instanceof GrAnnotationNameValuePair) {
       myAnnotationArgList.addAttribute((GrAnnotationNameValuePair)pair);
@@ -150,17 +163,17 @@ public class GrLightAnnotation extends LightElement implements GrAnnotation {
       if (newValue == null) return;
 
       String name = pair.getName();
-      GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(pair.getProject());
-      String annotationText;
-      annotationText = name != null ? "@A(" + name + "=" + newValue.getText() + ")"
-                                    : "@A(" + newValue.getText() + ")";
-      GrAnnotation annotation = factory.createAnnotationFromText(annotationText);
-      myAnnotationArgList.addAttribute(annotation.getParameterList().getAttributes()[0]);
+      addAttribute(name, newValue.getText());
     }
   }
 
+  public void addAttribute(@NlsSafe @Nullable String name, @NlsSafe @NotNull String value) {
+    GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(getProject());
+    String text = name != null ? name + "=" + value : value;
+    myAnnotationArgList.addAttribute(factory.createAnnotationAttribute(text, this));
+  }
 
-  private class GrLightAnnotationArgumentList extends LightElement implements GrAnnotationArgumentList {
+  private final class GrLightAnnotationArgumentList extends LightElement implements GrAnnotationArgumentList {
     private List<GrAnnotationNameValuePair> myAttributes = null;
     private GrAnnotationNameValuePair[] myCachedAttributes = GrAnnotationNameValuePair.EMPTY_ARRAY;
 
@@ -174,29 +187,28 @@ public class GrLightAnnotation extends LightElement implements GrAnnotation {
       super(manager, language);
     }
 
-    @NotNull
     @Override
-    public GrAnnotationNameValuePair[] getAttributes() {
+    public GrAnnotationNameValuePair @NotNull [] getAttributes() {
       if (myCachedAttributes == null) {
         assert myAttributes != null;
-        myCachedAttributes = myAttributes.toArray(new GrAnnotationNameValuePair[myAttributes.size()]);
+        myCachedAttributes = myAttributes.toArray(GrAnnotationNameValuePair.EMPTY_ARRAY);
       }
       return myCachedAttributes;
     }
 
     public void addAttribute(@NotNull GrAnnotationNameValuePair attribute) {
-      if (myAttributes == null) myAttributes = ContainerUtilRt.newArrayList();
+      if (myAttributes == null) myAttributes = new ArrayList<>();
       myAttributes.add(attribute);
       myCachedAttributes = null;
     }
 
     @Override
-    public void accept(GroovyElementVisitor visitor) {
+    public void accept(@NotNull GroovyElementVisitor visitor) {
       visitor.visitAnnotationArgumentList(this);
     }
 
     @Override
-    public void acceptChildren(GroovyElementVisitor visitor) {
+    public void acceptChildren(@NotNull GroovyElementVisitor visitor) {
       if (myAttributes != null) {
         for (GrAnnotationNameValuePair attribute : myAttributes) {
           attribute.accept(visitor);
@@ -220,7 +232,7 @@ public class GrLightAnnotation extends LightElement implements GrAnnotation {
         buffer.append(attribute.getText());
         buffer.append(',');
       }
-      if (!myAttributes.isEmpty()) buffer.deleteCharAt(buffer.length() - 1);
+      buffer.deleteCharAt(buffer.length() - 1);
       buffer.append(')');
       return buffer.toString();
     }

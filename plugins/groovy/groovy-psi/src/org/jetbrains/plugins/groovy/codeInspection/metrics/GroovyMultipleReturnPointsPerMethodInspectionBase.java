@@ -1,23 +1,10 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.codeInspection.metrics;
 
 import com.intellij.psi.PsiType;
-import org.jetbrains.annotations.Nls;
+import com.intellij.psi.PsiTypes;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.codeInspection.BaseInspectionVisitor;
 import org.jetbrains.plugins.groovy.codeInspection.utils.ControlFlowUtils;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrStatement;
@@ -25,40 +12,20 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrCodeBlock;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 
 public class GroovyMultipleReturnPointsPerMethodInspectionBase extends GroovyMethodMetricInspection {
-  @Override
-  @Nls
-  @NotNull
-  public String getGroupDisplayName() {
-    return METHOD_METRICS;
+
+  public GroovyMultipleReturnPointsPerMethodInspectionBase() {
+    super(1);
   }
 
   @Override
-  @NotNull
-  public String getDisplayName() {
-    return "Method with multiple return points";
-  }
-
-  @Override
-  protected int getDefaultLimit() {
-    return 1;
-  }
-
-  @Override
-  protected String getConfigurationLabel() {
-    return "Return point limit:";
-  }
-
-  @Override
-  @NotNull
-  public String buildErrorString(Object... infos) {
+  public @NotNull String buildErrorString(Object... infos) {
     final Integer returnPointCount = (Integer) infos[0];
-    return "<code>#ref</code> has " + returnPointCount + " return points #loc";
+    return GroovyBundle.message("inspection.message.ref.has.0.return.points", returnPointCount);
 
   }
 
-  @NotNull
   @Override
-  public BaseInspectionVisitor buildVisitor() {
+  public @NotNull BaseInspectionVisitor buildVisitor() {
     return new MultipleReturnPointsVisitor();
   }
 
@@ -101,12 +68,12 @@ public class GroovyMultipleReturnPointsPerMethodInspectionBase extends GroovyMet
       return count;
     }
 
-    private boolean mayFallThroughBottom(GrMethod method) {
+    private static boolean mayFallThroughBottom(GrMethod method) {
       if (method.isConstructor()) {
         return true;
       }
       final PsiType returnType = method.getReturnType();
-      return PsiType.VOID.equals(returnType);
+      return PsiTypes.voidType().equals(returnType);
     }
   }
 }

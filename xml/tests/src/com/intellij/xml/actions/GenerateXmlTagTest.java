@@ -15,58 +15,58 @@
  */
 package com.intellij.xml.actions;
 
-import com.intellij.javaee.ExternalResourceManagerExImpl;
+import com.intellij.javaee.ExternalResourceManagerExBase;
 import com.intellij.testFramework.PlatformTestUtil;
+import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import com.intellij.testFramework.fixtures.CodeInsightTestUtil;
-import com.intellij.testFramework.fixtures.LightPlatformCodeInsightFixtureTestCase;
 
 import java.io.File;
 
 /**
  * @author Dmitry Avdeev
  */
-public class GenerateXmlTagTest extends LightPlatformCodeInsightFixtureTestCase {
+public class GenerateXmlTagTest extends BasePlatformTestCase {
 
-  public void testGenerate() throws Exception {
+  public void testGenerate() {
     myFixture.configureByFile("web-app_2_5.xsd");
     doTest("generate.xml", "security-constraint");
   }
 
-  public void testGenerateEmpty() throws Exception {
+  public void testGenerateEmpty() {
     myFixture.configureByFile("javaee_5.xsd");
     myFixture.configureByFile("web-app_2_5.xsd");
     doTest("generateEmpty.xml", "distributable");
   }
 
-  public void testGenerateDTD() throws Exception {
+  public void testGenerateDTD() {
     doTest("generateDTD.xml", "b");
   }
 
-  public void testGenerateDTDComplex() throws Exception {
+  public void testGenerateDTDComplex() {
     doTest("generateDTDComplex.xml", "b");
   }
 
-  public void testSpring() throws Exception {
+  public void testSpring() {
     myFixture.configureByFile("spring-beans_3.0.xsd");
     doTest("spring.xml", "bean");
   }
 
-  public void testSpringAtCaret() throws Exception {
+  public void testSpringAtCaret() {
     myFixture.configureByFile("spring-beans_3.0.xsd");
     doTest("springAtCaret.xml", "bean");
   }
 
-  public void testSpringAfterBean() throws Exception {
+  public void testSpringAfterBean() {
     myFixture.configureByFile("spring-beans_3.0.xsd");
     doTest("springAfterBean.xml", "bean");
   }
 
-  public void testSpringAlias() throws Exception {
+  public void testSpringAlias() {
     myFixture.configureByFile("spring-beans_3.0.xsd");
     doTest("springAlias.xml", "alias");
   }
 
-  public void testInitParam() throws Exception {
+  public void testInitParam() {
     doTest("initParam.xml", "context-param");
   }
 
@@ -82,8 +82,8 @@ public class GenerateXmlTagTest extends LightPlatformCodeInsightFixtureTestCase 
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    ExternalResourceManagerExImpl.registerResourceTemporarily("http://java.sun.com/j2ee/dtds/web-app_2_3.dtd",
-                                                              getTestDataPath() + "/web-app_2_3.dtd", getTestRootDisposable());
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://java.sun.com/j2ee/dtds/web-app_2_3.dtd",
+                                                              getTestDataPath() + "/web-app_2_3.dtd", myFixture.getTestRootDisposable());
   }
 
   @Override

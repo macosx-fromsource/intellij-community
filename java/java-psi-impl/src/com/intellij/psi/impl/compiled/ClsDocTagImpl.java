@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.compiled;
 
 import com.intellij.psi.JavaElementVisitor;
@@ -43,7 +29,7 @@ class ClsDocTagImpl extends ClsElementImpl implements PsiDocTag {
   }
 
   @Override
-  public void setMirror(@NotNull TreeElement element) throws InvalidMirrorException {
+  protected void setMirror(@NotNull TreeElement element) throws InvalidMirrorException {
     setMirrorCheckingType(element, JavaDocElementType.DOC_TAG);
   }
 
@@ -53,14 +39,12 @@ class ClsDocTagImpl extends ClsElementImpl implements PsiDocTag {
   }
 
   @Override
-  @NotNull
-  public char[] textToCharArray() {
+  public char @NotNull [] textToCharArray() {
     return myNameElement.textToCharArray();
   }
 
   @Override
-  @NotNull
-  public String getName() {
+  public @NotNull String getName() {
     return getNameElement().getText().substring(1);
   }
 
@@ -80,8 +64,7 @@ class ClsDocTagImpl extends ClsElementImpl implements PsiDocTag {
   }
 
   @Override
-  @NotNull
-  public PsiElement[] getChildren() {
+  public PsiElement @NotNull [] getChildren() {
     return new PsiElement[]{myNameElement};
   }
 
@@ -101,7 +84,7 @@ class ClsDocTagImpl extends ClsElementImpl implements PsiDocTag {
   }
 
   @Override
-  public PsiElement[] getDataElements() {
+  public PsiElement @NotNull [] getDataElements() {
     return PsiElement.EMPTY_ARRAY;
   }
 
@@ -130,7 +113,7 @@ class ClsDocTagImpl extends ClsElementImpl implements PsiDocTag {
     private final ClsDocTagImpl myParent;
     private final String myText;
 
-    public NameElement(ClsDocTagImpl parent, String text) {
+    NameElement(ClsDocTagImpl parent, String text) {
       myParent = parent;
       myText = text;
     }
@@ -141,14 +124,12 @@ class ClsDocTagImpl extends ClsElementImpl implements PsiDocTag {
     }
 
     @Override
-    @NotNull
-    public char[] textToCharArray() {
+    public char @NotNull [] textToCharArray() {
       return myText.toCharArray();
     }
 
     @Override
-    @NotNull
-    public PsiElement[] getChildren() {
+    public PsiElement @NotNull [] getChildren() {
       return PsiElement.EMPTY_ARRAY;
     }
 
@@ -157,18 +138,13 @@ class ClsDocTagImpl extends ClsElementImpl implements PsiDocTag {
     }
 
     @Override
-    public void setMirror(@NotNull TreeElement element) throws InvalidMirrorException {
+    protected void setMirror(@NotNull TreeElement element) throws InvalidMirrorException {
       setMirrorCheckingType(element, null);
     }
 
     @Override
     public PsiElement getParent() {
       return myParent;
-    }
-
-    @Override
-    public void accept(@NotNull PsiElementVisitor visitor) {
-      visitor.visitElement(this);
     }
   }
 }

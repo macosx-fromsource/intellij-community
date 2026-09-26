@@ -1,4 +1,4 @@
-// "Replace with lambda" "true"
+// "Replace with lambda" "true-preview"
 import java.util.concurrent.Callable;
 
 class A {
@@ -9,6 +9,8 @@ class A {
   }
 
   public static void main(String[] args) {
-    submit((Runnable) () -> new A());
+    submit(() -> {
+      new A();
+    });
   }
 }

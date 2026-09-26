@@ -16,38 +16,22 @@
 package org.jetbrains.plugins.groovy.codeInspection.assignment;
 
 import com.intellij.psi.PsiElement;
-import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.codeInspection.BaseInspection;
 import org.jetbrains.plugins.groovy.codeInspection.BaseInspectionVisitor;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression;
 
-public class GroovyNestedAssignmentInspection extends BaseInspection {
+public final class GroovyNestedAssignmentInspection extends BaseInspection {
 
   @Override
-  @Nls
-  @NotNull
-  public String getGroupDisplayName() {
-    return ASSIGNMENT_ISSUES;
+  protected @Nullable String buildErrorString(Object... args) {
+    return GroovyBundle.message("inspection.message.nested.assignment.expression");
   }
 
   @Override
-  @Nls
-  @NotNull
-  public String getDisplayName() {
-    return "Nested assignment";
-  }
-
-  @Override
-  @Nullable
-  protected String buildErrorString(Object... args) {
-    return "Nested assignment expression #loc";
-  }
-
-  @NotNull
-  @Override
-  public BaseInspectionVisitor buildVisitor() {
+  public @NotNull BaseInspectionVisitor buildVisitor() {
     return new Visitor();
   }
 

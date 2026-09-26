@@ -1,95 +1,97 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.vcs.log.ui.actions;
 
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbAwareAction;
-import com.intellij.openapi.wm.impl.content.ToolWindowContentUi;
-import com.intellij.vcs.log.VcsLogDataKeys;
-import com.intellij.vcs.log.VcsLogUi;
+import com.intellij.openapi.util.NlsActions;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.vcs.log.graph.PermanentGraph;
-import com.intellij.vcs.log.impl.VcsLogUtil;
-import com.intellij.vcs.log.ui.VcsLogUiImpl;
+import com.intellij.vcs.log.graph.actions.ActionController;
+import com.intellij.vcs.log.graph.actions.GraphAction;
+import com.intellij.vcs.log.graph.actions.GraphAnswer;
+import com.intellij.vcs.log.impl.MainVcsLogUiProperties;
+import com.intellij.vcs.log.impl.VcsLogUiProperties;
+import com.intellij.vcs.log.statistics.VcsLogUsageTriggerCollector;
+import com.intellij.vcs.log.ui.MainVcsLogUi;
+import com.intellij.vcs.log.ui.VcsLogInternalDataKeys;
+import com.intellij.vcs.log.visible.VisiblePack;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import java.util.function.Supplier;
 
 abstract class CollapseOrExpandGraphAction extends DumbAwareAction {
-  private static final String LINEAR_BRANCHES = "Linear Branches";
-  private static final String LINEAR_BRANCHES_DESCRIPTION = "linear branches";
-  private static final String MERGES = "Merges";
-  private static final String MERGES_DESCRIPTION = "merges";
+  private final Supplier<@NlsActions.ActionText String> myLinearBranchesAction;
+  private final Supplier<@NlsActions.ActionDescription String> myLinearBranchesDescription;
+  private final Supplier<@NlsActions.ActionText String> myMergesAction;
+  private final Supplier<@NlsActions.ActionDescription String> myMergesDescription;
 
-  public CollapseOrExpandGraphAction(@NotNull String action) {
-    super(action + " " + LINEAR_BRANCHES, action + " " + LINEAR_BRANCHES_DESCRIPTION, null);
+  protected CollapseOrExpandGraphAction(@NotNull Supplier<String> linearBranchesAction,
+                                        @NotNull Supplier<String> linearBranchesDescription,
+                                        @NotNull Supplier<String> mergesAction,
+                                        @NotNull Supplier<String> mergesDescription) {
+    super(linearBranchesAction, linearBranchesDescription);
+    myLinearBranchesAction = linearBranchesAction;
+    myLinearBranchesDescription = linearBranchesDescription;
+    myMergesAction = mergesAction;
+    myMergesDescription = mergesDescription;
   }
 
   @Override
   public void actionPerformed(@NotNull AnActionEvent e) {
-    VcsLogUtil.triggerUsage(e);
-
-    VcsLogUi ui = e.getRequiredData(VcsLogDataKeys.VCS_LOG_UI);
-    executeAction((VcsLogUiImpl)ui);
+    VcsLogUsageTriggerCollector.triggerUsage(e, this);
+    MainVcsLogUi ui = e.getData(VcsLogInternalDataKeys.MAIN_UI);
+    if (ui == null || !ui.getDataPack().getVisibleGraph().getActionController().isActionSupported(getGraphAction())) return;
+    executeAction(ui);
   }
 
   @Override
   public void update(@NotNull AnActionEvent e) {
-    VcsLogUi ui = e.getData(VcsLogDataKeys.VCS_LOG_UI);
+    MainVcsLogUi ui = e.getData(VcsLogInternalDataKeys.MAIN_UI);
+    VcsLogUiProperties properties = e.getData(VcsLogInternalDataKeys.LOG_UI_PROPERTIES);
 
-    if (ui != null && ui.areGraphActionsEnabled()) {
-      e.getPresentation().setEnabled(true);
-      if (!ui.getFilterUi().getFilters().getDetailsFilters().isEmpty()) {
-        e.getPresentation().setEnabled(false);
-      }
-
-      if (ui.getBekType() == PermanentGraph.SortType.LinearBek) {
-        e.getPresentation().setText(getPrefix() + MERGES);
-        e.getPresentation().setDescription(getPrefix() + MERGES_DESCRIPTION);
+    boolean visible = ui != null && ui.getDataPack().getVisibleGraph().getActionController().isActionSupported(getGraphAction());
+    e.getPresentation().setVisible(visible);
+    e.getPresentation().setEnabled(visible && !ui.getDataPack().isEmpty());
+    if (visible) {
+      if (properties != null && properties.exists(MainVcsLogUiProperties.GRAPH_OPTIONS) &&
+          properties.get(MainVcsLogUiProperties.GRAPH_OPTIONS) == PermanentGraph.Options.LinearBek.INSTANCE) {
+        e.getPresentation().setText(myMergesAction.get());
+        e.getPresentation().setDescription(myMergesDescription.get());
       }
       else {
-        e.getPresentation().setText(getPrefix() + LINEAR_BRANCHES);
-        e.getPresentation().setDescription(getPrefix() + LINEAR_BRANCHES_DESCRIPTION);
+        e.getPresentation().setText(myLinearBranchesAction.get());
+        e.getPresentation().setDescription(myLinearBranchesDescription.get());
       }
-    }
-    else {
-      e.getPresentation().setEnabled(false);
-    }
-
-    e.getPresentation().setText(getPrefix() + LINEAR_BRANCHES);
-    e.getPresentation().setDescription(getPrefix() + LINEAR_BRANCHES_DESCRIPTION);
-    if (isIconHidden(e)) {
-      e.getPresentation().setIcon(null);
-    }
-    else {
-      e.getPresentation().setIcon(ui != null && ui.getBekType() == PermanentGraph.SortType.LinearBek ? getMergesIcon() : getBranchesIcon());
     }
   }
 
-  protected abstract void executeAction(@NotNull VcsLogUiImpl vcsLogUi);
+  protected abstract void executeAction(@NotNull MainVcsLogUi vcsLogUi);
 
-  @NotNull
-  protected abstract Icon getMergesIcon();
+  protected abstract @NotNull GraphAction getGraphAction();
 
-  @NotNull
-  protected abstract Icon getBranchesIcon();
+  protected void performLongAction(@NotNull MainVcsLogUi logUi,
+                                   @NotNull GraphAction graphAction,
+                                   @NotNull @NlsContexts.ProgressTitle String title) {
+    VisiblePack dataPack = logUi.getDataPack();
+    ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
+      ActionController<Integer> actionController = dataPack.getVisibleGraph().getActionController();
+      GraphAnswer<Integer> answer = actionController.performAction(graphAction);
+      Runnable updater = answer.getGraphUpdater();
+      ApplicationManager.getApplication().invokeLater(() -> {
+        assert updater != null : "Action:" + title +
+                                 "\nController: " + actionController +
+                                 "\nAnswer:" + answer;
+        updater.run();
+        logUi.getTable().handleAnswer(answer);
+      });
+    }, title, false, null, logUi.getMainComponent());
+  }
 
-  @NotNull
-  protected abstract String getPrefix();
-
-  private static boolean isIconHidden(@NotNull AnActionEvent e) {
-    return e.getPlace().equals(ToolWindowContentUi.POPUP_PLACE);
+  @Override
+  public @NotNull ActionUpdateThread getActionUpdateThread() {
+    return ActionUpdateThread.EDT;
   }
 }

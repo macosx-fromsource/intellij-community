@@ -1,120 +1,81 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.modules.decompiler.stats;
 
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.code.InstructionSequence;
+import org.jetbrains.java.decompiler.main.CancellationManager;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
-import org.jetbrains.java.decompiler.main.TextBuffer;
 import org.jetbrains.java.decompiler.main.collectors.BytecodeMappingTracer;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
 import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeDirection;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeType;
 import org.jetbrains.java.decompiler.modules.decompiler.StrongConnectivityHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.DoStatement.LoopType;
 import org.jetbrains.java.decompiler.struct.match.IMatchable;
 import org.jetbrains.java.decompiler.struct.match.MatchEngine;
 import org.jetbrains.java.decompiler.struct.match.MatchNode;
 import org.jetbrains.java.decompiler.struct.match.MatchNode.RuleValue;
+import org.jetbrains.java.decompiler.util.StartEndPair;
+import org.jetbrains.java.decompiler.util.TextBuffer;
+import org.jetbrains.java.decompiler.util.TextUtil;
 import org.jetbrains.java.decompiler.util.VBStyleCollection;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.EnumMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map.Entry;
+import java.util.Set;
 
-public class Statement implements IMatchable {
+public abstract class Statement implements IMatchable {
+  public StatementType type;
+  public int id;
 
-  public static final int STATEDGE_ALL = 1 << 31;
-  public static final int STATEDGE_DIRECT_ALL = 1 << 30;
+  private final EnumMap<EdgeType, List<StatEdge>> mapSuccEdges = new EnumMap<>(EdgeType.class);
+  private final EnumMap<EdgeType, List<StatEdge>> mapPredEdges = new EnumMap<>(EdgeType.class);
 
-  public static final int DIRECTION_BACKWARD = 0;
-  public static final int DIRECTION_FORWARD = 1;
+  private final EnumMap<EdgeType, List<Statement>> mapSuccStates = new EnumMap<>(EdgeType.class);
+  private final EnumMap<EdgeType, List<Statement>> mapPredStates = new EnumMap<>(EdgeType.class);
 
-  public static final int TYPE_GENERAL = 0;
-  public static final int TYPE_IF = 2;
-  public static final int TYPE_DO = 5;
-  public static final int TYPE_SWITCH = 6;
-  public static final int TYPE_TRYCATCH = 7;
-  public static final int TYPE_BASICBLOCK = 8;
-  public static final int TYPE_FINALLY = 9;
-  public static final int TYPE_SYNCRONIZED = 10;
-  public static final int TYPE_PLACEHOLDER = 11;
-  public static final int TYPE_CATCHALL = 12;
-  public static final int TYPE_ROOT = 13;
-  public static final int TYPE_DUMMYEXIT = 14;
-  public static final int TYPE_SEQUENCE = 15;
-
-
-  public static final int LASTBASICTYPE_IF = 0;
-  public static final int LASTBASICTYPE_SWITCH = 1;
-  public static final int LASTBASICTYPE_GENERAL = 2;
-
-
-  // *****************************************************************************
-  // public fields
-  // *****************************************************************************
-
-  public int type;
-
-  public Integer id;
-
-  // *****************************************************************************
-  // private fields
-  // *****************************************************************************
-
-  private final Map<Integer, List<StatEdge>> mapSuccEdges = new HashMap<>();
-  private final Map<Integer, List<StatEdge>> mapPredEdges = new HashMap<>();
-
-  private final Map<Integer, List<Statement>> mapSuccStates = new HashMap<>();
-  private final Map<Integer, List<Statement>> mapPredStates = new HashMap<>();
-
-  // statement as graph
-  protected final VBStyleCollection<Statement, Integer> stats = new VBStyleCollection<>();
-
-  protected Statement parent;
-
-  protected Statement first;
-
-  protected List<Exprent> exprents;
-
-  protected final HashSet<StatEdge> labelEdges = new HashSet<>();
-
-  protected final List<Exprent> varDefinitions = new ArrayList<>();
-
+  private final HashSet<StatEdge> labelEdges = new HashSet<>();
   // copied statement, s. deobfuscating of irreducible CFGs
   private boolean copied = false;
-
+  // statement as graph
+  protected final VBStyleCollection<Statement, Integer> stats = new VBStyleCollection<>();
+  protected Statement parent;
+  protected Statement first;
+  protected List<Exprent> exprents;
+  protected final List<Exprent> varDefinitions = new ArrayList<>();
   // relevant for the first stage of processing only
   // set to null after initializing of the statement structure
-
   protected Statement post;
-
-  protected int lastBasicType = LASTBASICTYPE_GENERAL;
-
+  protected StatementType lastBasicType = StatementType.GENERAL;
   protected boolean isMonitorEnter;
-
   protected boolean containsMonitorExit;
-
   protected HashSet<Statement> continueSet = new HashSet<>();
 
-  // *****************************************************************************
-  // initializers
-  // *****************************************************************************
+  //Statement must live only in one Thread
+  private final CancellationManager cancellationManager = DecompilerContext.getCancellationManager();
 
   {
-    // set statement id
     id = DecompilerContext.getCounterContainer().getCounterAndIncrement(CounterContainer.STATEMENT_COUNTER);
+  }
+
+  Statement(@NotNull StatementType type) {
+    this.type = type;
+    cancellationManager.checkCanceled();
+  }
+
+  Statement(@NotNull StatementType type, int id) {
+    this.type = type;
+    this.id = id;
+    cancellationManager.checkCanceled();
   }
 
   // *****************************************************************************
@@ -138,20 +99,20 @@ public class Statement implements IMatchable {
     processMap(mapPredStates);
   }
 
-  private static <T> void processMap(Map<Integer, List<T>> map) {
-    map.remove(StatEdge.TYPE_EXCEPTION);
+  private static <T> void processMap(EnumMap<EdgeType, List<T>> map) {
+    map.remove(EdgeType.EXCEPTION);
 
-    List<T> lst = map.get(STATEDGE_DIRECT_ALL);
+    List<T> lst = map.get(EdgeType.DIRECT_ALL);
     if (lst != null) {
-      map.put(STATEDGE_ALL, new ArrayList<>(lst));
+      map.put(EdgeType.ALL, new ArrayList<>(lst));
     }
     else {
-      map.remove(STATEDGE_ALL);
+      map.remove(EdgeType.ALL);
     }
   }
 
   public void collapseNodesToStatement(Statement stat) {
-
+    cancellationManager.checkCanceled();
     Statement head = stat.getFirst();
     Statement post = stat.getPost();
 
@@ -159,9 +120,9 @@ public class Statement implements IMatchable {
 
     // post edges
     if (post != null) {
-      for (StatEdge edge : post.getEdges(STATEDGE_DIRECT_ALL, DIRECTION_BACKWARD)) {
+      for (StatEdge edge : post.getEdges(EdgeType.DIRECT_ALL, EdgeDirection.BACKWARD)) {
         if (stat.containsStatementStrict(edge.getSource())) {
-          edge.getSource().changeEdgeType(DIRECTION_FORWARD, edge, StatEdge.TYPE_BREAK);
+          edge.getSource().changeEdgeType(EdgeDirection.FORWARD, edge, EdgeType.BREAK);
           stat.addLabeledEdge(edge);
         }
       }
@@ -169,15 +130,16 @@ public class Statement implements IMatchable {
 
     // regular head edges
     for (StatEdge prededge : head.getAllPredecessorEdges()) {
+      cancellationManager.checkCanceled();
 
-      if (prededge.getType() != StatEdge.TYPE_EXCEPTION &&
+      if (prededge.getType() != EdgeType.EXCEPTION &&
           stat.containsStatementStrict(prededge.getSource())) {
-        prededge.getSource().changeEdgeType(DIRECTION_FORWARD, prededge, StatEdge.TYPE_CONTINUE);
+        prededge.getSource().changeEdgeType(EdgeDirection.FORWARD, prededge, EdgeType.CONTINUE);
         stat.addLabeledEdge(prededge);
       }
 
       head.removePredecessor(prededge);
-      prededge.getSource().changeEdgeNode(DIRECTION_FORWARD, prededge, stat);
+      prededge.getSource().changeEdgeNode(EdgeDirection.FORWARD, prededge, stat);
       stat.addPredecessor(prededge);
     }
 
@@ -186,14 +148,14 @@ public class Statement implements IMatchable {
     }
 
     // exception edges
-    Set<Statement> setHandlers = new HashSet<>(head.getNeighbours(StatEdge.TYPE_EXCEPTION, DIRECTION_FORWARD));
+    Set<Statement> setHandlers = new HashSet<>(head.getNeighbours(EdgeType.EXCEPTION, EdgeDirection.FORWARD));
     for (Statement node : setNodes) {
-      setHandlers.retainAll(node.getNeighbours(StatEdge.TYPE_EXCEPTION, DIRECTION_FORWARD));
+      setHandlers.retainAll(node.getNeighbours(EdgeType.EXCEPTION, EdgeDirection.FORWARD));
     }
 
     if (!setHandlers.isEmpty()) {
 
-      for (StatEdge edge : head.getEdges(StatEdge.TYPE_EXCEPTION, DIRECTION_FORWARD)) {
+      for (StatEdge edge : head.getEdges(EdgeType.EXCEPTION, EdgeDirection.FORWARD)) {
         Statement handler = edge.getDestination();
 
         if (setHandlers.contains(handler)) {
@@ -204,7 +166,7 @@ public class Statement implements IMatchable {
       }
 
       for (Statement node : setNodes) {
-        for (StatEdge edge : node.getEdges(StatEdge.TYPE_EXCEPTION, DIRECTION_FORWARD)) {
+        for (StatEdge edge : node.getEdges(EdgeType.EXCEPTION, EdgeDirection.FORWARD)) {
           if (setHandlers.contains(edge.getDestination())) {
             node.removeSuccessor(edge);
           }
@@ -213,8 +175,8 @@ public class Statement implements IMatchable {
     }
 
     if (post != null &&
-        !stat.getNeighbours(StatEdge.TYPE_EXCEPTION, DIRECTION_FORWARD).contains(post)) { // TODO: second condition redundant?
-      stat.addSuccessor(new StatEdge(StatEdge.TYPE_REGULAR, stat, post));
+        !stat.getNeighbours(EdgeType.EXCEPTION, EdgeDirection.FORWARD).contains(post)) { // TODO: second condition redundant?
+      stat.addSuccessor(new StatEdge(EdgeType.REGULAR, stat, post));
     }
 
 
@@ -232,7 +194,7 @@ public class Statement implements IMatchable {
     // monitorenter and monitorexit
     stat.buildMonitorFlags();
 
-    if (stat.type == TYPE_SWITCH) {
+    if (stat.type == StatementType.SWITCH) {
       // special case switch, sorting leaf nodes
       ((SwitchStatement)stat).sortEdgesAndNodes();
     }
@@ -253,45 +215,36 @@ public class Statement implements IMatchable {
     this.getLabelEdges().add(edge);
   }
 
-  private void addEdgeDirectInternal(int direction, StatEdge edge, int edgetype) {
+  private void addEdgeDirectInternal(EdgeDirection direction, StatEdge edge, EdgeType edgetype) {
+    EnumMap<EdgeType, List<StatEdge>> mapEdges = direction == EdgeDirection.BACKWARD ? mapPredEdges : mapSuccEdges;
+    EnumMap<EdgeType, List<Statement>> mapStates = direction == EdgeDirection.BACKWARD ? mapPredStates : mapSuccStates;
 
-    Map<Integer, List<StatEdge>> mapEdges = direction == DIRECTION_BACKWARD ? mapPredEdges : mapSuccEdges;
-    Map<Integer, List<Statement>> mapStates = direction == DIRECTION_BACKWARD ? mapPredStates : mapSuccStates;
+    mapEdges.computeIfAbsent(edgetype, k -> new ArrayList<>()).add(edge);
 
-    List<StatEdge> lst = mapEdges.get(edgetype);
-    if (lst == null) {
-      mapEdges.put(edgetype, lst = new ArrayList<>());
-    }
-    lst.add(edge);
-
-    List<Statement> lstStates = mapStates.get(edgetype);
-    if (lstStates == null) {
-      mapStates.put(edgetype, lstStates = new ArrayList<>());
-    }
-    lstStates.add(direction == DIRECTION_BACKWARD ? edge.getSource() : edge.getDestination());
+    mapStates.computeIfAbsent(edgetype, k -> new ArrayList<>())
+      .add(direction == EdgeDirection.BACKWARD ? edge.getSource() : edge.getDestination());
   }
 
-  private void addEdgeInternal(int direction, StatEdge edge) {
+  private void addEdgeInternal(EdgeDirection direction, StatEdge edge) {
+    EdgeType type = edge.getType();
 
-    int type = edge.getType();
-
-    int[] arrtypes;
-    if (type == StatEdge.TYPE_EXCEPTION) {
-      arrtypes = new int[]{STATEDGE_ALL, StatEdge.TYPE_EXCEPTION};
+    EdgeType[] arrtypes;
+    if (type == EdgeType.EXCEPTION) {
+      arrtypes = new EdgeType[]{EdgeType.ALL, EdgeType.EXCEPTION};
     }
     else {
-      arrtypes = new int[]{STATEDGE_ALL, STATEDGE_DIRECT_ALL, type};
+      arrtypes = new EdgeType[]{EdgeType.ALL, EdgeType.DIRECT_ALL, type};
     }
 
-    for (int edgetype : arrtypes) {
+    for (EdgeType edgetype : arrtypes) {
       addEdgeDirectInternal(direction, edge, edgetype);
     }
   }
 
-  private void removeEdgeDirectInternal(int direction, StatEdge edge, int edgetype) {
+  private void removeEdgeDirectInternal(EdgeDirection direction, StatEdge edge, EdgeType edgetype) {
 
-    Map<Integer, List<StatEdge>> mapEdges = direction == DIRECTION_BACKWARD ? mapPredEdges : mapSuccEdges;
-    Map<Integer, List<Statement>> mapStates = direction == DIRECTION_BACKWARD ? mapPredStates : mapSuccStates;
+    EnumMap<EdgeType, List<StatEdge>> mapEdges = direction == EdgeDirection.BACKWARD ? mapPredEdges : mapSuccEdges;
+    EnumMap<EdgeType, List<Statement>> mapStates = direction == EdgeDirection.BACKWARD ? mapPredStates : mapSuccStates;
 
     List<StatEdge> lst = mapEdges.get(edgetype);
     if (lst != null) {
@@ -303,25 +256,25 @@ public class Statement implements IMatchable {
     }
   }
 
-  private void removeEdgeInternal(int direction, StatEdge edge) {
+  private void removeEdgeInternal(EdgeDirection direction, StatEdge edge) {
 
-    int type = edge.getType();
+    EdgeType type = edge.getType();
 
-    int[] arrtypes;
-    if (type == StatEdge.TYPE_EXCEPTION) {
-      arrtypes = new int[]{STATEDGE_ALL, StatEdge.TYPE_EXCEPTION};
+    EdgeType[] arrtypes;
+    if (type == EdgeType.EXCEPTION) {
+      arrtypes = new EdgeType[]{EdgeType.ALL, EdgeType.EXCEPTION};
     }
     else {
-      arrtypes = new int[]{STATEDGE_ALL, STATEDGE_DIRECT_ALL, type};
+      arrtypes = new EdgeType[]{EdgeType.ALL, EdgeType.DIRECT_ALL, type};
     }
 
-    for (int edgetype : arrtypes) {
+    for (EdgeType edgetype : arrtypes) {
       removeEdgeDirectInternal(direction, edge, edgetype);
     }
   }
 
   public void addPredecessor(StatEdge edge) {
-    addEdgeInternal(DIRECTION_BACKWARD, edge);
+    addEdgeInternal(EdgeDirection.BACKWARD, edge);
   }
 
   public void removePredecessor(StatEdge edge) {
@@ -330,11 +283,11 @@ public class Statement implements IMatchable {
       return;
     }
 
-    removeEdgeInternal(DIRECTION_BACKWARD, edge);
+    removeEdgeInternal(EdgeDirection.BACKWARD, edge);
   }
 
   public void addSuccessor(StatEdge edge) {
-    addEdgeInternal(DIRECTION_FORWARD, edge);
+    addEdgeInternal(EdgeDirection.FORWARD, edge);
 
     if (edge.closure != null) {
       edge.closure.getLabelEdges().add(edge);
@@ -349,7 +302,7 @@ public class Statement implements IMatchable {
       return;
     }
 
-    removeEdgeInternal(DIRECTION_FORWARD, edge);
+    removeEdgeInternal(EdgeDirection.FORWARD, edge);
 
     if (edge.closure != null) {
       edge.closure.getLabelEdges().remove(edge);
@@ -375,6 +328,7 @@ public class Statement implements IMatchable {
   }
 
   public HashSet<Statement> buildContinueSet() {
+    cancellationManager.checkCanceled();
     continueSet.clear();
 
     for (Statement st : stats) {
@@ -384,11 +338,11 @@ public class Statement implements IMatchable {
       }
     }
 
-    for (StatEdge edge : getEdges(StatEdge.TYPE_CONTINUE, DIRECTION_FORWARD)) {
+    for (StatEdge edge : getEdges(EdgeType.CONTINUE, EdgeDirection.FORWARD)) {
       continueSet.add(edge.getDestination().getBasichead());
     }
 
-    if (type == TYPE_DO) {
+    if (type == StatementType.DO) {
       continueSet.remove(first.getBasichead());
     }
 
@@ -402,11 +356,11 @@ public class Statement implements IMatchable {
     }
 
     switch (type) {
-      case TYPE_BASICBLOCK:
+      case BASIC_BLOCK -> {
         BasicBlockStatement bblock = (BasicBlockStatement)this;
         InstructionSequence seq = bblock.getBlock().getSeq();
 
-        if (seq != null && seq.length() > 0) {
+        if (seq != null && !seq.isEmpty()) {
           for (int i = 0; i < seq.length(); i++) {
             if (seq.getInstr(i).opcode == CodeConstants.opc_monitorexit) {
               containsMonitorExit = true;
@@ -415,24 +369,21 @@ public class Statement implements IMatchable {
           }
           isMonitorEnter = (seq.getLastInstr().opcode == CodeConstants.opc_monitorenter);
         }
-        break;
-      case TYPE_SEQUENCE:
-      case TYPE_IF:
+      }
+      case SEQUENCE, IF -> {
         containsMonitorExit = false;
         for (Statement st : stats) {
           containsMonitorExit |= st.isContainsMonitorExit();
         }
-
-        break;
-      case TYPE_SYNCRONIZED:
-      case TYPE_ROOT:
-      case TYPE_GENERAL:
-        break;
-      default:
+      }
+      case SYNCHRONIZED, ROOT, GENERAL -> {
+      }
+      default -> {
         containsMonitorExit = false;
         for (Statement st : stats) {
           containsMonitorExit |= st.isContainsMonitorExit();
         }
+      }
     }
   }
 
@@ -442,6 +393,7 @@ public class Statement implements IMatchable {
   }
 
   public List<Statement> getReversePostOrderList(Statement stat) {
+    cancellationManager.checkCanceled();
     List<Statement> res = new ArrayList<>();
 
     addToReversePostOrderListIterative(stat, res);
@@ -454,17 +406,17 @@ public class Statement implements IMatchable {
   }
 
   public List<Statement> getPostReversePostOrderList(List<Statement> lstexits) {
-
+    cancellationManager.checkCanceled();
     List<Statement> res = new ArrayList<>();
 
     if (lstexits == null) {
-      StrongConnectivityHelper schelper = new StrongConnectivityHelper(this);
-      lstexits = StrongConnectivityHelper.getExitReps(schelper.getComponents());
+      lstexits = new StrongConnectivityHelper(this).getExitReps();
     }
 
     HashSet<Statement> setVisited = new HashSet<>();
 
     for (Statement exit : lstexits) {
+      cancellationManager.checkCanceled();
       addToPostReversePostOrderList(exit, res, setVisited);
     }
 
@@ -480,13 +432,14 @@ public class Statement implements IMatchable {
   }
 
   public boolean containsStatementStrict(Statement stat) {
+    cancellationManager.checkCanceled();
 
     if (stats.contains(stat)) {
       return true;
     }
 
-    for (int i = 0; i < stats.size(); i++) {
-      if (stats.get(i).containsStatementStrict(stat)) {
+    for (Statement st : stats) {
+      if (st.containsStatementStrict(stat)) {
         return true;
       }
     }
@@ -494,13 +447,25 @@ public class Statement implements IMatchable {
     return false;
   }
 
+  public TextBuffer toJava() {
+    return toJava(0, BytecodeMappingTracer.DUMMY);
+  }
+
   public TextBuffer toJava(int indent, BytecodeMappingTracer tracer) {
     throw new RuntimeException("not implemented");
   }
 
   // TODO: make obsolete and remove
-  public List<Object> getSequentialObjects() {
+  public List<IMatchable> getSequentialObjects() {
     return new ArrayList<>(stats);
+  }
+
+  public @NotNull List<? extends IMatchable> getExprentsOrSequentialObjects() {
+    List<? extends IMatchable> exprents = getExprents();
+    if (exprents != null) {
+      return exprents;
+    }
+    return getSequentialObjects();
   }
 
   public void initExprents() {
@@ -522,10 +487,10 @@ public class Statement implements IMatchable {
   }
 
   public void replaceStatement(Statement oldstat, Statement newstat) {
-
+    cancellationManager.checkCanceled();
     for (StatEdge edge : oldstat.getAllPredecessorEdges()) {
       oldstat.removePredecessor(edge);
-      edge.getSource().changeEdgeNode(DIRECTION_FORWARD, edge, newstat);
+      edge.getSource().changeEdgeNode(EdgeDirection.FORWARD, edge, newstat);
       newstat.addPredecessor(edge);
     }
 
@@ -571,7 +536,7 @@ public class Statement implements IMatchable {
   // private methods
   // *****************************************************************************
 
-  private static void addToReversePostOrderListIterative(Statement root, List<Statement> lst) {
+  private static void addToReversePostOrderListIterative(Statement root, List<? super Statement> lst) {
 
     LinkedList<Statement> stackNode = new LinkedList<>();
     LinkedList<Integer> stackIndex = new LinkedList<>();
@@ -594,7 +559,7 @@ public class Statement implements IMatchable {
         Statement succ = edge.getDestination();
 
         if (!setVisited.contains(succ) &&
-            (edge.getType() == StatEdge.TYPE_REGULAR || edge.getType() == StatEdge.TYPE_EXCEPTION)) { // TODO: edge filter?
+            (edge.getType() == EdgeType.REGULAR || edge.getType() == EdgeType.EXCEPTION)) { // TODO: edge filter?
 
           stackIndex.add(index + 1);
 
@@ -614,14 +579,14 @@ public class Statement implements IMatchable {
   }
 
 
-  private static void addToPostReversePostOrderList(Statement stat, List<Statement> lst, HashSet<Statement> setVisited) {
+  private static void addToPostReversePostOrderList(Statement stat, List<? super Statement> lst, HashSet<? super Statement> setVisited) {
 
     if (setVisited.contains(stat)) { // because of not considered exception edges, s. isExitComponent. Should be rewritten, if possible.
       return;
     }
     setVisited.add(stat);
 
-    for (StatEdge prededge : stat.getEdges(StatEdge.TYPE_REGULAR | StatEdge.TYPE_EXCEPTION, DIRECTION_BACKWARD)) {
+    for (StatEdge prededge : stat.getEdges(EdgeType.REGULAR_EXCEPTION, EdgeDirection.BACKWARD)) {
       Statement pred = prededge.getSource();
       if (!setVisited.contains(pred)) {
         addToPostReversePostOrderList(pred, lst, setVisited);
@@ -635,22 +600,23 @@ public class Statement implements IMatchable {
   // getter and setter methods
   // *****************************************************************************
 
-  public void changeEdgeNode(int direction, StatEdge edge, Statement value) {
+  public void changeEdgeNode(EdgeDirection direction, StatEdge edge, Statement value) {
+    cancellationManager.checkCanceled();
 
-    Map<Integer, List<StatEdge>> mapEdges = direction == DIRECTION_BACKWARD ? mapPredEdges : mapSuccEdges;
-    Map<Integer, List<Statement>> mapStates = direction == DIRECTION_BACKWARD ? mapPredStates : mapSuccStates;
+    EnumMap<EdgeType, List<StatEdge>> mapEdges = direction == EdgeDirection.BACKWARD ? mapPredEdges : mapSuccEdges;
+    EnumMap<EdgeType, List<Statement>> mapStates = direction == EdgeDirection.BACKWARD ? mapPredStates : mapSuccStates;
 
-    int type = edge.getType();
+    EdgeType type = edge.getType();
 
-    int[] arrtypes;
-    if (type == StatEdge.TYPE_EXCEPTION) {
-      arrtypes = new int[]{STATEDGE_ALL, StatEdge.TYPE_EXCEPTION};
+    EdgeType[] arrtypes;
+    if (type == EdgeType.EXCEPTION) {
+      arrtypes = new EdgeType[]{EdgeType.ALL, EdgeType.EXCEPTION};
     }
     else {
-      arrtypes = new int[]{STATEDGE_ALL, STATEDGE_DIRECT_ALL, type};
+      arrtypes = new EdgeType[]{EdgeType.ALL, EdgeType.DIRECT_ALL, type};
     }
 
-    for (int edgetype : arrtypes) {
+    for (EdgeType edgetype : arrtypes) {
       List<StatEdge> lst = mapEdges.get(edgetype);
       if (lst != null) {
         int index = lst.indexOf(edge);
@@ -660,7 +626,7 @@ public class Statement implements IMatchable {
       }
     }
 
-    if (direction == DIRECTION_BACKWARD) {
+    if (direction == EdgeDirection.BACKWARD) {
       edge.setSource(value);
     }
     else {
@@ -668,41 +634,43 @@ public class Statement implements IMatchable {
     }
   }
 
-  public void changeEdgeType(int direction, StatEdge edge, int newtype) {
+  public void changeEdgeType(EdgeDirection direction, StatEdge edge, EdgeType newtype) {
+    cancellationManager.checkCanceled();
 
-    int oldtype = edge.getType();
+    EdgeType oldtype = edge.getType();
     if (oldtype == newtype) {
       return;
     }
 
-    if (oldtype == StatEdge.TYPE_EXCEPTION || newtype == StatEdge.TYPE_EXCEPTION) {
+    if (oldtype == EdgeType.EXCEPTION || newtype == EdgeType.EXCEPTION) {
       throw new RuntimeException("Invalid edge type!");
     }
 
     removeEdgeDirectInternal(direction, edge, oldtype);
     addEdgeDirectInternal(direction, edge, newtype);
 
-    if (direction == DIRECTION_FORWARD) {
-      edge.getDestination().changeEdgeType(DIRECTION_BACKWARD, edge, newtype);
+    if (direction == EdgeDirection.FORWARD) {
+      edge.getDestination().changeEdgeType(EdgeDirection.BACKWARD, edge, newtype);
     }
 
     edge.setType(newtype);
   }
 
 
-  private List<StatEdge> getEdges(int type, int direction) {
+  private List<StatEdge> getEdges(EdgeType type, @NotNull EdgeDirection direction) {
+    cancellationManager.checkCanceled();
 
-    Map<Integer, List<StatEdge>> map = direction == DIRECTION_BACKWARD ? mapPredEdges : mapSuccEdges;
+    EnumMap<EdgeType, List<StatEdge>> map = direction == EdgeDirection.BACKWARD ? mapPredEdges : mapSuccEdges;
 
     List<StatEdge> res;
-    if ((type & (type - 1)) == 0) {
+    if ((type.mask() & (type.mask() - 1)) == 0) {
       res = map.get(type);
       res = res == null ? new ArrayList<>() : new ArrayList<>(res);
     }
     else {
       res = new ArrayList<>();
-      for (int edgetype : StatEdge.TYPES) {
-        if ((type & edgetype) != 0) {
+      for (EdgeType edgetype : EdgeType.types()) {
+        if ((type.mask() & edgetype.mask()) != 0) {
           List<StatEdge> lst = map.get(edgetype);
           if (lst != null) {
             res.addAll(lst);
@@ -714,19 +682,22 @@ public class Statement implements IMatchable {
     return res;
   }
 
-  public List<Statement> getNeighbours(int type, int direction) {
+  public List<Statement> getNeighbours(EdgeType type, EdgeDirection direction) {
+    if (type == EdgeType.REGULAR && direction == EdgeDirection.FORWARD) {
+      cancellationManager.checkCanceled();
+    }
 
-    Map<Integer, List<Statement>> map = direction == DIRECTION_BACKWARD ? mapPredStates : mapSuccStates;
+    EnumMap<EdgeType, List<Statement>> map = direction == EdgeDirection.BACKWARD ? mapPredStates : mapSuccStates;
 
     List<Statement> res;
-    if ((type & (type - 1)) == 0) {
+    if ((type.mask() & (type.mask() - 1)) == 0) {
       res = map.get(type);
       res = res == null ? new ArrayList<>() : new ArrayList<>(res);
     }
     else {
       res = new ArrayList<>();
-      for (int edgetype : StatEdge.TYPES) {
-        if ((type & edgetype) != 0) {
+      for (EdgeType edgetype : EdgeType.types()) {
+        if ((type.mask() & edgetype.mask()) != 0) {
           List<Statement> lst = map.get(edgetype);
           if (lst != null) {
             res.addAll(lst);
@@ -738,27 +709,28 @@ public class Statement implements IMatchable {
     return res;
   }
 
-  public Set<Statement> getNeighboursSet(int type, int direction) {
+  public Set<Statement> getNeighboursSet(EdgeType type, EdgeDirection direction) {
     return new HashSet<>(getNeighbours(type, direction));
   }
 
-  public List<StatEdge> getSuccessorEdges(int type) {
-    return getEdges(type, DIRECTION_FORWARD);
+  public List<StatEdge> getSuccessorEdges(EdgeType type) {
+    return getEdges(type, EdgeDirection.FORWARD);
   }
 
-  public List<StatEdge> getPredecessorEdges(int type) {
-    return getEdges(type, DIRECTION_BACKWARD);
+  public List<StatEdge> getPredecessorEdges(EdgeType type) {
+    return getEdges(type, EdgeDirection.BACKWARD);
   }
 
   public List<StatEdge> getAllSuccessorEdges() {
-    return getEdges(STATEDGE_ALL, DIRECTION_FORWARD);
+    return getEdges(EdgeType.ALL, EdgeDirection.FORWARD);
   }
 
   public List<StatEdge> getAllPredecessorEdges() {
-    return getEdges(STATEDGE_ALL, DIRECTION_BACKWARD);
+    return getEdges(EdgeType.ALL, EdgeDirection.BACKWARD);
   }
 
   public Statement getFirst() {
+    cancellationManager.checkCanceled();
     return first;
   }
 
@@ -770,15 +742,12 @@ public class Statement implements IMatchable {
     return post;
   }
 
-  public void setPost(Statement post) {
-    this.post = post;
-  }
-
   public VBStyleCollection<Statement, Integer> getStats() {
+    cancellationManager.checkCanceled();
     return stats;
   }
 
-  public int getLastBasicType() {
+  public StatementType getLastBasicType() {
     return lastBasicType;
   }
 
@@ -795,7 +764,7 @@ public class Statement implements IMatchable {
   }
 
   public BasicBlockStatement getBasichead() {
-    if (type == TYPE_BASICBLOCK) {
+    if (type == StatementType.BASIC_BLOCK) {
       return (BasicBlockStatement)this;
     }
     else {
@@ -817,13 +786,14 @@ public class Statement implements IMatchable {
 
     // FIXME: default switch
 
-    return type == TYPE_BASICBLOCK || (type == TYPE_IF &&
-                                                        ((IfStatement)this).iftype == IfStatement.IFTYPE_IF) ||
-                  (type == TYPE_DO && ((DoStatement)this).getLooptype() != DoStatement.LOOP_DO);
+    return type == StatementType.BASIC_BLOCK || (type == StatementType.IF &&
+                                                 ((IfStatement)this).iftype == IfStatement.IFTYPE_IF) ||
+           (type == StatementType.DO && ((DoStatement)this).getLoopType() != LoopType.DO);
   }
 
 
   public Statement getParent() {
+    cancellationManager.checkCanceled();
     return parent;
   }
 
@@ -831,15 +801,32 @@ public class Statement implements IMatchable {
     this.parent = parent;
   }
 
+  public Statement getTopParent() {
+    Statement ret = this;
+    while (ret.getParent() != null) {
+      ret = ret.getParent();
+    }
+    return ret;
+  }
+
   public HashSet<StatEdge> getLabelEdges() {  // FIXME: why HashSet?
     return labelEdges;
   }
 
   public List<Exprent> getVarDefinitions() {
+    cancellationManager.checkCanceled();
     return varDefinitions;
   }
 
-  public List<Exprent> getExprents() {
+  /**
+   * Retrieves the list of expression statements associated with this instance.
+   * This method also checks if the current operation has been canceled via the cancellation manager.
+   *
+   * @return a list of {@link Exprent} objects representing expression statements (can be empty if BlockStatement is empty),
+   * or null if it is a SequenceStatement or this Block is not processed
+   */
+  public @Nullable List<Exprent> getExprents() {
+    cancellationManager.checkCanceled();
     return exprents;
   }
 
@@ -856,34 +843,87 @@ public class Statement implements IMatchable {
   }
 
   // helper methods
+  @Override
   public String toString() {
-    return id.toString();
+    return toString(0);
   }
-  
+
+  protected String toString(int indent) {
+    var buf = new StringBuilder();
+    buf.append(TextUtil.getIndentString(indent)).append(type).append(": ").append(id);
+    for (var stat : this.stats) {
+      buf.append(DecompilerContext.getNewLineSeparator());
+      buf.append(stat.toString(indent + 1));
+    }
+    return buf.toString();
+  }
+
+  //TODO: Cleanup/cache?
+  public void getOffset(@Nullable BitSet values) {
+    if (values == null) return;
+    if (this instanceof DummyExitStatement && ((DummyExitStatement)this).bytecode != null) {
+      values.or(((DummyExitStatement)this).bytecode);
+    }
+    if (this.getExprents() != null) {
+      for (Exprent e : this.getExprents()) {
+        e.fillBytecodeRange(values);
+      }
+    }
+    else {
+      for (IMatchable obj : this.getSequentialObjects()) {
+        if (obj == null) {
+          //Humm? Skip it
+        }
+        else if (obj instanceof Statement) {
+          ((Statement)obj).getOffset(values);
+        }
+        else if (obj instanceof Exprent) {
+          ((Exprent)obj).fillBytecodeRange(values);
+        }
+      }
+    }
+  }
+
+  private StartEndPair endpoints;
+
+  public StartEndPair getStartEndRange() {
+    if (endpoints == null) {
+      BitSet set = new BitSet();
+      getOffset(set);
+      endpoints = new StartEndPair(set.nextSetBit(0), set.length() - 1);
+    }
+    return endpoints;
+  }
+
+
   // *****************************************************************************
   // IMatchable implementation
   // *****************************************************************************
-  
+
+  @Override
   public IMatchable findObject(MatchNode matchNode, int index) {
-    
     int node_type = matchNode.getType();
-    
+
     if (node_type == MatchNode.MATCHNODE_STATEMENT && !this.stats.isEmpty()) {
       String position = (String)matchNode.getRuleValue(MatchProperties.STATEMENT_POSITION);
-      if(position != null) {
-        if(position.matches("-?\\d+")) {
+      if (position != null) {
+        if (position.matches("-?\\d+")) {
           return this.stats.get((this.stats.size() + Integer.parseInt(position)) % this.stats.size()); // care for negative positions
         }
-      } else if(index < this.stats.size()) { // use 'index' parameter
+      }
+      else if (index < this.stats.size()) { // use 'index' parameter
         return this.stats.get(index);
       }
-    } else if(node_type == MatchNode.MATCHNODE_EXPRENT && this.exprents != null && !this.exprents.isEmpty()) {
+    }
+    else if (node_type == MatchNode.MATCHNODE_EXPRENT && this.exprents != null && !this.exprents.isEmpty()) {
       String position = (String)matchNode.getRuleValue(MatchProperties.EXPRENT_POSITION);
-      if(position != null) {
-        if(position.matches("-?\\d+")) {
-          return this.exprents.get((this.exprents.size() + Integer.parseInt(position)) % this.exprents.size()); // care for negative positions
+      if (position != null) {
+        if (position.matches("-?\\d+")) {
+          return this.exprents.get(
+            (this.exprents.size() + Integer.parseInt(position)) % this.exprents.size()); // care for negative positions
         }
-      } else if(index < this.exprents.size()) { // use 'index' parameter
+      }
+      else if (index < this.exprents.size()) { // use 'index' parameter
         return this.exprents.get(index);
       }
     }
@@ -891,46 +931,61 @@ public class Statement implements IMatchable {
     return null;
   }
 
+  @Override
   public boolean match(MatchNode matchNode, MatchEngine engine) {
-    
-    if(matchNode.getType() != MatchNode.MATCHNODE_STATEMENT) {
+    if (matchNode.getType() != MatchNode.MATCHNODE_STATEMENT) {
       return false;
     }
-    
-    for(Entry<MatchProperties, RuleValue> rule : matchNode.getRules().entrySet()) {
-      switch(rule.getKey()) {
-      case STATEMENT_TYPE:
-        if(this.type != ((Integer)rule.getValue().value).intValue()) {
-          return false;
-        }
-        break;
-      case STATEMENT_STATSIZE:
-        if(this.stats.size() != ((Integer)rule.getValue().value).intValue()) {
-          return false;
-        }
-        break;
-      case STATEMENT_EXPRSIZE:
-        int exprsize = ((Integer)rule.getValue().value).intValue();
-        if(exprsize == -1) {
-          if(this.exprents != null) {
-            return false;
-          }
-        } else {
-          if(this.exprents == null || this.exprents.size() != exprsize) {
+
+    for (Entry<MatchProperties, RuleValue> rule : matchNode.getRules().entrySet()) {
+      switch (rule.getKey()) {
+        case STATEMENT_TYPE -> {
+          if (this.type != rule.getValue().value) {
             return false;
           }
         }
-        break;
-      case STATEMENT_RET:
-        if(!engine.checkAndSetVariableValue((String)rule.getValue().value, this)) {
-          return false;
+        case STATEMENT_STATSIZE -> {
+          if (this.stats.size() != (Integer)rule.getValue().value) {
+            return false;
+          }
         }
-        break;
+        case STATEMENT_EXPRSIZE -> {
+          int exprsize = (Integer)rule.getValue().value;
+          if (exprsize == -1) {
+            if (this.exprents != null) {
+              return false;
+            }
+          }
+          else {
+            if (this.exprents == null || this.exprents.size() != exprsize) {
+              return false;
+            }
+          }
+        }
+        case STATEMENT_RET -> {
+          if (!engine.checkAndSetVariableValue((String)rule.getValue().value, this)) {
+            return false;
+          }
+        }
       }
-      
     }
-    
+
     return true;
   }
-  
+
+  public enum StatementType {
+    GENERAL,
+    IF,
+    DO,
+    SWITCH,
+    TRY_CATCH,
+    BASIC_BLOCK,
+    // FINALLY,
+    SYNCHRONIZED,
+    PLACEHOLDER,
+    CATCH_ALL,
+    ROOT,
+    DUMMY_EXIT,
+    SEQUENCE
+  }
 }

@@ -1,113 +1,645 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.util.treeView;
 
-import com.intellij.navigation.NavigationItem;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.Progressive;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.ActionCallback;
+import com.intellij.openapi.util.InvalidDataException;
+import com.intellij.openapi.util.JDOMExternalizable;
+import com.intellij.openapi.util.JDOMUtil;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.text.StringHash;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.reference.SoftReference;
+import com.intellij.ui.ComponentUtil;
+import com.intellij.ui.tree.TreeVisitor;
+import com.intellij.ui.treeStructure.CachingTreePath;
+import com.intellij.ui.treeStructure.Tree;
+import com.intellij.util.ExceptionUtil;
+import com.intellij.util.SmartList;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.Interner;
 import com.intellij.util.ui.tree.TreeUtil;
+import com.intellij.util.xmlb.XmlSerializer;
+import com.intellij.util.xmlb.annotations.Attribute;
+import com.intellij.util.xmlb.annotations.Property;
+import com.intellij.util.xmlb.annotations.Tag;
+import com.intellij.util.xmlb.annotations.XCollection;
 import org.jdom.Element;
-import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
+import org.jetbrains.concurrency.AsyncPromise;
+import org.jetbrains.concurrency.Promise;
+import org.jetbrains.concurrency.Promises;
 
-import javax.swing.*;
+import javax.swing.JTree;
 import javax.swing.tree.DefaultMutableTreeNode;
-import javax.swing.tree.TreeNode;
+import javax.swing.tree.TreeModel;
 import javax.swing.tree.TreePath;
+import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.function.Consumer;
+
+import static com.intellij.ide.util.treeView.CachedTreePresentationData.createFromTree;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
 
 /**
- * @see  #createOn(javax.swing.JTree)
- * @see #createOn(javax.swing.JTree, javax.swing.tree.DefaultMutableTreeNode)
- *
- * @see #applyTo(javax.swing.JTree)
- * @see #applyTo(javax.swing.JTree, javax.swing.tree.DefaultMutableTreeNode)
+ * @see #createOn(JTree)
+ * @see #createOn(JTree, DefaultMutableTreeNode)
+ * @see #applyTo(JTree)
+ * @see #applyTo(JTree, Object)
  */
-public class TreeState implements JDOMExternalizable {
-  @NonNls private static final String PATH = "PATH";
-  @NonNls private static final String SELECTED = "SELECTED";
-  @NonNls private static final String PATH_ELEMENT = "PATH_ELEMENT";
-  @NonNls private static final String USER_OBJECT = "USER_OBJECT";
-  @NonNls public static final String CALLBACK = "Callback";
+public final class TreeState implements JDOMExternalizable {
+  private static final Interner<String> INTERNER = Interner.createStringInterner();
 
-  static class PathElement {
-    public String myItemId;
-    public String myItemType;
+  private static final Logger LOG = Logger.getInstance(TreeState.class);
 
-    private final int myItemIndex;
-    private Object myUserObject;
+  public static final Key<WeakReference<ActionCallback>> CALLBACK = Key.create("Callback");
+  private static final Key<Promise<Void>> EXPANDING = Key.create("TreeExpanding");
 
-    public PathElement(final String itemId, final String itemType, final int itemIndex, Object userObject) {
-      myItemId = itemId;
-      myItemType = itemType;
+  private static final @NotNull String EXPAND_TAG = "expand";
+  private static final @NotNull String SELECT_TAG = "select";
+  private static final @NotNull String PRESENTATION_TAG = "presentation";
+  private static final @NotNull String PATH_TAG = "path";
 
-      myItemIndex = itemIndex;
-      myUserObject = userObject;
+  private enum Match {OBJECT, ID_TYPE}
+
+  @Tag("item")
+  static final class PathElement implements CachedTreePathElement {
+    String id;
+    String type;
+    transient Object userObject;
+    final transient int index;
+
+    @SuppressWarnings("unused")
+    PathElement() {
+      this(null, null, -1, null);
     }
 
-    public PathElement() {
-      myItemIndex = -1;
-      myUserObject = null;
+    PathElement(String itemId, String itemType, int itemIndex, Object userObject) {
+      setId(itemId);
+      setType(itemType);
+
+      index = itemIndex;
+      this.userObject = userObject instanceof String stringObject ? INTERNER.intern(stringObject) : userObject;
     }
 
     @Override
     public String toString() {
-      return myItemId + ":" + myItemType;
+      return id + ": " + type;
     }
 
-    public boolean matchedWith(NodeDescriptor nodeDescriptor) {
-      return Comparing.equal(myItemId, getDescriptorKey(nodeDescriptor)) &&
-             Comparing.equal(myItemType, getDescriptorType(nodeDescriptor));
+    @Override
+    public boolean matches(@NotNull Object node) {
+      return isMatchTo(node);
     }
 
-    public boolean matchedWithByObject(Object object) {
-      return myUserObject != null && myUserObject.equals(object);
+    private boolean isMatchTo(Object object) {
+      return getMatchTo(object) != null;
     }
 
-    public void readExternal(Element element) throws InvalidDataException {
-      DefaultJDOMExternalizer.readExternal(this, element);
-      myUserObject = element.getAttributeValue(USER_OBJECT);
+    private Match getMatchTo(Object object) {
+      Object userObject = TreeUtil.getUserObject(object);
+      if (this.userObject != null && this.userObject.equals(userObject)) {
+        return Match.OBJECT;
+      }
+      return Objects.equals(id, calcId(object)) &&
+             Objects.equals(type, calcType(object)) ? Match.ID_TYPE : null;
     }
 
-    public void writeExternal(Element element) throws WriteExternalException {
-      DefaultJDOMExternalizer.writeExternal(this, element);
-      if (myUserObject instanceof String){
-        element.setAttribute(USER_OBJECT, (String)myUserObject);
+    @Attribute("name")
+    public void setId(String id) {
+      this.id = id == null ? null : INTERNER.intern(id);
+    }
+
+    @Override
+    @Attribute("name")
+    public String getId() {
+      return id;
+    }
+
+    @Attribute("type")
+    public void setType(String type) {
+      this.type = type == null ? null : INTERNER.intern(type);
+    }
+
+    @Override
+    @Attribute("type")
+    public String getType() {
+      return type;
+    }
+
+    @Nullable SerializablePathElement getSerializablePart() {
+      return id == null || type == null ? null : new SerializablePathElement(id, type);
+    }
+  }
+
+  private static final class PathMatcherCache {
+    private final Map<Object, Node> cachedNodes = new HashMap<>();
+
+    @Nullable Node getNode(@NotNull Object parent) {
+      return cachedNodes.get(parent);
+    }
+
+    @NotNull Node getOrCreateNode(@NotNull Object parent) {
+      var result = getNode(parent);
+      if (result != null) return result;
+      result = new Node();
+      cachedNodes.put(parent, result);
+      return result;
+    }
+
+    private static final class Node {
+      private final Map<@NotNull SerializablePathElement, @NotNull SerializedMatch> serializedMatches = new HashMap<>();
+      private final Map<@NotNull Object, @NotNull UserObjectMatch> userObjectMatches = new HashMap<>();
+      private int maxCachedIndex;
+
+      void cacheSerializedMatch(@NotNull Object node, int nodeIndex, @NotNull List<@NotNull SerializablePathElement> matchedElements) {
+        maxCachedIndex = max(maxCachedIndex, nodeIndex);
+        serializedMatches.put(matchedElements.get(0), new SerializedMatch(node, matchedElements));
+      }
+
+      void cacheUserObjectMatch(@NotNull Object node, int nodeIndex) {
+        maxCachedIndex = max(maxCachedIndex, nodeIndex);
+        userObjectMatches.put(new SerializablePathElement(calcId(node), calcType(node)), new UserObjectMatch(node));
+      }
+
+      int getMaxCachedIndex() {
+        return maxCachedIndex;
+      }
+
+      @Nullable SerializedMatch getSerializedMatch(@NotNull TreeState.PathElement element) {
+        var serializablePart = element.getSerializablePart();
+        return serializablePart == null ? null : serializedMatches.get(serializablePart);
+      }
+
+      @Nullable UserObjectMatch getUserObjectMatch(@NotNull TreeState.PathElement element) {
+        var userObject = element.userObject;
+        return userObject == null ? null : userObjectMatches.get(userObject);
+      }
+    }
+
+    private interface CachedMatch {
+      @NotNull Object getNode();
+      int getLength();
+      @NotNull Match getType();
+    }
+
+    private record SerializedMatch(@NotNull Object node, @NotNull List<@NotNull SerializablePathElement> matchedElements) implements CachedMatch {
+      @Override
+      public @NotNull Object getNode() {
+        return node;
+      }
+
+      @Override
+      public int getLength() {
+        return matchedElements.size();
+      }
+
+      @Override
+      public @NotNull Match getType() {
+        return Match.ID_TYPE;
+      }
+    }
+
+    private record UserObjectMatch(@NotNull Object node) implements CachedMatch {
+      @Override
+      public @NotNull Object getNode() {
+        return node;
+      }
+
+      @Override
+      public int getLength() {
+        return 1;
+      }
+
+      @Override
+      public @NotNull Match getType() {
+        return Match.OBJECT;
       }
     }
   }
 
-  private final List<List<PathElement>> myExpandedPaths;
-  private final List<List<PathElement>> mySelectedPaths;
-  private boolean myScrollToSelection;
+  private static final class PathMatcher {
+    private final @NotNull PathElement @NotNull [] serializedPath;
+    private final @Nullable TreeState.PathMatcherCache cache;
+    private int matchedSoFar = 0;
+    private @Nullable TreePath matchedPath;
 
-  private TreeState(List<List<PathElement>> expandedPaths, final List<List<PathElement>> selectedPaths) {
-    myExpandedPaths = expandedPaths;
-    mySelectedPaths = selectedPaths;
-    myScrollToSelection = true;
+    record State(int matchedSoFar, @Nullable TreePath matchedPath) { }
+
+    static @Nullable PathMatcher tryStart(@NotNull PathElement @NotNull [] serializedPath, @NotNull TreePath rootPath, @Nullable TreeState.PathMatcherCache cache) {
+      if (serializedPath.length == 0) return null;
+      if (!serializedPath[0].matches(rootPath.getLastPathComponent())) return null;
+      var attempt = new PathMatcher(serializedPath, rootPath.getParentPath(), cache);
+      return attempt.tryAdvance(rootPath.getLastPathComponent()) ? attempt : null;
+    }
+
+    private PathMatcher(@NotNull PathElement @NotNull [] serializedPath, @Nullable TreePath parentPath, @Nullable TreeState.PathMatcherCache cache) {
+      this.serializedPath = serializedPath;
+      this.matchedPath = parentPath;
+      this.cache = cache;
+    }
+
+    @NotNull State stateSnapshot() {
+      return new State(matchedSoFar, matchedPath);
+    }
+
+    void restoreState(@NotNull State state) {
+      this.matchedSoFar = state.matchedSoFar;
+      this.matchedPath = state.matchedPath;
+    }
+
+    @Nullable TreeState.PathMatcherCache.Node getCachedMatches(@NotNull Object parent) {
+      if (cache == null) return null;
+      return cache.getNode(parent);
+    }
+
+    @Nullable TreeState.PathMatcherCache.Node getOrCreateCachedMatches(@NotNull Object parent) {
+      if (cache == null) return null;
+      return cache.getOrCreateNode(parent);
+    }
+
+    @Nullable TreePath matchedPath() {
+      return matchedPath;
+    }
+
+    boolean fullyMatched() {
+      return matchedSoFar == serializedPath.length;
+    }
+    
+    boolean isParentOf(@NotNull TreePath path) {
+      var parent = path.getParentPath();
+      if (parent == null) return false; // No path can be the root's parent.
+      return Objects.equals(matchedPath, parent);
+    }
+
+    boolean tryAdvance(@NotNull Object node) {
+      return tryAdvanceWithParent(null, node, -1) != null;
+    }
+
+    @Nullable Match tryAdvanceWithParent(@Nullable Object parent, @NotNull Object node, int index) {
+      if (LOG.isTraceEnabled()) {
+        LOG.trace("Trying to advance a matcher using " + node);
+        LOG.trace("The node's parent is " + parent);
+        logCurrentMatchedPath();
+      }
+      assert matchedSoFar <= serializedPath.length;
+      if (matchedSoFar == serializedPath.length) throw new IllegalStateException("Already matched all the path");
+      // In the current implementation, caching is only enabled for non-async trees, which is why we check for index >= 0,
+      // as for async visitors the index is unknown and passed as -1.
+      // This may change in the future, but we'll need to teach the visitors to keep track of the current child index then.
+      var cacheNode = index >= 0 && parent != null ? getOrCreateCachedMatches(parent) : null;
+      boolean userObjectSucceeded = false;
+      boolean flattenedSucceeded = false;
+      boolean plainSucceeded = false;
+      List<SerializablePathElement> serializableElements = null;
+      var userObject = TreeUtil.getUserObject(node);
+      // The user object case (one-to-one match, the serialized node was not flattened).
+      if (userObject != null && Objects.equals(userObject, serializedPath[matchedSoFar].userObject)) {
+        userObjectSucceeded = true;
+        ++matchedSoFar;
+      }
+      String id = null;
+      String type = null;
+      // The flattened case (a node represents several nested nodes).
+      var provider = getProvider(node);
+      if (provider != null && !userObjectSucceeded) {
+        var flattened = provider.getFlattenedElements();
+        if (flattened != null && !flattened.isEmpty()) {
+          serializableElements = flattened; // for caching
+          if (flattened.size() == 1) { // optimization, to avoid recomputing id/type
+            id = flattened.get(0).id();
+            type = flattened.get(0).type();
+          }
+        }
+        if (flattened != null && flattened.size() > 1 && matchedSoFar + flattened.size() <= serializedPath.length) {
+          if (LOG.isTraceEnabled()) {
+            LOG.trace("Unflattened elements: " + flattened);
+          }
+          var allMatch = true;
+          for (int i = 0; i < flattened.size(); ++i) {
+            var actualElement = flattened.get(i);
+            var serializedElement = serializedPath[matchedSoFar + i];
+            if (!serializedElement.id.equals(actualElement.id()) || !serializedElement.type.equals(actualElement.type())) {
+              if (LOG.isTraceEnabled()) {
+                LOG.trace("Mismatched element at " + i + ": " + actualElement + " != " + serializedElement);
+              }
+              allMatch = false;
+              break;
+            }
+          }
+          if (allMatch) {
+            flattenedSucceeded = true;
+            matchedSoFar += flattened.size();
+          }
+        }
+      }
+      // compute the cacheable results and cache them
+      if (id == null) {
+        id = calcId(node);
+      }
+      if (type == null) {
+        type = calcType(node);
+      }
+      if (serializableElements == null) { // the case when there's no provider or the flattened list is null or empty
+        serializableElements = List.of(new SerializablePathElement(id, type));
+      }
+      if (cacheNode != null) {
+        cacheNode.cacheSerializedMatch(node, index, serializableElements);
+        if (userObject != null) {
+          cacheNode.cacheUserObjectMatch(node, index);
+        }
+      }
+      // The regular case (one-to-one match using the ID/type pair).
+      if (!userObjectSucceeded && !flattenedSucceeded) {
+        if (id.equals(serializedPath[matchedSoFar].id) && type.equals(serializedPath[matchedSoFar].type)) {
+          plainSucceeded = true;
+          ++matchedSoFar;
+        }
+      }
+      if (userObjectSucceeded || flattenedSucceeded || plainSucceeded) {
+        addNodeToMatchedPath(node);
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("Advanced successfully to " + matchedSoFar + " elements corresponding to " + matchedPath);
+        }
+        return userObjectSucceeded ? Match.OBJECT : Match.ID_TYPE;
+      }
+      else {
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("Failed to advance");
+        }
+        return null;
+      }
+    }
+
+    boolean tryAdvanceUsingIndex(@NotNull TreeModel model, @NotNull Object parent) {
+      if (LOG.isTraceEnabled()) {
+        LOG.trace("Trying to advance a matcher using the previously saved index");
+        logCurrentMatchedPath();
+      }
+      assert matchedSoFar <= serializedPath.length;
+      if (matchedSoFar == serializedPath.length) throw new IllegalStateException("Already matched all the path");
+      var nextSerializedElement = serializedPath[matchedSoFar];
+      var index = nextSerializedElement.index;
+      var count = model.getChildCount(parent);
+      if (index < 0 || count == 0) return false;
+      index = min(index, count - 1);
+      var child = model.getChild(parent, index);
+      ++matchedSoFar;
+      addNodeToMatchedPath(child);
+      return true;
+    }
+
+    @Nullable Match tryAdvanceUsingCache(@NotNull TreeState.PathMatcherCache.Node cacheNode) {
+      if (LOG.isTraceEnabled()) {
+        LOG.trace("Trying to advance a matcher using the cache");
+        logCurrentMatchedPath();
+      }
+      assert matchedSoFar <= serializedPath.length;
+      if (matchedSoFar == serializedPath.length) throw new IllegalStateException("Already matched all the path");
+      @Nullable TreeState.PathMatcherCache.CachedMatch match = null;
+      var cachedUserObjectMatch = cacheNode.getUserObjectMatch(serializedPath[matchedSoFar]);
+      if (cachedUserObjectMatch != null) {
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("Advancing using the user object match: " + cachedUserObjectMatch);
+        }
+        match = cachedUserObjectMatch;
+      }
+      if (match == null) {
+        LOG.trace("Failed to advance using the cached user object match");
+        var serializedMatch = cacheNode.getSerializedMatch(serializedPath[matchedSoFar]);
+        if (serializedMatch != null) {
+          var cachedElements = serializedMatch.matchedElements();
+          if (LOG.isTraceEnabled()) {
+            LOG.trace("Trying to use the cached serialized elements: " + cachedElements);
+          }
+          if (matchedSoFar + cachedElements.size() <= serializedPath.length) {
+            for (var i = 0; i < cachedElements.size(); ++i) {
+              var cachedElement = cachedElements.get(i);
+              var serializedElement = serializedPath[matchedSoFar + i];
+              if (!serializedElement.id.equals(cachedElement.id()) || !serializedElement.type.equals(cachedElement.type())) {
+                if (LOG.isTraceEnabled()) {
+                  LOG.trace("Mismatched cached element at " + i + ": " + cachedElement + " != " + serializedElement);
+                }
+                break;
+              }
+            }
+            match = serializedMatch;
+          }
+        }
+      }
+      if (match != null) {
+        var node = match.getNode();
+        addNodeToMatchedPath(node);
+        matchedSoFar += match.getLength();
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("Advanced successfully to " + matchedSoFar + " elements corresponding to " + matchedPath + " using " + match);
+        }
+        return match.getType();
+      }
+      return null;
+    }
+
+    private void addNodeToMatchedPath(@NotNull Object node) {
+      matchedPath = matchedPath == null ? new CachingTreePath(node) : matchedPath.pathByAddingChild(node);
+    }
+
+    private void logCurrentMatchedPath() {
+      LOG.trace("The serialized path: " + Arrays.toString(serializedPath));
+      LOG.trace("Matched so far: " + matchedSoFar + " elements corresponding to " + matchedPath);
+    }
   }
 
-  public TreeState() {
-    this(new ArrayList<>(), new ArrayList<>());
+  @Tag("presentation")
+  static final class SerializableCachedPresentation {
+    PathElement item;
+    CachedPresentationDataImpl data;
+    Map<String, String> attributes;
+
+    SerializableCachedPresentation() {
+      item = new PathElement();
+      data = new CachedPresentationDataImpl();
+    }
+
+    SerializableCachedPresentation(@NotNull CachedTreePresentationData data) {
+      this.item = (PathElement)data.getPathElement();
+      this.data = (CachedPresentationDataImpl)data.getPresentation();
+      this.attributes = data.getExtraAttributes();
+    }
+
+    boolean isValid() {
+      return item != null && data != null && data.isValid();
+    }
+
+    @Property(surroundWithTag = false)
+    public @NotNull PathElement getItem() {
+      return item;
+    }
+
+    @Property(surroundWithTag = false)
+    public void setItem(@NotNull PathElement item) {
+      this.item = item;
+    }
+
+    @Property(surroundWithTag = false)
+    public @NotNull CachedPresentationDataImpl getData() {
+      return data;
+    }
+
+    @Property(surroundWithTag = false)
+    public void setData(@NotNull CachedPresentationDataImpl data) {
+      this.data = data;
+    }
+
+    @XCollection(style = XCollection.Style.v2)
+    public @Nullable Map<String, String> getAttributes() {
+      return attributes;
+    }
+
+    @XCollection(style = XCollection.Style.v2)
+    public void setAttributes(@Nullable Map<String, String> attributes) {
+      this.attributes = attributes;
+    }
+
+    @Override
+    public String toString() {
+      return "SerializableCachedPresentation{" +
+             "item=" + item +
+             ", data=" + data +
+             ", attributes=" + attributes +
+             '}';
+    }
+  }
+
+  @Tag("data")
+  static final class CachedPresentationDataImpl implements CachedPresentationData {
+    String text;
+    String iconPath;
+    String iconPlugin;
+    String iconModule;
+    boolean isLeaf = true;
+
+    @SuppressWarnings("unused")
+    CachedPresentationDataImpl() { }
+
+    CachedPresentationDataImpl(
+      @NotNull String text,
+      @Nullable CachedIconPresentation iconPresentation,
+      boolean isLeaf
+    ) {
+      this.text = text;
+      if (iconPresentation != null) {
+        this.iconPath = iconPresentation.getPath();
+        this.iconPlugin = iconPresentation.getPlugin();
+        this.iconModule = iconPresentation.getModule();
+      }
+      this.isLeaf = isLeaf;
+    }
+
+    boolean isValid() {
+      return text != null;
+    }
+
+    @Override
+    @Attribute("text")
+    public @NotNull String getText() {
+      return text;
+    }
+
+    @Attribute("text")
+    public void setText(String text) {
+      this.text = text;
+    }
+
+    @Attribute("iconPath")
+    public @Nullable String getIconPath() {
+      return iconPath;
+    }
+
+    @Attribute("iconPath")
+    public void setIconPath(String iconPath) {
+      this.iconPath = iconPath;
+    }
+
+    @Attribute("iconPlugin")
+    public @Nullable String getIconPlugin() {
+      return iconPlugin;
+    }
+
+    @Attribute("iconPlugin")
+    public void setIconPlugin(String iconPlugin) {
+      this.iconPlugin = iconPlugin;
+    }
+
+    @Attribute("iconModule")
+    public @Nullable String getIconModule() {
+      return iconModule;
+    }
+
+    @Attribute("iconModule")
+    public void setIconModule(String iconModule) {
+      this.iconModule = iconModule;
+    }
+
+    @Override
+    public @Nullable CachedIconPresentation getIconData() {
+      if (iconPath == null || iconPlugin == null) return null;
+      return new CachedIconPresentation(iconPath, iconPlugin, iconModule);
+    }
+
+    @Override
+    @Attribute("isLeaf")
+    public boolean isLeaf() {
+      return isLeaf;
+    }
+
+    @Attribute("isLeaf")
+    public void setLeaf(boolean leaf) {
+      isLeaf = leaf;
+    }
+
+    @Override
+    public String toString() {
+      return "'" + text + "' icon=" + iconPath;
+    }
+  }
+
+  @XCollection(style = XCollection.Style.v2)
+  private final List<PathElement[]> myExpandedPaths;
+  @XCollection(style = XCollection.Style.v2)
+  private final List<PathElement[]> mySelectedPaths;
+  private @Nullable CachedTreePresentationData myPresentationData;
+  private boolean myScrollToSelection;
+
+  TreeState() {
+    this(new SmartList<>(), new SmartList<>(), null);
+  }
+
+  private TreeState(List<PathElement[]> expandedPaths, List<PathElement[]> selectedPaths, @Nullable CachedTreePresentationData presentationData) {
+    myExpandedPaths = expandedPaths;
+    mySelectedPaths = selectedPaths;
+    myPresentationData = presentationData;
+    myScrollToSelection = true;
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("TreeState created: " + this);
+    }
   }
 
   public boolean isEmpty() {
@@ -116,328 +648,471 @@ public class TreeState implements JDOMExternalizable {
 
   @Override
   public void readExternal(Element element) throws InvalidDataException {
-    readExternal(element, myExpandedPaths, PATH);
-    readExternal(element, mySelectedPaths, SELECTED);
+    readExternal(element, myExpandedPaths, EXPAND_TAG);
+    readExternal(element, mySelectedPaths, SELECT_TAG);
+    try {
+      myPresentationData = readExternalPresentation(element);
+    }
+    catch (CancellationException ignored) {
+    }
+    catch (Exception e) {
+      LOG.warn("An error occurred while trying to read a cached tree presentation", e);
+    }
   }
 
-  private static void readExternal(Element element, List<List<PathElement>> list, String name) throws InvalidDataException {
+  private static void readExternal(@NotNull Element root, List<PathElement[]> list, @NotNull String name) {
     list.clear();
-    final List paths = element.getChildren(name);
-    for (final Object path : paths) {
-      Element xmlPathElement = (Element)path;
-      list.add(readPath(xmlPathElement));
+    for (Element element : root.getChildren(name)) {
+      for (Element child : element.getChildren(PATH_TAG)) {
+        PathElement[] path = XmlSerializer.deserialize(child, PathElement[].class);
+        list.add(path);
+      }
     }
   }
 
-  private static List<PathElement> readPath(final Element xmlPathElement) throws InvalidDataException {
-    final ArrayList<PathElement> result = new ArrayList<>();
-    final List elements = xmlPathElement.getChildren(PATH_ELEMENT);
-    for (final Object element : elements) {
-      Element xmlPathElementElement = (Element)element;
-      final PathElement pathElement = new PathElement();
-      pathElement.readExternal(xmlPathElementElement);
-      result.add(pathElement);
+  private static @Nullable CachedTreePresentationData readExternalPresentation(Element element) {
+    var presentationChildren = element.getChildren(PRESENTATION_TAG);
+    if (presentationChildren.size() != 1) return null;
+    var presentations = new SmartList<CachedTreePresentationData>();
+    readExternalPresentation(presentationChildren.get(0), presentations);
+    return presentations.size() == 1 ? presentations.get(0) : null;
+  }
+
+  private static void readExternalPresentation(Element element, List<CachedTreePresentationData> result) {
+    var deserialized = XmlSerializer.deserialize(element, SerializableCachedPresentation.class);
+    if (!deserialized.isValid()) return;
+    var item = deserialized.getItem();
+    var presentationData = deserialized.getData();
+    var attributes = deserialized.getAttributes();
+    var children = new SmartList<CachedTreePresentationData>();
+    var data = new CachedTreePresentationData(item, presentationData, attributes, children);
+    for (Element child : element.getChildren(PRESENTATION_TAG)) {
+      readExternalPresentation(child, children);
     }
-    return result;
+    if (!children.isEmpty()) { // Just in case isLeaf is incorrect in the XML.
+      presentationData.setLeaf(false);
+    }
+    result.add(data);
   }
 
-  public static TreeState createOn(JTree tree, final DefaultMutableTreeNode treeNode) {
-    return new TreeState(createExpandedPaths(tree, treeNode), createSelectedPaths(tree, treeNode));
+  public static @NotNull TreeState createOn(@NotNull JTree tree, @NotNull DefaultMutableTreeNode treeNode) {
+    return createOn(tree, new CachingTreePath(treeNode.getPath()));
   }
 
-  public static TreeState createOn(@NotNull JTree tree) {
-    return new TreeState(createPaths(tree), new ArrayList<>());
+  public static @NotNull TreeState createOn(@NotNull JTree tree, @NotNull TreePath rootPath) {
+    return new TreeState(createPaths(tree, TreeUtil.collectExpandedPaths(tree, rootPath)),
+                         createPaths(tree, TreeUtil.collectSelectedPaths(tree, rootPath)),
+                         null);
+  }
+
+  public static @NotNull TreeState createOn(@NotNull JTree tree) {
+    return createOn(tree, true, false);
+  }
+
+  public static @NotNull TreeState createOn(@NotNull JTree tree, boolean persistExpand, boolean persistSelect) {
+    return createOn(tree, persistExpand, persistSelect, false);
+  }
+
+  @ApiStatus.Internal
+  public static @NotNull TreeState createOn(@NotNull JTree tree, boolean persistExpand, boolean persistSelect, boolean persistPresentation) {
+    List<TreePath> expanded = persistExpand ? TreeUtil.collectExpandedPaths(tree) : Collections.emptyList();
+    List<TreePath> selected = persistSelect ? TreeUtil.collectSelectedPaths(tree) : Collections.emptyList();
+    return createOn(tree, expanded, selected, persistPresentation);
+  }
+
+  public static @NotNull TreeState createOn(@NotNull JTree tree, @NotNull List<TreePath> expandedPaths, @NotNull List<TreePath> selectedPaths) {
+    return createOn(tree, expandedPaths, selectedPaths, false);
+  }
+
+  @ApiStatus.Internal
+  public static @NotNull TreeState createOn(@NotNull JTree tree, @NotNull List<TreePath> expandedPaths, @NotNull List<TreePath> selectedPaths, boolean persistPresentation) {
+    List<PathElement[]> expandedPathElements = !expandedPaths.isEmpty()
+      ? createPaths(tree, expandedPaths)
+      : new ArrayList<>();
+    List<PathElement[]> selectedPathElements = !selectedPaths.isEmpty()
+      ? createPaths(tree, selectedPaths)
+      : new ArrayList<>();
+    return new TreeState(expandedPathElements, selectedPathElements, persistPresentation ? createFromTree(tree) : null);
+  }
+
+  public static @NotNull TreeState createFrom(@Nullable Element element) {
+    TreeState state = new TreeState();
+    try {
+      if (element != null) {
+        state.readExternal(element);
+      }
+    }
+    catch (InvalidDataException e) {
+      LOG.warn(e);
+    }
+    return state;
   }
 
   @Override
-  public void writeExternal(Element element) throws WriteExternalException {
-    writeExternal(element, myExpandedPaths, PATH);
-    writeExternal(element, mySelectedPaths, SELECTED);
+  public void writeExternal(Element element) {
+    writeExternal(element, myExpandedPaths, EXPAND_TAG);
+    writeExternal(element, mySelectedPaths, SELECT_TAG);
+    writeExternal(element, myPresentationData);
   }
 
-  private static void writeExternal(Element element, List<List<PathElement>> list, String name) throws WriteExternalException {
-    for (List<PathElement> path : list) {
-      final Element pathElement = new Element(name);
-      writeExternal(pathElement, path);
-      element.addContent(pathElement);
+  private static void writeExternal(Element element, @Nullable CachedTreePresentationData data) {
+    if (data == null) return;
+    Element root = XmlSerializer.serialize(new SerializableCachedPresentation(data));
+    for (CachedTreePresentationData child : data.getChildren()) {
+      writeExternal(root, child);
     }
+    element.addContent(root);
   }
 
-  private static void writeExternal(final Element pathXmlElement, final List<PathElement> path) throws WriteExternalException {
-    for (final PathElement aPath : path) {
-      final Element pathXmlElementElement = new Element(PATH_ELEMENT);
-      aPath.writeExternal(pathXmlElementElement);
-      pathXmlElement.addContent(pathXmlElementElement);
+  private static void writeExternal(Element element, List<PathElement[]> list, String name) {
+    Element root = new Element(name);
+    for (PathElement[] path : list) {
+      Element e = XmlSerializer.serialize(path);
+      e.setName(PATH_TAG);
+      root.addContent(e);
     }
+    element.addContent(root);
   }
 
-  private static List<List<PathElement>> createPaths(final JTree tree) {
-    final List<TreePath> expandedPaths = TreeUtil.collectExpandedPaths(tree);
-    return createPaths(tree, expandedPaths);
-  }
-
-  private static List<List<PathElement>> createExpandedPaths(JTree tree, final DefaultMutableTreeNode treeNode) {
-    final List<TreePath> expandedPaths = TreeUtil.collectExpandedPaths(tree, new TreePath(treeNode.getPath()));
-    return createPaths(tree, expandedPaths);
-  }
-
-  private static List<List<PathElement>> createSelectedPaths(JTree tree, final DefaultMutableTreeNode treeNode) {
-    final List<TreePath> selectedPaths
-      = TreeUtil.collectSelectedPaths(tree, new TreePath(treeNode.getPath()));
-    return createPaths(tree, selectedPaths);
-  }
-
-  private static List<List<PathElement>> createPaths(JTree tree, List<TreePath> paths) {
-    ArrayList<List<PathElement>> result = new ArrayList<>();
-    for (TreePath path : paths) {
-      if (tree.isRootVisible() || path.getPathCount() > 1) {
-        List<PathElement> list = createPath(path);
-        if (list != null) result.add(list);
+  private static List<PathElement[]> createPaths(@NotNull JTree tree, @NotNull @Unmodifiable List<? extends TreePath> paths) {
+    List<PathElement[]> list = new ArrayList<>();
+    for (TreePath o : paths) {
+      if (o.getPathCount() > 1 || tree.isRootVisible()) {
+        list.add(createPath(tree.getModel(), o));
       }
     }
-    return result;
+    return list;
   }
 
-  private static List<PathElement> createPath(final TreePath treePath) {
-    final ArrayList<PathElement> result = new ArrayList<>();
-    for (int i = 0; i < treePath.getPathCount(); i++) {
-      final Object pathComponent = treePath.getPathComponent(i);
-      if (pathComponent instanceof DefaultMutableTreeNode) {
-        final DefaultMutableTreeNode node = (DefaultMutableTreeNode)pathComponent;
-        final TreeNode parent = node.getParent();
-
-        final Object userObject = node.getUserObject();
-        if (userObject instanceof NodeDescriptor) {
-          final NodeDescriptor nodeDescriptor = (NodeDescriptor)userObject;
-          //nodeDescriptor.update();
-          final int childIndex = parent != null ? parent.getIndex(node) : 0;
-          result.add(new PathElement(getDescriptorKey(nodeDescriptor), getDescriptorType(nodeDescriptor), childIndex, nodeDescriptor));
-        }
-        else {
-          result.add(new PathElement("", "", 0, userObject));
-        }
-      }
-      else {
-        return null;
-      }
-    }
-    return result;
-  }
-
-  private static String getDescriptorKey(final NodeDescriptor nodeDescriptor) {
-    if (nodeDescriptor instanceof AbstractTreeNode) {
-      Object value;
-      if (nodeDescriptor instanceof NodeDescriptorProvidingKey) {
-        value = ((NodeDescriptorProvidingKey)nodeDescriptor).getKey();
-      }
-      else {
-        value = ((AbstractTreeNode)nodeDescriptor).getValue();
-      }
-
-      if (value instanceof NavigationItem) {
-        try {
-          final String name = ((NavigationItem)value).getName();
-          return name != null ? name : value.toString();
-        }
-        catch (Exception e) {
-          //ignore for invalid psi element
+  private static PathElement[] createPath(@NotNull TreeModel model, @NotNull TreePath treePath) {
+    Object prev = null;
+    int count = treePath.getPathCount();
+    ArrayList<PathElement> result = new ArrayList<>(count);
+    for (int i = 0; i < count; i++) {
+      Object cur = treePath.getPathComponent(i);
+      Object userObject = TreeUtil.getUserObject(cur);
+      int childIndex = prev == null ? 0 : model.getIndexOfChild(prev, cur);
+      boolean isFlattened = false;
+      String id = null;
+      String type = null;
+      var provider = getProvider(cur);
+      if (provider != null) {
+        var flattened = provider.getFlattenedElements();
+        if (flattened != null && !flattened.isEmpty()) {
+          if (flattened.size() == 1) {
+            id = flattened.get(0).id();
+            type = flattened.get(0).type();
+          }
+          else {
+            isFlattened = true;
+            for (SerializablePathElement element : flattened) {
+              // No "user object" because the unflattened sequence elements aren't present in the tree at this moment.
+              result.add(new PathElement(element.id(), element.type(), childIndex, null));
+              // The first element of the unflattened sequence has the same child index as the flattened element.
+              // Every other element is the first and only child of its parent.
+              // For example, a directory "a/b/c" becomes a -> b -> c, where "a" has the same place in the tree as the flattened node.
+              childIndex = 0;
+            }
+          }
         }
       }
-    }
-    return nodeDescriptor.toString();
-  }
-
-  private static String getDescriptorType(final NodeDescriptor nodeDescriptor) {
-    return nodeDescriptor.getClass().getName();
-  }
-
-  public void applyTo(JTree tree) {
-    applyTo(tree, (DefaultMutableTreeNode)tree.getModel().getRoot());
-  }
-
-  private void applyExpanded(TreeFacade tree, Object root, ProgressIndicator indicator) {
-    indicator.checkCanceled();
-
-    if (!(root instanceof DefaultMutableTreeNode)) {
-      return;
-    }
-    final DefaultMutableTreeNode nodeRoot = (DefaultMutableTreeNode)root;
-    final TreeNode[] nodePath = nodeRoot.getPath();
-    if (nodePath.length > 0) {
-      for (final List<PathElement> path : myExpandedPaths) {
-        applyTo(nodePath.length - 1,path, root, tree, indicator);
+      if (!isFlattened) {
+        // A special case: when flattened returns a list of one item, reuse that ID/type to avoid calculating them twice.
+        if (id == null) {
+          id = calcId(cur);
+        }
+        if (type == null) {
+          type = calcType(cur);
+        }
+        result.add(new PathElement(id, type, childIndex, userObject));
       }
+      prev = cur;
     }
+    return result.toArray(PathElement[]::new);
   }
 
-  public void applyTo(final JTree tree, final DefaultMutableTreeNode node) {
-    final TreeFacade facade = getFacade(tree);
+  private static @Nullable PathElementIdProvider getProvider(@Nullable Object node) {
+    if (node == null) return null;
+    if (node instanceof PathElementIdProvider provider) return provider;
+    var userObject = TreeUtil.getUserObject(node);
+    if (userObject instanceof PathElementIdProvider provider) return provider;
+    return null;
+  }
+
+  static @NotNull String calcId(@Nullable Object node) {
+    if (node == null) return "";
+    var provider = getProvider(node);
+    // The easiest case: the node provides an ID explicitly.
+    if (provider != null) {
+      return provider.getPathElementId();
+    }
+    return defaultPathElementId(node);
+  }
+
+  /**
+   * The default ID calculation implementation
+   * <p>
+   *   Calculates the ID based on the value returned by the node's user object's {@code toString()}.
+   * </p>
+   * @param node a tree node or its user object (a node is unwrapped as needed)
+   * @return the default value representation of the node's user object
+   */
+  public static @NotNull String defaultPathElementId(@NotNull Object node) {
+    var userObject = TreeUtil.getUserObject(node);
+    if (userObject == null) return "";
+    // There used to be a lot of code here that all started in 2005 with IDEA-29734 (back then IDEADEV-2150),
+    // which later was modified many times, but in the end all it did was to invoke some slow operations on EDT
+    // (IDEA-270843, IDEA-305055), and IDEA-29734 was still broken.
+    // Now we just fall back to toString(), which MUST work fast. If that doesn't work, implement PathElementIdProvider.
+    return StringUtil.notNullize(userObject.toString());
+  }
+
+  static @NotNull String calcType(@Nullable Object node) {
+    if (node == null) return "";
+    var provider = getProvider(node);
+    if (provider != null) {
+      // A special override for unusual cases, for example, nodes with cached presentations.
+      var providedType = provider.getPathElementType();
+      if (providedType != null) return providedType;
+    }
+    return defaultPathElementType(node);
+  }
+
+  /**
+   * The default type calculation implementation
+   * <p>
+   *   Calculates the type based on the actual class of the node's user object.
+   * </p>
+   * @param node a tree node or its user object (a node is unwrapped as needed)
+   * @return the default type representation of the node's user object
+   */
+  public static @NotNull String defaultPathElementType(@NotNull Object node) {
+    var userObject = TreeUtil.getUserObject(node);
+    if (userObject == null) return "";
+    String name = userObject.getClass().getName();
+    return Integer.toHexString(StringHash.murmur(name, 31)) + ":" + StringUtil.getShortName(name);
+  }
+
+  public void applyTo(@NotNull JTree tree) {
+    applyTo(tree, tree.getModel().getRoot());
+  }
+
+  public void applyTo(@NotNull JTree tree, @Nullable Object root) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("TreeState.applyTo: " + tree + "\n" + this);
+    }
+    if (tree instanceof @NotNull Tree jbTree) {
+      jbTree.fireTreeStateRestoreStarted();
+    }
+    applyCachedPresentation(tree);
+    if (visit(tree)) return; // AsyncTreeModel#accept
+    if (root == null) return;
+    var cache = new PathMatcherCache();
+    TreeFacade facade = TreeFacade.getFacade(tree);
     ActionCallback callback = facade.getInitialized().doWhenDone(new TreeRunnable("TreeState.applyTo: on done facade init") {
       @Override
       public void perform() {
-        facade.batch(new Progressive() {
-          @Override
-          public void run(@NotNull ProgressIndicator indicator) {
-            applyExpanded(facade, node, indicator);
-          }
-        });
+        facade.batch(indicator -> applyExpandedTo(facade, new CachingTreePath(root), indicator, cache));
       }
     });
     if (tree.getSelectionCount() == 0) {
       callback.doWhenDone(new TreeRunnable("TreeState.applyTo: on done") {
         @Override
         public void perform() {
-          applySelected(tree, node);
+          if (tree.getSelectionCount() == 0) {
+            applySelectedTo(tree, cache);
+          }
         }
       });
     }
   }
 
-  private void applySelected(final JTree tree, final DefaultMutableTreeNode node) {
-    TreeUtil.unselect(tree, node);
-    List<TreePath> selectionPaths = new ArrayList<>();
-    for (List<PathElement> pathElements : mySelectedPaths) {
-      applySelectedTo(pathElements, tree.getModel().getRoot(), tree, selectionPaths, myScrollToSelection);
-    }
-
-    if (selectionPaths.size() > 1) {
-      for (TreePath path : selectionPaths) {
-        tree.addSelectionPath(path);
+  private void applyCachedPresentation(@NotNull JTree tree) {
+    if (myPresentationData != null && tree instanceof CachedTreePresentationSupport cps) {
+      cps.setCachedPresentation(myPresentationData.createTree());
+      if (tree instanceof @NotNull Tree jbTree) {
+        jbTree.fireTreeStateCachedStateRestored();
       }
     }
   }
 
-
-  @Nullable
-  private static DefaultMutableTreeNode findMatchedChild(DefaultMutableTreeNode parent, PathElement pathElement) {
-
-    for (int j = 0; j < parent.getChildCount(); j++) {
-      final TreeNode child = parent.getChildAt(j);
-      if (!(child instanceof DefaultMutableTreeNode)) continue;
-      final DefaultMutableTreeNode childNode = (DefaultMutableTreeNode)child;
-      final Object userObject = childNode.getUserObject();
-      if (pathElement.matchedWithByObject(userObject)) return childNode;
+  private static void clearCachedPresentation(@NotNull JTree tree) {
+    if (tree instanceof CachedTreePresentationSupport jbTree) {
+      jbTree.setCachedPresentation(null);
     }
-
-    for (int j = 0; j < parent.getChildCount(); j++) {
-      final TreeNode child = parent.getChildAt(j);
-      if (!(child instanceof DefaultMutableTreeNode)) continue;
-      final DefaultMutableTreeNode childNode = (DefaultMutableTreeNode)child;
-      final Object userObject = childNode.getUserObject();
-      if (!(userObject instanceof NodeDescriptor)) continue;
-      final NodeDescriptor nodeDescriptor = (NodeDescriptor)userObject;
-      if (pathElement.matchedWith(nodeDescriptor)) return childNode;
-    }
-
-    if (parent.getChildCount() > 0) {
-      int index = pathElement.myItemIndex;
-      if (index >= parent.getChildCount()) {
-        index = parent.getChildCount()-1;
-      }
-      index = Math.max(0, index);
-      final TreeNode child = parent.getChildAt(index);
-      if (child instanceof DefaultMutableTreeNode) {
-        return (DefaultMutableTreeNode) child;
-      }
-    }
-
-    return null;
   }
 
-  private static boolean applyTo(final int positionInPath,
-                                 final List<PathElement> path,
-                                 final Object root,
-                                 final TreeFacade tree,
-                                 final ProgressIndicator indicator) {
-    if (!(root instanceof DefaultMutableTreeNode)) return false;
+  private void applyExpandedTo(@NotNull TreeFacade tree, @NotNull TreePath rootPath, @NotNull ProgressIndicator indicator, PathMatcherCache cache) {
+    indicator.checkCanceled();
 
-    final DefaultMutableTreeNode treeNode = (DefaultMutableTreeNode)root;
-
-    final Object userObject = treeNode.getUserObject();
-    final PathElement pathElement = path.get(positionInPath);
-
-    if (userObject instanceof NodeDescriptor) {
-      if (!pathElement.matchedWith((NodeDescriptor)userObject)) return false;
-    }
-    else {
-      if (!pathElement.matchedWithByObject(userObject)) return false;
+    for (PathElement[] path : myExpandedPaths) {
+      if (path.length == 0) continue;
+      var matcher = PathMatcher.tryStart(path, rootPath, cache);
+      if (matcher == null) continue;
+      expandImpl(matcher, tree, indicator);
     }
 
-    tree.expand(treeNode).doWhenDone(new TreeRunnable("TreeState.applyTo") {
+    tree.finishExpanding();
+  }
+
+  private void applySelectedTo(@NotNull JTree tree, PathMatcherCache cache) {
+    TreeModel model = tree.getModel();
+    List<TreePath> selection = new ArrayList<>();
+    for (PathElement[] path : mySelectedPaths) {
+      ContainerUtil.addIfNotNull(selection, findPathToSelect(model, path, cache));
+    }
+    if (selection.isEmpty()) return;
+    tree.setSelectionPaths(selection.toArray(TreeUtil.EMPTY_TREE_PATH));
+    if (myScrollToSelection) {
+      TreeUtil.showRowCentered(tree, tree.getRowForPath(selection.get(0)), true, true);
+    }
+  }
+
+  private static @Nullable TreePath findPathToSelect(@NotNull TreeModel model, PathElement @NotNull [] path, @NotNull TreeState.PathMatcherCache cache) {
+    var root = model.getRoot();
+    if (root == null) return null;
+    var matcher = PathMatcher.tryStart(path, new CachingTreePath(root), cache);
+    if (matcher == null) return null;
+    return findPathToSelect(matcher, model, cache);
+  }
+
+  private static @Nullable TreePath findPathToSelect(@NotNull PathMatcher matcher, @NotNull TreeModel model, @NotNull TreeState.PathMatcherCache cache) {
+    var currentlyMatchedPath = matcher.matchedPath();
+    assert currentlyMatchedPath != null; // this function is only called after a successful root match
+    if (matcher.fullyMatched()) return currentlyMatchedPath;
+    var parent = currentlyMatchedPath.getLastPathComponent();
+    var cacheNode = cache.getNode(parent);
+    @NotNull PathMatcher.State initialState = matcher.stateSnapshot();
+    @Nullable PathMatcher.State serializedMatch = null;
+    // First, try using the cached matches.
+    if (cacheNode != null) {
+      var cachedMatch = matcher.tryAdvanceUsingCache(cacheNode);
+      if (cachedMatch == Match.OBJECT) {
+        return findPathToSelect(matcher, model, cache);
+      }
+      else if (cachedMatch == Match.ID_TYPE) {
+        // better than nothing, but first let's try to continue search for an object match
+        serializedMatch = matcher.stateSnapshot();
+        matcher.restoreState(initialState);
+      }
+    }
+    // Failing to find an object match, proceed with the nodes not cached yet, if any.
+    var childCount = model.getChildCount(parent);
+    for (int i = cacheNode == null ? 0 : cacheNode.getMaxCachedIndex() + 1; i < childCount; ++i) {
+      var childNode = model.getChild(parent, i);
+      var match = matcher.tryAdvanceWithParent(parent, childNode, i);
+      if (match == Match.OBJECT) {
+        return findPathToSelect(matcher, model, cache);
+      }
+      else if (match == Match.ID_TYPE) {
+        if (serializedMatch == null) {
+          serializedMatch = matcher.stateSnapshot();
+        }
+        matcher.restoreState(initialState);
+      }
+    }
+    // We haven't found an object match, fall back to the found ID/type match, if any.
+    if (serializedMatch != null) {
+      matcher.restoreState(serializedMatch);
+      return findPathToSelect(matcher, model, cache);
+    }
+    // Nope, nothing. Let's blindly use the last index, coercing it into the valid range. Still better than nothing.
+    if (matcher.tryAdvanceUsingIndex(model, parent)) {
+      return findPathToSelect(matcher, model, cache);
+    }
+    // Still nothing? Let's select the parent at least.
+    return matcher.matchedPath();
+  }
+
+  private static void expandImpl(
+    @NotNull PathMatcher matcher,
+    TreeFacade tree,
+    ProgressIndicator indicator
+  ) {
+    var parentPath = matcher.matchedPath();
+    assert parentPath != null; // This function is only called after some initial match succeeds.
+    tree.expand(parentPath).doWhenDone(new TreeRunnable("TreeState.applyTo") {
       @Override
       public void perform() {
         indicator.checkCanceled();
 
-        if (positionInPath == path.size() - 1) {
-          return;
+        if (matcher.fullyMatched()) return;
+
+        Object parent = parentPath.getLastPathComponent();
+
+        TreeModel model = tree.tree.getModel();
+
+        var cachedMatches = matcher.getCachedMatches(parent);
+        if (cachedMatches != null) {
+          if (matcher.tryAdvanceUsingCache(cachedMatches) != null) {
+            expandImpl(matcher, tree, indicator);
+            return;
+          }
         }
 
-        for (int j = 0; j < treeNode.getChildCount(); j++) {
-          final TreeNode child = treeNode.getChildAt(j);
-          final boolean resultFromChild = applyTo(positionInPath + 1, path, child, tree, indicator);
-          if (resultFromChild) {
+        int childCount = model.getChildCount(parent);
+        for (int j = cachedMatches == null ? 0 : cachedMatches.getMaxCachedIndex() + 1; j < childCount; j++) {
+          Object child = tree.tree.getModel().getChild(parent, j);
+          if (matcher.tryAdvanceWithParent(parent, child, j) != null) {
+            expandImpl(matcher, tree, indicator);
             break;
           }
         }
       }
     });
-
-
-    return true;
   }
 
-  private static void applySelectedTo(final List<PathElement> path,
-                                      Object root,
-                                      JTree tree,
-                                      final List<TreePath> outSelectionPaths, final boolean scrollToSelection) {
+  abstract static class TreeFacade {
 
-    for (int i = 1; i < path.size(); i++) {
-      if (!(root instanceof DefaultMutableTreeNode)) return;
+    final JTree tree;
 
-      root = findMatchedChild((DefaultMutableTreeNode)root, path.get(i));
+    TreeFacade(@NotNull JTree tree) {this.tree = tree;}
+
+    abstract ActionCallback getInitialized();
+
+    abstract ActionCallback expand(TreePath treePath);
+
+    abstract void finishExpanding();
+
+    abstract void batch(Progressive progressive);
+
+    static TreeFacade getFacade(JTree tree) {
+      return new JTreeFacade(tree);
     }
-
-    if (!(root instanceof DefaultMutableTreeNode)) return;
-
-    final TreePath pathInNewTree = new TreePath(((DefaultMutableTreeNode) root).getPath());
-    if (scrollToSelection) {
-      TreeUtil.selectPath(tree, pathInNewTree);
-    } else {
-      tree.setSelectionPath(pathInNewTree);
-    }
-    outSelectionPaths.add(pathInNewTree);
   }
 
-  interface TreeFacade {
-    ActionCallback getInitialized();
-    ActionCallback expand(DefaultMutableTreeNode node);
-
-    void batch(Progressive progressive);
-  }
-
-  private static TreeFacade getFacade(JTree tree) {
-    final AbstractTreeBuilder builder = AbstractTreeBuilder.getBuilderFor(tree);
-    return builder != null ? new BuilderFacade(builder) : new JTreeFacade(tree);
-  }
-
-  public static class JTreeFacade implements TreeFacade {
-
-    private final JTree myTree;
+  static class JTreeFacade extends TreeFacade {
+    private final boolean useBulkExpand;
+    private final @NotNull List<@NotNull TreePath> pathsToExpand = new ArrayList<>();
 
     JTreeFacade(JTree tree) {
-      myTree = tree;
+      super(tree);
+      useBulkExpand = TreeUtil.isBulkExpandCollapseSupported(tree);
     }
 
     @Override
-    public ActionCallback expand(DefaultMutableTreeNode node) {
-      myTree.expandPath(new TreePath(node.getPath()));
+    public ActionCallback expand(@NotNull TreePath treePath) {
+      if (useBulkExpand) {
+        pathsToExpand.add(treePath);
+      }
+      else {
+        tree.expandPath(treePath);
+      }
       return ActionCallback.DONE;
     }
 
     @Override
+    void finishExpanding() {
+      clearCachedPresentation(tree);
+      if (useBulkExpand) {
+        TreeUtil.expandPaths(tree, pathsToExpand);
+      }
+    }
+
+    @Override
     public ActionCallback getInitialized() {
-      final WeakReference<ActionCallback> ref = (WeakReference<ActionCallback>)myTree.getClientProperty(CALLBACK);
-      final ActionCallback callback = SoftReference.dereference(ref);
+      WeakReference<ActionCallback> ref = ComponentUtil.getClientProperty(tree, CALLBACK);
+      ActionCallback callback = SoftReference.dereference(ref);
       if (callback != null) return callback;
       return ActionCallback.DONE;
     }
@@ -448,77 +1123,254 @@ public class TreeState implements JDOMExternalizable {
     }
   }
 
-  static class BuilderFacade implements TreeFacade {
-
-    private final AbstractTreeBuilder myBuilder;
-
-    BuilderFacade(AbstractTreeBuilder builder) {
-      myBuilder = builder;
-    }
-
-    @Override
-    public ActionCallback getInitialized() {
-      return myBuilder.getReady(this);
-    }
-
-    @Override
-    public void batch(Progressive progressive) {
-      myBuilder.batch(progressive);
-    }
-
-    @Override
-    public ActionCallback expand(DefaultMutableTreeNode node) {
-      final Object userObject = node.getUserObject();
-      if (!(userObject instanceof NodeDescriptor)) return ActionCallback.REJECTED;
-
-      NodeDescriptor desc = (NodeDescriptor)userObject;
-
-      final Object element = myBuilder.getTreeStructureElement(desc);
-
-      final ActionCallback result = new ActionCallback();
-
-      myBuilder.expand(element, result.createSetDoneRunnable());
-
-      return result;
-    }
-  }
-
   public void setScrollToSelection(boolean scrollToSelection) {
     myScrollToSelection = scrollToSelection;
   }
 
   @Override
   public String toString() {
-    StringBuilder sb = new StringBuilder("TreeState(").append(myScrollToSelection).append(")");
-    append(sb, " expanded:", myExpandedPaths);
-    append(sb, " selected:", mySelectedPaths);
-    return sb.toString();
+    Element st = new Element("TreeState");
+    String content;
+    try {
+      writeExternal(st);
+      content = JDOMUtil.writeChildren(st, "\n");
+    }
+    catch (IOException e) {
+      content = ExceptionUtil.getThrowableText(e);
+    }
+    return "TreeState(" + myScrollToSelection + ")\n" + content;
   }
 
-  private static void append(StringBuilder sb, String prefix, Object object) {
-    if (prefix != null) {
-      sb.append(prefix);
-    }
-    if (object instanceof List) {
-      appendList(sb, (List)object);
+  /**
+   * @deprecated Temporary solution to resolve simultaneous expansions with async tree model.
+   * Note that the specified consumer must resolve async promise at the end.
+   */
+  @Deprecated
+  public static void expand(@NotNull JTree tree, @NotNull Consumer<? super AsyncPromise<Void>> consumer) {
+    Promise<Void> expanding = ComponentUtil.getClientProperty(tree, EXPANDING);
+    LOG.debug("EXPANDING: ", expanding);
+    if (expanding == null) expanding = Promises.resolvedPromise();
+    expanding.onProcessed(value -> {
+      AsyncPromise<Void> promise = new AsyncPromise<>();
+      ComponentUtil.putClientProperty(tree, EXPANDING, promise);
+      consumer.accept(promise);
+    });
+  }
+
+  private static boolean isSelectionNeeded(List<TreePath> list, @NotNull JTree tree, AsyncPromise<Void> promise) {
+    if (list != null && tree.isSelectionEmpty()) return true;
+    if (promise != null) promise.setResult(null);
+    return false;
+  }
+
+  private Promise<List<TreePath>> expand(@NotNull JTree tree) {
+    if (myPresentationData == null) {
+      LOG.debug("Restoring the expanded paths");
+      return TreeUtil.promiseExpand(tree, myExpandedPaths.stream().map(elements -> new SinglePathVisitor(elements)));
     }
     else {
-      sb.append(object);
+      // If we have cached presentation data, then everything is already shown and expanded,
+      // and if the user collapses one of those nodes, we don't want to expand it again here,
+      // as that looks and feels weird.
+      // So instead, only load these nodes so they can replace the cached ones.
+      LOG.debug("Loading the expanded paths to replace the cached presentation");
+      var promise = new AsyncPromise<List<TreePath>>();
+      var visitor = new MultiplePathsVisitor(myExpandedPaths);
+      TreeUtil.promiseVisit(tree, visitor).onProcessed(lastPathFound -> {
+        promise.setResult(visitor.pathsFound);
+      });
+      return promise;
     }
   }
 
-  private static void appendList(StringBuilder sb, List list) {
-    if (list.isEmpty()) {
-      sb.append("{}");
+  private Promise<List<TreePath>> select(@NotNull JTree tree) {
+    return TreeUtil.promiseSelect(tree, mySelectedPaths.stream().map(elements -> new SinglePathVisitor(elements)));
+  }
+
+  private boolean visit(@NotNull JTree tree) {
+    TreeModel model = tree.getModel();
+
+    if (myPresentationData != null && model instanceof DefaultTreeModelWithCachedPresentation defaultModel && tree instanceof CachedTreePresentationSupport) {
+      var started = System.currentTimeMillis();
+      // The presentation is applied, meaning that everything is expanded already.
+      // We only have to wait until the nodes are actually loaded, and the model supports this directly.
+      defaultModel.promiseRealNodes().onProcessed(loaded -> {
+        List<TreePath> expanded = loaded == null ? Collections.emptyList() : loaded.stream().filter(path -> tree.isExpanded(path)).toList();
+        onExpandFinished(tree, expanded, started);
+        if (tree.isSelectionEmpty()) {
+          select(tree);
+        }
+      });
+      return true;
     }
-    else {
-      String prefix = "{";
-      for (Object object : list) {
-        append(sb, prefix, object);
-        prefix = ", ";
+
+    if (!(model instanceof TreeVisitor.Acceptor)) return false;
+
+    var started = System.currentTimeMillis();
+    expand(tree, promise -> expand(tree).onProcessed(expanded -> {
+      onExpandFinished(tree, expanded, started);
+      if (isSelectionNeeded(expanded, tree, promise)) {
+        select(tree).onProcessed(selected -> promise.setResult(null));
       }
-      sb.append("}");
+    }));
+    return true;
+  }
+
+  private static void onExpandFinished(@NotNull JTree tree, List<TreePath> expanded, long started) {
+    if (LOG.isDebugEnabled() && expanded != null) {
+      LOG.debug("Expanded " + expanded.size() + " paths in " + (System.currentTimeMillis() - started) + " ms");
+    }
+    if (tree instanceof @NotNull Tree jbTree) {
+      jbTree.fireTreeStateRestoreFinished();
+    }
+    clearCachedPresentation(tree);
+  }
+
+  private static final class SinglePathVisitor implements TreeVisitor {
+    private final @NotNull PathMatcher matcher;
+
+    SinglePathVisitor(PathElement[] elements) {
+      matcher = new PathMatcher(elements, null, null);
+    }
+
+    @Override
+    public @NotNull TreeVisitor.VisitThread visitThread() {
+      return VisitThread.BGT;
+    }
+
+    @Override
+    public @NotNull Action visit(@NotNull TreePath path) {
+      if (matcher.tryAdvance(path.getLastPathComponent())) {
+        boolean found = matcher.fullyMatched();
+        if (found) {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Found a path using a single-path visitor: " + path);
+          }
+        }
+        return found ? Action.INTERRUPT : Action.CONTINUE;
+      }
+      else {
+        return Action.SKIP_CHILDREN;
+      }
+    }
+  }
+
+  private static final class MultiplePathsVisitor implements TreeVisitor {
+
+    private static final class PathMatchState {
+
+      private final @NotNull PathMatcher matcher;
+
+      private PathMatchState(PathElement[] elements) { this.matcher = new PathMatcher(elements, null, null); }
+
+      @NotNull PathMatch match(@NotNull TreePath path) {
+        if (matcher.fullyMatched()) {
+          return matcher.isParentOf(path) ? PathMatch.CHILD : PathMatch.NONE;
+        }
+        else if (Objects.equals(path.getParentPath(), matcher.matchedPath())) {
+          if (matcher.tryAdvance(path.getLastPathComponent())) {
+            return matcher.fullyMatched() ? PathMatch.FULL : PathMatch.ANCESTOR;
+          }
+          else {
+            return PathMatch.NONE;
+          }
+        }
+        else {
+          return PathMatch.NONE;
+        }
+      }
+    }
+
+    private enum PathMatch {
+      FULL,
+      ANCESTOR,
+      CHILD,
+      NONE
+    }
+
+    private final List<Set<PathMatchState>> matchStatesPerLevel = new ArrayList<>();
+    private final List<TreePath> pathsFound = new ArrayList<>();
+
+    MultiplePathsVisitor(List<PathElement[]> paths) {
+      matchStatesPerLevel.add(new HashSet<>());
+      for (PathElement[] path : paths) {
+        matchStatesPerLevel.getFirst().add(new PathMatchState(path));
+      }
+      push(1, new HashSet<>(matchStatesPerLevel.getFirst()));
+    }
+
+    @Override
+    public @NotNull TreeVisitor.VisitThread visitThread() {
+      return VisitThread.BGT;
+    }
+
+    @Override
+    public @NotNull Action visit(@NotNull TreePath path) {
+      var level = path.getPathCount();
+      pop(level);
+      var matchStates = matchStatesPerLevel.get(level);
+      @Nullable Set<PathMatchState> matchStatesForNextLevel = null;
+      for (Iterator<PathMatchState> iterator = matchStates.iterator(); iterator.hasNext(); ) {
+        PathMatchState state = iterator.next();
+        boolean needToGoDeeper = false;
+        switch (state.match(path)) {
+          case FULL -> {
+            if (LOG.isDebugEnabled()) {
+              LOG.debug("Found a path using a multi-path visitor: " + path);
+            }
+            pathsFound.add(path);
+            // We've found an expanded path, but we still need to load its children.
+            needToGoDeeper = true;
+          }
+          case ANCESTOR -> {
+            // We've found an ancestor of an expanded path, so we need to keep looking into this subtree.
+            needToGoDeeper = true;
+          }
+          case CHILD -> {
+            // A fully matched path, and we've found its first child.
+            // This means its children have been loaded, so we're done with it.
+            iterator.remove();
+            removeFromUpperLevels(level, state);
+          }
+        }
+        if (needToGoDeeper) {
+          if (matchStatesForNextLevel == null) {
+            matchStatesForNextLevel = new HashSet<>();
+          }
+          matchStatesForNextLevel.add(state);
+        }
+      }
+      if (matchStates.isEmpty()) {
+        // Nothing more to look for at this level.
+        return Action.SKIP_SIBLINGS;
+      }
+      else if (matchStatesForNextLevel != null) {
+        // Either this path is an ancestor of a path we're looking for,
+        // or that it IS a path we're looking for, but we still need to load its children.
+        push(level + 1, matchStatesForNextLevel);
+        return Action.CONTINUE;
+      }
+      else {
+        // No need to go deeper, but we might still find something on this level because matchStates is not empty yet.
+        return Action.SKIP_CHILDREN;
+      }
+    }
+
+    private void push(int level, @NotNull Set<PathMatchState> matchStates) {
+      assert level == matchStatesPerLevel.size();
+      matchStatesPerLevel.add(matchStates);
+    }
+
+    private void pop(int level) {
+      while (level < matchStatesPerLevel.size() - 1) {
+        matchStatesPerLevel.removeLast();
+      }
+    }
+
+    private void removeFromUpperLevels(int level, PathMatchState state) {
+      for (int i = 0; i < level; ++i) {
+        matchStatesPerLevel.get(i).remove(state);
+      }
     }
   }
 }
-

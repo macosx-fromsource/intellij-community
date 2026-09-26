@@ -1,36 +1,54 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.remoteServer.impl.configuration;
 
+import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurableProvider;
 import com.intellij.remoteServer.ServerType;
 import com.intellij.remoteServer.configuration.RemoteServersManager;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.xmlb.annotations.Attribute;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Unmodifiable;
+
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
- * @author Sergey.Malenkov
+ * Provides default configurable for server configurations of different
+ * {@link ServerType}s.
+ * <p>
+ * {@link ServerType} is included into the configurable (f.e. if it has not a
+ * specific configurable) by declaring {@link IncludeServerType} extension with
+ * the corresponding {@code serverType} attribute.
  */
 public final class RemoteServerListConfigurableProvider extends ConfigurableProvider {
   @Override
   public boolean canCreateConfigurable() {
-    return ServerType.EP_NAME.getExtensions().length > 0;
+    List<ServerType<?>> serverTypes = getServerTypesIncludedInList();
+    return !serverTypes.isEmpty();
   }
 
   @Override
   public Configurable createConfigurable() {
-    return new RemoteServerListConfigurable(RemoteServersManager.getInstance());
+    return new RemoteServerListConfigurable(RemoteServersManager.getInstance(), getServerTypesIncludedInList(), null);
+  }
+
+  private static @Unmodifiable @NotNull List<ServerType<?>> getServerTypesIncludedInList() {
+    Set<String> includedTypes = IncludeServerType.EP_NAME.getExtensionList().stream().map(type -> type.myServerType).collect(Collectors.toSet());
+    return ContainerUtil.filter(ServerType.EP_NAME.getExtensionList(), type -> includedTypes.contains(type.getClass().getName()));
+  }
+
+  /**
+   * Includes server configurations of specific {@link ServerType} to default
+   * configurable.
+   */
+  public static class IncludeServerType {
+    public static final ExtensionPointName<IncludeServerType> EP_NAME =
+      ExtensionPointName.create("com.intellij.remoteServer.defaultConfigurable.includeServerType");
+
+    @Attribute("serverType")
+    public String myServerType;
   }
 }

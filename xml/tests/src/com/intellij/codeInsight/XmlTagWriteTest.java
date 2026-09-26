@@ -20,14 +20,14 @@ import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.psi.XmlElementFactory;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.psi.xml.XmlText;
-import com.intellij.testFramework.LightCodeInsightTestCase;
+import com.intellij.testFramework.LightJavaCodeInsightTestCase;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.xml.util.XmlUtil;
 
 /**
  * @author lesya, dsl
  */
-public class XmlTagWriteTest extends LightCodeInsightTestCase{
+public class XmlTagWriteTest extends LightJavaCodeInsightTestCase {
   public void test1() throws IncorrectOperationException {
     XmlElementFactory elementFactory = XmlElementFactory.getInstance(getProject());
     final XmlTag xmlTag = XmlElementFactory.getInstance(getProject()).createTagFromText("<tag1/>");
@@ -57,7 +57,7 @@ public class XmlTagWriteTest extends LightCodeInsightTestCase{
     assertEquals("tag2", createdFromText.getSubTags()[0].getName());
   }
 
-  public void test3() throws Exception{
+  public void test3() {
     final XmlTag tag = XmlElementFactory.getInstance(getProject()).createTagFromText("<b>\n0123456</b>");
     final XmlText text = (XmlText) tag.getValue().getChildren()[0];
     String textS = text.getText();

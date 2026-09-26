@@ -1,10 +1,24 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.progress;
 
 import com.intellij.openapi.application.ModalityState;
+import org.jetbrains.annotations.ApiStatus.Obsolete;
 import org.jetbrains.annotations.NotNull;
 
+/**
+ * <h3>Obsolescence notice</h3>
+ * <p>
+ * See {@link com.intellij.openapi.progress.ProgressIndicator} notice.
+ * </p>
+ */
 public class DumbProgressIndicator implements StandardProgressIndicator {
+
+  @Obsolete
   public static final DumbProgressIndicator INSTANCE = new DumbProgressIndicator();
+
+  @Obsolete
+  public DumbProgressIndicator() {
+  }
 
   @Override
   public void start() {
@@ -68,22 +82,13 @@ public class DumbProgressIndicator implements StandardProgressIndicator {
   }
 
   @Override
-  public void startNonCancelableSection() {
-  }
-
-  @Override
-  public void finishNonCancelableSection() {
-  }
-
-  @Override
   public boolean isModal() {
     return false;
   }
 
   @Override
-  @NotNull
-  public ModalityState getModalityState() {
-    return ModalityState.NON_MODAL;
+  public @NotNull ModalityState getModalityState() {
+    return ModalityState.nonModal();
   }
 
   @Override

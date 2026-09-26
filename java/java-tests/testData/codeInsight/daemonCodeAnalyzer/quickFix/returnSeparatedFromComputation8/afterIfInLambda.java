@@ -1,13 +1,12 @@
-// "Move 'return' closer to computation of the value of 'n'" "true"
+// "Move 'return' closer to computation of the value of 'n'" "true-preview"
 class T {
     interface I {
         int call();
     }
     void f(boolean b) {
         g(() -> {
-            int n = -1;
             if (b) return 1;
-            return n;
+            return -1;
         });
     }
 

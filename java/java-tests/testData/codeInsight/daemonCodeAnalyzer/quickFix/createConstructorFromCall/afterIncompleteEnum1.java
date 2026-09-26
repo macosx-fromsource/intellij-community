@@ -1,6 +1,7 @@
-// "Create constructor" "true"
+// "Create constructor" "true-preview"
 public enum ReportType {
-    AGING("Aging"),;
+    AGING("Aging"),
+    ;
 
     ReportType(String aging) {
         <selection></selection>

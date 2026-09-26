@@ -1,22 +1,9 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.commandLine;
 
+import com.intellij.ide.trustedProjects.TrustedProjects;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.containers.ContainerUtil;
@@ -26,22 +13,22 @@ import org.jetbrains.idea.svn.SvnApplicationSettings;
 import org.jetbrains.idea.svn.SvnProgressCanceller;
 import org.jetbrains.idea.svn.SvnUtil;
 import org.jetbrains.idea.svn.SvnVcs;
+import org.jetbrains.idea.svn.api.Url;
 import org.jetbrains.idea.svn.auth.AuthenticationService;
-import org.tmatesoft.svn.core.SVNURL;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author Konstantin Kolosovsky.
- */
+import static org.jetbrains.idea.svn.SvnBundle.message;
+
 public class CommandRuntime {
 
   private static final Logger LOG = Logger.getInstance(CommandRuntime.class);
 
-  @NotNull private final AuthenticationService myAuthenticationService;
-  @NotNull private final SvnVcs myVcs;
-  @NotNull private final List<CommandRuntimeModule> myModules;
+  private final @NotNull AuthenticationService myAuthenticationService;
+  private final @NotNull SvnVcs myVcs;
+  private final @NotNull List<CommandRuntimeModule> myModules;
   private final String exePath;
 
   public CommandRuntime(@NotNull SvnVcs vcs, @NotNull AuthenticationService authenticationService) {
@@ -51,14 +38,18 @@ public class CommandRuntime {
     SvnApplicationSettings settings = SvnApplicationSettings.getInstance();
     exePath = settings.getCommandLinePath();
 
-    myModules = ContainerUtil.newArrayList();
+    myModules = new ArrayList<>();
     myModules.add(new CommandParametersResolutionModule(this));
     myModules.add(new ProxyModule(this));
     myModules.add(new SshTunnelRuntimeModule(this));
   }
 
-  @NotNull
-  public CommandExecutor runWithAuthenticationAttempt(@NotNull Command command) throws SvnBindException {
+  public @NotNull CommandExecutor runWithAuthenticationAttempt(@NotNull Command command) throws SvnBindException {
+    Project project = myVcs.getProject();
+    if (!project.isDefault() && !TrustedProjects.isProjectTrusted(project)) {
+      throw new IllegalStateException("Shouldn't be possible to run a SVN command in the safe mode");
+    }
+
     try {
       onStart(command);
 
@@ -75,10 +66,14 @@ public class CommandRuntime {
     }
   }
 
-  @NotNull
-  public CommandExecutor runLocal(@NotNull Command command, int timeout) throws SvnBindException {
+  public @NotNull CommandExecutor runLocal(@NotNull Command command, int timeout) throws SvnBindException {
+    Project project = myVcs.getProject();
+    if (!project.isDefault() && !TrustedProjects.isProjectTrusted(project)) {
+      throw new IllegalStateException("Shouldn't be possible to run a SVN command in the safe mode");
+    }
+
     if (command.getWorkingDirectory() == null) {
-      command.setWorkingDirectory(CommandParametersResolutionModule.getDefaultWorkingDirectory(myVcs.getProject()));
+      command.setWorkingDirectory(CommandParametersResolutionModule.getDefaultWorkingDirectory(project));
     }
 
     CommandExecutor executor = newExecutor(command);
@@ -89,7 +84,7 @@ public class CommandRuntime {
     return executor;
   }
 
-  private void onStart(@NotNull Command command) throws SvnBindException {
+  private void onStart(@NotNull Command command) {
     // TODO: Actually command handler should be used as canceller, but currently all handlers use same cancel logic -
     // TODO: - just check progress indicator
     command.setCanceller(new SvnProgressCanceller());
@@ -134,7 +129,7 @@ public class CommandRuntime {
       LOG.info("Command - " + executor.getCommandText());
       LOG.info("Command output - " + executor.getOutput());
 
-      throw new SvnBindException("Svn process exited with error code: " + exitCode);
+      throw new SvnBindException(message("error.svn.exited.with.error.code", exitCode));
     }
 
     return false;
@@ -149,9 +144,7 @@ public class CommandRuntime {
     // "infinite" times despite it was cancelled.
     if (!executor.checkCancelled() && callback != null) {
       if (callback.getCredentials(errText)) {
-        if (myAuthenticationService.getSpecialConfigDir() != null) {
-          command.setConfigDir(myAuthenticationService.getSpecialConfigDir());
-        }
+        command.setConfigDir(myAuthenticationService.getSpecialConfigDir().toFile());
         callback.updateParameters(command);
         return true;
       }
@@ -181,9 +174,8 @@ public class CommandRuntime {
     }
   }
 
-  @Nullable
-  private AuthCallbackCase createCallback(@NotNull final String errText, @Nullable final SVNURL url, boolean isUnderTerminal) {
-    List<AuthCallbackCase> authCases = ContainerUtil.newArrayList();
+  private @Nullable AuthCallbackCase createCallback(final @NotNull String errText, final @Nullable Url url, boolean isUnderTerminal) {
+    List<AuthCallbackCase> authCases = new ArrayList<>();
 
     if (isUnderTerminal) {
       // Subversion client does not prompt for proxy credentials (just fails with error) even in terminal mode. So we handle this case the
@@ -199,20 +191,16 @@ public class CommandRuntime {
       authCases.add(new CertificateCallbackCase(myAuthenticationService, url));
       authCases.add(new ProxyCallback(myAuthenticationService, url));
       authCases.add(new TwoWaySslCallback(myAuthenticationService, url));
+      authCases.add(new ServerUnavailableCallback(myAuthenticationService, url));
       authCases.add(new UsernamePasswordCallback(myAuthenticationService, url));
     }
 
-    return ContainerUtil.find(authCases, new Condition<AuthCallbackCase>() {
-      @Override
-      public boolean value(AuthCallbackCase authCase) {
-        return authCase.canHandle(errText);
-      }
-    });
+    return ContainerUtil.find(authCases, authCase -> authCase.canHandle(errText));
   }
 
   private void cleanup(@NotNull CommandExecutor executor, @NotNull File workingDirectory) throws SvnBindException {
     if (executor.getCommandName().isWriteable()) {
-      File wcRoot = SvnUtil.getWorkingCopyRootNew(workingDirectory);
+      File wcRoot = SvnUtil.getWorkingCopyRoot(workingDirectory);
 
       // not all commands require cleanup - for instance, some commands operate only with repository - like "svn info <url>"
       // TODO: check if we could "configure" commands (or make command to explicitly ask) if cleanup is required - not to search
@@ -228,8 +216,7 @@ public class CommandRuntime {
     }
   }
 
-  @NotNull
-  private CommandExecutor newExecutor(@NotNull Command command) {
+  private @NotNull CommandExecutor newExecutor(@NotNull Command command) {
     final CommandExecutor executor;
 
     if (!myVcs.getSvnConfiguration().isRunUnderTerminal() || isLocal(command)) {
@@ -248,8 +235,7 @@ public class CommandRuntime {
     return executor;
   }
 
-  @NotNull
-  private TerminalExecutor newTerminalExecutor(@NotNull Command command) {
+  private @NotNull TerminalExecutor newTerminalExecutor(@NotNull Command command) {
     return SystemInfo.isWindows
            ? new WinTerminalExecutor(exePath, command)
            : new TerminalExecutor(exePath, command);
@@ -268,13 +254,11 @@ public class CommandRuntime {
            command.isLocalInfo() || command.isLocalStatus() || command.isLocalProperty() || command.isLocalCat();
   }
 
-  @NotNull
-  public AuthenticationService getAuthenticationService() {
+  public @NotNull AuthenticationService getAuthenticationService() {
     return myAuthenticationService;
   }
 
-  @NotNull
-  public SvnVcs getVcs() {
+  public @NotNull SvnVcs getVcs() {
     return myVcs;
   }
 }

@@ -18,8 +18,15 @@ package com.intellij.codeInsight.generation;
 import com.intellij.codeInsight.template.Expression;
 import com.intellij.codeInsight.template.Template;
 import com.intellij.codeInsight.template.TemplateBuilderImpl;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.Objects;
 
 public abstract class TemplateGenerationInfo extends GenerationInfoBase implements GenerationInfo {
   private final Expression myExpression;
@@ -42,12 +49,13 @@ public abstract class TemplateGenerationInfo extends GenerationInfoBase implemen
   }
 
   @Override
-  public void insert(PsiClass aClass, PsiElement anchor, boolean before) throws IncorrectOperationException {
-    setElement((PsiMethod)GenerateMembersUtil.insert(aClass, myElement.getElement(), anchor, before));
+  public void insert(@NotNull PsiClass aClass, PsiElement anchor, boolean before) throws IncorrectOperationException {
+    PsiMethod member = Objects.requireNonNull(getPsiMember());
+    setElement((PsiMethod)GenerateMembersUtil.insert(aClass, member, anchor, before));
   }
 
   public Template getTemplate() {
-    PsiMethod element = getPsiMember();
+    PsiMethod element = Objects.requireNonNull(getPsiMember());
     TemplateBuilderImpl builder = new TemplateBuilderImpl(element);
     builder.replaceElement(getTemplateElement(element), myExpression);
     return builder.buildTemplate();

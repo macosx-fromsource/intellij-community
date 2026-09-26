@@ -1,60 +1,52 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.keyFMap;
 
 import com.intellij.openapi.util.Key;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
-public class OneElementFMap<V> implements KeyFMap {
-  private final Key myKey;
-  private final V myValue;
+@ApiStatus.Internal
+public class OneElementFMap implements KeyFMap {
+  protected final @NotNull Key<?> myKey;
+  protected final @NotNull Object myValue;
 
-  public OneElementFMap(@NotNull Key key, @NotNull V value) {
+  protected OneElementFMap(@NotNull Key<?> key, @NotNull Object value) {
     myKey = key;
     myValue = value;
   }
 
-  @NotNull
   @Override
-  public <V> KeyFMap plus(@NotNull Key<V> key, @NotNull V value) {
-    if (myKey == key) return new OneElementFMap<V>(key, value);
+  public @NotNull <T> KeyFMap plus(@NotNull Key<T> key, @NotNull T value) {
+    if (myKey == key) {
+      return value == myValue ? this : new OneElementFMap(key, value);
+    }
     return new PairElementsFMap(myKey, myValue, key, value);
   }
 
-  @NotNull
   @Override
-  public KeyFMap minus(@NotNull Key<?> key) {
+  public @NotNull KeyFMap minus(@NotNull Key<?> key) {
     return key == myKey ? KeyFMap.EMPTY_MAP : this;
   }
 
   @Override
-  public <V> V get(@NotNull Key<V> key) {
+  public <T> T get(@NotNull Key<T> key) {
     //noinspection unchecked
-    return myKey == key ? (V)myValue : null;
+    return myKey == key ? (T)myValue : null;
   }
 
-  @NotNull
   @Override
-  public Key[] getKeys() {
+  public int size() {
+    return 1;
+  }
+
+  @Override
+  public @NotNull Key @NotNull [] getKeys() {
     return new Key[] { myKey };
   }
 
   @Override
   public String toString() {
-    return "<" + myKey + " -> " + myValue+">";
+    return "{" + myKey + "=" + myValue + "}";
   }
 
   @Override
@@ -62,31 +54,31 @@ public class OneElementFMap<V> implements KeyFMap {
     return false;
   }
 
-  public Key getKey() {
-    return myKey;
-  }
-
-  public V getValue() {
-    return myValue;
+  @Override
+  public int getValueIdentityHashCode() {
+    return myKey.hashCode() * 31 + System.identityHashCode(myValue);
   }
 
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
-    if (!(o instanceof OneElementFMap)) return false;
+    if (o == null || o.getClass() != OneElementFMap.class) return false;
 
     OneElementFMap map = (OneElementFMap)o;
+    return myKey == map.myKey && myValue.equals(map.myValue);
+  }
 
-    if (myKey != map.myKey) return false;
-    if (!myValue.equals(map.myValue)) return false;
+  @Override
+  public boolean equalsByReference(@NotNull KeyFMap o) {
+    if (this == o) return true;
+    if (o.getClass() != OneElementFMap.class) return false;
 
-    return true;
+    OneElementFMap map = (OneElementFMap)o;
+    return myKey == map.myKey && myValue == map.myValue;
   }
 
   @Override
   public int hashCode() {
-    int result = myKey.hashCode();
-    result = 31 * result + myValue.hashCode();
-    return result;
+    return myKey.hashCode() ^ myValue.hashCode();
   }
 }

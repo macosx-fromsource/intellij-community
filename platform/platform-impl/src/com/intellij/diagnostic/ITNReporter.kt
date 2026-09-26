@@ -1,164 +1,188 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.diagnostic
 
-import com.intellij.CommonBundle
-import com.intellij.credentialStore.hasOnlyUserName
-import com.intellij.errorreport.bean.ErrorBean
-import com.intellij.errorreport.error.InternalEAPException
-import com.intellij.errorreport.error.NoSuchEAPUserException
+import com.intellij.diagnostic.ITNProxy.ErrorBean
 import com.intellij.errorreport.error.UpdateAvailableException
-import com.intellij.errorreport.itn.ITNProxy
+import com.intellij.ide.BrowserUtil
 import com.intellij.ide.DataManager
-import com.intellij.ide.plugins.PluginManager
 import com.intellij.idea.IdeaLogger
-import com.intellij.notification.NotificationListener
+import com.intellij.notification.Notification
+import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.ErrorReportSubmitter
 import com.intellij.openapi.diagnostic.IdeaLoggingEvent
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.diagnostic.SubmittedReportInfo
+import com.intellij.openapi.extensions.InternalIgnoreDependencyViolation
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.MessageDialogBuilder
 import com.intellij.openapi.ui.Messages
+import com.intellij.platform.ide.progress.withBackgroundProgress
 import com.intellij.util.Consumer
-import com.intellij.xml.util.XmlStringUtil
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.jetbrains.annotations.ApiStatus
 import java.awt.Component
-import javax.swing.Icon
+import java.net.URI
+import java.util.concurrent.atomic.AtomicBoolean
 
-private var previousExceptionThreadId = 0
+internal val NOTIFY_SUCCESS_EACH_REPORT = AtomicBoolean(true) // dirty hack, reporter API does not support any optional args
+internal val SHOW_NEW_BUILD_DIALOG = AtomicBoolean(true) // ensures the "New Build Available" dialog is shown at most once per user action
 
-open class ITNReporter : ErrorReportSubmitter() {
+private val LOG = Logger.getInstance(ITNReporter::class.java)
+
+@Service
+internal class ITNReporterSubmitService(val coroutineScope: CoroutineScope) {
+  fun submit(
+    postUrl: URI?,
+    project: Project?,
+    errorBean: ErrorBean,
+    parentComponent: Component,
+    callback: (SubmittedReportInfo) -> Unit,
+  ): Boolean {
+    coroutineScope.launch(DiagnosticDispatchers.Default) {
+      try {
+        val reportId = if (project != null) {
+          withBackgroundProgress(project, DiagnosticBundle.message("title.submitting.error.report")) {
+            ITNProxy.sendError(errorBean, postUrl)
+          }
+        }
+        else {
+          ITNProxy.sendError(errorBean, postUrl)
+        }
+        onSuccess(project, reportId, callback)
+      }
+      catch (e: Exception) {
+        onError(postUrl, project, e, errorBean, parentComponent, callback)
+      }
+    }
+    return true
+  }
+
+  private fun onSuccess(project: Project?, reportId: Long, callback: (SubmittedReportInfo) -> Unit) {
+    val reportUrl = ITNProxy.getBrowseUrl(reportId)
+    callback(SubmittedReportInfo(reportUrl, reportId.toString(), SubmittedReportInfo.SubmissionStatus.NEW_ISSUE))
+
+    if (!NOTIFY_SUCCESS_EACH_REPORT.get()) return
+
+    val content = DiagnosticBundle.message("error.report.gratitude")
+    val title = DiagnosticBundle.message("error.report.submitted")
+    val notification = Notification("Error Report", title, content, NotificationType.INFORMATION).setImportant(false)
+    if (reportUrl != null) {
+      notification.addAction(NotificationAction.createSimpleExpiring(DiagnosticBundle.message("error.report.view.action")) { BrowserUtil.browse(reportUrl) })
+    }
+    notification.notify(project)
+  }
+
+  private suspend fun onError(
+    postUrl: URI?,
+    project: Project?,
+    e: Exception,
+    errorBean: ErrorBean,
+    parentComponent: Component,
+    callback: (SubmittedReportInfo) -> Unit
+  ) {
+    LOG.info("reporting failed: ${e}")
+    LOG.debug(e)
+    withContext(Dispatchers.EDT) {
+      if (e is UpdateAvailableException) {
+        if (SHOW_NEW_BUILD_DIALOG.compareAndSet(true, false)) {
+          val message = DiagnosticBundle.message("error.report.new.build.message", e.message)
+          val title = DiagnosticBundle.message("error.report.new.build.title")
+          val icon = Messages.getWarningIcon()
+          if (parentComponent.isShowing) Messages.showMessageDialog(parentComponent, message, title, icon)
+          else Messages.showMessageDialog(project, message, title, icon)
+        }
+        callback(SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.FAILED))
+      }
+      else if (e is CancellationException) {
+        callback(SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.FAILED))
+      }
+      else {
+        val message = DiagnosticBundle.message("error.report.failed.message", e.message ?: e.javaClass.name)
+        val title = DiagnosticBundle.message("error.report.failed.title")
+        val result = MessageDialogBuilder.yesNo(title, message).ask(project)
+        if (!result || !submit(postUrl, project, errorBean, parentComponent, callback)) {
+          callback(SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.FAILED))
+        }
+      }
+    }
+  }
+}
+
+/**
+ * This is an internal implementation of [ErrorReportSubmitter] which is used to report exceptions in IntelliJ platform
+ * and plugins developed by JetBrains to processing at JetBrains.
+ *
+ * **The class is not supposed to be used by third-party plugins.**
+ * They need to provide their own implementations of [ErrorReportSubmitter].
+ */
+@InternalIgnoreDependencyViolation
+open class ITNReporter internal constructor(private val postUrl: URI?) : ErrorReportSubmitter() {
+  @ApiStatus.Internal
+  constructor() : this(postUrl = null)
+
   override fun getReportActionText(): String = DiagnosticBundle.message("error.report.to.jetbrains.action")
 
-  override fun submit(events: Array<IdeaLoggingEvent>,
-                      additionalInfo: String?,
-                      parentComponent: Component,
-                      consumer: Consumer<SubmittedReportInfo>): Boolean {
-    return submit(events.get(0), parentComponent, consumer, ErrorBean(events.get(0).throwable, IdeaLogger.ourLastActionId), additionalInfo)
+  override fun getPrivacyNoticeText(): String = DiagnosticBundle.message("error.dialog.notice.anonymous")
+
+  @ApiStatus.OverrideOnly
+  override fun submit(
+    events: Array<IdeaLoggingEvent>,
+    additionalInfo: String?,
+    parentComponent: Component,
+    consumer: Consumer<in SubmittedReportInfo>
+  ): Boolean {
+    val errorBean = createReportBean(events[0], additionalInfo, autoReported = false)
+    val project = CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext(parentComponent))
+    return submit(project, errorBean, parentComponent, consumer::consume)
+  }
+
+  @ApiStatus.Internal
+  suspend fun submitAutomated(event: IdeaLoggingEvent): SubmittedReportInfo {
+    val errorBean = createReportBean(event, comment = "Automatically reported exception", autoReported = true)
+    return try {
+      val reportId = ITNProxy.sendError(errorBean, postUrl)
+      SubmittedReportInfo(ITNProxy.getBrowseUrl(reportId), reportId.toString(), SubmittedReportInfo.SubmissionStatus.NEW_ISSUE)
+    }
+    catch (e: Exception) {
+      LOG.warn("Failed to submit exception automatically", e)
+      SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.FAILED)
+    }
   }
 
   /**
    * Used to enable error reporting even in release versions.
    */
-  open fun showErrorInRelease(event: IdeaLoggingEvent) = false
-}
+  open fun showErrorInRelease(event: IdeaLoggingEvent): Boolean = false
 
-fun setPluginInfo(event: IdeaLoggingEvent, errorBean: ErrorBean) {
-  val t = event.throwable
-  if (t != null) {
-    val pluginId = IdeErrorsDialog.findPluginId(t)
-    if (pluginId != null) {
-      val ideaPluginDescriptor = PluginManager.getPlugin(pluginId)
-      if (ideaPluginDescriptor != null && (!ideaPluginDescriptor.isBundled || ideaPluginDescriptor.allowBundledUpdate())) {
-        errorBean.pluginName = ideaPluginDescriptor.name
-        errorBean.pluginVersion = ideaPluginDescriptor.version
-      }
-    }
-  }
-}
+  private fun createReportBean(event: IdeaLoggingEvent, comment: String?, autoReported: Boolean) = ErrorBean(
+    event, comment, event.problematicPluginInfo?.pluginId?.idString, event.problematicPluginInfo?.name, event.problematicPluginInfo?.version,
+    getLastActionId(event), autoReported
+  )
 
-private fun updatePreviousThreadId(threadId: Int?) {
-  previousExceptionThreadId = threadId!!
-}
-
-private fun showMessageDialog(parentComponent: Component, project: Project?, message: String, title: String, icon: Icon) {
-  if (parentComponent.isShowing) {
-    Messages.showMessageDialog(parentComponent, message, title, icon)
-  }
-  else {
-    Messages.showMessageDialog(project, message, title, icon)
-  }
-}
-
-private fun submit(event: IdeaLoggingEvent, parentComponent: Component, callback: Consumer<SubmittedReportInfo>, errorBean: ErrorBean, description: String?): Boolean {
-  var credentials = ErrorReportConfigurable.getCredentials()
-  // ask password only if user name was specified
-  if (credentials.hasOnlyUserName()) {
-    if (!showJetBrainsAccountDialog(parentComponent).showAndGet()) {
-      return false
+  private fun getLastActionId(event: IdeaLoggingEvent): String? {
+    val throwable = event.throwable
+    if (throwable is Freeze) {
+      return throwable.lastActionId // we must record last action ID before the freeze finished
     }
 
-    credentials = ErrorReportConfigurable.getCredentials()
+    return IdeaLogger.ourLastActionId
   }
 
-  errorBean.description = description
-  errorBean.message = event.message
-
-  if (previousExceptionThreadId != 0) {
-    errorBean.previousException = previousExceptionThreadId
+  private fun submit(
+    project: Project?,
+    errorBean: ErrorBean,
+    parentComponent: Component,
+    callback: (SubmittedReportInfo) -> Unit,
+  ): Boolean {
+    return service<ITNReporterSubmitService>().submit(postUrl, project, errorBean, parentComponent, callback)
   }
-
-  setPluginInfo(event, errorBean)
-
-  val data = event.data
-  if (data is AbstractMessage) {
-    errorBean.assigneeId = data.assigneeId
-    errorBean.attachments = data.includedAttachments
-  }
-
-  var login = credentials?.userName
-  var password = credentials?.getPasswordAsString()
-  if (login.isNullOrBlank() && password.isNullOrBlank()) {
-    login = "idea_anonymous"
-    password = "guest"
-  }
-
-  val project = CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext(parentComponent))
-  ITNProxy.sendError(project, login, password, errorBean, { threadId ->
-    updatePreviousThreadId(threadId)
-    val linkText = threadId.toString()
-    val reportInfo = SubmittedReportInfo(ITNProxy.getBrowseUrl(threadId), linkText, SubmittedReportInfo.SubmissionStatus.NEW_ISSUE)
-    callback.consume(reportInfo)
-    ApplicationManager.getApplication().invokeLater {
-      val text = StringBuilder()
-      IdeErrorsDialog.appendSubmissionInformation(reportInfo, text)
-      text.append('.').append("<br/>").append(DiagnosticBundle.message("error.report.gratitude"))
-      val content = XmlStringUtil.wrapInHtml(text)
-      ReportMessages.GROUP.createNotification(ReportMessages.ERROR_REPORT, content, NotificationType.INFORMATION,
-          NotificationListener.URL_OPENING_LISTENER).setImportant(false).notify(project)
-    }
-  }) { e ->
-    Logger.getInstance(ITNReporter::class.java).info("reporting failed: $e")
-    ApplicationManager.getApplication().invokeLater {
-      val msg = when (e) {
-        is NoSuchEAPUserException -> DiagnosticBundle.message("error.report.authentication.failed")
-        is InternalEAPException -> DiagnosticBundle.message("error.report.posting.failed", e.message)
-        else -> DiagnosticBundle.message("error.report.sending.failure")
-      }
-
-      if (e is UpdateAvailableException) {
-        val message = DiagnosticBundle.message("error.report.new.eap.build.message", e.message)
-        showMessageDialog(parentComponent, project, message, CommonBundle.getWarningTitle(), Messages.getWarningIcon())
-        callback.consume(SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.FAILED))
-        return@invokeLater
-      }
-
-      if (!MessageDialogBuilder.yesNo(ReportMessages.ERROR_REPORT, msg).project(project).isYes) {
-        callback.consume(SubmittedReportInfo(SubmittedReportInfo.SubmissionStatus.FAILED))
-      }
-      else {
-        if (e is NoSuchEAPUserException) {
-          showJetBrainsAccountDialog(parentComponent, project).show()
-        }
-        ApplicationManager.getApplication().invokeLater { submit(event, parentComponent, callback, errorBean, description) }
-      }
-    }
-  }
-  return true
 }

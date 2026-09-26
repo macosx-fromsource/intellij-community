@@ -20,6 +20,7 @@
 package com.intellij.psi;
 
 import com.intellij.util.containers.Stack;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * a JavaElementVisitor which also visits all children elements
@@ -28,13 +29,13 @@ import com.intellij.util.containers.Stack;
  * <b>Note</b>: This visitor handles all elements recursively, so it can consume a large amount of stack space for very deep trees.
  * For such deep trees please consider using {@link JavaRecursiveElementWalkingVisitor} instead.
  */
-public abstract class JavaRecursiveElementVisitor extends JavaElementVisitor {
+public abstract class JavaRecursiveElementVisitor extends JavaElementVisitor implements PsiRecursiveVisitor {
   // This stack thing is intended to prevent exponential child traversing due to visitReferenceExpression calls both visitRefElement
   // and visitExpression.
-  private final Stack<PsiReferenceExpression> myRefExprsInVisit = new Stack<PsiReferenceExpression>();
+  private final Stack<PsiReferenceExpression> myRefExprsInVisit = new Stack<>();
 
   @Override
-  public void visitElement(PsiElement element) {
+  public void visitElement(@NotNull PsiElement element) {
     if (!myRefExprsInVisit.isEmpty() && myRefExprsInVisit.peek() == element) {
       myRefExprsInVisit.pop();
       myRefExprsInVisit.push(null);
@@ -44,7 +45,7 @@ public abstract class JavaRecursiveElementVisitor extends JavaElementVisitor {
     }
   }
 
-  @Override public void visitReferenceExpression(PsiReferenceExpression expression) {
+  @Override public void visitReferenceExpression(@NotNull PsiReferenceExpression expression) {
     myRefExprsInVisit.push(expression);
     try {
       visitExpression(expression);

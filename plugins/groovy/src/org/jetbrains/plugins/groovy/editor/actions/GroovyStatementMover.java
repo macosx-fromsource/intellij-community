@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.plugins.groovy.editor.actions;
 
@@ -35,28 +21,25 @@ import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocComment;
 import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocCommentOwner;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFileBase;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrBlockStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrField;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrCodeBlock;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrCaseLabel;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrCaseSection;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrLiteral;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinitionBody;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMembersDeclaration;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
-import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.GrTopStatement;
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author peter
- */
-public class GroovyStatementMover extends StatementUpDownMover {
+public final class GroovyStatementMover extends StatementUpDownMover {
 
   @Override
   public boolean checkAvailable(@NotNull Editor editor, @NotNull PsiFile file, @NotNull MoveInfo info, boolean down) {
@@ -104,8 +87,7 @@ public class GroovyStatementMover extends StatementUpDownMover {
     return true;
   }
 
-  @Nullable
-  private static GroovyPsiElement getElementToMove(GroovyFileBase file, int offset) {
+  private static @Nullable GroovyPsiElement getElementToMove(GroovyFileBase file, int offset) {
     offset = CharArrayUtil.shiftForward(file.getText(), offset, " \t");
     PsiElement element = file.findElementAt(offset);
     final GrDocComment docComment = PsiTreeUtil.getParentOfType(element, GrDocComment.class);
@@ -119,7 +101,7 @@ public class GroovyStatementMover extends StatementUpDownMover {
       element = PsiTreeUtil.nextVisibleLeaf(element);
     }
 
-    return (GroovyPsiElement)PsiTreeUtil.findFirstParent(element, element11 -> isMoveable(element11));
+    return (GroovyPsiElement)PsiTreeUtil.findFirstParent(element, element11 -> isMovable(element11));
   }
 
   private List<LineRange> allRanges(final GroovyPsiElement scope, final boolean stmtLevel, final boolean topLevel) {
@@ -135,17 +117,15 @@ public class GroovyStatementMover extends StatementUpDownMover {
       }
 
       @Override
-      public void visitElement(PsiElement element) {
+      public void visitElement(@NotNull PsiElement element) {
         if (stmtLevel && element instanceof GrCodeBlock) {
           final PsiElement lBrace = ((GrCodeBlock)element).getLBrace();
           if (nlsAfter(lBrace)) {
-            assert lBrace != null;
             addRange(new LineRange(lBrace).endLine);
           }
           addChildRanges(((GrCodeBlock)element).getStatements());
           final PsiElement rBrace = ((GrCodeBlock)element).getRBrace();
           if (nlsAfter(rBrace)) {
-            assert rBrace != null;
             final int endLine = new LineRange(rBrace).endLine;
             if (lastStart >= 0) {
               for (int i = lastStart + 1; i < endLine; i++) {
@@ -155,12 +135,22 @@ public class GroovyStatementMover extends StatementUpDownMover {
           }
         }
         else if (stmtLevel && element instanceof GrCaseSection) {
-          final GrCaseLabel[] allLabels = ((GrCaseSection)element).getCaseLabels();
-          final GrCaseLabel label = allLabels[0];
-          if (nlsAfter(label)) {
-            addRange(new LineRange(label).endLine);
+          PsiElement delimiter = ((GrCaseSection)element).getColon();
+          if (delimiter != null) {
+            if (nlsAfter(delimiter)) {
+              addRange(new LineRange(element.getFirstChild(), delimiter).endLine);
+            }
+            addChildRanges(((GrCaseSection)element).getStatements());
+          } else {
+            var statements = ((GrCaseSection)element).getStatements();
+            if (statements.length == 1 && statements[0] instanceof GrBlockStatement) {
+              GrOpenBlock block = ((GrBlockStatement)statements[0]).getBlock();
+              if (nlsAfter(block.getLBrace())) {
+                addRange(new LineRange(element.getFirstChild(), block.getLBrace()).endLine);
+              }
+              addChildRanges(block.getStatements());
+            }
           }
-          addChildRanges(((GrCaseSection)element).getStatements());
         }
         else if (element instanceof GroovyFileBase) {
           addChildRanges(((GroovyFileBase)element).getTopStatements());
@@ -173,7 +163,7 @@ public class GroovyStatementMover extends StatementUpDownMover {
         }
       }
 
-      private boolean shouldDigInside(GrTopStatement statement) {
+      private boolean shouldDigInside(GroovyPsiElement statement) {
         if (stmtLevel && (statement instanceof GrMethod || statement instanceof GrTypeDefinition)) {
           return false;
         }
@@ -183,9 +173,9 @@ public class GroovyStatementMover extends StatementUpDownMover {
         return true;
       }
 
-      private void addChildRanges(GrTopStatement[] statements) {
+      private void addChildRanges(GroovyPsiElement[] statements) {
         for (int i = 0; i < statements.length; i++) {
-          GrTopStatement statement = statements[i];
+          GroovyPsiElement statement = statements[i];
           if (nlsAfter(statement)) {
             final LineRange range = getLineRange(statement);
             if ((i == 0 || isStatement(statements[i-1])) && isStatement(statement)) {
@@ -227,7 +217,7 @@ public class GroovyStatementMover extends StatementUpDownMover {
     }
   }
 
-  private static boolean isMoveable(PsiElement element) {
+  private static boolean isMovable(PsiElement element) {
     return isStatement(element) || isMemberDeclaration(element);
   }
 

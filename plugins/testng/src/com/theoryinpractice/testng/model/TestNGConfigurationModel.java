@@ -16,14 +16,11 @@
 package com.theoryinpractice.testng.model;
 
 import com.intellij.execution.JavaExecutionUtil;
-import com.intellij.execution.junit.JUnitUtil;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.PsiClass;
 import com.theoryinpractice.testng.configuration.TestNGConfiguration;
 import com.theoryinpractice.testng.configuration.TestNGConfigurationEditor;
 
@@ -33,7 +30,7 @@ import javax.swing.text.PlainDocument;
 import java.util.LinkedHashSet;
 
 /**
- * @author Hani Suleiman Date: Jul 21, 2005 Time: 1:20:14 PM
+ * @author Hani Suleiman
  */
 public class TestNGConfigurationModel
 {
@@ -59,9 +56,6 @@ public class TestNGConfigurationModel
     }
 
     public void setType(TestType type) {
-        if (type == this.type)
-            return;
-
         this.type = type;
         updateEditorType(type);
     }
@@ -119,11 +113,8 @@ public class TestNGConfigurationModel
             if (TestType.METHOD == type || TestType.SOURCE == type)
                 data.METHOD_NAME = getText(TestType.METHOD);
 
-            PsiClass psiClass = !getProject().isDefault() && !StringUtil.isEmptyOrSpaces(className) ? JUnitUtil.findPsiClass(className, module, getProject()) : null;
-            if (psiClass != null && psiClass.isValid())
-                data.setMainClass(psiClass);
-            else
-                data.MAIN_CLASS_NAME = className;
+            data.MAIN_CLASS_NAME = className;
+            data.PACKAGE_NAME = StringUtil.getPackageName(className);
 
         } else if (TestType.SUITE == type) {
             data.SUITE_NAME = getText(TestType.SUITE);
@@ -136,7 +127,7 @@ public class TestNGConfigurationModel
           final LinkedHashSet<String> set = new LinkedHashSet<>();
           final String[] patterns = getText(TestType.PATTERN).split("\\|\\|");
           for (String pattern : patterns) {
-            if (pattern.length() > 0) {
+            if (!pattern.isEmpty()) {
               set.add(pattern);
             }
           }
@@ -160,7 +151,7 @@ public class TestNGConfigurationModel
         return getText(type, typeDocuments);
     }
 
-    private String getText(TestType testType, Object[] documents) {
+    private static String getText(TestType testType, Object[] documents) {
         Object document = documents[testType.getValue()];
       if (document instanceof PlainDocument) {
         try {

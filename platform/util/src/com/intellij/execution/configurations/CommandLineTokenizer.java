@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.execution.configurations;
 
 import java.util.ArrayList;
@@ -24,13 +10,12 @@ import java.util.StringTokenizer;
  * usually used for splitting command line to separate arguments that may contain space symbols.
  * Space and quote are the only symbols that can be escaped
  */
-public class CommandLineTokenizer extends StringTokenizer {
+public final class CommandLineTokenizer extends StringTokenizer {
 
     private static final String DEFAULT_DELIMITERS = " \t\n\r\f";
-    // keep source level 1.4
-    private List myTokens = new ArrayList();
+    private final List<String> myTokens = new ArrayList<>();
     private int myCurrentToken = 0;
-    private boolean myHandleEscapedWhitespaces = false;
+    private final boolean myHandleEscapedWhitespaces;
 
     public CommandLineTokenizer(String str) {
       this(str, false);
@@ -42,15 +27,6 @@ public class CommandLineTokenizer extends StringTokenizer {
         parseTokens();
     }
 
-    /**
-     * @deprecated Do not pass custom delimiters to the CommandLineTokenizer as it may break its logic
-     */
-    @Deprecated()
-    public CommandLineTokenizer(String str, String delim) {
-        super(str, delim, true);
-        parseTokens();
-    }
-
     @Override
     public boolean hasMoreTokens() {
         return myCurrentToken < myTokens.size();
@@ -58,11 +34,11 @@ public class CommandLineTokenizer extends StringTokenizer {
 
     @Override
     public String nextToken() {
-        return (String) myTokens.get(myCurrentToken++);
+        return myTokens.get(myCurrentToken++);
     }
 
     public String peekNextToken() {
-        return (String) myTokens.get(myCurrentToken);
+        return myTokens.get(myCurrentToken);
     }
 
     @Override
@@ -105,7 +81,7 @@ public class CommandLineTokenizer extends StringTokenizer {
             while ((i = nextToken.indexOf('"')) >= 0) {
                 boolean isEscapedQuote = isEscapedAtPos(nextToken, i);
                 if (!isEscapedQuote) quotationMarks++;
-                buffer.append(nextToken.substring(0, isEscapedQuote ? i - 1 : i));
+                buffer.append(nextToken, 0, isEscapedQuote ? i - 1 : i);
                 if (isEscapedQuote) buffer.append('"');
                 nextToken = nextToken.substring(i + 1);
             }
@@ -113,7 +89,7 @@ public class CommandLineTokenizer extends StringTokenizer {
             boolean isEscapedWhitespace = false;
             if (myHandleEscapedWhitespaces && quotationMarks == 0 && nextToken.endsWith("\\") && super.hasMoreTokens()) {
               isEscapedWhitespace = true;
-              buffer.append(nextToken.substring(0, nextToken.length() - 1));
+              buffer.append(nextToken, 0, nextToken.length() - 1);
               buffer.append(super.nextToken());
             }
             else {

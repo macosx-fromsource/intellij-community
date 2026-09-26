@@ -1,97 +1,99 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.projectRoots;
 
-import com.intellij.openapi.components.ServiceManager;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Condition;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.util.concurrency.annotations.RequiresWriteLock;
 import com.intellij.util.messages.Topic;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.EventListener;
 import java.util.List;
 
+/**
+ * Provides access to SDKs configured in the IDE. Despite its name, this class operates on SDKs of all kinds, not only on Java SDKs.
+ */
+@ApiStatus.NonExtendable
 public abstract class ProjectJdkTable {
+  /**
+   * Retrieves an SDK table containing <i>all</i> available SDKs in the IDE. There can be several SDKs with the same name and type.
+   */
   public static ProjectJdkTable getInstance() {
-    return ServiceManager.getService(ProjectJdkTable.class);
+    return ApplicationManager.getApplication().getService(ProjectJdkTable.class);
   }
 
-  @Nullable
-  public abstract Sdk findJdk(String name);
-
-  @Nullable
-  public abstract Sdk findJdk(String name, String type);
-
-  public abstract Sdk[] getAllJdks();
-
-  public abstract List<Sdk> getSdksOfType(SdkTypeId type);
-
-  @Nullable
-  public Sdk findMostRecentSdkOfType(final SdkTypeId type) {
-    return findMostRecentSdk(sdk -> sdk.getSdkType() == type);
+  /**
+   * Retrieves an SDK table relevant to the provided project. The SDKs in the provided table are unique by their name and type.
+   */
+  @ApiStatus.Experimental
+  public static @NotNull ProjectJdkTable getInstance(@NotNull Project project) {
+    return project.getService(SdkTableProjectViewProvider.class).getSdkTableView();
   }
 
-  @Nullable
-  public Sdk findMostRecentSdk(Condition<Sdk> condition) {
-    Sdk found = null;
-    for (Sdk each : getAllJdks()) {
-      if (!condition.value(each)) continue;
-      if (found == null) {
-        found = each;
-        continue;
-      }
-      if (Comparing.compare(each.getVersionString(), found.getVersionString()) > 0) found = each;
+  public abstract @Nullable Sdk findJdk(@NotNull String name);
+
+  public abstract @Nullable Sdk findJdk(@NotNull String name, @NotNull String type);
+
+  public abstract Sdk @NotNull [] getAllJdks();
+
+  public abstract @Unmodifiable @NotNull List<Sdk> getSdksOfType(@NotNull SdkTypeId type);
+
+  public @Nullable Sdk findMostRecentSdkOfType(@NotNull SdkTypeId type) {
+    return getSdksOfType(type).stream().max(type.versionComparator()).orElse(null);
+  }
+
+  @RequiresWriteLock
+  public abstract void addJdk(@NotNull Sdk jdk);
+
+  @TestOnly
+  public void addJdk(@NotNull Sdk jdk, @NotNull Disposable parentDisposable) {
+    Sdk existingJdk = findJdk(jdk.getName(), jdk.getSdkType().getName());
+    if (existingJdk == null || existingJdk.getSdkAdditionalData() != jdk.getSdkAdditionalData()) {
+      addJdk(jdk);
     }
-    return found;
+    // Anyway, we need to call remove method otherwise the created `VirtualFilePonters` will not be removed
+    Disposer.register(parentDisposable, () -> WriteAction.runAndWait(()-> removeJdk(jdk)));
   }
 
-  public abstract void addJdk(Sdk jdk);
+  @RequiresWriteLock
+  public abstract void removeJdk(@NotNull Sdk jdk);
 
-  public abstract void removeJdk(Sdk jdk);
-
-  public abstract void updateJdk(Sdk originalJdk, Sdk modifiedJdk);
+  @RequiresWriteLock
+  public abstract void updateJdk(@NotNull Sdk originalJdk, @NotNull Sdk modifiedJdk);
 
   public interface Listener extends EventListener {
-    void jdkAdded(Sdk jdk);
-    void jdkRemoved(Sdk jdk);
-    void jdkNameChanged(Sdk jdk, String previousName);
+    default void jdkAdded(@NotNull Sdk jdk) {
+    }
+
+    default void jdkRemoved(@NotNull Sdk jdk) {
+    }
+
+    default void jdkNameChanged(@NotNull Sdk jdk, @NotNull String previousName) {
+    }
   }
 
-  public static class Adapter implements Listener {
-    @Override public void jdkAdded(Sdk jdk) { }
-    @Override public void jdkRemoved(Sdk jdk) { }
-    @Override public void jdkNameChanged(Sdk jdk, String previousName) { }
+  public abstract @NotNull SdkTypeId getDefaultSdkType();
+
+  public abstract @NotNull SdkTypeId getSdkTypeByName(@NotNull String name);
+
+  public abstract @NotNull Sdk createSdk(@NotNull String name, @NotNull SdkTypeId sdkType);
+
+  /**
+   * This method may automatically detect Sdk if none are configured.
+   */
+  public void preconfigure() {
   }
 
-  /**
-   * @deprecated use {@link ProjectJdkTable#JDK_TABLE_TOPIC} instead
-   */
-  public abstract void addListener(Listener listener);
+  @TestOnly
+  public void saveOnDisk() { }
 
-  /**
-   * @deprecated use {@link ProjectJdkTable#JDK_TABLE_TOPIC} instead
-   */
-  public abstract void removeListener(Listener listener);
-
-  public abstract SdkTypeId getDefaultSdkType();
-
-  public abstract SdkTypeId getSdkTypeByName(@NotNull String name);
-
-  public abstract Sdk createSdk(final String name, final SdkTypeId sdkType);
-
-  public static final Topic<Listener> JDK_TABLE_TOPIC = Topic.create("Project JDK table", Listener.class);
+  @Topic.AppLevel
+  public static final Topic<Listener> JDK_TABLE_TOPIC = new Topic<>(Listener.class, Topic.BroadcastDirection.TO_DIRECT_CHILDREN);
 }

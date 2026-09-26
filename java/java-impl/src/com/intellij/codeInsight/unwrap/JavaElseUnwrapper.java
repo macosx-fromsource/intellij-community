@@ -20,6 +20,7 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiIfStatement;
 import com.intellij.psi.PsiStatement;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
@@ -29,7 +30,7 @@ public class JavaElseUnwrapper extends JavaElseUnwrapperBase {
   }
 
   @Override
-  public PsiElement collectAffectedElements(PsiElement e, List<PsiElement> toExtract) {
+  public PsiElement collectAffectedElements(@NotNull PsiElement e, @NotNull List<? super PsiElement> toExtract) {
     super.collectAffectedElements(e, toExtract);
     return findTopmostIfStatement(e);
   }
@@ -47,7 +48,7 @@ public class JavaElseUnwrapper extends JavaElseUnwrapperBase {
     context.delete(parent);
   }
 
-  private PsiElement findTopmostIfStatement(PsiElement parent) {
+  private static PsiElement findTopmostIfStatement(PsiElement parent) {
     while (parent.getParent() instanceof PsiIfStatement) {
       parent = parent.getParent();
     }

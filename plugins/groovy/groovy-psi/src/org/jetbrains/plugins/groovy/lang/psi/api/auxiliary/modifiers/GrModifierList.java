@@ -23,35 +23,31 @@ import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElement;
+import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifier.GrModifierConstant;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.annotation.GrAnnotation;
 
-/**
- * @autor: Dmitry.Krasilschikov
- * @date: 18.03.2007
- */
 public interface GrModifierList extends GroovyPsiElement, PsiModifierList {
 
-  @NotNull
-  PsiElement[] getModifiers();
+  int getModifierFlags();
+
+  PsiElement @NotNull [] getModifiers();
 
   @Nullable
-  PsiElement getModifier(@GrModifier.GrModifierConstant @NotNull @NonNls String name);
+  PsiElement getModifier(@GrModifierConstant @NotNull @NonNls String name);
 
   boolean hasExplicitVisibilityModifiers();
 
   @Override
-  @NotNull
-  GrAnnotation[] getAnnotations();
+  GrAnnotation @NotNull [] getAnnotations();
 
   @Override
-  boolean hasModifierProperty(@GrModifier.GrModifierConstant @NotNull @NonNls String name);
+  boolean hasModifierProperty(@GrModifierConstant @NotNull @NonNls String name);
 
   @Override
-  boolean hasExplicitModifier(@GrModifier.GrModifierConstant @NotNull @NonNls String name);
+  boolean hasExplicitModifier(@GrModifierConstant @NotNull @NonNls String name);
 
   @Override
-  void setModifierProperty(@GrModifier.GrModifierConstant @NotNull @NonNls String name, boolean value) throws IncorrectOperationException;
+  void setModifierProperty(@GrModifierConstant @NotNull @NonNls String name, boolean value) throws IncorrectOperationException;
 
-  @NotNull
-  GrAnnotation[] getRawAnnotations();
+  GrAnnotation @NotNull [] getRawAnnotations();
 }

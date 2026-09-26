@@ -14,52 +14,45 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: mike
- * Date: Oct 4, 2002
- * Time: 2:14:24 PM
- * To change template for new class use 
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.codeInsight;
 
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.ide.highlighter.XmlFileType;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.psi.AbstractReparseTestCase;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.XmlElementFactory;
 import com.intellij.psi.impl.DebugUtil;
 import com.intellij.psi.impl.source.xml.XmlFileImpl;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.testFramework.ParsingTestCase;
-import com.intellij.testFramework.PlatformTestCase;
 import com.intellij.testFramework.PlatformTestUtil;
+import com.intellij.testFramework.PsiTestUtil;
 import com.intellij.util.IncorrectOperationException;
 
 import java.io.File;
 
-@PlatformTestCase.WrapInCommand
 public class XmlReparseTest extends AbstractReparseTestCase {
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    setFileType(StdFileTypes.XML);
+    setFileType(XmlFileType.INSTANCE);
   }
 
-  public void test1() throws Exception{
+  public void test1() {
     String s1 = "<a>";
     String s2 = "</a>";
 
     prepareFile(s1, s2);
-    final String beforeReparse = DebugUtil.treeToString(((XmlFileImpl)myDummyFile).getTreeElement(), true);
+    final String beforeReparse = DebugUtil.treeToString(((XmlFileImpl)myDummyFile).getTreeElement(), false);
     insert("");
-    assertEquals("Tree changed after empty reparse", beforeReparse, DebugUtil.treeToString(((XmlFileImpl)myDummyFile).getTreeElement(), true));
+    assertEquals("Tree changed after empty reparse", beforeReparse, DebugUtil.treeToString(((XmlFileImpl)myDummyFile).getTreeElement(),
+                                                                                           false));
   }
 
-  public void testTagData1() throws Exception {
+  public void testTagData1() {
     String s1 = "<a>";
     String s2 = "</a>";
 
@@ -71,7 +64,7 @@ public class XmlReparseTest extends AbstractReparseTestCase {
     insert("xxxxx");
   }
 
-  public void testTagData2() throws Exception {
+  public void testTagData2() {
     String s1 = "<a><b>\nSomeDataHere";
     String s2 = "\n</b></a>";
 
@@ -88,7 +81,7 @@ public class XmlReparseTest extends AbstractReparseTestCase {
     assertSame(element1, ((XmlFile)myDummyFile).getDocument().getRootTag());
   }
 
-  public void testTagInTag1() throws Exception {
+  public void testTagInTag1() {
     String s1 = "<a><b>";
     String s2 = "</b></a>";
 
@@ -100,7 +93,7 @@ public class XmlReparseTest extends AbstractReparseTestCase {
     insert(">");
   }
 
-  public void testTagInTag2() throws Exception {
+  public void testTagInTag2() {
     String s1 = "<a><b>";
     String s2 = "</b></a>";
 
@@ -116,7 +109,7 @@ public class XmlReparseTest extends AbstractReparseTestCase {
     insert(">");
   }
 
-  public void testTagInTag3() throws Exception {
+  public void testTagInTag3() {
     String s1 = "<a><b>";
     String s2 = "</b></a>";
 
@@ -128,7 +121,7 @@ public class XmlReparseTest extends AbstractReparseTestCase {
     insert(">");
   }
 
-  public void testSCR5925() throws Exception {
+  public void testSCR5925() {
     String s1 = "<one>     <two ";
     String s2 = ",b\"/></one>";
 
@@ -142,17 +135,19 @@ public class XmlReparseTest extends AbstractReparseTestCase {
   }
 
   public void testXmlReparseProblem() throws IncorrectOperationException {
-    prepareFile("<table>\n" +
-                "    <tr>\n" +
-                "<td>\n" +
-                "<table width"," </td>\n" +
-               "    </tr>\n" +
-               "</table>");
+    prepareFile("""
+                  <table>
+                      <tr>
+                  <td>
+                  <table width""", """
+                   </td>
+                      </tr>
+                  </table>""");
     insert("=");
   }
   private static final String marker = "<marker>";
   public void testXmlDeclDtd() throws Exception {
-    PsiFile file = createFile("x.xml", "<!DOCTYPE name [\n" +
+    PsiFile file = myFixture.addFileToProject("x.xml", "<!DOCTYPE name [\n" +
                                        "  <!ELEMENT name (" + marker+ "a b c d" + marker+ ")>\n" +
                                        "  <!ELEMENT name2 (" + marker+ "%entity;" + marker+ ")>\n" +
                                        "]>\n" +
@@ -164,14 +159,14 @@ public class XmlReparseTest extends AbstractReparseTestCase {
     removeGarbage(document);
 
     documentManager.commitAllDocuments();
-    String myFullDataPath = getTestDataPath() + "psi/";
+    String myFullDataPath = getTestDataPath() + "psi/xml";
     ParsingTestCase.doCheckResult(myFullDataPath, file, true, "testXmlDeclDtd", false, false);
   }
 
-  private static void removeGarbage(Document document) {
+  private void removeGarbage(Document document) {
     int i = document.getText().indexOf(marker);
     if (i==-1) return;
-    ApplicationManager.getApplication().runWriteAction(() -> document.replaceString(i, i + marker.length(), ""));
+    WriteCommandAction.runWriteCommandAction(getProject(), () -> document.replaceString(i, i + marker.length(), ""));
 
     removeGarbage(document);
   }
@@ -180,4 +175,30 @@ public class XmlReparseTest extends AbstractReparseTestCase {
   protected String getTestDataPath() {
     return PlatformTestUtil.getCommunityPath().replace(File.separatorChar, '/') + "/xml/tests/testData/";
   }
+
+  public void testXml() {
+    setFileType(XmlFileType.INSTANCE);
+    String text2 = "</root>";
+    final String text1 = "<root>/n";
+    prepareFile(text1, text2);
+    insert("<");
+    PsiElement element = myDummyFile.findElementAt(10);
+    assert element != null;
+    assertNotNull(element.getTextRange());
+  }
+
+  public void testNoExceptionsDummyIdentifierMovementWithSpace() {
+    setFileType(XmlFileType.INSTANCE);
+    String text1 = "<rf oot><xc></root>";
+    String text2 = "<root><f xc></root>"; // moved "f " to another place
+    prepareFile(text1, "");
+    Document document = myDummyFile.getViewProvider().getDocument();
+    WriteCommandAction.runWriteCommandAction(getProject(), () -> {
+      ((XmlFile)myDummyFile).getRootTag().replace(XmlElementFactory.getInstance(getProject()).createTagFromText(text2));
+    });
+    PsiTestUtil.checkFileStructure(myDummyFile);
+    assertEquals(text2, myDummyFile.getText());
+    assertEquals(text2, document.getText());
+  }
+
 }

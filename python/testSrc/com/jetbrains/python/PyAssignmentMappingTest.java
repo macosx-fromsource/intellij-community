@@ -15,23 +15,30 @@
  */
 package com.jetbrains.python;
 
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
 import com.intellij.openapi.util.Pair;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.fixtures.LightMarkedTestCase;
 import com.jetbrains.python.psi.PyAssignmentStatement;
 import com.jetbrains.python.psi.PyExpression;
 import com.jetbrains.python.psi.PySubscriptionExpression;
 import com.jetbrains.python.psi.PyTargetExpression;
+import com.jetbrains.python.psi.impl.PyPsiUtils;
 import junit.framework.Assert;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 
 /**
  * Tests assignment mapping.
- * User: dcheryasov
- * Date: Dec 11, 2009 2:13:51 AM
  */
+@Subsystems.CodeInsight
+@Layers.Functional
 public class PyAssignmentMappingTest extends LightMarkedTestCase {
 
   @Override
@@ -40,7 +47,7 @@ public class PyAssignmentMappingTest extends LightMarkedTestCase {
   }
 
 
-  public void testSimple() throws Exception {
+  public void testSimple() {
     Map<String, PsiElement> marks = loadTest();
     Assert.assertEquals(2, marks.size());
     PsiElement src = marks.get("<src>").getParent(); // const -> expr;
@@ -54,7 +61,7 @@ public class PyAssignmentMappingTest extends LightMarkedTestCase {
     Assert.assertEquals(src, pair.getSecond());
   }
 
-  public void testSubscribedSource() throws Exception {
+  public void testSubscribedSource() {
     Map<String, PsiElement> marks = loadTest();
     Assert.assertEquals(2, marks.size());
     PsiElement src = marks.get("<src>").getParent().getParent(); // const -> ref foo -> subscr expr;
@@ -68,7 +75,7 @@ public class PyAssignmentMappingTest extends LightMarkedTestCase {
     Assert.assertEquals(src, pair.getSecond());
   }
 
-  public void testSubscribedTarget() throws Exception {
+  public void testSubscribedTarget() {
     Map<String, PsiElement> marks = loadTest();
     Assert.assertEquals(2, marks.size());
     PsiElement src = marks.get("<src>").getParent(); // const -> expr;
@@ -83,14 +90,14 @@ public class PyAssignmentMappingTest extends LightMarkedTestCase {
   }
 
 
-  public void testMultiple() throws Exception {
+  public void testMultiple() {
     Map<String, PsiElement> marks = loadTest();
     final int TARGET_NUM = 3;
     Assert.assertEquals(TARGET_NUM + 1, marks.size());
     PsiElement src = marks.get("<src>").getParent(); // const -> expr;
     PsiElement[] dsts = new PsiElement[TARGET_NUM];
     for (int i=0; i<TARGET_NUM; i+=1) {
-      PsiElement dst = marks.get("<dst" + String.valueOf(i+1) +">").getParent(); // ident -> target expr
+      PsiElement dst = marks.get("<dst" + (i + 1) + ">").getParent(); // ident -> target expr
       Assert.assertTrue(dst instanceof PyTargetExpression);
       dsts[i] = dst;
     }
@@ -104,61 +111,33 @@ public class PyAssignmentMappingTest extends LightMarkedTestCase {
     }
   }
 
-  public void testTupleMapped() throws Exception {
-    Map<String, PsiElement> marks = loadTest();
-    final int PAIR_NUM = 2;
-    Assert.assertEquals(PAIR_NUM * 2, marks.size());
-    PsiElement[] srcs = new PsiElement[PAIR_NUM];
-    PsiElement[] dsts = new PsiElement[PAIR_NUM];
-    for (int i=0; i<PAIR_NUM; i+=1) {
-      PsiElement dst = marks.get("<dst" + String.valueOf(i+1) +">").getParent(); // ident -> target expr
-      Assert.assertTrue(dst instanceof PyTargetExpression);
-      dsts[i] = dst;
-      PsiElement src = marks.get("<src" + String.valueOf(i+1) +">").getParent(); // ident -> target expr
-      Assert.assertTrue(src instanceof PyExpression);
-      srcs[i] = src;
-    }
-    PyAssignmentStatement stmt = (PyAssignmentStatement)srcs[0].getParent().getParent(); // tuple expr -> assignment
-    List<Pair<PyExpression, PyExpression>> mapping = stmt.getTargetsToValuesMapping();
-    Assert.assertEquals(PAIR_NUM, mapping.size());
-    for (int i=0; i<PAIR_NUM; i+=1) {
-      Pair<PyExpression, PyExpression> pair = mapping.get(i);
-      Assert.assertEquals(dsts[i], pair.getFirst());
-      Assert.assertEquals(srcs[i], pair.getSecond());
-    }
+  public void testTupleMapped() {
+    List<Pair<PyExpression, PyExpression>> expectedMappings = loadMultiMappingTest(IntStream.of(1, 2));
+    PyAssignmentStatement stmt =
+      PsiTreeUtil.getParentOfType(expectedMappings.get(0).second, PyAssignmentStatement.class);
+    assertSameElements(stmt.getTargetsToValuesMapping(), expectedMappings);
   }
 
-  public void testParenthesizedTuple() throws Exception { //PY-2648
-    Map<String, PsiElement> marks = loadTest();
-    final int PAIR_NUM = 2;
-    Assert.assertEquals(PAIR_NUM * 2, marks.size());
-    PsiElement[] srcs = new PsiElement[PAIR_NUM];
-    PsiElement[] dsts = new PsiElement[PAIR_NUM];
-    for (int i=0; i<PAIR_NUM; i+=1) {
-      PsiElement dst = marks.get("<dst" + String.valueOf(i + 1) + ">").getParent(); // ident -> target expr
-      Assert.assertTrue(dst instanceof PyTargetExpression);
-      dsts[i] = dst;
-      PsiElement src = marks.get("<src" + String.valueOf(i + 1) + ">").getParent(); // ident -> target expr
-      Assert.assertTrue(src instanceof PyExpression);
-      srcs[i] = src;
-    }
-    PyAssignmentStatement stmt = (PyAssignmentStatement)srcs[0].getParent().getParent().getParent(); // tuple expr -> assignment
-    List<Pair<PyExpression, PyExpression>> mapping = stmt.getTargetsToValuesMapping();
-    Assert.assertEquals(PAIR_NUM, mapping.size());
-    for (int i=0; i<PAIR_NUM; i+=1) {
-      Pair<PyExpression, PyExpression> pair = mapping.get(i);
-      Assert.assertEquals(dsts[i], pair.getFirst());
-      Assert.assertEquals(srcs[i], pair.getSecond());
-    }
+  public void testNestedTupleMapped() {
+    List<Pair<PyExpression, PyExpression>> expectedMappings = loadMultiMappingTest(IntStream.rangeClosed(1, 3));
+    PyAssignmentStatement stmt =
+      PsiTreeUtil.getParentOfType(expectedMappings.get(0).second, PyAssignmentStatement.class);
+    assertSameElements(stmt.getTargetsToValuesMapping(), expectedMappings);
   }
 
-  public void testTuplePack() throws Exception {
+  public void testParenthesizedTuple() { //PY-2648
+    List<Pair<PyExpression, PyExpression>> expectedMappings = loadMultiMappingTest(IntStream.of(1, 2));
+    PyAssignmentStatement stmt = PsiTreeUtil.getParentOfType(expectedMappings.get(0).second, PyAssignmentStatement.class);
+    assertSameElements(stmt.getTargetsToValuesMapping(), expectedMappings);
+  }
+
+  public void testTuplePack() {
     Map<String, PsiElement> marks = loadTest();
     final int SRC_NUM = 2;
     Assert.assertEquals(SRC_NUM + 1, marks.size());
     PsiElement[] srcs = new PsiElement[SRC_NUM];
     for (int i=0; i<SRC_NUM; i+=1) {
-      PsiElement src = marks.get("<src" + String.valueOf(i+1) +">").getParent(); // ident -> target expr
+      PsiElement src = marks.get("<src" + (i + 1) + ">").getParent(); // ident -> target expr
       Assert.assertTrue(src instanceof PyExpression);
       srcs[i] = src;
     }
@@ -173,32 +152,78 @@ public class PyAssignmentMappingTest extends LightMarkedTestCase {
     }
   }
 
-
-  public void testTupleUnpack() throws Exception {
+  public void testTupleUnpack() {
     Map<String, PsiElement> marks = loadTest();
-    final int DST_NUM = 2;
-    Assert.assertEquals(DST_NUM + 3, marks.size());
-    PsiElement[] dsts = new PsiElement[DST_NUM];
-    for (int i=0; i<DST_NUM; i+=1) {
-      PsiElement dst = marks.get("<dst" + String.valueOf(i+1) +">").getParent(); // ident -> target expr
-      Assert.assertTrue(dst instanceof PyTargetExpression);
-      dsts[i] = dst;
-    }
-    PsiElement[] srcs = new PsiElement[DST_NUM];
-    for (int i=0; i<DST_NUM; i+=1) {
-      PsiElement src = marks.get("<src" + String.valueOf(i+1) +">").getParent().getParent().getParent(); // ident -> target expr
-      Assert.assertTrue(src instanceof PyExpression);
-      srcs[i] = src;
-    }
+    List<Pair<PyExpression, PyExpression>> expectedMapping = getMapping(marks, IntStream.rangeClosed(1, 2));
 
-    PsiElement src = marks.get("<src>").getParent(); // ident -> target expr
+    PsiElement src = marks.get("<src>").getParent();
     PyAssignmentStatement stmt = (PyAssignmentStatement)src.getParent().getParent();
     List<Pair<PyExpression, PyExpression>> mapping = stmt.getTargetsToValuesMapping();
-    Assert.assertEquals(DST_NUM, mapping.size());
-    for (int i=0; i<DST_NUM; i+=1) {
-      Pair<PyExpression, PyExpression> pair = mapping.get(i);
-      Assert.assertEquals(dsts[i], pair.getFirst());
-      Assert.assertEquals(srcs[i].getText(), pair.getSecond().getText());
-    }
+
+    assertSameElements(
+      ContainerUtil.map(mapping, pair -> Pair.create(pair.first, pair.second.getText())),
+      ContainerUtil.map(expectedMapping, pair -> Pair.create(pair.first, pair.second.getText()))
+    );
+  }
+
+  public void testNestedTupleUnpack() {
+    Map<String, PsiElement> marks = loadTest();
+    List<Pair<PyExpression, PyExpression>> expectedMapping = getMapping(marks, IntStream.rangeClosed(1, 4));
+
+    PsiElement src = marks.get("<src>").getParent();
+    PyAssignmentStatement stmt = PsiTreeUtil.getParentOfType(src, PyAssignmentStatement.class);
+    List<Pair<PyExpression, PyExpression>> mapping = stmt.getTargetsToValuesMapping();
+
+    assertSameElements(
+      ContainerUtil.map(mapping, pair -> Pair.create(pair.first, pair.second.getText())),
+      ContainerUtil.map(expectedMapping, pair -> Pair.create(pair.first, pair.second.getText()))
+    );
+  }
+
+  // List literal on the left-hand side is unpacked like a tuple: [a, b] = 1, 2
+  public void testListLiteralUnpack() {
+    List<Pair<PyExpression, PyExpression>> expectedMappings = loadMultiMappingTest(IntStream.of(1, 2));
+    PyAssignmentStatement stmt =
+      PsiTreeUtil.getParentOfType(expectedMappings.get(0).second, PyAssignmentStatement.class);
+    assertSameElements(stmt.getTargetsToValuesMapping(), expectedMappings);
+  }
+
+  // A starred target absorbs the middle and is not mapped to a single value: a, *b, c = 1, 2, 3, 4
+  public void testStarredTargetMapped() {
+    List<Pair<PyExpression, PyExpression>> expectedMappings = loadMultiMappingTest(IntStream.of(1, 2));
+    PyAssignmentStatement stmt =
+      PsiTreeUtil.getParentOfType(expectedMappings.get(0).second, PyAssignmentStatement.class);
+    assertSameElements(stmt.getTargetsToValuesMapping(), expectedMappings);
+  }
+
+  // A starred target unpacked from a single RHS addresses trailing targets with negative indices:
+  // a, *b, c = returnTuple() maps a -> (returnTuple())[0] and c -> (returnTuple())[-1]
+  public void testStarredTargetUnpack() {
+    Map<String, PsiElement> marks = loadTest();
+    List<Pair<PyExpression, PyExpression>> expectedMapping = getMapping(marks, IntStream.rangeClosed(1, 2));
+
+    PsiElement src = marks.get("<src>").getParent();
+    PyAssignmentStatement stmt = (PyAssignmentStatement)src.getParent().getParent();
+    List<Pair<PyExpression, PyExpression>> mapping = stmt.getTargetsToValuesMapping();
+
+    assertSameElements(
+      ContainerUtil.map(mapping, pair -> Pair.create(pair.first, pair.second.getText())),
+      ContainerUtil.map(expectedMapping, pair -> Pair.create(pair.first, pair.second.getText()))
+    );
+  }
+
+  private List<Pair<PyExpression, PyExpression>> loadMultiMappingTest(IntStream indices) {
+    Map<String, PsiElement> marks = loadTest();
+    return getMapping(marks, indices);
+  }
+
+  private static List<Pair<PyExpression, PyExpression>> getMapping(Map<String, PsiElement> marks, IntStream indices) {
+    return indices.mapToObj(i -> Pair.create(getMarkedExpression(marks, "<dst%d>".formatted(i)),
+                                             getMarkedExpression(marks, "<src%d>".formatted(i)))).toList();
+  }
+
+  private static PyExpression getMarkedExpression(Map<String, PsiElement> marks, String marker) {
+    PsiElement element = marks.get(marker);
+    return PyPsiUtils.flattenParens((PyExpression)element.getParent());
   }
 }

@@ -1,40 +1,39 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.search;
 
-import com.intellij.psi.*;
+import com.intellij.openapi.application.CachedSingletonsRegistry;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.PsiReferenceService;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.ReferenceRange;
+import com.intellij.psi.ResolvingHint;
 import com.intellij.psi.search.RequestResultProcessor;
 import com.intellij.psi.util.MethodSignature;
 import com.intellij.psi.util.MethodSignatureUtil;
 import com.intellij.psi.util.TypeConversionUtil;
 import com.intellij.util.Processor;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
+import java.util.function.Supplier;
 
-/**
- * @author peter
- */
 public class MethodTextOccurrenceProcessor extends RequestResultProcessor {
-  private static final PsiReferenceService ourReferenceService = PsiReferenceService.getService();
+  private static final Supplier<PsiReferenceService> ourReferenceService = CachedSingletonsRegistry.lazy(
+    () -> PsiReferenceService.getService()
+  );
   private final PsiMethod[] myMethods;
   protected final PsiClass myContainingClass;
-  protected final boolean myStrictSignatureSearch;
+  private final boolean myStrictSignatureSearch;
 
-  public MethodTextOccurrenceProcessor(@NotNull final PsiClass aClass, final boolean strictSignatureSearch, final PsiMethod... methods) {
+  public MethodTextOccurrenceProcessor(final @NotNull PsiClass aClass,
+                                       final boolean strictSignatureSearch,
+                                       PsiMethod @NotNull ... methods) {
     super(strictSignatureSearch, Arrays.asList(methods));
     myMethods = methods;
     myContainingClass = aClass;
@@ -42,8 +41,10 @@ public class MethodTextOccurrenceProcessor extends RequestResultProcessor {
   }
 
   @Override
-  public final boolean processTextOccurrence(@NotNull PsiElement element, int offsetInElement, @NotNull final Processor<PsiReference> consumer) {
-    for (PsiReference ref : ourReferenceService.getReferences(element, new PsiReferenceService.Hints(myMethods[0], offsetInElement))) {
+  public final boolean processTextOccurrence(@NotNull PsiElement element,
+                                             int offsetInElement,
+                                             final @NotNull Processor<? super PsiReference> consumer) {
+    for (PsiReference ref : ourReferenceService.get().getReferences(element, new PsiReferenceService.Hints(myMethods[0], offsetInElement))) {
       if (ReferenceRange.containsOffsetInElement(ref, offsetInElement) && !processReference(consumer, ref)) {
         return false;
       }
@@ -51,7 +52,7 @@ public class MethodTextOccurrenceProcessor extends RequestResultProcessor {
     return true;
   }
 
-  private boolean processReference(Processor<PsiReference> consumer, PsiReference ref) {
+  private boolean processReference(@NotNull Processor<? super PsiReference> consumer, @NotNull PsiReference ref) {
     for (PsiMethod method : myMethods) {
       if (!method.isValid()) {
         continue;
@@ -72,9 +73,11 @@ public class MethodTextOccurrenceProcessor extends RequestResultProcessor {
     return true;
   }
 
-  protected boolean processInexactReference(PsiReference ref, PsiElement refElement, PsiMethod method, Processor<PsiReference> consumer) {
-    if (refElement instanceof PsiMethod) {
-      PsiMethod refMethod = (PsiMethod)refElement;
+  protected boolean processInexactReference(@NotNull PsiReference ref,
+                                            @Nullable PsiElement refElement,
+                                            @NotNull PsiMethod method,
+                                            @NotNull Processor<? super PsiReference> consumer) {
+    if (refElement instanceof PsiMethod refMethod) {
       PsiClass refMethodClass = refMethod.getContainingClass();
       if (refMethodClass == null) return true;
 
@@ -93,12 +96,11 @@ public class MethodTextOccurrenceProcessor extends RequestResultProcessor {
       if (!myStrictSignatureSearch) {
         PsiManager manager = method.getManager();
         if (manager.areElementsEquivalent(refMethodClass, myContainingClass)) {
-          if (!consumer.process(ref)) return false;
+          return consumer.process(ref);
         }
       }
     }
 
     return true;
   }
-
 }

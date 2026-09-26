@@ -1,47 +1,34 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.externalSystem.view;
 
 import com.intellij.execution.ProgramRunnerUtil;
 import com.intellij.execution.RunManager;
-import com.intellij.execution.RunManagerEx;
 import com.intellij.execution.RunnerAndConfigurationSettings;
 import com.intellij.execution.executors.DefaultRunExecutor;
 import com.intellij.execution.impl.EditConfigurationsDialog;
 import com.intellij.ide.projectView.PresentationData;
 import com.intellij.openapi.externalSystem.model.execution.ExternalSystemTaskExecutionSettings;
 import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunConfiguration;
-import com.intellij.openapi.project.Project;
+import com.intellij.openapi.externalSystem.statistics.ExternalSystemActionsCollector;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.pom.Navigatable;
 import com.intellij.ui.treeStructure.SimpleTree;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.awt.Component;
 import java.awt.event.InputEvent;
 
 import static com.intellij.openapi.externalSystem.service.project.manage.ExternalSystemTaskActivator.getRunConfigurationActivationTaskName;
 
 /**
  * @author Vladislav.Soroka
- * @since 11/7/2014
  */
 public class RunConfigurationNode extends ExternalSystemNode {
   private final RunnerAndConfigurationSettings mySettings;
 
+  @ApiStatus.Internal
   public RunConfigurationNode(@NotNull ExternalProjectsView externalProjectsView,
                               RunConfigurationsNode parent,
                               @NotNull RunnerAndConfigurationSettings settings) {
@@ -50,7 +37,7 @@ public class RunConfigurationNode extends ExternalSystemNode {
   }
 
   @Override
-  protected void update(PresentationData presentation) {
+  protected void update(@NotNull PresentationData presentation) {
     super.update(presentation);
     presentation.setIcon(ProgramRunnerUtil.getConfigurationIcon(mySettings, false));
 
@@ -73,7 +60,7 @@ public class RunConfigurationNode extends ExternalSystemNode {
       hint = shortcutHint + ", " + activatorHint;
     }
 
-    setNameAndTooltip(getName(), StringUtil.join(taskExecutionSettings.getTaskNames(), " "), hint);
+    setNameAndTooltip(presentation, getName(), StringUtil.join(taskExecutionSettings.getTaskNames(), " "), hint);
   }
 
   public RunnerAndConfigurationSettings getSettings() {
@@ -85,13 +72,13 @@ public class RunConfigurationNode extends ExternalSystemNode {
     return mySettings.getName();
   }
 
+  @Override
   public boolean isAlwaysLeaf() {
     return true;
   }
 
-  @Nullable
   @Override
-  protected String getMenuId() {
+  protected @Nullable String getMenuId() {
     return "ExternalSystemView.RunConfigurationMenu";
   }
 
@@ -100,15 +87,20 @@ public class RunConfigurationNode extends ExternalSystemNode {
 
   @Override
   public void handleDoubleClickOrEnter(SimpleTree tree, InputEvent inputEvent) {
-    final Project project = getExternalProjectsView().getProject();
-    ProgramRunnerUtil.executeConfiguration(project, mySettings, DefaultRunExecutor.getRunExecutorInstance());
-    final RunManagerEx runManagerEx = RunManagerEx.getInstanceEx(project);
-    runManagerEx.setSelectedConfiguration(mySettings);
+    ExternalProjectsView projectsView = getExternalProjectsView();
+    String place = projectsView instanceof Component ? ((Component)projectsView).getName() : "unknown";
+
+    ExternalSystemActionsCollector.trigger(myProject, projectsView.getSystemId(),
+                                           ExternalSystemActionsCollector.ActionId.ExecuteExternalSystemRunConfigurationAction,
+                                           place, false, null);
+    ProgramRunnerUtil.executeConfiguration(mySettings, DefaultRunExecutor.getRunExecutorInstance());
+    RunManager runManager = RunManager.getInstance(mySettings.getConfiguration().getProject());
+    runManager.addConfiguration(mySettings);
+    runManager.setSelectedConfiguration(mySettings);
   }
 
-  @Nullable
   @Override
-  public Navigatable getNavigatable() {
+  public @Nullable Navigatable getNavigatable() {
     return new Navigatable() {
 
       @Override
@@ -121,11 +113,6 @@ public class RunConfigurationNode extends ExternalSystemNode {
       @Override
       public boolean canNavigate() {
         return true;
-      }
-
-      @Override
-      public boolean canNavigateToSource() {
-        return false;
       }
     };
   }

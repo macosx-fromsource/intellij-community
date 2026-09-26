@@ -27,10 +27,7 @@ import org.jetbrains.jps.incremental.ModuleBuildTarget
 import org.junit.Assert
 import java.io.File
 
-/**
- * @author nik
- */
-class ModuleClasspathTest(): JpsBuildTestCase() {
+class ModuleClasspathTest : JpsBuildTestCase() {
   override fun setUp() {
     super.setUp()
     addJdk("1.6", "/jdk.jar")
@@ -38,13 +35,10 @@ class ModuleClasspathTest(): JpsBuildTestCase() {
     loadProject("moduleClasspath/moduleClasspath.ipr")
   }
 
-  private fun getProjectPath(): String {
-    return FileUtil.toSystemIndependentName(testDataRootPath) + "/moduleClasspath/moduleClasspath.ipr"
-  }
+  private fun getProjectPath() = FileUtil.toSystemIndependentName(testDataRootPath) + "/moduleClasspath/moduleClasspath.ipr"
 
-  override fun getTestDataRootPath(): String {
-    return FileUtil.toCanonicalPath(PathManagerEx.findFileUnderCommunityHome("jps/jps-builders/testData/output")!!.absolutePath, '/')!!
-  }
+  override fun getTestDataRootPath(): String =
+    FileUtil.toCanonicalPath(PathManagerEx.findFileUnderCommunityHome("jps/jps-builders/testData/output")!!.absolutePath, '/')!!
 
   fun testSimpleClasspath() {
     assertClasspath("util", false, listOf("util/lib/exported.jar", "/jdk15.jar"))
@@ -73,7 +67,7 @@ class ModuleClasspathTest(): JpsBuildTestCase() {
   }
 
   private fun createChunk(moduleName: String): ModuleChunk {
-    val module = myProject.modules.first { it.name == moduleName }
+    val module = myProject.findModuleByName(moduleName)!!
     return ModuleChunk(setOf(ModuleBuildTarget(module, JavaModuleBuildTargetType.PRODUCTION)))
   }
 
@@ -83,11 +77,9 @@ class ModuleClasspathTest(): JpsBuildTestCase() {
     Assert.assertEquals(expected.joinToString("\n"), actual.joinToString("\n"))
   }
 
-  private fun toSystemIndependentPaths(classpath: List<String>): List<String> {
-    return classpath.map(FileUtil::toSystemIndependentName)
-  }
+  private fun toSystemIndependentPaths(classpath: List<String>) = classpath.map(FileUtil::toSystemIndependentName)
 
-  fun getPathsList(files: Collection<File>): List<String> {
+  private fun getPathsList(files: Collection<File>): List<String> {
     return files.map { file ->
       val path = file.path
       if (path.contains(".")) toCanonicalPath(path)!! else toSystemIndependentName(path)

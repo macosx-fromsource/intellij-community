@@ -1,38 +1,42 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.slicer;
 
 import com.intellij.icons.AllIcons;
+import com.intellij.ide.CommonActionsManager;
+import com.intellij.ide.DefaultTreeExpander;
 import com.intellij.ide.IdeBundle;
-import com.intellij.ide.actions.CloseTabToolbarAction;
 import com.intellij.ide.actions.RefreshAction;
 import com.intellij.ide.util.treeView.AbstractTreeNode;
+import com.intellij.lang.LangBundle;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.actionSystem.*;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionPlaces;
+import com.intellij.openapi.actionSystem.ActionToolbar;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.actionSystem.DataSink;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.PlatformDataKeys;
+import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.actionSystem.ToggleAction;
+import com.intellij.openapi.actionSystem.UiDataProvider;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowAnchor;
-import com.intellij.openapi.wm.ex.ToolWindowManagerEx;
+import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener;
 import com.intellij.pom.Navigatable;
-import com.intellij.ui.*;
+import com.intellij.ui.AutoScrollToSourceHandler;
+import com.intellij.ui.IdeBorderFactory;
+import com.intellij.ui.ScrollPaneFactory;
+import com.intellij.ui.SideBorder;
+import com.intellij.ui.TreeUIHelper;
+import com.intellij.ui.tree.AsyncTreeModel;
+import com.intellij.ui.tree.StructureTreeModel;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.usageView.UsageInfo;
 import com.intellij.usageView.UsageViewBundle;
@@ -41,30 +45,39 @@ import com.intellij.usages.UsageViewPresentation;
 import com.intellij.usages.UsageViewSettings;
 import com.intellij.usages.impl.UsagePreviewPanel;
 import com.intellij.util.EditSourceOnDoubleClickHandler;
+import com.intellij.util.concurrency.ThreadingAssertions;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.tree.TreeUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTree;
+import javax.swing.SwingUtilities;
+import javax.swing.ToolTipManager;
 import javax.swing.event.TreeExpansionEvent;
 import javax.swing.event.TreeWillExpandListener;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreeCellRenderer;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.Component;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-/**
- * @author cdr
- */
-public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider, Disposable {
+@ApiStatus.Internal
+public abstract class SlicePanel extends JPanel implements UiDataProvider, Disposable {
   private final SliceTreeBuilder myBuilder;
   private final JTree myTree;
 
@@ -79,58 +92,49 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
       setAutoScroll(state);
     }
   };
+  private final StructureTreeModel<SliceTreeStructure> myStructureTreeModel;
   private UsagePreviewPanel myUsagePreviewPanel;
   private final Project myProject;
   private boolean isDisposed;
   private final ToolWindow myToolWindow;
   private final SliceLanguageSupportProvider myProvider;
 
-  protected SlicePanel(@NotNull final Project project,
+  protected SlicePanel(final @NotNull Project project,
                        boolean dataFlowToThis,
                        @NotNull SliceNode rootNode,
                        boolean splitByLeafExpressions,
-                       @NotNull final ToolWindow toolWindow) {
+                       final @NotNull ToolWindow toolWindow) {
     super(new BorderLayout());
     myProvider = rootNode.getProvider();
     myToolWindow = toolWindow;
-    final ToolWindowManagerListener listener = new ToolWindowManagerListener() {
+    ThreadingAssertions.assertEventDispatchThread();
+    myProject = project;
+
+    myProject.getMessageBus().connect(this).subscribe(ToolWindowManagerListener.TOPIC, new ToolWindowManagerListener() {
       ToolWindowAnchor myAnchor = toolWindow.getAnchor();
-      @Override
-      public void toolWindowRegistered(@NotNull String id) {
-      }
 
       @Override
-      public void stateChanged() {
-        if (!project.isOpen()) return;
+      public void stateChanged(@NotNull ToolWindowManager toolWindowManager) {
+        if (!project.isOpen()) {
+          return;
+        }
         if (toolWindow.getAnchor() != myAnchor) {
           myAnchor = myToolWindow.getAnchor();
           layoutPanel();
         }
       }
-    };
-    ToolWindowManagerEx.getInstanceEx(project).addToolWindowManagerListener(listener, this);
-
-    ApplicationManager.getApplication().assertIsDispatchThread();
-    myProject = project;
-    myTree = createTree();
-
-    myBuilder = new SliceTreeBuilder(myTree, project, dataFlowToThis, rootNode, splitByLeafExpressions);
-    myBuilder.setCanYieldUpdate(!ApplicationManager.getApplication().isUnitTestMode());
-
-    Disposer.register(this, myBuilder);
-
-    myBuilder.addSubtreeToUpdate((DefaultMutableTreeNode)myTree.getModel().getRoot(), () -> {
-      if (isDisposed || myBuilder.isDisposed() || myProject.isDisposed()) return;
-      final SliceNode rootNode1 = myBuilder.getRootSliceNode();
-      myBuilder.expand(rootNode1, new Runnable() {
-        @Override
-        public void run() {
-          if (isDisposed || myBuilder.isDisposed() || myProject.isDisposed()) return;
-          myBuilder.select(rootNode1.myCachedChildren.get(0)); //first there is ony one child
-        }
-      });
-      treeSelectionChanged();
     });
+
+    SliceTreeStructure treeStructure = new SliceTreeStructure(project, (SliceRootNode)rootNode);
+    myBuilder = new SliceTreeBuilder(treeStructure, dataFlowToThis, splitByLeafExpressions);
+
+    myStructureTreeModel = new StructureTreeModel<>(treeStructure, SliceTreeBuilder.SLICE_NODE_COMPARATOR, this);
+    final AsyncTreeModel asyncTreeModel = new AsyncTreeModel(myStructureTreeModel, this);
+
+    myTree = createTree();
+    myTree.setModel(asyncTreeModel);
+
+    TreeUtil.promiseSelectFirst(myTree);
 
     layoutPanel();
   }
@@ -146,7 +150,7 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
       pane.setBorder(IdeBorderFactory.createBorder(SideBorder.LEFT | SideBorder.RIGHT));
 
       boolean vertical = myToolWindow.getAnchor() == ToolWindowAnchor.LEFT || myToolWindow.getAnchor() == ToolWindowAnchor.RIGHT;
-      Splitter splitter = new Splitter(vertical, UsageViewSettings.getInstance().PREVIEW_USAGES_SPLITTER_PROPORTIONS);
+      Splitter splitter = new Splitter(vertical, UsageViewSettings.getInstance().getPreviewUsagesSplitterProportion());
       splitter.setFirstComponent(pane);
       myUsagePreviewPanel = new UsagePreviewPanel(myProject, new UsageViewPresentation());
       myUsagePreviewPanel.setBorder(IdeBorderFactory.createBorder(SideBorder.LEFT));
@@ -162,7 +166,7 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
 
     add(createToolbar().getComponent(), BorderLayout.WEST);
 
-    myTree.getParent().setBackground(UIManager.getColor("Tree.background"));
+    myTree.getParent().setBackground(UIUtil.getTreeBackground());
 
     revalidate();
   }
@@ -170,16 +174,55 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
   @Override
   public void dispose() {
     if (myUsagePreviewPanel != null) {
-      UsageViewSettings.getInstance().PREVIEW_USAGES_SPLITTER_PROPORTIONS = ((Splitter)myUsagePreviewPanel.getParent()).getProportion();
+      UsageViewSettings.getInstance().setPreviewUsagesSplitterProportion(((Splitter)myUsagePreviewPanel.getParent()).getProportion());
       myUsagePreviewPanel = null;
     }
-    
+
     isDisposed = true;
     ToolTipManager.sharedInstance().unregisterComponent(myTree);
   }
 
-  @NotNull
-  private JTree createTree() {
+  static final class MultiLanguageTreeCellRenderer implements TreeCellRenderer {
+    private final @NotNull SliceUsageCellRendererBase rootRenderer;
+
+    private final @NotNull Map<SliceLanguageSupportProvider, SliceUsageCellRendererBase> providersToRenderers = new HashMap<>();
+
+    MultiLanguageTreeCellRenderer(@NotNull SliceUsageCellRendererBase rootRenderer) {
+      this.rootRenderer = rootRenderer;
+      rootRenderer.setOpaque(false);
+    }
+
+    private @NotNull SliceUsageCellRendererBase getRenderer(Object value) {
+      if (!(value instanceof DefaultMutableTreeNode)) return rootRenderer;
+
+      Object userObject = ((DefaultMutableTreeNode)value).getUserObject();
+      if (!(userObject instanceof SliceNode)) return rootRenderer;
+
+      SliceLanguageSupportProvider provider = ((SliceNode)userObject).getProvider();
+      if (provider == null) return rootRenderer;
+
+      SliceUsageCellRendererBase renderer = providersToRenderers.get(provider);
+      if (renderer == null) {
+        renderer = provider.getRenderer();
+        renderer.setOpaque(false);
+        providersToRenderers.put(provider, renderer);
+      }
+      return renderer;
+    }
+
+    @Override
+    public Component getTreeCellRendererComponent(JTree tree,
+                                                  Object value,
+                                                  boolean selected,
+                                                  boolean expanded,
+                                                  boolean leaf,
+                                                  int row,
+                                                  boolean hasFocus) {
+      return getRenderer(value).getTreeCellRendererComponent(tree, value, selected, expanded, leaf, row, hasFocus);
+    }
+  }
+
+  private @NotNull JTree createTree() {
     DefaultMutableTreeNode root = new DefaultMutableTreeNode();
     final Tree tree = new Tree(new DefaultTreeModel(root))/* {
       @Override
@@ -191,20 +234,15 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
     tree.setOpaque(false);
 
     tree.setToggleClickCount(-1);
-    SliceUsageCellRendererBase renderer = myProvider.getRenderer();
-    renderer.setOpaque(false);
-    tree.setCellRenderer(renderer);
-    UIUtil.setLineStyleAngled(tree);
+    tree.setCellRenderer(new MultiLanguageTreeCellRenderer(myProvider.getRenderer()));
     tree.setRootVisible(false);
-    
+
     tree.setShowsRootHandles(true);
     tree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
     tree.setSelectionPath(new TreePath(root.getPath()));
-    //ActionGroup group = (ActionGroup)ActionManager.getInstance().getAction(IdeActions.GROUP_METHOD_HIERARCHY_POPUP);
-    //PopupHandler.installPopupHandler(tree, group, ActionPlaces.METHOD_HIERARCHY_VIEW_POPUP, ActionManager.getInstance());
     EditSourceOnDoubleClickHandler.install(tree);
 
-    new TreeSpeedSearch(tree);
+    TreeUIHelper.getInstance().installTreeSpeedSearch(tree);
     TreeUtil.installActions(tree);
     ToolTipManager.sharedInstance().registerComponent(tree);
 
@@ -219,8 +257,8 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
           List<Navigatable> navigatables = getNavigatables();
           if (navigatables.isEmpty()) return;
           for (Navigatable navigatable : navigatables) {
-            if (navigatable instanceof AbstractTreeNode && ((AbstractTreeNode)navigatable).getValue() instanceof Usage) {
-              navigatable = (Usage)((AbstractTreeNode)navigatable).getValue();
+            if (navigatable instanceof AbstractTreeNode && ((AbstractTreeNode<?>)navigatable).getValue() instanceof Usage) {
+              navigatable = (Usage)((AbstractTreeNode<?>)navigatable).getValue();
             }
             if (navigatable.canNavigateToSource()) {
               navigatable.navigate(false);
@@ -243,7 +281,9 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
       public void treeWillExpand(TreeExpansionEvent event) {
         TreePath path = event.getPath();
         SliceNode node = fromPath(path);
-        node.calculateDupNode();
+        if (node != null) {
+          node.calculateDupNode();
+        }
       }
     });
 
@@ -255,15 +295,14 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
       if (isDisposed) return;
       List<UsageInfo> infos = getSelectedUsageInfos();
       if (infos != null && myUsagePreviewPanel != null) {
-        myUsagePreviewPanel.updateLayout(infos);
+        myUsagePreviewPanel.updateLayout(myProject, infos);
       }
     });
   }
 
   private static SliceNode fromPath(TreePath path) {
     Object lastPathComponent = path.getLastPathComponent();
-    if (lastPathComponent instanceof DefaultMutableTreeNode) {
-      DefaultMutableTreeNode node = (DefaultMutableTreeNode)lastPathComponent;
+    if (lastPathComponent instanceof DefaultMutableTreeNode node) {
       Object userObject = node.getUserObject();
       if (userObject instanceof SliceNode) {
         return (SliceNode)userObject;
@@ -272,15 +311,17 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
    return null;
   }
 
-  @Nullable
-  private List<UsageInfo> getSelectedUsageInfos() {
+  private @Nullable List<UsageInfo> getSelectedUsageInfos() {
     TreePath[] paths = myTree.getSelectionPaths();
     if (paths == null) return null;
     final ArrayList<UsageInfo> result = new ArrayList<>();
     for (TreePath path : paths) {
       SliceNode sliceNode = fromPath(path);
       if (sliceNode != null) {
-        result.add(sliceNode.getValue().getUsageInfo());
+        final SliceUsage sliceUsage = sliceNode.getValue();
+        if (sliceUsage != null) {
+          result.add(sliceUsage.getUsageInfo());
+        }
       }
     }
     if (result.isEmpty()) return null;
@@ -288,24 +329,20 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
   }
 
   @Override
-  public void calcData(DataKey key, DataSink sink) {
-    if (key == CommonDataKeys.NAVIGATABLE_ARRAY) {
-      List<Navigatable> navigatables = getNavigatables();
-      if (!navigatables.isEmpty()) {
-        sink.put(CommonDataKeys.NAVIGATABLE_ARRAY, navigatables.toArray(new Navigatable[navigatables.size()]));
-      }
-    }
+  public void uiDataSnapshot(@NotNull DataSink sink) {
+    List<Navigatable> navigatables = getNavigatables();
+    sink.set(CommonDataKeys.NAVIGATABLE_ARRAY,
+             navigatables.isEmpty() ? null : navigatables.toArray(Navigatable.EMPTY_NAVIGATABLE_ARRAY));
+    sink.set(PlatformDataKeys.TREE_EXPANDER, new DefaultTreeExpander(myTree));
   }
 
-  @NotNull
-  private List<Navigatable> getNavigatables() {
+  private @NotNull List<Navigatable> getNavigatables() {
     TreePath[] paths = myTree.getSelectionPaths();
     if (paths == null) return Collections.emptyList();
     final ArrayList<Navigatable> navigatables = new ArrayList<>();
     for (TreePath path : paths) {
       Object lastPathComponent = path.getLastPathComponent();
-      if (lastPathComponent instanceof DefaultMutableTreeNode) {
-        DefaultMutableTreeNode node = (DefaultMutableTreeNode)lastPathComponent;
+      if (lastPathComponent instanceof DefaultMutableTreeNode node) {
         Object userObject = node.getUserObject();
         if (userObject instanceof Navigatable) {
           navigatables.add((Navigatable)userObject);
@@ -318,32 +355,40 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
     return navigatables;
   }
 
-  @NotNull
-  private ActionToolbar createToolbar() {
+  private @NotNull ActionToolbar createToolbar() {
     final DefaultActionGroup actionGroup = new DefaultActionGroup();
     actionGroup.add(new MyRefreshAction(myTree));
     if (isToShowAutoScrollButton()) {
       actionGroup.add(myAutoScrollToSourceHandler.createToggleAction());
     }
-    if (isToShowCloseButton()) {
-      actionGroup.add(new CloseAction());
-    }
+
     if (isToShowPreviewButton()) {
-      actionGroup.add(new ToggleAction(UsageViewBundle.message("preview.usages.action.text", "usages"), "preview", AllIcons.Actions.PreviewDetails) {
+      actionGroup.add(new ToggleAction(UsageViewBundle.message("preview.usages.action.text"),
+                                       LangBundle.message("action.preview.description"), AllIcons.Actions.PreviewDetails) {
         @Override
-        public boolean isSelected(AnActionEvent e) {
+        public boolean isSelected(@NotNull AnActionEvent e) {
           return isPreview();
         }
 
         @Override
-        public void setSelected(AnActionEvent e, boolean state) {
+        public @NotNull ActionUpdateThread getActionUpdateThread() {
+          return ActionUpdateThread.EDT;
+        }
+
+        @Override
+        public void setSelected(@NotNull AnActionEvent e, boolean state) {
           setPreview(state);
           layoutPanel();
         }
       });
     }
 
+    ActionManager actionManager = ActionManager.getInstance();
+    actionGroup.add(actionManager.getAction(IdeActions.ACTION_EXPAND_ALL));
+    actionGroup.add(actionManager.getAction(IdeActions.ACTION_COLLAPSE_ALL));
+    actionGroup.addSeparator();
     myProvider.registerExtraPanelActions(actionGroup, myBuilder);
+    actionGroup.add(CommonActionsManager.getInstance().createExportToTextFileAction(new SliceToTextFileExporter(myBuilder, UsageViewSettings.getInstance())));
 
     //actionGroup.add(new ContextHelpAction(HELP_ID));
 
@@ -355,25 +400,12 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
 
   public abstract void setAutoScroll(boolean autoScroll);
 
-  public boolean isToShowCloseButton() {return true;}
-
   public boolean isToShowPreviewButton() {return true;}
   public abstract boolean isPreview();
 
   public abstract void setPreview(boolean preview);
 
-  private class CloseAction extends CloseTabToolbarAction {
-    @Override
-    public final void actionPerformed(final AnActionEvent e) {
-      close();
-    }
-  }
-
   protected void close() {
-    final ProgressIndicator progress = myBuilder.getUi().getProgress();
-    if (progress != null) {
-      progress.cancel();
-    }
   }
 
   private final class MyRefreshAction extends RefreshAction {
@@ -383,20 +415,21 @@ public abstract class SlicePanel extends JPanel implements TypeSafeDataProvider,
     }
 
     @Override
-    public final void actionPerformed(final AnActionEvent e) {
-      SliceNode rootNode = (SliceNode)myBuilder.getRootNode().getUserObject();
+    public void actionPerformed(final @NotNull AnActionEvent e) {
+      SliceNode rootNode = myBuilder.getRootSliceNode();
       rootNode.setChanged();
-      myBuilder.addSubtreeToUpdate(myBuilder.getRootNode());
+      myStructureTreeModel.invalidateAsync();
     }
 
     @Override
-    public final void update(final AnActionEvent event) {
+    public void update(final @NotNull AnActionEvent event) {
       final Presentation presentation = event.getPresentation();
       presentation.setEnabled(true);
     }
   }
 
   @TestOnly
+  @ApiStatus.Internal
   public SliceTreeBuilder getBuilder() {
     return myBuilder;
   }

@@ -1,262 +1,424 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.dataFlow;
 
-import com.intellij.codeInspection.dataFlow.instructions.*;
+import com.intellij.codeInsight.Nullability;
+import com.intellij.codeInspection.dataFlow.interpreter.RunnerResult;
+import com.intellij.codeInspection.dataFlow.java.JavaDfaListener;
+import com.intellij.codeInspection.dataFlow.jvm.JvmDfaMemoryStateImpl;
+import com.intellij.codeInspection.dataFlow.jvm.JvmPsiRangeSetUtil;
+import com.intellij.codeInspection.dataFlow.jvm.SpecialField;
+import com.intellij.codeInspection.dataFlow.jvm.descriptors.AssertionDisabledDescriptor;
+import com.intellij.codeInspection.dataFlow.lang.DfaListener;
+import com.intellij.codeInspection.dataFlow.memory.DfaMemoryState;
+import com.intellij.codeInspection.dataFlow.rangeSet.LongRangeSet;
+import com.intellij.codeInspection.dataFlow.types.DfPrimitiveType;
+import com.intellij.codeInspection.dataFlow.types.DfReferenceType;
+import com.intellij.codeInspection.dataFlow.types.DfType;
+import com.intellij.codeInspection.dataFlow.types.DfTypes;
+import com.intellij.codeInspection.dataFlow.value.DfaTypeValue;
 import com.intellij.codeInspection.dataFlow.value.DfaValue;
+import com.intellij.codeInspection.dataFlow.value.DfaValueFactory;
 import com.intellij.codeInspection.dataFlow.value.DfaVariableValue;
-import com.intellij.openapi.util.MultiValuesMap;
-import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
+import com.intellij.codeInspection.dataFlow.value.DfaWrappedValue;
+import com.intellij.codeInspection.dataFlow.value.RelationType;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.JavaTokenType;
+import com.intellij.psi.LambdaUtil;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiAnonymousClass;
+import com.intellij.psi.PsiAssignmentExpression;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiEnumConstantInitializer;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiLambdaExpression;
+import com.intellij.psi.PsiLiteralExpression;
+import com.intellij.psi.PsiLocalVariable;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiParameterListOwner;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiVariable;
+import com.intellij.psi.controlFlow.DefUseUtil;
+import com.intellij.psi.impl.source.resolve.JavaResolveUtil;
 import com.intellij.psi.tree.IElementType;
-import com.intellij.psi.util.CachedValueProvider;
-import com.intellij.psi.util.CachedValuesManager;
+import com.intellij.psi.util.PsiPrecedenceUtil;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.util.IncorrectOperationException;
+import com.intellij.psi.util.TypeConversionUtil;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.FList;
-import gnu.trove.THashSet;
+import com.siyeh.ig.psiutils.ParenthesesUtils;
+import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
-import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.function.BiPredicate;
+
+import static com.intellij.psi.CommonClassNames.JAVA_UTIL_COLLECTIONS;
+import static com.intellij.util.ObjectUtils.tryCast;
 
 /**
- * @author Gregory.Shrago
+ * Utility methods to support DFA on Java
  */
-public class DfaUtil {
-
-  @Nullable("null means DFA analysis has failed (too complex to analyze)")
-  public static Collection<PsiExpression> getCachedVariableValues(@Nullable final PsiVariable variable, @Nullable final PsiElement context) {
+public final class DfaUtil {
+  public static @NotNull Collection<PsiExpression> getVariableValues(@Nullable PsiVariable variable, @Nullable PsiElement context) {
     if (variable == null || context == null) return Collections.emptyList();
 
-    final PsiElement codeBlock = DfaPsiUtil.getEnclosingCodeBlock(variable, context);
+    final PsiCodeBlock codeBlock = tryCast(getEnclosingCodeBlock(variable, context), PsiCodeBlock.class);
     if (codeBlock == null) return Collections.emptyList();
+    PsiElement[] defs = DefUseUtil.getDefs(codeBlock, variable, context);
 
-    final Map<PsiElement, ValuableInstructionVisitor.PlaceResult> value = getCachedPlaceResults(codeBlock);
-    if (value == null) return null;
-
-    ValuableInstructionVisitor.PlaceResult placeResult = value.get(context);
-    final Collection<FList<PsiExpression>> concatenations = placeResult == null ? null : placeResult.myValues.get(variable);
-    if (concatenations != null) {
-      return ContainerUtil.map(concatenations, expressions -> concatenateExpressions(expressions));
+    List<PsiExpression> results = new ArrayList<>();
+    for (PsiElement def : defs) {
+      if (def instanceof PsiLocalVariable var) {
+        ContainerUtil.addIfNotNull(results, var.getInitializer());
+      }
+      else if (def instanceof PsiReferenceExpression) {
+        PsiAssignmentExpression assignment = tryCast(def.getParent(), PsiAssignmentExpression.class);
+        if(assignment != null && assignment.getLExpression() == def) {
+          ContainerUtil.addIfNotNull(results, unrollConcatenation(assignment, variable, codeBlock));
+        }
+      }
+      else if (def instanceof PsiExpression expr) {
+        results.add(expr);
+      }
     }
-    return Collections.emptyList();
+    return results;
   }
 
-  @Nullable("null means DFA analysis has failed (too complex to analyze)")
-  private static Map<PsiElement, ValuableInstructionVisitor.PlaceResult> getCachedPlaceResults(@NotNull final PsiElement codeBlock) {
-    return CachedValuesManager.getCachedValue(codeBlock, () -> {
-      final ValuableInstructionVisitor visitor = new ValuableInstructionVisitor();
-      RunnerResult runnerResult = new ValuableDataFlowRunner().analyzeMethod(codeBlock, visitor);
-      return CachedValueProvider.Result.create(runnerResult == RunnerResult.OK ? visitor.myResults : null, codeBlock);
-    });
+  private static PsiElement getEnclosingCodeBlock(final PsiVariable variable, final PsiElement context) {
+    PsiElement codeBlock;
+    if (variable instanceof PsiParameter parameter) {
+      codeBlock = parameter.getDeclarationScope();
+      if (codeBlock instanceof PsiMethod method) {
+        codeBlock = method.getBody();
+      }
+    }
+    else if (variable instanceof PsiLocalVariable) {
+      codeBlock = PsiTreeUtil.getParentOfType(variable, PsiCodeBlock.class);
+    }
+    else {
+      codeBlock = DfaPsiUtil.getTopmostBlockInSameClass(context);
+    }
+    while (codeBlock != null) {
+      PsiAnonymousClass anon = PsiTreeUtil.getParentOfType(codeBlock, PsiAnonymousClass.class);
+      if (anon == null) break;
+      codeBlock = PsiTreeUtil.getParentOfType(anon, PsiCodeBlock.class);
+    }
+    return codeBlock;
   }
 
-  @NotNull
-  public static Nullness checkNullness(@Nullable final PsiVariable variable, @Nullable final PsiElement context) {
-    if (variable == null || context == null) return Nullness.UNKNOWN;
-
-    final PsiElement codeBlock = DfaPsiUtil.getEnclosingCodeBlock(variable, context);
-    Map<PsiElement, ValuableInstructionVisitor.PlaceResult> results = codeBlock == null ? null : getCachedPlaceResults(codeBlock);
-    ValuableInstructionVisitor.PlaceResult placeResult = results == null ? null : results.get(context);
-    if (placeResult == null) {
-      return Nullness.UNKNOWN;
+  private static PsiExpression unrollConcatenation(PsiAssignmentExpression assignment, PsiVariable variable, PsiCodeBlock block) {
+    List<PsiExpression> operands = new ArrayList<>();
+    while (true) {
+      if (assignment == null) return null;
+      PsiExpression rExpression = assignment.getRExpression();
+      if (rExpression == null) return null;
+      operands.add(rExpression);
+      IElementType type = assignment.getOperationTokenType();
+      if (type.equals(JavaTokenType.EQ)) break;
+      if (!type.equals(JavaTokenType.PLUSEQ)) {
+        return null;
+      }
+      PsiElement[] previous = DefUseUtil.getDefs(block, variable, assignment);
+      if (previous.length != 1) return null;
+      PsiElement def = previous[0];
+      if (def instanceof PsiLocalVariable var) {
+        PsiExpression initializer = var.getInitializer();
+        if (initializer == null) return null;
+        operands.add(initializer);
+        break;
+      }
+      else if (def instanceof PsiReferenceExpression) {
+        assignment = tryCast(def.getParent(), PsiAssignmentExpression.class);
+      }
+      else return null;
     }
-    if (placeResult.myNulls.contains(variable) && !placeResult.myNotNulls.contains(variable)) return Nullness.NULLABLE;
-    if (placeResult.myNotNulls.contains(variable) && !placeResult.myNulls.contains(variable)) return Nullness.NOT_NULL;
-    return Nullness.UNKNOWN;
+    if (operands.size() == 1) {
+      return operands.get(0);
+    }
+    return JavaPsiFacade.getElementFactory(block.getProject()).createExpressionFromText(
+      StreamEx.ofReversed(operands).map(op -> ParenthesesUtils.getText(op, PsiPrecedenceUtil.ADDITIVE_PRECEDENCE)).joining("+"),
+      assignment);
   }
 
-  @NotNull
-  public static Collection<? extends PsiElement> getPossibleInitializationElements(final PsiElement qualifierExpression) {
-    if (qualifierExpression instanceof PsiMethodCallExpression) {
-      return Collections.singletonList(qualifierExpression);
+  public static @NotNull Collection<PsiExpression> getPossibleInitializationElements(@NotNull PsiElement qualifierExpression) {
+    if (qualifierExpression instanceof PsiMethodCallExpression call) {
+      return Collections.singletonList(call);
     }
-    if (qualifierExpression instanceof PsiReferenceExpression) {
-      final PsiElement targetElement = ((PsiReferenceExpression)qualifierExpression).resolve();
-      if (!(targetElement instanceof PsiVariable)) {
+    if (qualifierExpression instanceof PsiReferenceExpression ref) {
+      if (!(ref.resolve() instanceof PsiVariable var)) {
         return Collections.emptyList();
       }
-      final Collection<? extends PsiElement> variableValues = getCachedVariableValues((PsiVariable)targetElement, qualifierExpression);
-      if (variableValues == null || variableValues.isEmpty()) {
-        return DfaPsiUtil.getVariableAssignmentsInFile((PsiVariable)targetElement, false, qualifierExpression);
+      Collection<PsiExpression> variableValues = getVariableValues(var, qualifierExpression);
+      if (variableValues.isEmpty()) {
+        return DfaPsiUtil.getVariableAssignmentsInFile(var, false, qualifierExpression);
       }
       return variableValues;
     }
-    if (qualifierExpression instanceof PsiLiteralExpression) {
-      return Collections.singletonList(qualifierExpression);
+    if (qualifierExpression instanceof PsiLiteralExpression literal) {
+      return Collections.singletonList(literal);
     }
     return Collections.emptyList();
   }
 
-  @Nullable
-  static PsiElement getClosureInside(Instruction instruction) {
-    if (instruction instanceof MethodCallInstruction) {
-      PsiCall anchor = ((MethodCallInstruction)instruction).getCallExpression();
-      if (anchor instanceof PsiNewExpression) {
-        return ((PsiNewExpression)anchor).getAnonymousClass();
-      }
+  /**
+   * Compute method nullability using dataflow analysis. Results are not cached and
+   * this method may work slowly, so avoid calling it often. Could be useful for
+   * refactorings like "extract method".
+   *
+   * @param method method to infer nullability for
+   * @return inferred nullability
+   */
+  public static @NotNull Nullability inferMethodNullability(PsiMethod method) {
+    if (PsiUtil.resolveClassInType(method.getReturnType()) == null) {
+      return Nullability.UNKNOWN;
     }
-    else if (instruction instanceof LambdaInstruction) {
-      return ((LambdaInstruction)instruction).getLambdaExpression();
-    }
-    else if (instruction instanceof EmptyInstruction) {
-      PsiElement anchor = ((EmptyInstruction)instruction).getAnchor();
-      if (anchor instanceof PsiClass) {
-        return anchor;
-      }
-    }
-    return null;
+
+    return inferBlockNullability(method, suppressNullable(method));
   }
 
-  @NotNull
-  public static Nullness inferMethodNullity(PsiMethod method) {
-    final PsiCodeBlock body = method.getBody();
-    if (body == null || PsiUtil.resolveClassInType(method.getReturnType()) == null) {
-      return Nullness.UNKNOWN;
+  private static boolean suppressNullable(PsiMethod method) {
+    if (method.getParameterList().isEmpty()) return false;
+
+    for (StandardMethodContract contract : JavaMethodContractUtil.getMethodContracts(method)) {
+      if (contract.getReturnValue().isNull()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Compute lambda return value nullability using dataflow analysis. Results are not cached and
+   * this method may work slowly, so avoid calling it often.
+   *
+   * @param lambda lambda to infer nullability for
+   * @return inferred nullability
+   */
+  public static @NotNull Nullability inferLambdaNullability(PsiLambdaExpression lambda) {
+    if (LambdaUtil.getFunctionalInterfaceReturnType(lambda) == null) {
+      return Nullability.UNKNOWN;
     }
 
-    final AtomicBoolean hasNulls = new AtomicBoolean();
-    final AtomicBoolean hasNotNulls = new AtomicBoolean();
-    final AtomicBoolean hasUnknowns = new AtomicBoolean();
+    return inferBlockNullability(lambda, false);
+  }
 
-    final StandardDataFlowRunner dfaRunner = new StandardDataFlowRunner();
-    final RunnerResult rc = dfaRunner.analyzeMethod(body, new StandardInstructionVisitor() {
+  private static @NotNull Nullability inferBlockNullability(@NotNull PsiParameterListOwner owner, boolean suppressNullable) {
+    PsiElement body = owner.getBody();
+    if (body == null) return Nullability.UNKNOWN;
+
+    final var dfaRunner = new StandardDataFlowRunner(owner.getProject());
+
+    final class BlockNullabilityListener implements JavaDfaListener {
+      boolean hasNulls = false;
+      boolean hasNotNulls = false;
+      boolean hasUnknowns = false;
+
       @Override
-      public DfaInstructionState[] visitCheckReturnValue(CheckReturnValueInstruction instruction,
-                                                         DataFlowRunner runner,
-                                                         DfaMemoryState memState) {
-        DfaValue returned = memState.peek();
-        if (memState.isNull(returned)) {
-          hasNulls.set(true);
+      public void beforeValueReturn(@NotNull DfaValue value,
+                                    @Nullable PsiExpression expression,
+                                    @NotNull PsiElement context,
+                                    @NotNull DfaMemoryState state) {
+        if (context == owner && expression != null) {
+          DfaNullability nullability = DfaNullability.fromDfType(state.getDfType(value));
+          if (TypeConversionUtil.isPrimitiveAndNotNull(expression.getType()) || 
+              nullability == DfaNullability.NOT_NULL) {
+            hasNotNulls = true;
+          }
+          else if (nullability == DfaNullability.NULL) {
+            hasNulls = true;
+          }
+          else if (nullability == DfaNullability.NULLABLE) {
+            hasNulls = hasNotNulls = true;
+          }
+          else {
+            hasUnknowns = true;
+          }
         }
-        else if (memState.isNotNull(returned)) {
-          hasNotNulls.set(true);
-        }
-        else {
-          hasUnknowns.set(true);
-        }
-        return super.visitCheckReturnValue(instruction, runner, memState);
       }
-    });
+    }
+    var interceptor = new BlockNullabilityListener();
+    final RunnerResult rc = dfaRunner.analyzeMethod(body, interceptor);
 
     if (rc == RunnerResult.OK) {
-      if (hasNulls.get()) {
-        return InferenceFromSourceUtil.suppressNullable(method) ? Nullness.UNKNOWN : Nullness.NULLABLE;
+      if (interceptor.hasNulls) {
+        return suppressNullable ? Nullability.UNKNOWN : Nullability.NULLABLE;
       }
-      if (hasNotNulls.get() && !hasUnknowns.get()) {
-        return Nullness.NOT_NULL;
+      if (interceptor.hasNotNulls && !interceptor.hasUnknowns) {
+        return Nullability.NOT_NULL;
       }
     }
 
-    return Nullness.UNKNOWN;
+    return Nullability.UNKNOWN;
   }
 
-  private static class ValuableInstructionVisitor extends StandardInstructionVisitor {
-    final Map<PsiElement, PlaceResult> myResults = ContainerUtil.newHashMap();
+  public static boolean hasImplicitImpureSuperCall(PsiClass aClass, PsiMethod constructor) {
+    PsiClass superClass = aClass.getSuperClass();
+    if (superClass == null) return false;
+    PsiElement superCtor = JavaResolveUtil.resolveImaginarySuperCallInThisPlace(constructor, constructor.getProject(), superClass);
+    if (!(superCtor instanceof PsiMethod method)) return false;
+    return !JavaMethodContractUtil.isPure(method);
+  }
 
-    static class PlaceResult {
-      final MultiValuesMap<PsiVariable, FList<PsiExpression>> myValues = new MultiValuesMap<>(true);
-      final Set<PsiVariable> myNulls = new THashSet<>();
-      final Set<PsiVariable> myNotNulls = new THashSet<>();
-    }
-
-    @Override
-    public DfaInstructionState[] visitPush(PushInstruction instruction, DataFlowRunner runner, DfaMemoryState memState) {
-      PsiExpression place = instruction.getPlace();
-      if (place != null) {
-        PlaceResult result = myResults.get(place);
-        if (result == null) {
-          myResults.put(place, result = new PlaceResult());
-        }
-        final Map<DfaVariableValue,DfaVariableState> map = ((ValuableDataFlowRunner.MyDfaMemoryState)memState).getVariableStates();
-        for (Map.Entry<DfaVariableValue, DfaVariableState> entry : map.entrySet()) {
-          ValuableDataFlowRunner.ValuableDfaVariableState state = (ValuableDataFlowRunner.ValuableDfaVariableState)entry.getValue();
-          DfaVariableValue variableValue = entry.getKey();
-          final FList<PsiExpression> concatenation = state.myConcatenation;
-          if (!concatenation.isEmpty() && variableValue.getQualifier() == null) {
-            PsiModifierListOwner element = variableValue.getPsiVariable();
-            if (element instanceof PsiVariable) {
-              result.myValues.put((PsiVariable)element, concatenation);
-            }
-          }
-        }
-        DfaValue value = instruction.getValue();
-        if (value instanceof DfaVariableValue && ((DfaVariableValue)value).getQualifier() == null) {
-          PsiModifierListOwner element = ((DfaVariableValue)value).getPsiVariable();
-          if (element instanceof PsiVariable) {
-            if (memState.isNotNull(value)) {
-              result.myNotNulls.add((PsiVariable)element);
-            }
-            if (memState.isNull(value)) {
-              result.myNulls.add((PsiVariable)element);
-            }
-          }
+  /**
+   * Returns a surrounding PSI element which should be analyzed via DFA
+   * (e.g. passed to {@link StandardDataFlowRunner#analyzeMethodRecursively(PsiElement, DfaListener)}) to cover
+   * given element.
+   *
+   * @param anchor element to cover
+   * @return a dataflow context; null if no applicable context found.
+   */
+  static @Nullable PsiElement getDataflowContext(@NotNull PsiElement anchor) {
+    PsiElement element = anchor;
+    while (true) {
+      if (element == null || element instanceof PsiAnnotation) return null;
+      if (element instanceof PsiMethod method && !method.isConstructor()) {
+        PsiClass containingClass = method.getContainingClass();
+        if (containingClass != null &&
+            (!PsiUtil.isLocalOrAnonymousClass(containingClass) || containingClass instanceof PsiEnumConstantInitializer)) {
+          return method.getBody();
         }
       }
-      return super.visitPush(instruction, runner, memState);
-    }
-
-    @Override
-    public DfaInstructionState[] visitAssign(AssignInstruction instruction, DataFlowRunner runner, DfaMemoryState _memState) {
-      final Instruction nextInstruction = runner.getInstruction(instruction.getIndex() + 1);
-
-      ValuableDataFlowRunner.MyDfaMemoryState memState = (ValuableDataFlowRunner.MyDfaMemoryState)_memState;
-      final DfaValue dfaSource = memState.pop();
-      final DfaValue dfaDest = memState.pop();
-
-      if (dfaDest instanceof DfaVariableValue) {
-        DfaVariableValue var = (DfaVariableValue)dfaDest;
-        final PsiExpression rightValue = instruction.getRExpression();
-        final PsiElement parent = rightValue == null ? null : rightValue.getParent();
-        final IElementType type = parent instanceof PsiAssignmentExpression
-                                  ? ((PsiAssignmentExpression)parent).getOperationTokenType() : JavaTokenType.EQ;
-        // store current value - to use in case of '+='
-        final FList<PsiExpression> prevValue = ((ValuableDataFlowRunner.ValuableDfaVariableState)memState.getVariableState(var)).myConcatenation;
-        memState.setVarValue(var, dfaSource);
-        // state may have been changed so re-retrieve it
-        final ValuableDataFlowRunner.ValuableDfaVariableState curState = (ValuableDataFlowRunner.ValuableDfaVariableState)memState.getVariableState(var);
-        final FList<PsiExpression> curValue = curState.myConcatenation;
-        final FList<PsiExpression> nextValue;
-        if (type == JavaTokenType.PLUSEQ && !prevValue.isEmpty() && rightValue != null) {
-          nextValue = prevValue.prepend(rightValue);
-        }
-        else {
-          nextValue = curValue.isEmpty() && rightValue != null ? curValue.prepend(rightValue) : curValue;
-        }
-        memState.setVariableState(var, curState.withExpression(nextValue));
-      }
-      memState.push(dfaDest);
-      return new DfaInstructionState[]{new DfaInstructionState(nextInstruction, memState)};
+      if (element instanceof PsiClass psiClass && !PsiUtil.isLocalOrAnonymousClass(psiClass)) return psiClass;
+      element = element.getParent();
     }
   }
 
-  private static PsiExpression concatenateExpressions(FList<PsiExpression> concatenation) {
-    if (concatenation.size() == 1) {
-      return concatenation.getHead();
+  /**
+   * Tries to evaluate boolean condition using dataflow analysis.
+   * Currently is limited to comparisons like {@code a > b} and constant expressions.
+   *
+   * @param condition condition to evaluate
+   * @return evaluated value or null if cannot be evaluated
+   */
+  public static @Nullable Boolean evaluateCondition(@Nullable PsiExpression condition) {
+    if (condition == null) return null;
+    CommonDataflow.DataflowResult result = CommonDataflow.getDataflowResult(condition);
+    if (result == null) return null;
+    return tryCast(ContainerUtil.getOnlyItem(result.getExpressionValues(condition)), Boolean.class);
+  }
+
+  public static DfaValue boxUnbox(DfaValue value, @Nullable PsiType type) {
+    return boxUnbox(value, DfTypes.typedObject(type, Nullability.UNKNOWN));
+  }
+
+  public static DfaValue boxUnbox(DfaValue value, @NotNull DfType type) {
+    if (TypeConstraint.fromDfType(type).isPrimitiveWrapper()) {
+      if (value.getDfType() instanceof DfPrimitiveType) {
+        return value.getFactory().getWrapperFactory().createWrapper(type.meet(DfTypes.NOT_NULL_OBJECT), SpecialField.UNBOX, value);
+      }
     }
-    String text = StringUtil
-      .join(ContainerUtil.reverse(new ArrayList<>(concatenation)), expression -> expression.getText(), "+");
-    try {
-      return JavaPsiFacade.getElementFactory(concatenation.getHead().getProject()).createExpressionFromText(text, concatenation.getHead());
+    if (type instanceof DfPrimitiveType primitiveType) {
+      if (value.getDfType() instanceof DfPrimitiveType valueType) {
+        PsiPrimitiveType psiType = primitiveType.getPsiType();
+        if (!valueType.getPsiType().equals(psiType)) {
+          return value.getFactory().fromDfType(valueType.castTo(psiType));
+        }
+      }
+      if (value instanceof DfaWrappedValue || TypeConstraint.fromDfType(value.getDfType()).isPrimitiveWrapper()) {
+        return SpecialField.UNBOX.createValue(value.getFactory(), value);
+      }
+      if (value.getDfType() instanceof DfReferenceType) {
+        return value.getFactory().fromDfType(type);
+      }
     }
-    catch (IncorrectOperationException e) {
-      return concatenation.getHead();
+    return value;
+  }
+
+  public static @Unmodifiable @NotNull List<? extends MethodContract> addRangeContracts(@Nullable PsiMethod method,
+                                                                                        @NotNull List<? extends MethodContract> contracts) {
+    if (method == null) return contracts;
+    PsiParameter[] parameters = method.getParameterList().getParameters();
+    List<MethodContract> rangeContracts = new ArrayList<>();
+    for (int i = 0; i < parameters.length; i++) {
+      PsiParameter parameter = parameters[i];
+      LongRangeSet fromType = JvmPsiRangeSetUtil.typeRange(parameter.getType());
+      if (fromType == null) continue;
+      LongRangeSet fromAnnotation = JvmPsiRangeSetUtil.fromPsiElement(parameter);
+      if (fromAnnotation.min() > fromType.min()) {
+        MethodContract contract = MethodContract.singleConditionContract(
+          ContractValue.argument(i), RelationType.LT, ContractValue.constant(fromAnnotation.min(), parameter.getType()),
+          ContractReturnValue.fail());
+        rangeContracts.add(contract);
+      }
+      if (fromAnnotation.max() < fromType.max()) {
+        MethodContract contract = MethodContract.singleConditionContract(
+          ContractValue.argument(i), RelationType.GT, ContractValue.constant(fromAnnotation.max(), parameter.getType()),
+          ContractReturnValue.fail());
+        rangeContracts.add(contract);
+      }
     }
+    return ContainerUtil.concat(rangeContracts, contracts);
+  }
+
+  public static boolean isEmptyCollectionConstantField(@Nullable PsiVariable var) {
+    if (!(var instanceof PsiField field)) return false;
+    return field.getName().startsWith("EMPTY_") && field.getContainingClass() != null &&
+           JAVA_UTIL_COLLECTIONS.equals(field.getContainingClass().getQualifiedName());
+  }
+
+  /**
+   * @param poset input poset (mutable)
+   * @param predicate non-strict partial order over the input poset
+   * @param <T> type of poset elements
+   * @return the longest strong upwards antichain contained in the poset (input poset object with some elements removed)
+   */
+  public static <T, C extends Collection<T>> C upwardsAntichain(@NotNull C poset, @NotNull BiPredicate<T, T> predicate) {
+    for (Iterator<T> iterator = poset.iterator(); iterator.hasNext(); ) {
+      T left = iterator.next();
+      for (T right : poset) {
+        ProgressManager.checkCanceled();
+        if (right != left && predicate.test(left, right)) {
+          iterator.remove();
+          break;
+        }
+      }
+    }
+    return poset;
+  }
+
+  public static @NotNull DfaMemoryState createStateWithEnabledAssertions(@NotNull DfaValueFactory factory) {
+    final DfaMemoryState initialState = new JvmDfaMemoryStateImpl(factory);
+    DfaVariableValue assertionStatus = AssertionDisabledDescriptor.getAssertionsDisabledVar(factory);
+    if (assertionStatus != null) {
+      initialState.applyCondition(assertionStatus.eq(DfTypes.FALSE));
+    }
+    return initialState;
+  }
+
+  /**
+   * Return the DfType of the value, automatically unboxing it (in terms of Java boxing), if necessary
+   * 
+   * @param state memory state
+   * @param value value to get the type of; if value is a primitive wrapper, it will be unboxed before fetching the DfType
+   * @return the DfType of the value within this memory state
+   */
+  public static @NotNull DfType getUnboxedDfType(DfaMemoryState state, @NotNull DfaValue value) {
+    if (value instanceof DfaWrappedValue wrappedValue && wrappedValue.getSpecialField() == SpecialField.UNBOX) {
+      return state.getDfType(wrappedValue.getWrappedValue());
+    }
+    if (value instanceof DfaVariableValue && TypeConstraint.fromDfType(value.getDfType()).isPrimitiveWrapper()) {
+      return state.getDfType(SpecialField.UNBOX.createValue(value.getFactory(), value));
+    }
+    if (value instanceof DfaTypeValue) {
+      DfReferenceType refType = tryCast(value.getDfType(), DfReferenceType.class);
+      if (refType != null && refType.getSpecialField() == SpecialField.UNBOX) {
+        return refType.getSpecialFieldType();
+      }
+    }
+    return state.getDfType(value);
   }
 }

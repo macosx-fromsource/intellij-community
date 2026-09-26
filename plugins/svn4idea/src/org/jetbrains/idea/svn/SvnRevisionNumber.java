@@ -1,37 +1,23 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn;
 
 import com.intellij.openapi.vcs.history.LongRevisionNumber;
 import com.intellij.openapi.vcs.history.VcsRevisionNumber;
 import org.jetbrains.annotations.NotNull;
-import org.tmatesoft.svn.core.wc.SVNRevision;
+import org.jetbrains.idea.svn.api.Revision;
 
 /**
  * @author alex
  */
 public class SvnRevisionNumber implements VcsRevisionNumber, LongRevisionNumber {
-  @NotNull
-  private final SVNRevision myRevision;
+  private final @NotNull Revision myRevision;
 
-  public SvnRevisionNumber(@NotNull SVNRevision revision) {
+  public SvnRevisionNumber(@NotNull Revision revision) {
     myRevision = revision;
   }
 
-  public String asString() {
+  @Override
+  public @NotNull String asString() {
     return myRevision.toString();
   }
 
@@ -40,31 +26,27 @@ public class SvnRevisionNumber implements VcsRevisionNumber, LongRevisionNumber 
     return myRevision.getNumber();
   }
 
+  @Override
   public int compareTo(VcsRevisionNumber vcsRevisionNumber) {
     if (vcsRevisionNumber == null || vcsRevisionNumber.getClass() != SvnRevisionNumber.class) {
       return -1;
     }
-    SVNRevision rev = ((SvnRevisionNumber)vcsRevisionNumber).myRevision;
-    if (!myRevision.isValid()) {
-      return !rev.isValid() ? 0 : -1;
-    }
+    Revision rev = ((SvnRevisionNumber)vcsRevisionNumber).myRevision;
+
     if (myRevision.getNumber() >= 0 && rev.getNumber() >= 0) {
-      return myRevision.getNumber() == rev.getNumber() ? 0 : myRevision.getNumber() > rev.getNumber() ? 1 : -1;
+      return java.lang.Long.compare(myRevision.getNumber(), rev.getNumber());
     }
     else if (myRevision.getDate() != null && rev.getDate() != null) {
       return myRevision.getDate().compareTo(rev.getDate());
     }
-    if (myRevision.equals(SVNRevision.HEAD)) {
-      return rev.equals(SVNRevision.HEAD) ? 0 : 1;    // HEAD is greater than a specific rev
-    }
-    return myRevision.getID() == rev.getID() ? 0 : myRevision.getID() > rev.getID() ? 1 : -1;
+    return Revision.GENERAL_ORDER.compare(myRevision, rev);
   }
 
-  @NotNull
-  public SVNRevision getRevision() {
+  public @NotNull Revision getRevision() {
     return myRevision;
   }
 
+  @Override
   public boolean equals(final Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
@@ -75,10 +57,12 @@ public class SvnRevisionNumber implements VcsRevisionNumber, LongRevisionNumber 
 
   }
 
+  @Override
   public int hashCode() {
     return myRevision.hashCode();
   }
 
+  @Override
   public String toString() {
     return myRevision.toString();
   }

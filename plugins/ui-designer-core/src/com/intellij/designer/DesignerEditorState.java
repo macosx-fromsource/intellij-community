@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.designer;
 
 import com.intellij.openapi.editor.Document;
@@ -22,6 +8,7 @@ import com.intellij.openapi.fileEditor.FileEditorStateLevel;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * @author Alexander Lobas
@@ -44,9 +31,8 @@ public class DesignerEditorState implements FileEditorState {
 
   @Override
   public int hashCode() {
-    int A = (int)(myModificationStamp ^ (myModificationStamp >>> 32));
-    long B = Double.doubleToLongBits(myZoom);
-    return 31 * A + (int)(B ^ (B >>> 32));
+    int A = Long.hashCode(myModificationStamp);
+    return 31 * A + Double.hashCode(myZoom);
   }
 
   @Override
@@ -54,37 +40,34 @@ public class DesignerEditorState implements FileEditorState {
     if (this == object) {
       return true;
     }
-    if (object instanceof DesignerEditorState) {
-      DesignerEditorState state = (DesignerEditorState)object;
+    if (object instanceof DesignerEditorState state) {
       return myModificationStamp == state.myModificationStamp && myZoom == state.myZoom;
     }
     return false;
   }
 
   @Override
-  public boolean canBeMergedWith(FileEditorState otherState, FileEditorStateLevel level) {
+  public boolean canBeMergedWith(@NotNull FileEditorState otherState, @NotNull FileEditorStateLevel level) {
     return otherState instanceof DesignerEditorState;
   }
 
   /**
-   * @see com.intellij.openapi.fileEditor.FileEditorProvider#readState(org.jdom.Element, com.intellij.openapi.project.Project, com.intellij.openapi.vfs.VirtualFile)
+   * @see com.intellij.openapi.fileEditor.FileEditorProvider#readState(Element, com.intellij.openapi.project.Project, VirtualFile)
    */
-  @NotNull
-  public static FileEditorState readState(@NotNull Element sourceElement, @NotNull VirtualFile file, double defaultZoom) {
+  public static @NotNull FileEditorState readState(@Nullable Element sourceElement, @NotNull VirtualFile file, double defaultZoom) {
     double zoom = defaultZoom;
-
-    try {
-      zoom = Double.parseDouble(sourceElement.getAttributeValue(DESIGNER_ZOOM));
+    if (sourceElement != null) {
+      try {
+        zoom = Double.parseDouble(sourceElement.getAttributeValue(DESIGNER_ZOOM));
+      }
+      catch (Throwable ignored) {
+      }
     }
-    catch (Throwable e) {
-      // ignore
-    }
-
     return new DesignerEditorState(file, zoom);
   }
 
   /**
-   * @see com.intellij.openapi.fileEditor.FileEditorProvider#writeState(com.intellij.openapi.fileEditor.FileEditorState, com.intellij.openapi.project.Project, org.jdom.Element)
+   * @see com.intellij.openapi.fileEditor.FileEditorProvider#writeState(FileEditorState, com.intellij.openapi.project.Project, Element)
    */
   public static void writeState(@NotNull FileEditorState state, @NotNull Element targetElement) {
     targetElement.setAttribute(DESIGNER_ZOOM, Double.toString(((DesignerEditorState)state).getZoom()));

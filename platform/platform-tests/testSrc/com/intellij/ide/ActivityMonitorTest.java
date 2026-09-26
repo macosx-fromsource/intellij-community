@@ -1,39 +1,28 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide;
 
 import com.intellij.mock.MockProject;
 import com.intellij.mock.MockProjectEx;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.impl.LaterInvocator;
-import com.intellij.openapi.application.impl.ModalityStateEx;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.BusyObject;
+import com.intellij.testFramework.JUnit38AssumeSupportRunner;
 import com.intellij.testFramework.LightPlatformTestCase;
+import com.intellij.util.concurrency.ThreadingAssertions;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.junit.runner.RunWith;
 
-/**
- * Created by IntelliJ IDEA.
- * User: kirillk
- * Date: 8/17/11
- * Time: 10:04 AM
- * To change this template use File | Settings | File Templates.
- */
+import java.awt.Dialog;
+import java.awt.GraphicsEnvironment;
+import java.awt.Window;
+
+import static org.junit.Assume.assumeFalse;
+
+@RunWith(JUnit38AssumeSupportRunner.class)
 public class ActivityMonitorTest extends LightPlatformTestCase {
   private UiActivityMonitorImpl myMonitor;
 
@@ -98,7 +87,7 @@ public class ActivityMonitorTest extends LightPlatformTestCase {
     assertReady(project2);
   }
 
-  public void testReadyWithWatchActivities() throws Exception {
+  public void testReadyWithWatchActivities() {
     final UiActivity root = new UiActivity("root");
 
     final UiActivity op1 = new UiActivity("root", "operation1");
@@ -128,26 +117,39 @@ public class ActivityMonitorTest extends LightPlatformTestCase {
   }
 
   public void testModalityState() {
+    assumeFalse("Test cannot be run in headless environment", GraphicsEnvironment.isHeadless());
+    assertTrue(ApplicationManager.getApplication().getClass().getName().contains("ApplicationImpl"));
+    ThreadingAssertions.assertEventDispatchThread();
+
     assertReady(null);
 
-    myMonitor.addActivity(new UiActivity("non_modal_1"), ModalityState.NON_MODAL);
+    myMonitor.addActivity(new UiActivity("non_modal_1"), ModalityState.nonModal());
     assertBusy(null);
 
-    LaterInvocator.enterModal("dialog");
+    Dialog dialog = new Dialog(new Dialog((Window)null), "d", true);
+    LaterInvocator.enterModal(dialog);
     try {
       assertReady(null);
 
-      myMonitor.addActivity(new UiActivity("non_modal2"), ModalityState.NON_MODAL);
+      myMonitor.addActivity(new UiActivity("non_modal2"), ModalityState.nonModal());
       assertReady(null);
 
-      myMonitor.addActivity(new UiActivity("modal_1"), new ModalityStateEx(new Object[] {"dialog"}));
+      ModalityState m1 = ApplicationManager.getApplication().getModalityStateForComponent(dialog);
+      myMonitor.addActivity(new UiActivity("modal_1"), m1);
       assertBusy(null);
 
-      myMonitor.addActivity(new UiActivity("modal_2"), new ModalityStateEx(new Object[] {"dialog", "popup"}));
+      Dialog popup = new Dialog(dialog, "popup", true);
+      LaterInvocator.enterModal(popup);
+      ModalityState m2 = ApplicationManager.getApplication().getModalityStateForComponent(popup);
+      LaterInvocator.leaveModal(popup);
+
+      assertFalse("m1: " + m1 + "; m2:" + m2, m2.accepts(m1));
+
+      myMonitor.addActivity(new UiActivity("modal_2"), m2);
       assertBusy(null);
     }
     finally {
-      LaterInvocator.leaveModal("dialog");
+      LaterInvocator.leaveModal(dialog);
     }
 
     assertBusy(null);
@@ -168,25 +170,25 @@ public class ActivityMonitorTest extends LightPlatformTestCase {
     }
   }
 
-  public void testUiActivity() throws Exception {
+  public void testUiActivity() {
     assertTrue(new UiActivity("root", "folder1").isSameOrGeneralFor(new UiActivity("root", "folder1")));
     assertTrue(new UiActivity("root", "folder1").isSameOrGeneralFor(new UiActivity("root", "folder1", "folder2")));
     assertFalse(new UiActivity("root", "folder2").isSameOrGeneralFor(new UiActivity("root", "folder1", "folder2")));
     assertFalse(new UiActivity("root", "folder2").isSameOrGeneralFor(new UiActivity("anotherRoot")));
   }
-  
-  private void assertReady(@Nullable Project key, @NotNull UiActivity ... activities) {
+
+  private void assertReady(@Nullable Project key, UiActivity @NotNull ... activities) {
     UIUtil.dispatchAllInvocationEvents();
     BusyObject.Impl busy = (BusyObject.Impl)(key != null ? myMonitor.getBusy(key, activities) : myMonitor.getBusy(activities));
     assertTrue("Must be READY, but was: BUSY", busy.isReady());
-    
+
     final boolean[] done = {false};
     busy.getReady(this).doWhenDone(() -> done[0] = true);
 
     assertTrue(done[0]);
   }
 
-  private void assertBusy(@Nullable Project key, @NotNull UiActivity ... activities) {
+  private void assertBusy(@Nullable Project key, UiActivity @NotNull ... activities) {
     UIUtil.dispatchAllInvocationEvents();
     BusyObject.Impl busy = (BusyObject.Impl)(key != null ? myMonitor.getBusy(key, activities) : myMonitor.getBusy(activities));
     assertFalse("Must be BUSY, but was: READY", busy.isReady());

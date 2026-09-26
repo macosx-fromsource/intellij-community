@@ -1,165 +1,202 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.progress.util;
 
-import com.intellij.ide.IdeEventQueue;
+import com.intellij.diagnostic.PerformanceWatcher;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.util.io.storage.HeavyProcessLatch;
+import com.intellij.openapi.ui.DialogWrapperPeerFactory;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.util.concurrency.Semaphore;
+import com.intellij.util.concurrency.ThreadingAssertions;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.ApiStatus.Obsolete;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import javax.swing.JDialog;
+import javax.swing.JPanel;
+import javax.swing.JRootPane;
+import javax.swing.SwingUtilities;
+import java.awt.Component;
+import java.awt.Window;
 import java.awt.event.InputEvent;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
- * A progress indicator for processes running in EDT. Paints itself in checkCanceled calls.
+ * <h3>Obsolescence notice</h3>
+ * <p>
+ * See {@link com.intellij.openapi.progress.ProgressIndicator} notice.
+ * </p>
+ * <hr>
  *
- * @author peter
+ * A progress indicator for write actions. Paints itself explicitly, without resorting to normal Swing's delayed repaint API.
+ * Doesn't dispatch Swing events, except for handling manually those that can cancel it or affect the visual presentation.
  */
-public class PotemkinProgress extends ProgressWindow {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.progress.util.PotemkinProgress");
+public final class PotemkinProgress extends ProgressWindow implements PingProgress {
+  private final Application myApp = ApplicationManager.getApplication();
+  private final EventStealer myEventStealer;
+  private final PerformanceWatcher myWatcher = PerformanceWatcher.Companion.getInstanceIfCreated();
   private long myLastUiUpdate = System.currentTimeMillis();
-  private final List<AWTEvent> myDelayedEvents = new ArrayList<>();
-  private IdeEventQueue myEventQueue = IdeEventQueue.getInstance();
+  private long myLastInteraction = myLastUiUpdate;
+  private long myLastWatcherPing = myLastUiUpdate;
 
-  public PotemkinProgress(@NotNull String title, @Nullable Project project, @Nullable JComponent parentComponent, @Nullable String cancelText) {
+  @Obsolete
+  public PotemkinProgress(@NotNull @NlsContexts.ModalProgressTitle String title,
+                          @Nullable Project project,
+                          @Nullable JComponent parentComponent,
+                          @Nullable @Nls(capitalization = Nls.Capitalization.Title) String cancelText) {
     super(cancelText != null,false, project, parentComponent, cancelText);
     setTitle(title);
-    installCheckCanceledPaintingHook();
+    ThreadingAssertions.assertEventDispatchThread();
+    myApp.getService(DialogWrapperPeerFactory.class); // make sure the service is created
+    myEventStealer = startStealingInputEvents(this::dispatchInputEvent, this);
   }
 
-  @NotNull
+  static @NotNull EventStealer startStealingInputEvents(@NotNull Consumer<? super InputEvent> inputConsumer, @NotNull Disposable parent) {
+    return new EventStealer(parent, inputConsumer);
+  }
+
   @Override
-  protected ProgressDialog getDialog() {
+  @ApiStatus.Internal
+  public @NotNull ProgressDialog getDialog() {
     return Objects.requireNonNull(super.getDialog());
   }
 
-  private void installCheckCanceledPaintingHook() {
-    // make ProgressManager#checkCanceled actually delegate to the current indicator
-    HeavyProcessLatch.INSTANCE.prioritizeUiActivity();
-
-    // isCanceled is final, so using a nonstandard way of plugging into it
-    addStateDelegate(new AbstractProgressIndicatorExBase() {
-      @Override
-      public boolean isCanceled() {
-        dispatchAwtEventsWithoutModelAccess();
-        updateUI();
-        return super.isCanceled();
-      }
-    });
-  }
-
-  private void dispatchAwtEventsWithoutModelAccess() {
-    while (myEventQueue.peekEvent() != null) {
-      try {
-        handleEvent(myEventQueue.getNextEvent());
-      }
-      catch (InterruptedException e) {
-        LOG.error(e);
-        return;
-      }
+  @Override
+  public void interact() {
+    if (!myApp.isDispatchThread()) return;
+    long now = System.currentTimeMillis();
+    if (now == myLastInteraction) return;
+    myLastInteraction = now;
+    if (myWatcher != null && now - myLastWatcherPing > myWatcher.getUnresponsiveInterval() / 2) {
+      myLastWatcherPing = now;
+      myWatcher.edtEventStarted();
     }
-  }
-
-  private void handleEvent(AWTEvent e) {
-    if (e instanceof InputEvent) {
-      dispatchInputEvent(e);
-    } else {
-      myDelayedEvents.add(e);
+    if (getDialog().getPanel().isShowing()) {
+      myEventStealer.dispatchEvents(0);
     }
+    updateUI(now);
   }
 
-  private void dispatchInputEvent(AWTEvent e) {
+  private void dispatchInputEvent(@NotNull InputEvent e) {
     if (isCancellationEvent(e)) {
       cancel();
       return;
     }
 
     Object source = e.getSource();
-    if (source instanceof Component && getDialog().getPanel().isAncestorOf((Component)source)) {
+    if (source instanceof Component && isInDialogWindow((Component)source)) {
       ((Component)source).dispatchEvent(e);
     }
   }
 
-  private void updateUI() {
-    if (!ApplicationManager.getApplication().isDispatchThread()) return;
+  private boolean isInDialogWindow(Component source) {
+    Window dialogWindow = SwingUtilities.windowForComponent(getDialog().getPanel());
+    return dialogWindow instanceof JDialog && SwingUtilities.isDescendingFrom(source, dialogWindow);
+  }
 
-    JRootPane rootPane = getDialog().getPanel().getRootPane();
-    if (rootPane == null) {
-      rootPane = considerShowingDialog();
+  private void updateUI(long now) {
+    if (myApp.isUnitTestMode()) {
+      if (now - myLastUiUpdate > delayInMillis) {
+        myEventStealer.dispatchAllExistingEvents();
+        drainUndispatchedInputEvents();
+      }
+      return;
     }
 
-    if (rootPane != null && timeToPaint()) {
+    JRootPane rootPane = getDialog().getPanel().getRootPane();
+    if (rootPane == null && now - myLastUiUpdate > delayInMillis && myApp.isActive()) {
+      getDialog().getRepaintRunnable().run();
+      showDialog();
+      // since we are starting to show the dialog, we need to emulate modality and drop unrelated input events
+      // the only events that are allowed here are the ones that related to the dialog;
+      // but we know that there are no such events because the dialog is not showing yet
+      drainUndispatchedInputEvents();
+
+      rootPane = getDialog().getPanel().getRootPane();
+    }
+
+    if (rootPane != null && now - myLastUiUpdate > ProgressDialog.UPDATE_INTERVAL) {
+      myLastUiUpdate = now;
       paintProgress();
     }
   }
 
-  @Nullable
-  private JRootPane considerShowingDialog() {
-    if (System.currentTimeMillis() - myLastUiUpdate > DEFAULT_PROGRESS_DIALOG_POSTPONE_TIME_MILLIS) {
-      getDialog().myRepaintRunnable.run();
-      showDialog();
-      return getDialog().getPanel().getRootPane();
-    }
-    return null;
-  }
-
-  private boolean timeToPaint() {
-    long now = System.currentTimeMillis();
-    if (now - myLastUiUpdate <= ProgressDialog.UPDATE_INTERVAL) {
-      return false;
-    }
-    myLastUiUpdate = now;
-    return true;
-  }
-
-  public void progressFinished() {
+  void progressFinished() {
     getDialog().hideImmediately();
-    scheduleDelayedEventDelivery();
-  }
-
-  private void scheduleDelayedEventDelivery() {
-    Disposable disposable = Disposer.newDisposable();
-    myEventQueue.addDispatcher(e -> {
-      Disposer.dispose(disposable);
-      for (AWTEvent event : myDelayedEvents) {
-        myEventQueue.dispatchEvent(event);
-      }
-      return false;
-    }, disposable);
+    myEventStealer.dispatchAllExistingEvents();
   }
 
   /**
    * Repaint just the dialog panel. We must not call custom paint methods during write action,
-   * because they might access the model which might be inconsistent at that moment.
+   * because they might access the model, which might be inconsistent at that moment.
    */
   private void paintProgress() {
-    getDialog().myRepaintRunnable.run();
+    getDialog().getRepaintRunnable().run();
 
     JPanel dialogPanel = getDialog().getPanel();
     dialogPanel.validate();
     dialogPanel.paintImmediately(dialogPanel.getBounds());
   }
 
+  /** Executes the action in EDT, paints itself inside checkCanceled calls. */
+  public void runInSwingThread(@NotNull Runnable action) {
+    ThreadingAssertions.assertEventDispatchThread();
+    try {
+      ProgressManager.getInstance().runProcess(action, this);
+    }
+    catch (ProcessCanceledException ignore) {
+    }
+    finally {
+      progressFinished();
+    }
+  }
+
+  /** Executes the action in a background thread, block Swing thread, handles selected input events and paints itself periodically. */
+  public void runInBackground(@NotNull Runnable action) {
+    ThreadingAssertions.assertEventDispatchThread();
+
+    try {
+      executeInModalContext(() -> {
+        ensureBackgroundThreadStarted(action);
+
+        while (isRunning()) {
+          myEventStealer.dispatchEvents(10);
+          updateUI(System.currentTimeMillis());
+        }
+      });
+    }
+    finally {
+      progressFinished();
+    }
+  }
+
+  private void ensureBackgroundThreadStarted(@NotNull Runnable action) {
+    Semaphore started = new Semaphore();
+    started.down();
+    AppExecutorUtil.getAppExecutorService().execute(() -> ProgressManager.getInstance().runProcess(() -> {
+      started.up();
+      action.run();
+    }, this));
+
+    started.waitFor();
+  }
+
+  private List<InputEvent> drainUndispatchedInputEvents() {
+    return myEventStealer.drainUndispatchedInputEvents();
+  }
+
+  @ApiStatus.Internal
+  public void dispatchAllInvocationEvents() {
+    myEventStealer.dispatchAllExistingEvents();
+  }
 }

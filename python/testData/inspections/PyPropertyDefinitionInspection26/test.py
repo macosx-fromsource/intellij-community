@@ -1,3 +1,6 @@
+import abc
+
+
 class A(object):
   def __init__(self):
     self._x = 1
@@ -65,7 +68,7 @@ class A(object):
   foo2 = property(get_foo2)
 
   @property
-  @abstractproperty
+  @abc.abstractproperty
   def abstract_property(self):
       pass
 
@@ -172,7 +175,7 @@ class Test(object):
         self._myprop = None
 
     def get_myprop(self):
-        while False:
+        while undefined:
             yield i
 
     myprop = property(get_myprop)  # shouldn't pass with better analysis, pass at the moment

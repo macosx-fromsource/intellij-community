@@ -26,19 +26,13 @@ import org.intellij.plugins.relaxNG.compact.psi.util.EscapeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 11.08.2007
- */
 public class RncRefImpl extends RncElementImpl implements RncRef {
   public RncRefImpl(ASTNode node) {
     super(node);
   }
 
   @Override
-  @Nullable
-  public RncDefine getPattern() {
+  public @Nullable RncDefine getPattern() {
     final PsiReference ref = getReference();
     // TODO: honor combine & return virtual element if multiResolve().length > 0
     return ref instanceof PatternReference ? (RncDefine)ref.resolve() : null;

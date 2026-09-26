@@ -1,59 +1,59 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+@file:Suppress("ReplacePutWithAssignment", "ReplaceGetOrSet")
+
 package com.intellij.configurationStore
 
-import com.intellij.openapi.application.runWriteAction
-import com.intellij.openapi.components.StateSplitter
+import com.intellij.application.options.PathMacrosCollector
+import com.intellij.openapi.components.PathMacroSubstitutor
+import com.intellij.openapi.components.RoamingType
 import com.intellij.openapi.components.StateSplitterEx
-import com.intellij.openapi.components.StateStorage
 import com.intellij.openapi.components.TrackingPathMacroSubstitutor
-import com.intellij.openapi.components.impl.stores.DirectoryStorageUtil
-import com.intellij.openapi.components.impl.stores.FileStorageCoreUtil
-import com.intellij.openapi.util.Pair
-import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.components.impl.stores.ComponentStorageUtil
+import com.intellij.openapi.util.io.NioFiles
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.platform.settings.SettingsController
 import com.intellij.util.LineSeparator
-import com.intellij.util.SmartList
-import com.intellij.util.SystemProperties
-import com.intellij.util.containers.SmartHashSet
-import com.intellij.util.io.systemIndependentPath
-import com.intellij.util.isEmpty
-import gnu.trove.THashMap
-import gnu.trove.THashSet
 import org.jdom.Element
+import org.jetbrains.annotations.ApiStatus
 import java.io.IOException
-import java.nio.ByteBuffer
+import java.nio.file.DirectoryIteratorException
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
+import java.nio.file.NotDirectoryException
 import java.nio.file.Path
+import java.util.Collections
 
-abstract class DirectoryBasedStorageBase(@Suppress("DEPRECATION") protected val splitter: StateSplitter,
-                                         protected val pathMacroSubstitutor: TrackingPathMacroSubstitutor? = null) : StateStorageBase<StateMap>() {
-  protected var componentName: String? = null
+@ApiStatus.Internal
+open class DirectoryBasedStorage(
+  private val dir: Path,
+  @Suppress("DEPRECATION", "removal") private val splitter: com.intellij.openapi.components.StateSplitter,
+  private val pathMacroSubstitutor: PathMacroSubstitutor? = null,
+  override val controller: SettingsController? = null,
+) : StateStorageBase<StateMap>() {
+  private var componentName: String? = null
+  @Volatile private var nameToLineSeparatorMap: Map<String, LineSeparator> = @Suppress("RemoveRedundantQualifierName") java.util.Map.of()
+  @Volatile private var cachedVirtualFile: VirtualFile? = null
 
-  protected abstract val virtualFile: VirtualFile?
+  override val roamingType: RoamingType?
+    get() = null
 
-  override fun loadData() = StateMap.fromMap(DirectoryStorageUtil.loadFrom(virtualFile, pathMacroSubstitutor))
+  public override fun loadData(): StateMap {
+    val (elementMap, separatorMap) = loadComponentsAndDetectLineSeparator(dir, pathMacroSubstitutor)
+    nameToLineSeparatorMap = separatorMap
+    return StateMap.fromMap(elementMap)
+  }
 
-  override fun startExternalization(): StateStorage.ExternalizationSession? = null
+  private fun getLineSeparator(name: String): LineSeparator = nameToLineSeparatorMap.get(name) ?: LineSeparator.getSystemLineSeparator()
 
-  override fun analyzeExternalChangesAndUpdateIfNeed(componentNames: MutableSet<String>) {
+  override suspend fun analyzeExternalChangesAndUpdateIfNeeded(componentNames: MutableSet<in String>) {
     // todo reload only changed file, compute diff
     val newData = loadData()
     storageDataRef.set(newData)
-    if (componentName != null) {
-      componentNames.add(componentName!!)
+    componentName?.let {
+      componentNames.add(it)
     }
   }
 
@@ -64,194 +64,270 @@ abstract class DirectoryBasedStorageBase(@Suppress("DEPRECATION") protected val 
       return null
     }
 
-    val state = Element(FileStorageCoreUtil.COMPONENT)
+    // on load, `FileStorageCoreUtil` checks both `component` and `name` attributes
+    // (critically important for the external store case, where we have only in-project artifacts, but not external)
+    val state = Element(ComponentStorageUtil.COMPONENT).setAttribute(ComponentStorageUtil.NAME, componentName)
     if (splitter is StateSplitterEx) {
       for (fileName in storageData.keys()) {
         val subState = storageData.getState(fileName, archive) ?: return null
-        splitter.mergeStateInto(state, subState)
+        splitter.mergeStateInto(state, subState.clone())
       }
     }
     else {
-      val subElements = SmartList<Element>()
+      val subElements = ArrayList<Element>()
       for (fileName in storageData.keys()) {
         val subState = storageData.getState(fileName, archive) ?: return null
-        subElements.add(subState)
+        subElements.add(subState.clone())
       }
 
-      if (!subElements.isEmpty()) {
+      if (subElements.isNotEmpty()) {
+        @Suppress("removal")
         splitter.mergeStatesInto(state, subElements.toTypedArray())
       }
     }
     return state
   }
 
-  override fun hasState(storageData: StateMap, componentName: String) = storageData.hasStates()
-}
-
-open class DirectoryBasedStorage(private val dir: Path,
-                                 @Suppress("DEPRECATION") splitter: StateSplitter,
-                                 pathMacroSubstitutor: TrackingPathMacroSubstitutor? = null) : DirectoryBasedStorageBase(splitter, pathMacroSubstitutor) {
-  private @Volatile var cachedVirtualFile: VirtualFile? = null
-
-  override val virtualFile: VirtualFile?
-    get() {
-      var result = cachedVirtualFile
-      if (result == null) {
-        result = LocalFileSystem.getInstance().findFileByPath(dir.systemIndependentPath)
-        cachedVirtualFile = result
-      }
-      return result
+  private fun getVirtualFile(): VirtualFile? {
+    var result = cachedVirtualFile
+    if (result == null) {
+      result = VirtualFileManager.getInstance().refreshAndFindFileByNioPath(dir)
+      cachedVirtualFile = result
     }
+    return result
+  }
 
   internal fun setVirtualDir(dir: VirtualFile?) {
     cachedVirtualFile = dir
   }
 
-  override fun startExternalization(): StateStorage.ExternalizationSession? = if (checkIsSavingDisabled()) null else MySaveSession(this, getStorageData())
+  override fun createSaveSessionProducer(): SaveSessionProducer? {
+    return if (checkIsSavingDisabled()) null else DirectorySaveSessionProducer(storage = this, originalStates = getStorageData())
+  }
 
-  private class MySaveSession(private val storage: DirectoryBasedStorage, private val originalStates: StateMap) : SaveSessionBase() {
+  private class DirectorySaveSessionProducer(
+    private val storage: DirectoryBasedStorage,
+    private val originalStates: StateMap
+  ) : SaveSessionProducerBase(), SaveSession, DirectoryBasedSaveSessionProducer {
     private var copiedStorageData: MutableMap<String, Any>? = null
 
-    private val dirtyFileNames = SmartHashSet<String>()
-    private var someFileRemoved = false
+    override val controller: SettingsController?
+      get() = null
+
+    override val roamingType: RoamingType?
+      get() = null
+
+    private val dirtyFileNames = HashSet<String>()
+    private var isSomeFileRemoved = false
 
     override fun setSerializedState(componentName: String, element: Element?) {
       storage.componentName = componentName
 
-      if (element.isEmpty()) {
+      @Suppress("removal") val stateAndFileNameList = if (element == null || element.isEmpty) Collections.emptyList() else storage.splitter.splitState(element)
+      if (stateAndFileNameList.isEmpty()) {
         if (copiedStorageData != null) {
           copiedStorageData!!.clear()
         }
         else if (!originalStates.isEmpty()) {
-          copiedStorageData = THashMap<String, Any>()
+          copiedStorageData = HashMap()
         }
+        return
+      }
+
+      val existingFiles = HashSet<String>(stateAndFileNameList.size)
+      for (pair in stateAndFileNameList) {
+        doSetState(pair.second, pair.first)
+        existingFiles.add(pair.second)
+      }
+
+      for (key in originalStates.keys()) {
+        if (existingFiles.contains(key)) {
+          continue
+        }
+        removeFileData(key)
+      }
+    }
+
+    override fun setFileState(fileName: String, componentName: String, element: Element?) {
+      storage.componentName = componentName
+      if (element == null) {
+        removeFileData(fileName)
       }
       else {
-        val stateAndFileNameList = storage.splitter.splitState(element!!)
-        val existingFiles = THashSet<String>(stateAndFileNameList.size)
-        for (pair in stateAndFileNameList) {
-          doSetState(pair.second, pair.first)
-          existingFiles.add(pair.second)
-        }
-
-        for (key in originalStates.keys()) {
-          if (existingFiles.contains(key)) {
-            continue
-          }
-
-          if (copiedStorageData == null) {
-            copiedStorageData = originalStates.toMutableMap()
-          }
-          someFileRemoved = true
-          copiedStorageData!!.remove(key)
-        }
+        doSetState(fileName, element)
       }
+    }
+
+    private fun removeFileData(fileName: String) {
+      if (copiedStorageData == null) {
+        copiedStorageData = originalStates.toMutableMap()
+      }
+      isSomeFileRemoved = true
+      copiedStorageData!!.remove(fileName)
     }
 
     private fun doSetState(fileName: String, subState: Element) {
       if (copiedStorageData == null) {
-        copiedStorageData = setStateAndCloneIfNeed(fileName, subState, originalStates)
+        copiedStorageData = setStateAndCloneIfNeeded(key = fileName, newState = subState, oldStates = originalStates, newLiveStates = null)
         if (copiedStorageData != null) {
           dirtyFileNames.add(fileName)
         }
       }
-      else if (updateState(copiedStorageData!!, fileName, subState)) {
+      else if (updateState(states = copiedStorageData!!, key = fileName, newState = subState, newLiveStates = null)) {
         dirtyFileNames.add(fileName)
       }
     }
 
-    override fun createSaveSession() = if (storage.checkIsSavingDisabled() || copiedStorageData == null) null else this
+    override fun createSaveSession(): SaveSession? = if (storage.checkIsSavingDisabled() || copiedStorageData == null) null else this
 
-    override fun save() {
+    override suspend fun save(events: MutableList<VFileEvent>?) {
       val stateMap = StateMap.fromMap(copiedStorageData!!)
 
-      var dir = storage.virtualFile
       if (copiedStorageData!!.isEmpty()) {
+        val dir = storage.getVirtualFile()
         if (dir != null && dir.exists()) {
-          deleteFile(this, dir)
+          NioFiles.deleteRecursively(storage.dir)
+          events?.add(VFileDeleteEvent(/*requestor =*/ this, dir))
         }
-        storage.setStorageData(stateMap)
-        return
+      }
+      else {
+        if (dirtyFileNames.isNotEmpty()) {
+          saveStates(stateMap, events)
+        }
+        if (isSomeFileRemoved) {
+          deleteFiles(events)
+        }
       }
 
-      if (dir == null || !dir.isValid) {
-        dir = createDir(storage.dir, this)
-        storage.cachedVirtualFile = dir
-      }
-
-      if (!dirtyFileNames.isEmpty) {
-        saveStates(dir, stateMap)
-      }
-      if (someFileRemoved && dir.exists()) {
-        deleteFiles(dir)
-      }
-
-      storage.setStorageData(stateMap)
+      storage.storageDataRef.set(stateMap)
     }
 
-    private fun saveStates(dir: VirtualFile, states: StateMap) {
-      val storeElement = Element(FileStorageCoreUtil.COMPONENT)
+    private fun saveStates(states: StateMap, events: MutableList<VFileEvent>?) {
+      val macroManager = (storage.pathMacroSubstitutor as? TrackingPathMacroSubstitutorImpl)?.macroManager
+
+      NioFiles.createDirectories(storage.dir)
+      val dir = storage.getVirtualFile()
+
       for (fileName in states.keys()) {
         if (!dirtyFileNames.contains(fileName)) {
           continue
         }
 
-        var element: Element? = null
+        val element = states.getElement(fileName) ?: continue
+
+        val rootAttributes = mapOf(ComponentStorageUtil.NAME to storage.componentName!!)
+        val debugString = storage.dir.toString()
+        val dataWriter = XmlDataWriter(
+          rootElementName = ComponentStorageUtil.COMPONENT,
+          elements = listOf(element),
+          rootAttributes = rootAttributes,
+          macroManager = macroManager,
+          storageFilePathForDebugPurposes = debugString,
+        )
+
         try {
-          element = states.getElement(fileName) ?: continue
-          storage.pathMacroSubstitutor?.collapsePaths(element)
-
-          storeElement.setAttribute(FileStorageCoreUtil.NAME, storage.componentName!!)
-          storeElement.addContent(element)
-
-          val file = dir.getOrCreateChild(fileName, this)
-          // we don't write xml prolog due to historical reasons (and should not in any case)
-          writeFile(null, this, file, storeElement, LineSeparator.fromString(if (file.exists()) loadFile(file).second else SystemProperties.getLineSeparator()), false)
+          val file = storage.dir.resolve(fileName)
+          writeFile(file = file, requestor = this, dataWriter = dataWriter, lineSeparator = storage.getLineSeparator(fileName), prependXmlProlog = false)
+          if (events != null) {
+            val vFile = dir?.findChild(fileName)
+            when {
+              vFile != null -> events.add(updatingEvent(file, vFile))
+              dir != null -> events.add(creationEvent(file, dir))
+            }
+          }
         }
         catch (e: IOException) {
           LOG.error(e)
         }
-        finally {
-          if (element != null) {
-            element.detach()
-          }
-        }
       }
     }
 
-    private fun deleteFiles(dir: VirtualFile) {
-      runWriteAction {
-        for (file in dir.children) {
-          val fileName = file.name
-          if (fileName.endsWith(FileStorageCoreUtil.DEFAULT_EXT) && !copiedStorageData!!.containsKey(fileName)) {
-            if (file.isWritable) {
-              file.delete(this)
-            }
-            else {
-              throw ReadOnlyModificationException(file, null)
-            }
+    private fun deleteFiles(events: MutableList<VFileEvent>?) {
+      val copiedStorageData = copiedStorageData!!
+      val dir = storage.getVirtualFile()
+      for (file in NioFiles.list(storage.dir)) {
+        val fileName = file.fileName.toString()
+        if (fileName.endsWith(ComponentStorageUtil.DEFAULT_EXT) && !copiedStorageData.containsKey(fileName)) {
+          Files.deleteIfExists(file)
+          if (events != null) {
+            dir?.findChild(fileName)?.let { events.add(VFileDeleteEvent(/*requestor =*/ this, it)) }
           }
         }
       }
     }
   }
 
-  private fun setStorageData(newStates: StateMap) {
-    storageDataRef.set(newStates)
-  }
+  override fun toString(): String = "${javaClass.simpleName}(dir=$dir, componentName=$componentName)"
 }
 
-private val NON_EXISTENT_FILE_DATA = Pair.create<ByteArray, String>(null, SystemProperties.getLineSeparator())
+internal interface DirectoryBasedSaveSessionProducer : SaveSessionProducer {
+  fun setFileState(fileName: String, componentName: String, element: Element?)
+}
 
-/**
- * @return pair.first - file contents (null if file does not exist), pair.second - file line separators
- */
-private fun loadFile(file: VirtualFile?): Pair<ByteArray, String> {
-  if (file == null || !file.exists()) {
-    return NON_EXISTENT_FILE_DATA
+private fun loadComponentsAndDetectLineSeparator(dir: Path, pathMacroSubstitutor: PathMacroSubstitutor?): Pair<Map<String, Element>, Map<String, LineSeparator>> {
+  try {
+    Files.newDirectoryStream(dir).use { files ->
+      val fileToState = HashMap<String, Element>()
+      val fileToSeparator = HashMap<String, LineSeparator>()
+
+      for (file in files) {
+        // ignore system files like .DS_Store on Mac
+        if (!file.toString().endsWith(ComponentStorageUtil.DEFAULT_EXT, ignoreCase = true)) {
+          continue
+        }
+
+        try {
+          val (element, separator) = loadDataAndDetectLineSeparator(file)
+          val componentName = ComponentStorageUtil.getComponentNameIfValid(element) ?: continue
+          if (element.name != ComponentStorageUtil.COMPONENT) {
+            LOG.error("Incorrect root tag name (${element.name}) in $file")
+            continue
+          }
+
+          val elementChildren = element.children
+          if (elementChildren.isEmpty()) {
+            continue
+          }
+
+          val state = elementChildren[0].detach()
+          if (state.isEmpty) {
+            continue
+          }
+
+          if (pathMacroSubstitutor != null) {
+            pathMacroSubstitutor.expandPaths(state)
+            if (pathMacroSubstitutor is TrackingPathMacroSubstitutor) {
+              pathMacroSubstitutor.addUnknownMacros(componentName, PathMacrosCollector.getMacroNames(state))
+            }
+          }
+
+          val name = file.fileName.toString()
+          fileToState.put(name, state)
+          if (separator != null && separator != LineSeparator.getSystemLineSeparator()) {
+            fileToSeparator.put(name, separator)
+          }
+        }
+        catch (e: Throwable) {
+          if (e.message!!.startsWith("Unexpected End-of-input in prolog")) {
+            LOG.warn("Ignore empty file $file")
+          }
+          else {
+            LOG.warn("Unable to load state from $file", e)
+          }
+        }
+      }
+      return Pair(fileToState, fileToSeparator)
+    }
   }
-
-  val bytes = file.contentsToByteArray()
-  val lineSeparator = file.detectedLineSeparator ?: detectLineSeparators(Charsets.UTF_8.decode(ByteBuffer.wrap(bytes)), null).separatorString
-  return Pair.create<ByteArray, String>(bytes, lineSeparator)
+  catch (e: DirectoryIteratorException) {
+    throw e.cause!!
+  }
+  catch (_: NoSuchFileException) {
+    @Suppress("RemoveRedundantQualifierName")
+    return Pair(java.util.Map.of(), java.util.Map.of())
+  }
+  catch (_: NotDirectoryException) {
+    @Suppress("RemoveRedundantQualifierName")
+    return Pair(java.util.Map.of(), java.util.Map.of())
+  }
 }

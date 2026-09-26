@@ -14,34 +14,38 @@ package org.zmlx.hg4idea.test;
 
 import com.intellij.openapi.vcs.VcsConfiguration;
 import com.intellij.openapi.vcs.VcsTestUtil;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
-import org.testng.Assert;
-import org.testng.annotations.Test;
+import org.junit.Assert;
+import org.junit.Test;
 
 import java.io.File;
 
-import static org.testng.Assert.fail;
+import static com.intellij.openapi.vcs.Executor.overwrite;
+import static org.junit.Assert.fail;
 
 public class HgDeleteTest extends HgSingleUserTest {
 
   @Test
   public void testDeleteUnmodifiedFile() throws Exception {
     VirtualFile file = createFileInCommand("a.txt", "new file content");
+    myChangeListManager.ensureUpToDate();
     runHgOnProjectRepo("commit", "-m", "added file");
     deleteFileInCommand(file);
-    verify(runHgOnProjectRepo("status"), HgTestOutputParser.removed("a.txt"));
+    myChangeListManager.ensureUpToDate();
+    verifyStatus(HgTestOutputParser.removed("a.txt"));
   }
 
   @Test
   public void testDeleteUnversionedFile() throws Exception {
     VirtualFile file = makeFile(new File(myWorkingCopyDir.getPath(), "a.txt"));
-    verify(runHgOnProjectRepo("status"), HgTestOutputParser.unknown("a.txt"));
+    verifyStatus(HgTestOutputParser.unknown("a.txt"));
     deleteFileInCommand(file);
     Assert.assertFalse(file.exists());
   }
 
   @Test
-  public void testDeleteNewFile() throws Exception {
+  public void testDeleteNewFile() {
     VirtualFile file = createFileInCommand("a.txt", "new file content");
     deleteFileInCommand(file);
     Assert.assertFalse(file.exists());
@@ -50,20 +54,25 @@ public class HgDeleteTest extends HgSingleUserTest {
   @Test
   public void testDeleteModifiedFile() throws Exception {
     VirtualFile file = createFileInCommand("a.txt", "new file content");
+    myChangeListManager.ensureUpToDate();
     runHgOnProjectRepo("commit", "-m", "added file");
-    VcsTestUtil.editFileInCommand(myProject, file, "even newer content");
-    verify(runHgOnProjectRepo("status"), HgTestOutputParser.modified("a.txt"));
+    overwrite(VfsUtilCore.virtualToIoFile(file), "even newer content");
+    myChangeListManager.ensureUpToDate();
+    verifyStatus(HgTestOutputParser.modified("a.txt"));
     deleteFileInCommand(file);
-    verify(runHgOnProjectRepo("status"), HgTestOutputParser.removed("a.txt"));
+    myChangeListManager.ensureUpToDate();
+    verifyStatus(HgTestOutputParser.removed("a.txt"));
   }
 
   @Test
   public void testDeleteDirWithFiles() throws Exception {
     VirtualFile parent = createDirInCommand(myWorkingCopyDir, "com");
     createFileInCommand(parent, "a.txt", "new file content");
+    myChangeListManager.ensureUpToDate();
     runHgOnProjectRepo("commit", "-m", "added file");
     deleteFileInCommand(parent);
-    verify(runHgOnProjectRepo("status"), HgTestOutputParser.removed("com", "a.txt"));
+    myChangeListManager.ensureUpToDate();
+    verifyStatus(HgTestOutputParser.removed("com", "a.txt"));
   }
 
   /**
@@ -73,9 +82,10 @@ public class HgDeleteTest extends HgSingleUserTest {
    * 3. File shouldn't be prompted for removal from repository.
    */
   @Test
-  public void testNewlyAddedFileShouldNotBePromptedForRemoval() throws Exception {
+  public void testNewlyAddedFileShouldNotBePromptedForRemoval() {
     showConfirmation(VcsConfiguration.StandardConfirmation.REMOVE);
     final VirtualFile vf = createFileInCommand("a.txt", null);
+    myChangeListManager.ensureUpToDate();
     final HgMockVcsHelper helper = registerMockVcsHelper();
     helper.addListener(new VcsHelperListener() {
       @Override
@@ -95,14 +105,17 @@ public class HgDeleteTest extends HgSingleUserTest {
    * 5. File shouldn't be prompted for removal from repository.
    */
   @Test
-  public void testJustDeletedAndThenAddedFileShouldNotBePromptedForRemoval() throws Exception {
+  public void testJustDeletedAndThenAddedFileShouldNotBePromptedForRemoval() {
     VirtualFile vf = createFileInCommand("a.txt", null);
+    myChangeListManager.ensureUpToDate();
     myChangeListManager.commitFiles(vf);
     deleteFileInCommand(vf);
+    myChangeListManager.ensureUpToDate();
     myChangeListManager.commitFiles(vf);
 
     showConfirmation(VcsConfiguration.StandardConfirmation.REMOVE);
     vf = createFileInCommand("a.txt", null);
+    myChangeListManager.ensureUpToDate();
     final HgMockVcsHelper helper = registerMockVcsHelper();
     helper.addListener(new VcsHelperListener() {
       @Override

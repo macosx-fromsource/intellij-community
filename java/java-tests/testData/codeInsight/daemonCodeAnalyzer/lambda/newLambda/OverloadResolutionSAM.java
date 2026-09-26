@@ -1,10 +1,10 @@
 class Test {
   interface IInt {
-    int _();
+    int m();
   }
 
   interface ILong {
-    long _();
+    long m();
   }
 
   void m(IInt i, Long l) {}
@@ -14,7 +14,7 @@ class Test {
   void m1(ILong l, Object i) {}
 
   void test() {
-    <error descr="Ambiguous method call: both 'Test.m(IInt, Long)' and 'Test.m(ILong, Integer)' match">m</error>(() -> 1, null);
+    m<error descr="Ambiguous method call: both 'Test.m(IInt, Long)' and 'Test.m(ILong, Integer)' match">(() -> 1, null)</error>;
     m1(() -> 1, null);
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,26 +15,43 @@
  */
 package com.intellij.codeInsight.unwrap;
 
-import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.psi.*;
+import com.intellij.java.JavaBundle;
+import com.intellij.psi.JavaTokenType;
+import com.intellij.psi.PsiAnonymousClass;
+import com.intellij.psi.PsiAssignmentExpression;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiDeclarationStatement;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiExpressionStatement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiLambdaExpression;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiNewExpression;
+import com.intellij.psi.PsiReturnStatement;
+import com.intellij.psi.PsiStatement;
+import com.intellij.psi.PsiVariable;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
 public class JavaAnonymousUnwrapper extends JavaUnwrapper {
   public JavaAnonymousUnwrapper() {
-    super(CodeInsightBundle.message("unwrap.anonymous"));
+    super(JavaBundle.message("unwrap.anonymous"));
   }
 
   @Override
-  public boolean isApplicableTo(PsiElement e) {
+  public boolean isApplicableTo(@NotNull PsiElement e) {
     return e instanceof PsiAnonymousClass
            && ((PsiAnonymousClass)e).getMethods().length <= 1;
   }
 
   @Override
-  public PsiElement collectAffectedElements(PsiElement e, List<PsiElement> toExtract) {
+  public PsiElement collectAffectedElements(@NotNull PsiElement e, @NotNull List<? super PsiElement> toExtract) {
     super.collectAffectedElements(e, toExtract);
     return findElementToExtractFrom(e);
   }
@@ -61,7 +78,7 @@ public class JavaAnonymousUnwrapper extends JavaUnwrapper {
     }
 
     PsiElement next = from.getNextSibling();
-    if (next instanceof PsiJavaToken && ((PsiJavaToken)next).getTokenType() == JavaTokenType.SEMICOLON) {
+    if (PsiUtil.isJavaToken(next, JavaTokenType.SEMICOLON)) {
       context.deleteExactly(from.getNextSibling());
     }
     context.deleteExactly(from);
@@ -95,7 +112,6 @@ public class JavaAnonymousUnwrapper extends JavaUnwrapper {
 
   private static PsiElement findTopmostParentOfType(PsiElement el, Class<? extends PsiElement> clazz) {
     while (true) {
-      @SuppressWarnings({"unchecked"})
       PsiElement temp = PsiTreeUtil.getParentOfType(el, clazz, true, PsiAnonymousClass.class, PsiLambdaExpression.class);
       if (temp == null || temp instanceof PsiFile) return el;
       el = temp;

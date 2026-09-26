@@ -14,27 +14,24 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 20-Aug-2007
- */
 package com.intellij.execution.filters;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
 public class DefaultConsoleFiltersProvider implements ConsoleFilterProviderEx {
-  @NotNull
-  public Filter[] getDefaultFilters(@NotNull Project project) {
+  @Override
+  public Filter @NotNull [] getDefaultFilters(@NotNull Project project) {
     return getDefaultFilters(project, GlobalSearchScope.allScope(project));
   }
 
-  public Filter[] getDefaultFilters(@NotNull Project project, @NotNull GlobalSearchScope scope) {
+  @Override
+  public Filter @NotNull [] getDefaultFilters(@NotNull Project project, @NotNull GlobalSearchScope scope) {
     List<Filter> filters = ExceptionFilters.getFilters(scope);
-    filters.add(new YourkitFilter(project));
-    return filters.toArray(new Filter[filters.size()]);
+    return ContainerUtil.append(filters, new YourkitFilter(project)).toArray(Filter.EMPTY_ARRAY);
   }
 }

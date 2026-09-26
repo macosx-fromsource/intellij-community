@@ -1,10 +1,10 @@
-// "Replace Collections.emptySet().stream() with Stream.empty()" "true"
+// "Replace Collections.emptySet().stream() with Stream.empty()" "true-preview"
 
 import java.util.*;
 import java.util.stream.Stream;
 
 class CollectionEmptySetStream {
   Stream<String> stream(String[] args) {
-    return args.length == 1 ? Col<caret>lections.<String>emptySet().stream() : Arrays.stream(args);
+    return args.length == 1 ? Collections.<String>emptySet().st<caret>ream() : Arrays.stream(args);
   }
 }

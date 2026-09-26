@@ -1,56 +1,50 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl;
 
+import com.intellij.lang.Language;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.TransactionGuard;
 import com.intellij.openapi.application.TransactionGuardImpl;
-import com.intellij.openapi.project.DumbService;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.DumbModeListenerBackgroundable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.ModificationTracker;
+import com.intellij.openapi.util.SimpleModificationTracker;
+import com.intellij.openapi.util.text.Strings;
 import com.intellij.psi.PsiDirectory;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiInvalidElementAccessException;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiTreeChangeEvent;
+import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.util.PsiModificationTracker;
+import com.intellij.psi.util.PsiUtilCore;
+import com.intellij.util.containers.ConcurrentFactoryMap;
 import com.intellij.util.messages.MessageBus;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.Map;
+import java.util.function.Predicate;
 
-/**
- * @author mike
- * Date: Jul 18, 2002
- */
-public class PsiModificationTrackerImpl implements PsiModificationTracker, PsiTreeChangePreprocessor {
-  private final AtomicLong myModificationCount = new AtomicLong(0);
-  private final AtomicLong myOutOfCodeBlockModificationCount = new AtomicLong(0);
-  private final AtomicLong myJavaStructureModificationCount = new AtomicLong(0);
+import static com.intellij.psi.impl.PsiTreeChangeEventImpl.PsiEventType.BEFORE_PROPERTY_CHANGE;
+import static com.intellij.psi.impl.PsiTreeChangeEventImpl.PsiEventType.CHILD_REMOVED;
+import static com.intellij.psi.impl.PsiTreeChangeEventImpl.PsiEventType.PROPERTY_CHANGED;
+
+public final class PsiModificationTrackerImpl implements PsiModificationTracker, PsiTreeChangePreprocessor {
+  private final SimpleModificationTracker myModificationCount = new SimpleModificationTracker();
+
+  private final SimpleModificationTracker myAllLanguagesTracker = new SimpleModificationTracker();
+  private final Map<Language, SimpleModificationTracker> myLanguageTrackers =
+    ConcurrentFactoryMap.createWeakMap(language -> new SimpleModificationTracker());
   private final Listener myPublisher;
 
-  public PsiModificationTrackerImpl(Project project) {
-    final MessageBus bus = project.getMessageBus();
+  public PsiModificationTrackerImpl(@NotNull Project project) {
+    MessageBus bus = project.getMessageBus();
     myPublisher = bus.syncPublisher(TOPIC);
-    bus.connect().subscribe(DumbService.DUMB_MODE, new DumbService.DumbModeListener() {
-      private void doIncCounter() {
-        ApplicationManager.getApplication().runWriteAction(new Runnable() {
-          @Override
-          public void run() {
-            incCounter();
-          }
-        });
-      }
-
+    bus.connect().subscribe(DumbModeListenerBackgroundable.TOPIC, new DumbModeListenerBackgroundable() {
       @Override
       public void enteredDumbMode() {
         doIncCounter();
@@ -63,72 +57,127 @@ public class PsiModificationTrackerImpl implements PsiModificationTracker, PsiTr
     });
   }
 
+  private void doIncCounter() {
+    ApplicationManager.getApplication().runWriteAction(() -> incCountersInner());
+  }
+
+  /**
+   * @deprecated use higher-level ways of dropping caches
+   * @see com.intellij.util.FileContentUtilCore#reparseFiles
+   * @see PsiManager#dropPsiCaches()
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval
   public void incCounter() {
-    myModificationCount.getAndIncrement();
-    myJavaStructureModificationCount.getAndIncrement();
-    myOutOfCodeBlockModificationCount.getAndIncrement();
-    fireEvent();
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
+    incCountersInner();
+  }
+
+  /**
+   * @deprecated use higher-level ways of dropping caches
+   * @see com.intellij.util.FileContentUtilCore#reparseFiles
+   * @see PsiManager#dropPsiCaches()
+   */
+  @Deprecated
+  @ApiStatus.ScheduledForRemoval
+  public void incOutOfCodeBlockModificationCounter() {
+    ApplicationManager.getApplication().assertWriteAccessAllowed();
+    incCountersInner();
   }
 
   private void fireEvent() {
-    ((TransactionGuardImpl)TransactionGuard.getInstance()).assertWriteActionAllowed();
+    ((TransactionGuardImpl)TransactionGuard.getInstance()).assertWriteSafeEnvironment();
     myPublisher.modificationCountChanged();
   }
 
-  public void incOutOfCodeBlockModificationCounter() {
-    myModificationCount.getAndIncrement();
-    myOutOfCodeBlockModificationCount.getAndIncrement();
+  private void incCountersInner() {
+    myModificationCount.incModificationCount();
     fireEvent();
   }
 
   @Override
   public void treeChanged(@NotNull PsiTreeChangeEventImpl event) {
-    myModificationCount.getAndIncrement();
-    if (event.getParent() instanceof PsiDirectory 
-        || event.getOldParent() instanceof PsiDirectory /* move events */) {
-      myOutOfCodeBlockModificationCount.getAndIncrement();
+    if (!canAffectPsi(event)) {
+      return;
     }
 
-    fireEvent();
+    incLanguageCounters(event);
+    incCountersInner();
+  }
+
+  // used by Kotlin
+  @SuppressWarnings("WeakerAccess")
+  public static boolean canAffectPsi(@NotNull PsiTreeChangeEventImpl event) {
+    PsiTreeChangeEventImpl.PsiEventType code = event.getCode();
+    return !(code == BEFORE_PROPERTY_CHANGE ||
+             code == PROPERTY_CHANGED && Strings.areSameInstance(event.getPropertyName(), PsiTreeChangeEvent.PROP_WRITABLE));
+  }
+
+  private void incLanguageCounters(@NotNull PsiTreeChangeEventImpl event) {
+    PsiTreeChangeEventImpl.PsiEventType code = event.getCode();
+    String propertyName = event.getPropertyName();
+
+    if (code == PROPERTY_CHANGED &&
+        (Strings.areSameInstance(propertyName, PsiTreeChangeEvent.PROP_UNLOADED_PSI) ||
+         Strings.areSameInstance(propertyName, PsiTreeChangeEvent.PROP_ROOTS) ||
+         Strings.areSameInstance(propertyName, PsiTreeChangeEvent.PROP_FILE_TYPES)) ||
+        code == CHILD_REMOVED && event.getChild() instanceof PsiDirectory) {
+      myAllLanguagesTracker.incModificationCount();
+      return;
+    }
+    PsiElement[] elements = {
+      event.getFile(), event.getParent(), event.getOldParent(), event.getNewParent(),
+      event.getElement(), event.getChild(), event.getOldChild(), event.getNewChild()};
+    incLanguageModificationCount(Language.ANY);
+    for (PsiElement o : elements) {
+      if (o == null) continue;
+      if (o instanceof PsiDirectory) continue;
+      if (o instanceof PsiFile) {
+        for (Language language : ((PsiFile)o).getViewProvider().getLanguages()) {
+          incLanguageModificationCount(language);
+        }
+      }
+      else {
+        try {
+          IElementType type = PsiUtilCore.getElementType(o);
+          Language language = type != null ? type.getLanguage() : o.getLanguage();
+          incLanguageModificationCount(language);
+        }
+        catch (PsiInvalidElementAccessException e) {
+          Logger.getInstance(getClass()).warn(e);
+        }
+      }
+    }
   }
 
   @Override
   public long getModificationCount() {
-    return myModificationCount.get();
+    return myModificationCount.getModificationCount();
+  }
+
+  // used by Kotlin
+  @ApiStatus.Experimental
+  public void incLanguageModificationCount(@Nullable Language language) {
+    if (language == null) return;
+    myLanguageTrackers.get(language).incModificationCount();
   }
 
   @Override
-  public long getOutOfCodeBlockModificationCount() {
-    return myOutOfCodeBlockModificationCount.get();
-  }
-
-  private final ModificationTracker myOutOfCodeBlockModificationTracker = new ModificationTracker() {
-    @Override
-    public long getModificationCount() {
-      return getOutOfCodeBlockModificationCount();
-    }
-  };
-
-  @NotNull
-  @Override
-  public ModificationTracker getOutOfCodeBlockModificationTracker() {
-    return myOutOfCodeBlockModificationTracker;
+  public @NotNull ModificationTracker forLanguage(@NotNull Language language) {
+    SimpleModificationTracker languageTracker = myLanguageTrackers.get(language);
+    return () -> languageTracker.getModificationCount() +
+                 myAllLanguagesTracker.getModificationCount();
   }
 
   @Override
-  public long getJavaStructureModificationCount() {
-    return myJavaStructureModificationCount.get();
-  }
-
-  private final ModificationTracker myJavaStructureModificationTracker = new ModificationTracker() {
-    @Override
-    public long getModificationCount() {
-      return getJavaStructureModificationCount();
-    }
-  };
-  @NotNull
-  @Override
-  public ModificationTracker getJavaStructureModificationTracker() {
-    return myJavaStructureModificationTracker;
+  public @NotNull ModificationTracker forLanguages(@NotNull Predicate<? super Language> condition) {
+    return () -> {
+      long result = myAllLanguagesTracker.getModificationCount();
+      for (Language l : myLanguageTrackers.keySet()) {
+        if (!condition.test(l)) continue;
+        result += myLanguageTrackers.get(l).getModificationCount();
+      }
+      return result;
+    };
   }
 }

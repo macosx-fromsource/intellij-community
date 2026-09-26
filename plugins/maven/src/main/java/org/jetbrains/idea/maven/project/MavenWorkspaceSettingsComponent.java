@@ -1,75 +1,67 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.maven.project;
 
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.components.*;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.components.StoragePathMacros;
+import com.intellij.openapi.externalSystem.autoimport.ExternalSystemProjectTrackerSettings;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.maven.model.MavenExplicitProfiles;
-import org.jetbrains.idea.maven.server.MavenServerManager;
 
-@State(name = "MavenImportPreferences", storages = {@Storage(StoragePathMacros.WORKSPACE_FILE)})
-public class MavenWorkspaceSettingsComponent implements PersistentStateComponent<MavenWorkspaceSettings> {
-  private MavenWorkspaceSettings mySettings = new MavenWorkspaceSettings();
+import java.util.ArrayList;
+
+
+@State(name = "MavenImportPreferences", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
+@SuppressWarnings("LightServiceMigrationCode")
+// must be not a light service,
+// because SystemFileProcessor uses ComponentManagerEx.getServiceByClassName API to get instance of this service
+public final class MavenWorkspaceSettingsComponent implements PersistentStateComponent<MavenWorkspacePersistedSettings> {
+  private MavenWorkspacePersistedSettings mySettings;
 
   private final Project myProject;
 
-  public MavenWorkspaceSettingsComponent(Project project) {
+  public MavenWorkspaceSettingsComponent(@NotNull Project project) {
     myProject = project;
-    if (ApplicationManager.getApplication().isUnitTestMode()) {
-      mySettings.generalSettings.setMavenHome(MavenServerManager.BUNDLED_MAVEN_2);
-    }
-    else {
-      applyDefaults(mySettings);
-    }
+    mySettings = new MavenWorkspacePersistedSettings(new MavenWorkspaceSettings());
+    mySettings.getGeneralSettings().setProject(project);
+    applyDefaults(mySettings.getRealSettings());
   }
 
-  public static MavenWorkspaceSettingsComponent getInstance(Project project) {
-    return ServiceManager.getService(project, MavenWorkspaceSettingsComponent.class);
+  public static MavenWorkspaceSettingsComponent getInstance(@NotNull Project project) {
+    return project.getService(MavenWorkspaceSettingsComponent.class);
   }
 
-  @NotNull
-  public MavenWorkspaceSettings getState() {
-    MavenExplicitProfiles profiles = MavenProjectsManager.getInstance(myProject).getExplicitProfiles();
-    mySettings.setEnabledProfiles(profiles.getEnabledProfiles());
-    mySettings.setDisabledProfiles(profiles.getDisabledProfiles());
+  @Override
+  public @NotNull MavenWorkspacePersistedSettings getState() {
     return mySettings;
   }
 
-  public void loadState(MavenWorkspaceSettings state) {
+  @Override
+  public void loadState(@NotNull MavenWorkspacePersistedSettings state) {
     mySettings = state;
-    applyDefaults(mySettings);
+    applyDefaults(mySettings.getRealSettings());
+    migrateSettings(mySettings.getRealSettings());
   }
+
 
   public MavenWorkspaceSettings getSettings() {
-    return mySettings;
+    return mySettings.getRealSettings();
   }
 
-  private static void applyDefaults(MavenWorkspaceSettings settings) {
-    if (StringUtil.isEmptyOrSpaces(settings.generalSettings.getMavenHome())) {
-      if (MavenServerManager.getInstance().isUsedMaven2ForProjectImport() || ApplicationManager.getApplication().isUnitTestMode()) {
-        settings.generalSettings.setMavenHome(MavenServerManager.BUNDLED_MAVEN_2);
-      }
-      else {
-        settings.generalSettings.setMavenHome(MavenServerManager.BUNDLED_MAVEN_3);
-      }
-    } else {
-      MavenServerManager.getInstance().setMavenHome(settings.generalSettings.getMavenHome());
+  private void applyDefaults(MavenWorkspaceSettings settings) {
+    settings.getGeneralSettings().setProject(myProject);
+  }
+
+  @SuppressWarnings("removal")
+  private void migrateSettings(MavenWorkspaceSettings settings) {
+    MavenImportingSettings importingSettings = settings.getImportingSettings();
+    if (importingSettings.isImportAutomatically()) {
+      importingSettings.setImportAutomatically(false);
+      ExternalSystemProjectTrackerSettings projectTrackerSettings = ExternalSystemProjectTrackerSettings.getInstance(myProject);
+      projectTrackerSettings.setAutoReloadType(ExternalSystemProjectTrackerSettings.AutoReloadType.ALL);
     }
   }
 }

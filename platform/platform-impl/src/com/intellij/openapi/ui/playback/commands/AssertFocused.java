@@ -1,29 +1,25 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.ui.playback.commands;
 
 import com.intellij.openapi.ui.Queryable;
 import com.intellij.openapi.ui.playback.PlaybackContext;
-import com.intellij.openapi.util.ActionCallback;
 import com.intellij.openapi.wm.IdeFocusManager;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.concurrency.AsyncPromise;
+import org.jetbrains.concurrency.Promise;
+import org.jetbrains.concurrency.Promises;
 
-import java.awt.*;
-import java.util.*;
+import java.awt.Component;
+import java.awt.KeyboardFocusManager;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 
-public class AssertFocused extends AbstractCommand {
+@ApiStatus.Internal
+public final class AssertFocused extends AbstractCommand {
 
   public static final String PREFIX = CMD_PREFIX + "assert focused";
 
@@ -31,34 +27,34 @@ public class AssertFocused extends AbstractCommand {
     super(text, line);
   }
 
-  protected ActionCallback _execute(final PlaybackContext context) {
-    final ActionCallback result = new ActionCallback();
-
+  @Override
+  protected @NotNull Promise<Object> _execute(final @NotNull PlaybackContext context) {
     String text = getText().substring(PREFIX.length()).trim();
     final Map<String, String> expected = new LinkedHashMap<>();
 
-    if (text.length() > 0) {
+    if (!text.isEmpty()) {
       final String[] keyValue = text.split(",");
       for (String each : keyValue) {
         final String[] eachPair = each.split("=");
         if (eachPair.length != 2) {
-          context.error("Syntax error, must be comma-separated pairs key=value", getLine());
-          result.setRejected();
-          return result;
+          String error = "Syntax error, must be comma-separated pairs key=value";
+          context.error(error, getLine());
+          return Promises.rejectedPromise(error);
         }
 
         expected.put(eachPair[0], eachPair[1]);
       }
     }
 
+    final AsyncPromise<Object> result = new AsyncPromise<>();
     IdeFocusManager.findInstance().doWhenFocusSettlesDown(() -> {
       try {
         doAssert(expected, context);
-        result.setDone();
+        result.setResult(null);
       }
       catch (AssertionError error) {
         context.error("Assertion failed: " + error.getMessage(), getLine());
-        result.setRejected();
+        result.setError(error);
       }
     });
 
@@ -100,15 +96,15 @@ public class AssertFocused extends AbstractCommand {
       untested.put(eachKey, actual.get(eachKey));
     }
 
-    StringBuffer untestedText = new StringBuffer();
+    StringBuilder untestedText = new StringBuilder();
     for (String each : untested.keySet()) {
-      if (untestedText.length() > 0) {
+      if (!untestedText.isEmpty()) {
         untestedText.append(",");
       }
       untestedText.append(each).append("=").append(untested.get(each));
     }
 
-    context.message("Untested info: " + untestedText.toString(), getLine());
+    context.message("Untested info: " + untestedText, getLine());
   }
 
 }

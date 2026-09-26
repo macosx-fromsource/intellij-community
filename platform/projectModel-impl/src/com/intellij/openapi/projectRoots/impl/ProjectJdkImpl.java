@@ -1,394 +1,299 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.projectRoots.impl;
 
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.projectRoots.*;
-import com.intellij.openapi.projectRoots.ex.ProjectRoot;
+import com.intellij.openapi.projectRoots.SdkAdditionalData;
+import com.intellij.openapi.projectRoots.SdkModificator;
+import com.intellij.openapi.projectRoots.SdkTypeId;
 import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.roots.RootProvider;
-import com.intellij.openapi.roots.impl.RootProviderBaseImpl;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.UserDataHolderBase;
-import com.intellij.openapi.vfs.StandardFileSystems;
-import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.openapi.vfs.VirtualFileManager;
-import com.intellij.util.ArrayUtil;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.openapi.vfs.pointers.VirtualFilePointerManager;
+import com.intellij.platform.workspace.jps.entities.SdkEntityBuilder;
+import com.intellij.platform.workspace.storage.InternalEnvironmentName;
+import com.intellij.util.concurrency.ThreadingAssertions;
+import com.intellij.workspaceModel.ide.impl.legacyBridge.sdk.SdkBridgeImpl;
 import org.jdom.Element;
-import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.function.Function;
 
-public class ProjectJdkImpl extends UserDataHolderBase implements Sdk, SdkModificator {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.projectRoots.impl.ProjectJdkImpl");
-  final ProjectRootContainerImpl myRootContainer;
-  private String myName;
-  private String myVersionString;
-  private boolean myVersionDefined;
-  private String myHomePath = "";
-  private final MyRootProvider myRootProvider = new MyRootProvider();
-  private ProjectJdkImpl myOrigin;
-  private SdkAdditionalData myAdditionalData;
-  private SdkTypeId mySdkType;
-  @NonNls public static final String ELEMENT_NAME = "name";
-  @NonNls public static final String ATTRIBUTE_VALUE = "value";
-  @NonNls public static final String ELEMENT_TYPE = "type";
-  @NonNls private static final String ELEMENT_VERSION = "version";
-  @NonNls private static final String ELEMENT_ROOTS = "roots";
-  @NonNls private static final String ELEMENT_ROOT = "root";
-  @NonNls private static final String ELEMENT_PROPERTY = "property";
-  @NonNls private static final String VALUE_JDKHOME = "jdkHome";
-  @NonNls private static final String ATTRIBUTE_FILE = "file";
-  @NonNls private static final String ELEMENT_HOMEPATH = "homePath";
-  @NonNls private static final String ELEMENT_ADDITIONAL = "additional";
+public class ProjectJdkImpl extends UserDataHolderBase implements SdkBridge, SdkModificator, Disposable {
+  private static final Logger LOG = Logger.getInstance(ProjectJdkImpl.class);
 
-  public ProjectJdkImpl(String name, SdkTypeId sdkType) {
-    mySdkType = sdkType;
-    myRootContainer = new ProjectRootContainerImpl(true);
-    myName = name;
-    myRootContainer.addProjectRootContainerListener(myRootProvider);
+  private final SdkBridge delegate;
+  private SdkModificator modificator;
+
+  @ApiStatus.Internal
+  public ProjectJdkImpl(SdkBridge delegate) {
+    this.delegate = delegate;
+    // register on VirtualFilePointerManager because we want our virtual pointers to be disposed before VFPM to avoid "pointer leaked" diagnostics fired
+    Disposer.register((Disposable)VirtualFilePointerManager.getInstance(), this);
   }
 
-  public ProjectJdkImpl(String name, SdkTypeId sdkType, String homePath, String version) {
-    this(name, sdkType);
-    myHomePath = homePath;
-    myVersionString = version;
+  private ProjectJdkImpl(SdkBridge delegate, SdkModificator modificator) {
+    this(delegate);
+    this.modificator = modificator;
+  }
+
+  public ProjectJdkImpl(@NotNull String name, @NotNull SdkTypeId sdkType) {
+    this(name, sdkType, "", null);
+  }
+
+  public ProjectJdkImpl(@NotNull String name, @NotNull SdkTypeId sdkType, String homePath, String version) {
+    this(name, sdkType, homePath, version, InternalEnvironmentName.Local.INSTANCE);
+  }
+
+  @ApiStatus.Internal
+  public ProjectJdkImpl(@NotNull String name, @NotNull SdkTypeId sdkType, String homePath, String version,
+                        @NotNull InternalEnvironmentName environmentName) {
+    SdkEntityBuilder sdkEntity =
+      SdkBridgeImpl.Companion.createEmptySdkEntity(name, sdkType.getName(), homePath, version, environmentName);
+    delegate = new SdkBridgeImpl(sdkEntity, environmentName);
+    // register on VirtualFilePointerManager because we want our virtual pointers to be disposed before VFPM to avoid "pointer leaked" diagnostics fired
+    Disposer.register((Disposable)VirtualFilePointerManager.getInstance(), this);
   }
 
   @Override
-  @NotNull
-  public SdkTypeId getSdkType() {
-    if (mySdkType == null) {
-      mySdkType = ProjectJdkTable.getInstance().getDefaultSdkType();
+  public void dispose() {
+    if(delegate instanceof Disposable disposable) {
+      Disposer.dispose(disposable);
     }
-    return mySdkType;
   }
 
   @Override
-  @NotNull
-  public String getName() {
-    return myName;
+  public @NotNull SdkTypeId getSdkType() {
+    return delegate.getSdkType();
+  }
+
+  @Override
+  public @NotNull String getName() {
+    if (modificator != null) {
+      return modificator.getName();
+    } else {
+      return delegate.getName();
+    }
   }
 
   @Override
   public void setName(@NotNull String name) {
-    myName = name;
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    } else {
+      modificator.setName(name);
+    }
   }
 
   @Override
   public final void setVersionString(@Nullable String versionString) {
-    myVersionString = versionString == null || versionString.isEmpty() ? null : versionString;
-    myVersionDefined = true;
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    } else {
+      modificator.setVersionString(versionString);
+    }
   }
 
   @Override
   public String getVersionString() {
-    if (myVersionString == null && !myVersionDefined) {
-      String homePath = getHomePath();
-      if (homePath != null && !homePath.isEmpty()) {
-        setVersionString(getSdkType().getVersionString(this));
-      }
+    if (modificator != null) {
+      return modificator.getVersionString();
+    } else {
+      return delegate.getVersionString();
     }
-    return myVersionString;
-  }
-
-  public final void resetVersionString() {
-    myVersionDefined = false;
-    myVersionString = null;
   }
 
   @Override
   public String getHomePath() {
-    return myHomePath;
-  }
-
-  @Override
-  public VirtualFile getHomeDirectory() {
-    if (myHomePath == null) {
-      return null;
+    if (modificator != null) {
+      return modificator.getHomePath();
+    } else {
+      return delegate.getHomePath();
     }
-    return StandardFileSystems.local().findFileByPath(myHomePath);
-  }
-
-  public void readExternal(@NotNull Element element) {
-    readExternal(element, null);
-  }
-
-  public void readExternal(@NotNull Element element, @Nullable ProjectJdkTable projectJdkTable) {
-    myName = element.getChild(ELEMENT_NAME).getAttributeValue(ATTRIBUTE_VALUE);
-    final Element typeChild = element.getChild(ELEMENT_TYPE);
-    final String sdkTypeName = typeChild != null ? typeChild.getAttributeValue(ATTRIBUTE_VALUE) : null;
-    if (sdkTypeName != null) {
-      if (projectJdkTable == null) {
-        projectJdkTable = ProjectJdkTable.getInstance();
-      }
-      mySdkType = projectJdkTable.getSdkTypeByName(sdkTypeName);
-    }
-    final Element version = element.getChild(ELEMENT_VERSION);
-
-    // set version if it was cached (defined)
-    // otherwise it will be null && undefined
-    if (version != null) {
-      setVersionString(version.getAttributeValue(ATTRIBUTE_VALUE));
-    }
-    else {
-      myVersionDefined = false;
-    }
-
-    if (element.getAttribute(ELEMENT_VERSION) == null || !"2".equals(element.getAttributeValue(ELEMENT_VERSION))) {
-      myRootContainer.startChange();
-      myRootContainer.readOldVersion(element.getChild(ELEMENT_ROOTS));
-      final List children = element.getChild(ELEMENT_ROOTS).getChildren(ELEMENT_ROOT);
-      for (final Object aChildren : children) {
-        Element root = (Element)aChildren;
-        for (final Object o : root.getChildren(ELEMENT_PROPERTY)) {
-          Element prop = (Element)o;
-          if (ELEMENT_TYPE.equals(prop.getAttributeValue(ELEMENT_NAME)) && VALUE_JDKHOME.equals(prop.getAttributeValue(ATTRIBUTE_VALUE))) {
-            myHomePath = VirtualFileManager.extractPath(root.getAttributeValue(ATTRIBUTE_FILE));
-          }
-        }
-      }
-      myRootContainer.finishChange();
-    }
-    else {
-      myHomePath = element.getChild(ELEMENT_HOMEPATH).getAttributeValue(ATTRIBUTE_VALUE);
-      myRootContainer.readExternal(element.getChild(ELEMENT_ROOTS));
-    }
-
-    final Element additional = element.getChild(ELEMENT_ADDITIONAL);
-    if (additional != null) {
-      LOG.assertTrue(mySdkType != null);
-      myAdditionalData = mySdkType.loadAdditionalData(this, additional);
-    }
-    else {
-      myAdditionalData = null;
-    }
-  }
-
-  public void writeExternal(Element element) {
-    element.setAttribute(ELEMENT_VERSION, "2");
-
-    final Element name = new Element(ELEMENT_NAME);
-    name.setAttribute(ATTRIBUTE_VALUE, myName);
-    element.addContent(name);
-
-    if (mySdkType != null) {
-      final Element sdkType = new Element(ELEMENT_TYPE);
-      sdkType.setAttribute(ATTRIBUTE_VALUE, mySdkType.getName());
-      element.addContent(sdkType);
-    }
-
-    if (myVersionString != null) {
-      final Element version = new Element(ELEMENT_VERSION);
-      version.setAttribute(ATTRIBUTE_VALUE, myVersionString);
-      element.addContent(version);
-    }
-
-    final Element home = new Element(ELEMENT_HOMEPATH);
-    home.setAttribute(ATTRIBUTE_VALUE, myHomePath);
-    element.addContent(home);
-
-    Element roots = new Element(ELEMENT_ROOTS);
-    myRootContainer.writeExternal(roots);
-    element.addContent(roots);
-
-    Element additional = new Element(ELEMENT_ADDITIONAL);
-    if (myAdditionalData != null) {
-      LOG.assertTrue(mySdkType != null);
-      mySdkType.saveAdditionalData(myAdditionalData, additional);
-    }
-    element.addContent(additional);
   }
 
   @Override
   public void setHomePath(String path) {
-    final boolean changes = myHomePath == null ? path != null : !myHomePath.equals(path);
-    myHomePath = path;
-    if (changes) {
-      resetVersionString(); // clear cached value if home path changed
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    } else {
+      modificator.setHomePath(path);
     }
   }
 
   @Override
-  @NotNull
-  public ProjectJdkImpl clone() {
-    ProjectJdkImpl newJdk = new ProjectJdkImpl("", mySdkType);
-    copyTo(newJdk);
-    return newJdk;
+  public VirtualFile getHomeDirectory() {
+    return delegate.getHomeDirectory();
   }
 
   @Override
-  @NotNull
-  public RootProvider getRootProvider() {
-    return myRootProvider;
+  public void readExternal(@NotNull Element element) {
+    delegate.readExternal(element);
   }
 
-  void copyTo(ProjectJdkImpl dest) {
-    final String name = getName();
-    dest.setName(name);
-    dest.setHomePath(getHomePath());
-    dest.myVersionDefined = myVersionDefined;
-    dest.myVersionString = myVersionString;
-    dest.setSdkAdditionalData(getSdkAdditionalData());
-    copyRoots(myRootContainer, dest);
+  @Override
+  public void readExternal(@NotNull Element element, @NotNull Function<String, SdkTypeId> sdkTypeByNameFunction) throws InvalidDataException {
+    delegate.readExternal(element, sdkTypeByNameFunction);
   }
 
-  static void copyRoots(@NotNull ProjectRootContainerImpl rootContainer, @NotNull ProjectJdkImpl dest) {
-    dest.myRootContainer.startChange();
-    dest.myRootContainer.removeAllRoots();
-    for (OrderRootType rootType : OrderRootType.getAllTypes()) {
-      final ProjectRoot[] newRoots = rootContainer.getRoots(rootType);
-      for (ProjectRoot newRoot : newRoots) {
-        dest.myRootContainer.addRoot(newRoot, rootType);
-      }
-    }
-    dest.myRootContainer.finishChange();
+  @Override
+  public void writeExternal(@NotNull Element element) {
+    delegate.writeExternal(element);
   }
 
-  private class MyRootProvider extends RootProviderBaseImpl implements ProjectRootListener {
-    @Override
-    @NotNull
-    public String[] getUrls(@NotNull OrderRootType rootType) {
-      final ProjectRoot[] rootFiles = myRootContainer.getRoots(rootType);
-      final ArrayList<String> result = new ArrayList<>();
-      for (ProjectRoot rootFile : rootFiles) {
-        ContainerUtil.addAll(result, rootFile.getUrls());
-      }
-      return ArrayUtil.toStringArray(result);
-    }
+  @SuppressWarnings("MethodDoesntCallSuperMethod")
+  @Override
+  public @NotNull ProjectJdkImpl clone() {
+    return new ProjectJdkImpl(delegate.clone());
+  }
 
-    @Override
-    @NotNull
-    public VirtualFile[] getFiles(@NotNull final OrderRootType rootType) {
-      return myRootContainer.getRootFiles(rootType);
-    }
+  @Override
+  public @NotNull RootProvider getRootProvider() {
+    return delegate.getRootProvider();
+  }
 
-    private final List<RootSetChangedListener> myListeners = ContainerUtil.createLockFreeCopyOnWriteList();
-
-    @Override
-    public void addRootSetChangedListener(@NotNull RootSetChangedListener listener) {
-      if (!myListeners.contains(listener)) {
-        myListeners.add(listener);
-        super.addRootSetChangedListener(listener);
-      }
-    }
-
-    @Override
-    public void addRootSetChangedListener(@NotNull final RootSetChangedListener listener, @NotNull Disposable parentDisposable) {
-      super.addRootSetChangedListener(listener, parentDisposable);
-      Disposer.register(parentDisposable, () -> removeRootSetChangedListener(listener));
-    }
-
-    @Override
-    public void removeRootSetChangedListener(@NotNull RootSetChangedListener listener) {
-      super.removeRootSetChangedListener(listener);
-      myListeners.remove(listener);
-    }
-
-    @Override
-    public void rootsChanged() {
-      if (myListeners.isEmpty()) {
-        return;
-      }
-      ApplicationManager.getApplication().runWriteAction(this::fireRootSetChanged);
-    }
+  @Override
+  @ApiStatus.Internal
+  public void changeType(@NotNull SdkTypeId newType, @Nullable Element additionalDataElement) {
+    delegate.changeType(newType, additionalDataElement);
   }
 
   // SdkModificator implementation
   @Override
-  @NotNull
-  public SdkModificator getSdkModificator() {
-    ProjectJdkImpl sdk = (ProjectJdkImpl)clone();
-    sdk.myOrigin = this;
-    sdk.myRootContainer.startChange();
-    sdk.update();
-    return sdk;
+  public @NotNull SdkModificator getSdkModificator() {
+    if (modificator != null) {
+      LOG.error("Forbidden to call `getSdkModificator` on already modifiable version of SDK");
+    }
+    var sdkBridge = (SdkBridgeImpl)delegate;
+    return new ProjectJdkImpl(delegate, sdkBridge.getSdkModificator(this));
   }
 
   @Override
   public void commitChanges() {
-    LOG.assertTrue(isWritable());
-    myRootContainer.finishChange();
-    copyTo(myOrigin);
-    myOrigin = null;
+    if (modificator == null) {
+      LOG.error("Forbidden to call `commitChanges` outside of `SdkModificator`");
+    }
+    ThreadingAssertions.assertWriteAccess();
+    modificator.commitChanges();
+    SdkAdditionalData sdkAdditionalData = modificator.getSdkAdditionalData();
+    if (sdkAdditionalData != null) sdkAdditionalData.markAsCommited();
+    modificator = null;
+  }
+
+  @Override
+  public void applyChangesWithoutWriteAction() {
+    modificator.applyChangesWithoutWriteAction();
+    modificator = null;
   }
 
   @Override
   public SdkAdditionalData getSdkAdditionalData() {
-    return myAdditionalData;
+    if (modificator != null) {
+      return modificator.getSdkAdditionalData();
+    } else {
+      SdkAdditionalData sdkAdditionalData = delegate.getSdkAdditionalData();
+      if (sdkAdditionalData != null) sdkAdditionalData.markAsCommited();
+      return sdkAdditionalData;
+    }
   }
 
   @Override
   public void setSdkAdditionalData(SdkAdditionalData data) {
-    myAdditionalData = data;
-  }
-
-  @Override
-  public VirtualFile[] getRoots(OrderRootType rootType) {
-    final ProjectRoot[] roots = myRootContainer.getRoots(rootType); // use getRoots() cause the data is most up-to-date there
-    final List<VirtualFile> files = new ArrayList<>(roots.length);
-    for (ProjectRoot root : roots) {
-      ContainerUtil.addAll(files, root.getVirtualFiles());
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    } else {
+      modificator.setSdkAdditionalData(data);
     }
-    return VfsUtilCore.toVirtualFileArray(files);
+  }
+
+  @ApiStatus.Internal
+  public SdkBridge getDelegate() {
+    return delegate;
   }
 
   @Override
-  public void addRoot(VirtualFile root, OrderRootType rootType) {
-    myRootContainer.addRoot(root, rootType);
+  public VirtualFile @NotNull [] getRoots(@NotNull OrderRootType rootType) {
+    if (modificator == null) {
+      LOG.error("Forbidden to call `getRoots` outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    }
+    return modificator.getRoots(rootType);
   }
 
   @Override
-  public void removeRoot(VirtualFile root, OrderRootType rootType) {
-    myRootContainer.removeRoot(root, rootType);
+  public String @NotNull [] getUrls(@NotNull OrderRootType rootType) {
+    if (modificator == null) {
+      LOG.error("Forbidden to call `getUrls` outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    }
+    return modificator.getUrls(rootType);
   }
 
   @Override
-  public void removeRoots(OrderRootType rootType) {
-    myRootContainer.removeAllRoots(rootType);
+  public void addRoot(@NotNull VirtualFile root, @NotNull OrderRootType rootType) {
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    }
+    modificator.addRoot(root, rootType);
+  }
+
+  @Override
+  public void addRoot(@NotNull String url, @NotNull OrderRootType rootType) {
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    }
+    modificator.addRoot(url, rootType);
+  }
+
+  @Override
+  public void removeRoot(@NotNull VirtualFile root, @NotNull OrderRootType rootType) {
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    }
+    modificator.removeRoot(root, rootType);
+  }
+
+  @Override
+  public void removeRoot(@NotNull String url, @NotNull OrderRootType rootType) {
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    }
+    modificator.removeRoot(url, rootType);
+  }
+
+  @Override
+  public void removeRoots(@NotNull OrderRootType rootType) {
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    }
+    modificator.removeRoots(rootType);
   }
 
   @Override
   public void removeAllRoots() {
-    myRootContainer.removeAllRoots();
+    if (modificator == null) {
+      LOG.error("Forbidden to mutate SDK outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
+    }
+    modificator.removeAllRoots();
   }
 
   @Override
   public boolean isWritable() {
-    return myOrigin != null;
-  }
-
-  public void update() {
-    try {
-      myRootContainer.update();
+    if (modificator == null) {
+      LOG.error("Forbidden to call `isWritable` outside of the `SdkModificator`. Please, use `com.intellij.openapi.projectRoots.Sdk.getSdkModificator`");
     }
-    finally {
-      resetVersionString();
-    }
+    return modificator.isWritable();
   }
 
   @Override
   public String toString() {
-    return myName + (myVersionDefined ? ": " + myVersionString : "") + " (" + myHomePath + ")";
+    if (modificator != null) {
+      return modificator.toString();
+    } else {
+      return delegate.toString();
+    }
   }
 }

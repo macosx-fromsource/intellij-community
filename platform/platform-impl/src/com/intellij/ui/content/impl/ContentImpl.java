@@ -1,80 +1,69 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ui.content.impl;
 
-import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.util.BusyObject;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.UserDataHolderBase;
-import com.intellij.ui.LayeredIcon;
 import com.intellij.ui.content.AlertIcon;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentManager;
-import com.intellij.util.IconUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.Icon;
+import javax.swing.JComponent;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeSupport;
 
 public class ContentImpl extends UserDataHolderBase implements Content {
-  private static Icon ourEmptyPinIcon = null;
-
-  private String myDisplayName;
-  private String myDescription;
+  public static final @NonNls String PROP_CONTENT_MANAGER = "contentManager";
+  private @NlsContexts.TabTitle String myDisplayName;
+  private @NlsContexts.Tooltip String myDescription;
   private JComponent myComponent;
   private Icon myIcon;
   private final PropertyChangeSupport myChangeSupport = new PropertyChangeSupport(this);
   private ContentManager myManager;
-  private boolean myIsLocked = false;
-  private boolean myPinnable = true;
-  private Icon myLayeredIcon = new LayeredIcon(2);
-  private Disposable myDisposer = null;
+  private boolean myIsPinned;
+  private boolean myPinnable;
+  private Disposable myDisposer;
   private boolean myShouldDisposeContent = true;
-  private String myTabName;
-  private String myToolwindowTitle;
+  private @NlsContexts.TabTitle String myTabName;
+  private @NlsContexts.TabTitle String myToolwindowTitle;
   private boolean myCloseable = true;
   private ActionGroup myActions;
-  private String myPlace;
+  private @NonNls String myPlace;
 
   private AlertIcon myAlertIcon;
 
   private JComponent myActionsContextComponent;
   private JComponent mySearchComponent;
 
-  private Computable<JComponent> myFocusRequest;
+  private Computable<? extends JComponent> myFocusRequest;
   private BusyObject myBusyObject;
   private String mySeparator;
   private Icon myPopupIcon;
   private long myExecutionId;
+  private String myHelpId;
+  private Color myColor;
 
-  public ContentImpl(JComponent component, String displayName, boolean isPinnable) {
+  public ContentImpl(JComponent component, @Nullable @Nls(capitalization = Nls.Capitalization.Title) String displayName, boolean isPinnable) {
     myComponent = component;
     myDisplayName = displayName;
     myPinnable = isPinnable;
   }
 
   @Override
-  public JComponent getComponent() {
+  public @NotNull JComponent getComponent() {
     return myComponent;
   }
 
@@ -87,16 +76,29 @@ public class ContentImpl extends UserDataHolderBase implements Content {
 
   @Override
   public JComponent getPreferredFocusableComponent() {
-    return myFocusRequest == null ? myComponent : myFocusRequest.compute();
+    if (myFocusRequest != null) {
+      return myFocusRequest.compute();
+    }
+    if (myComponent == null) {
+      return null;
+    }
+
+    Container traversalRoot = myComponent.isFocusCycleRoot() ? myComponent : myComponent.getFocusCycleRootAncestor();
+    if (traversalRoot == null) {
+      return null;
+    }
+
+    Component component = traversalRoot.getFocusTraversalPolicy().getDefaultComponent(myComponent);
+    return component instanceof JComponent ? (JComponent)component : null;
   }
 
   @Override
-  public void setPreferredFocusableComponent(final JComponent c) {
+  public void setPreferredFocusableComponent(JComponent c) {
     setPreferredFocusedComponent(() -> c);
   }
 
   @Override
-  public void setPreferredFocusedComponent(final Computable<JComponent> computable) {
+  public void setPreferredFocusedComponent(Computable<? extends JComponent> computable) {
     myFocusRequest = computable;
   }
 
@@ -104,28 +106,12 @@ public class ContentImpl extends UserDataHolderBase implements Content {
   public void setIcon(Icon icon) {
     Icon oldValue = getIcon();
     myIcon = icon;
-    myLayeredIcon = LayeredIcon.create(myIcon, AllIcons.Nodes.PinToolWindow);
     myChangeSupport.firePropertyChange(PROP_ICON, oldValue, getIcon());
   }
 
   @Override
   public Icon getIcon() {
-    if (myIsLocked) {
-      return myIcon == null ? getEmptyPinIcon() : myLayeredIcon;
-    }
-    else {
-      return myIcon;
-    }
-  }
-
-  @NotNull
-  private static Icon getEmptyPinIcon() {
-    if (ourEmptyPinIcon == null) {
-      Icon icon = AllIcons.Nodes.PinToolWindow;
-      int width = icon.getIconWidth();
-      ourEmptyPinIcon = IconUtil.cropIcon(icon, new Rectangle(width / 2, 0, width - width / 2, icon.getIconHeight()));
-    }
-    return ourEmptyPinIcon;
+    return myIcon;
   }
 
   @Override
@@ -141,14 +127,13 @@ public class ContentImpl extends UserDataHolderBase implements Content {
   }
 
   @Override
-  public void setTabName(String tabName) {
+  public void setTabName(@NlsContexts.TabTitle String tabName) {
     myTabName = tabName;
   }
 
   @Override
   public String getTabName() {
-    if (myTabName != null) return myTabName;
-    return myDisplayName;
+    return myTabName == null ? myDisplayName : myTabName;
   }
 
   @Override
@@ -158,28 +143,22 @@ public class ContentImpl extends UserDataHolderBase implements Content {
 
   @Override
   public String getToolwindowTitle() {
-    if (myToolwindowTitle != null) return myToolwindowTitle;
-    return myDisplayName;
+    return myToolwindowTitle == null ? myDisplayName : myToolwindowTitle;
   }
 
   @Override
-  public Disposable getDisposer() {
+  public @Nullable Disposable getDisposer() {
     return myDisposer;
   }
 
   @Override
-  public void setDisposer(Disposable disposer) {
+  public void setDisposer(@NotNull Disposable disposer) {
     myDisposer = disposer;
   }
 
   @Override
   public void setShouldDisposeContent(boolean value) {
     myShouldDisposeContent = value;
-  }
-
-  @Override
-  public boolean shouldDisposeContent() {
-    return myShouldDisposeContent;
   }
 
   @Override
@@ -204,8 +183,10 @@ public class ContentImpl extends UserDataHolderBase implements Content {
     myChangeSupport.removePropertyChangeListener(l);
   }
 
-  public void setManager(ContentManager manager) {
+  public void setManager(@Nullable ContentManager manager) {
+    ContentManager oldValue = myManager;
     myManager = manager;
+    myChangeSupport.firePropertyChange(PROP_CONTENT_MANAGER, oldValue, myManager);
   }
 
   @Override
@@ -223,7 +204,6 @@ public class ContentImpl extends UserDataHolderBase implements Content {
     Disposer.dispose(this);
   }
 
-  //TODO[anton,vova] investigate
   @Override
   public boolean isValid() {
     return myManager != null;
@@ -231,16 +211,15 @@ public class ContentImpl extends UserDataHolderBase implements Content {
 
   @Override
   public boolean isPinned() {
-    return myIsLocked;
+    return myIsPinned;
   }
 
   @Override
-  public void setPinned(boolean locked) {
-    if (isPinnable()) {
-      Icon oldIcon = getIcon();
-      myIsLocked = locked;
-      Icon newIcon = getIcon();
-      myChangeSupport.firePropertyChange(PROP_ICON, oldIcon, newIcon);
+  public void setPinned(boolean pinned) {
+    if (isPinnable() && myIsPinned != pinned) {
+      boolean wasPinned = isPinned();
+      myIsPinned = pinned;
+      myChangeSupport.firePropertyChange(PROP_PINNED, wasPinned, pinned);
     }
   }
 
@@ -261,7 +240,11 @@ public class ContentImpl extends UserDataHolderBase implements Content {
 
   @Override
   public void setCloseable(final boolean closeable) {
+    if(closeable == myCloseable) return;
+
+    boolean old = myCloseable;
     myCloseable = closeable;
+    myChangeSupport.firePropertyChange(IS_CLOSABLE, old, closeable);
   }
 
   @Override
@@ -289,14 +272,13 @@ public class ContentImpl extends UserDataHolderBase implements Content {
   }
 
   @Override
-  @NonNls
-  public String toString() {
-    StringBuilder sb = new StringBuilder("Content name=").append(myDisplayName);
-    if (myIsLocked)
-      sb.append(", pinned");
-    if (myExecutionId != 0)
-      sb.append(", executionId=").append(myExecutionId);
-    return sb.toString();
+  public @NonNls String toString() {
+    return "Content name="+getDisplayName()
+           + (getDescription() == null ? "" : "; description='"+getDescription()+"'")
+           + (getTabName() == null ? "" : "; tab name='"+getTabName()+"'")
+           + (getToolwindowTitle() == null ? "" : "; toolwindow='"+getToolwindowTitle()+"'")
+           + (isPinned() ? ", pinned" : "")
+           + (getExecutionId() == 0 ? "" : ", executionId=" + getExecutionId());
   }
 
   @Override
@@ -305,31 +287,36 @@ public class ContentImpl extends UserDataHolderBase implements Content {
       Disposer.dispose((Disposable)myComponent);
     }
 
-    myComponent = null;
-    myFocusRequest = null;
-    myManager = null;
-
-    clearUserData();
     if (myDisposer != null) {
       Disposer.dispose(myDisposer);
       myDisposer = null;
     }
+
+    myFocusRequest = null;
+    clearUserData();
   }
 
   @Override
-  @Nullable
-  public AlertIcon getAlertIcon() {
+  public @Nullable AlertIcon getAlertIcon() {
     return myAlertIcon;
   }
 
   @Override
-  public void setAlertIcon(@Nullable final AlertIcon icon) {
+  public void setAlertIcon(final @Nullable AlertIcon icon) {
     myAlertIcon = icon;
   }
 
   @Override
   public void fireAlert() {
     myChangeSupport.firePropertyChange(PROP_ALERT, null, true);
+  }
+
+  /**
+   * @see com.intellij.openapi.wm.impl.content.ToolWindowContentUi
+   */
+  @ApiStatus.Internal
+  public void fireTabLayout() {
+    myChangeSupport.firePropertyChange(PROP_TAB_LAYOUT, null, true);
   }
 
   @Override
@@ -363,7 +350,7 @@ public class ContentImpl extends UserDataHolderBase implements Content {
   }
 
   @Override
-  public void setSearchComponent(@Nullable final JComponent comp) {
+  public void setSearchComponent(@Nullable JComponent comp) {
     mySearchComponent = comp;
   }
 
@@ -380,5 +367,27 @@ public class ContentImpl extends UserDataHolderBase implements Content {
   @Override
   public long getExecutionId() {
     return myExecutionId;
+  }
+
+  @Override
+  public void setHelpId(String helpId) {
+    myHelpId = helpId;
+  }
+
+  @Override
+  public @Nullable String getHelpId() {
+    return myHelpId;
+  }
+
+  @Override
+  public void setTabColor(@Nullable Color color) {
+    Color oldColor = myColor;
+    myColor = color;
+    myChangeSupport.firePropertyChange(PROP_TAB_COLOR, oldColor, myColor);
+  }
+
+  @Override
+  public @Nullable Color getTabColor() {
+    return myColor;
   }
 }

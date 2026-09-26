@@ -15,9 +15,11 @@
  */
 package com.intellij.openapi.vcs.changes;
 
+import com.intellij.ide.HelpIdProvider;
+
 /**
- * User: anna
- * Date: 2/17/12
+ * Marker class for executors that should be skipped by most {@link com.intellij.openapi.vcs.checkin.CheckinHandler} pre-commit checks.
+ * See {@link com.intellij.openapi.vcs.checkin.CheckinHandler#acceptExecutor(CommitExecutor)}.
  */
-public abstract class LocalCommitExecutor implements CommitExecutorWithHelp {
+public abstract class LocalCommitExecutor implements CommitExecutor, HelpIdProvider {
 }

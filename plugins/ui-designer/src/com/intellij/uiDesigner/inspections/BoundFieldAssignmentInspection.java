@@ -1,25 +1,21 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.uiDesigner.inspections;
 
-import com.intellij.codeInspection.BaseJavaLocalInspectionTool;
+import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
 import com.intellij.codeInspection.ProblemsHolder;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.PsiAssignmentExpression;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.PsiReferenceExpression;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.uiDesigner.GuiDesignerConfiguration;
 import com.intellij.uiDesigner.UIDesignerBundle;
 import com.intellij.uiDesigner.binding.FieldFormReference;
 import com.intellij.uiDesigner.binding.FormReferenceProvider;
@@ -27,23 +23,16 @@ import com.intellij.uiDesigner.compiler.AsmCodeGenerator;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * @author yole
- */
-public class BoundFieldAssignmentInspection extends BaseJavaLocalInspectionTool {
-  @NotNull
-  public String getGroupDisplayName() {
+
+public final class BoundFieldAssignmentInspection extends AbstractBaseJavaLocalInspectionTool {
+  @Override
+  public @NotNull String getGroupDisplayName() {
     return UIDesignerBundle.message("form.inspections.group");
   }
 
-  @NotNull
-  public String getDisplayName() {
-    return UIDesignerBundle.message("inspection.bound.field.title");
-  }
-
-  @NotNull
-  @NonNls
-  public String getShortName() {
+  @Override
+  public @NotNull
+  @NonNls String getShortName() {
     return "BoundFieldAssignment";
   }
 
@@ -52,24 +41,30 @@ public class BoundFieldAssignmentInspection extends BaseJavaLocalInspectionTool 
     return true;
   }
 
-  @NotNull
-  public PsiElementVisitor buildVisitor(@NotNull final ProblemsHolder holder, boolean isOnTheFly) {
+  @Override
+  public boolean isAvailableForFile(@NotNull PsiFile file) {
+    // Does not make sense if sources are generated with final fields, because
+    // in that case initialization is not done in setup method
+    // and also re-assignment is impossible due to one-shot final fields initialization
+    return super.isAvailableForFile(file) &&
+           !GuiDesignerConfiguration.getInstance(file.getProject()).GENERATE_SOURCES_FINAL_FIELDS;
+  }
+
+  @Override
+  public @NotNull PsiElementVisitor buildVisitor(final @NotNull ProblemsHolder holder, boolean isOnTheFly) {
     return new JavaElementVisitor() {
       @Override
-      public void visitAssignmentExpression(PsiAssignmentExpression expression) {
+      public void visitAssignmentExpression(@NotNull PsiAssignmentExpression expression) {
         PsiExpression lExpression = expression.getLExpression();
-        if (lExpression instanceof PsiReferenceExpression) {
-          PsiReferenceExpression lExpr = (PsiReferenceExpression)lExpression;
+        if (lExpression instanceof PsiReferenceExpression lExpr) {
           PsiElement lElement = lExpr.resolve();
-          if (!(lElement instanceof PsiField)) {
+          if (!(lElement instanceof PsiField field)) {
             return;
           }
-          PsiField field = (PsiField) lElement;
           PsiReference formReference = FormReferenceProvider.getFormReference(field);
-          if (!(formReference instanceof FieldFormReference)) {
+          if (!(formReference instanceof FieldFormReference ref)) {
             return;
           }
-          FieldFormReference ref = (FieldFormReference) formReference;
           if (ref.isCustomCreate()) {
             return;
           }

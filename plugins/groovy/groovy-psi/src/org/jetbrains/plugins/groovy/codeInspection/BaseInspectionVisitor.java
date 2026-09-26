@@ -18,6 +18,9 @@ package org.jetbrains.plugins.groovy.codeInspection;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.codeInspection.util.InspectionMessage;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
 import org.jetbrains.annotations.NotNull;
@@ -28,7 +31,6 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 
 public abstract class BaseInspectionVisitor extends GroovyElementVisitor {
@@ -44,11 +46,6 @@ public abstract class BaseInspectionVisitor extends GroovyElementVisitor {
 
   protected void registerStatementError(GrStatement statement, Object... args) {
     final PsiElement statementToken = statement.getFirstChild();
-    registerError(statementToken, args);
-  }
-
-  protected void registerClassError(GrTypeDefinition aClass, Object... args) {
-    final PsiElement statementToken = aClass.getNameIdentifierGroovy();
     registerError(statementToken, args);
   }
 
@@ -72,6 +69,11 @@ public abstract class BaseInspectionVisitor extends GroovyElementVisitor {
     registerError(method.getNameIdentifierGroovy(), description, fixes, ProblemHighlightType.GENERIC_ERROR_OR_WARNING);
   }
 
+  protected void registerRangeError(@NotNull PsiElement element, @NotNull TextRange range, Object... args) {
+    String description = StringUtil.notNullize(inspection.buildErrorString(args));
+    problemsHolder.registerProblem(element, range, description, createFixes(element));
+  }
+
   protected void registerVariableError(GrVariable variable, Object... args) {
     if (variable == null) {
       return;
@@ -81,7 +83,7 @@ public abstract class BaseInspectionVisitor extends GroovyElementVisitor {
     registerError(variable.getNameIdentifierGroovy(), description, fix, ProblemHighlightType.GENERIC_ERROR_OR_WARNING);
   }
 
-  protected void registerMethodCallError(GrMethodCall method, Object... args) {
+  protected void registerMethodCallError(GrMethodCall method, @NlsSafe Object... args) {
     if (method == null) {
       return;
     }
@@ -95,8 +97,8 @@ public abstract class BaseInspectionVisitor extends GroovyElementVisitor {
   }
 
   protected void registerError(@NotNull PsiElement location,
-                               @NotNull String description,
-                               @Nullable LocalQuickFix[] fixes,
+                               @InspectionMessage @NotNull String description,
+                               @NotNull LocalQuickFix @Nullable [] fixes,
                                ProblemHighlightType highlightType) {
     problemsHolder.registerProblem(location, description, highlightType, fixes);
   }
@@ -113,17 +115,16 @@ public abstract class BaseInspectionVisitor extends GroovyElementVisitor {
     registerError(location, description, fix, highlightType);
   }
 
-  @Nullable
-  private LocalQuickFix[] createFixes(@NotNull PsiElement location) {
+  private @NotNull LocalQuickFix @Nullable [] createFixes(@NotNull PsiElement location) {
     if (!onTheFly &&
         inspection.buildQuickFixesOnlyForOnTheFlyErrors()) {
       return null;
     }
-    final GroovyFix fix = inspection.buildFix(location);
+    final LocalQuickFix fix = inspection.buildFix(location);
     if (fix == null) {
       return null;
     }
-    return new GroovyFix[]{fix};
+    return new LocalQuickFix[]{fix};
   }
 
   public int getErrorCount() {

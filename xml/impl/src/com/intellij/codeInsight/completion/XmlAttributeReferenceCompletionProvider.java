@@ -1,26 +1,16 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.completion;
 
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementBuilder;
+import com.intellij.codeInsight.lookup.LookupElementPresentation;
+import com.intellij.codeInsight.lookup.LookupElementRenderer;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.html.HtmlTag;
+import com.intellij.psi.impl.source.html.dtd.HtmlAttributeDescriptorImpl;
 import com.intellij.psi.impl.source.xml.XmlAttributeImpl;
 import com.intellij.psi.impl.source.xml.XmlAttributeReference;
 import com.intellij.psi.meta.PsiPresentableMetaData;
@@ -43,7 +33,7 @@ public class XmlAttributeReferenceCompletionProvider extends CompletionProvider<
 
   @Override
   protected void addCompletions(@NotNull CompletionParameters parameters,
-                                ProcessingContext context,
+                                @NotNull ProcessingContext context,
                                 @NotNull CompletionResultSet result) {
     PsiReference reference = parameters.getPosition().getContainingFile().findReferenceAt(parameters.getOffset());
     if (reference instanceof XmlAttributeReference) {
@@ -74,13 +64,9 @@ public class XmlAttributeReferenceCompletionProvider extends CompletionProvider<
     final XmlTag tag = attribute.getParent();
     final PsiFile file = tag.getContainingFile();
     final XmlExtension extension = XmlExtension.getExtension(file);
-    final String prefix = attribute.getName().contains(":") && ((XmlAttributeImpl) attribute).getRealLocalName().length() > 0
+    final String prefix = attribute.getName().contains(":") && !XmlAttributeImpl.getRealName(attribute).isEmpty()
                           ? attribute.getNamespacePrefix() + ":"
                           : null;
-
-    CompletionData
-      completionData = CompletionUtil.getCompletionDataByElement(attribute, attribute.getContainingFile().getOriginalFile());
-    boolean caseSensitive = !(completionData instanceof HtmlCompletionData) || ((HtmlCompletionData)completionData).isCaseSensitive();
 
     for (XmlAttributeDescriptor descriptor : descriptors) {
       if (isValidVariant(attribute, descriptor, attributes, extension)) {
@@ -102,7 +88,7 @@ public class XmlAttributeReferenceCompletionProvider extends CompletionProvider<
 
           if (file instanceof XmlFile &&
               namespace != null &&
-              namespace.length() > 0 &&
+              !namespace.isEmpty() &&
               !name.contains(":") &&
               tag.getPrefixByNamespace(namespace) == null) {
             insertHandler = new XmlAttributeInsertHandler(namespace);
@@ -113,15 +99,34 @@ public class XmlAttributeReferenceCompletionProvider extends CompletionProvider<
             name = descriptor.getName(tag).substring(prefix.length());
           }
           LookupElementBuilder element = LookupElementBuilder.create(name);
-          if (descriptor instanceof PsiPresentableMetaData) {
-            element = element.withIcon(((PsiPresentableMetaData)descriptor).getIcon());
+          if (descriptor instanceof PsiPresentableMetaData presentableMetaData) {
+            if (descriptor instanceof PsiPresentableMetaDataRenderStrategy renderStrategy && renderStrategy.isRenderExpensive()) {
+              element = element.withExpensiveRenderer(new LookupElementRenderer<>() {
+                @Override
+                public void renderElement(@NotNull LookupElement element, @NotNull LookupElementPresentation presentation) {
+                  element.renderElement(presentation);
+                  presentation.setIcon(presentableMetaData.getIcon());
+                  String typeName = presentableMetaData.getTypeName();
+                  if (!StringUtil.isEmpty(typeName)) {
+                    presentation.setTypeText(typeName);
+                  }
+                }
+              });
+            }
+            else {
+              element = element.withIcon(presentableMetaData.getIcon());
+              String typeName = presentableMetaData.getTypeName();
+              if (!StringUtil.isEmpty(typeName)) {
+                element = element.withTypeText(typeName);
+              }
+            }
           }
           final int separator = name.indexOf(':');
           if (separator > 0) {
             element = element.withLookupString(name.substring(separator + 1));
           }
           element = element
-            .withCaseSensitivity(caseSensitive)
+            .withCaseSensitivity(!(descriptor instanceof HtmlAttributeDescriptorImpl) || ((HtmlAttributeDescriptorImpl)descriptor).isCaseSensitive())
             .withInsertHandler(insertHandler);
           result.addElement(
             descriptor.isRequired() ? PrioritizedLookupElement.withPriority(element.appendTailText("(required)", true), 100) :
@@ -131,7 +136,7 @@ public class XmlAttributeReferenceCompletionProvider extends CompletionProvider<
     }
   }
 
-  private static boolean isValidVariant(XmlAttribute attribute,
+  public static boolean isValidVariant(XmlAttribute attribute,
                                         @NotNull XmlAttributeDescriptor descriptor,
                                         final XmlAttribute[] attributes,
                                         final XmlExtension extension) {

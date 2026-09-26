@@ -20,20 +20,20 @@ import com.intellij.execution.configurations.ModuleBasedConfiguration;
 import com.intellij.execution.configurations.RuntimeConfigurationException;
 import com.intellij.execution.configurations.RuntimeConfigurationWarning;
 import com.intellij.execution.testframework.SourceScope;
+import com.intellij.execution.testframework.TestRunnerBundle;
 import com.intellij.execution.testframework.TestSearchScope;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.ClassUtil;
+import com.intellij.util.containers.ContainerUtil;
+import com.theoryinpractice.testng.TestngBundle;
 import com.theoryinpractice.testng.configuration.TestNGConfiguration;
 import com.theoryinpractice.testng.util.TestNGUtil;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +43,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 public class TestNGTestPattern extends TestNGTestObject {
-  private static final Logger LOG = Logger.getInstance("#" + TestNGTestPattern.class.getName());
+  private static final Logger LOG = Logger.getInstance(TestNGTestPattern.class);
 
   public TestNGTestPattern(TestNGConfiguration config) {
     super(config);
@@ -73,21 +73,10 @@ public class TestNGTestPattern extends TestNGTestObject {
         methodName = null;
       }
 
-      final PsiClass psiClass = ApplicationManager.getApplication().runReadAction(new Computable<PsiClass>() {
-        @Nullable
-        @Override
-        public PsiClass compute() {
-          return ClassUtil
-            .findPsiClass(PsiManager.getInstance(config.getProject()), className.replace('/', '.'), null, true, searchScope);
-        }
-      });
+      final PsiClass psiClass = ReadAction.compute(() -> ClassUtil
+        .findPsiClass(PsiManager.getInstance(config.getProject()), className.replace('/', '.'), null, true, searchScope));
       if (psiClass != null) {
-        final Boolean hasTest = ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
-          @Override
-          public Boolean compute() {
-            return TestNGUtil.hasTest(psiClass);
-          }
-        });
+        final Boolean hasTest = ReadAction.compute(() -> TestNGUtil.hasTest(psiClass));
         if (hasTest) {
           if (StringUtil.isEmpty(methodName)) {
             calculateDependencies(null, classes, searchScope, psiClass);
@@ -96,7 +85,7 @@ public class TestNGTestPattern extends TestNGTestObject {
             collectTestMethods(classes, psiClass, methodName, searchScope);
           }
         } else {
-          throw new CantRunException("No tests found in class " + className);
+          throw new CantRunException(TestngBundle.message("dialog.message.no.tests.found.in.class", className));
         }
       }
     }
@@ -129,8 +118,8 @@ public class TestNGTestPattern extends TestNGTestObject {
           }
         };
       calculateDependencies(null, classes, searchScope, TestNGUtil.getAllTestClasses(projectFilter, false));
-      if (classes.size() == 0) {
-        throw new CantRunException("No tests found in for patterns \"" + StringUtil.join(patterns, " || ") + '\"');
+      if (classes.isEmpty()) {
+        throw new CantRunException(TestngBundle.message("dialog.message.no.tests.found.in.for.patterns", StringUtil.join(patterns, " || ")));
       }
     }
   }
@@ -139,8 +128,15 @@ public class TestNGTestPattern extends TestNGTestObject {
   public String getGeneratedName() {
     final Set<String> patterns = myConfig.getPersistantData().getPatterns();
     final int size = patterns.size();
-    if (size == 0) return "Temp suite";
-    return StringUtil.getShortName(patterns.iterator().next()) + (size > 1 ? " and " + (size - 1) + " more" : "");
+    if (size == 0) return TestngBundle.message("action.text.temp.suite");
+    String firstPattern = ContainerUtil.getFirstItem(patterns);
+    if (size == 1) {
+      return firstPattern;
+    }
+    else {
+      //noinspection DialogTitleCapitalization
+      return TestRunnerBundle.message("test.config.first.pattern.and.few.more", firstPattern, size - 1);
+    }
   }
 
   @Override
@@ -152,7 +148,7 @@ public class TestNGTestPattern extends TestNGTestObject {
   public void checkConfiguration() throws RuntimeConfigurationException {
     final Set<String> patterns = myConfig.getPersistantData().getPatterns();
     if (patterns.isEmpty()) {
-      throw new RuntimeConfigurationWarning("No pattern selected");
+      throw new RuntimeConfigurationWarning(TestngBundle.message("testng.dialog.message.no.pattern.selected.warning"));
     }
   }
 }

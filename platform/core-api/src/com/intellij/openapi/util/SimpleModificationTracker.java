@@ -20,15 +20,15 @@ import com.intellij.util.xmlb.annotations.Transient;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
+ * A simple implementation of {@link ModificationTracker}.
+ *
  * @author Max Medvedev
- * @since 28.03.2014
  */
 @Transient
 public class SimpleModificationTracker implements ModificationTracker {
   private static final AtomicLongFieldUpdater<SimpleModificationTracker> UPDATER =
     AtomicLongFieldUpdater.newUpdater(SimpleModificationTracker.class, "myCounter");
 
-  @SuppressWarnings("unused")
   private volatile long myCounter;
 
   @Override
@@ -37,10 +37,6 @@ public class SimpleModificationTracker implements ModificationTracker {
   }
 
   public void incModificationCount() {
-    incAndGetModificationCount();
-  }
-
-  public long incAndGetModificationCount() {
-    return UPDATER.incrementAndGet(this);
+    UPDATER.incrementAndGet(this);
   }
 }

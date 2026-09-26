@@ -19,7 +19,6 @@ import org.jetbrains.annotations.NonNls;
 
 /**
 * @author Eugene Zhuravlev
-*         Date: 11/24/11
 */
 public class ExitStatus {
   private final String myName;
@@ -28,6 +27,7 @@ public class ExitStatus {
     myName = name;
   }
 
+  @Override
   public String toString() {
     return myName;
   }

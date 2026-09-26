@@ -1,28 +1,16 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.stats;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.code.cfg.BasicBlock;
-import org.jetbrains.java.decompiler.main.TextBuffer;
 import org.jetbrains.java.decompiler.main.collectors.BytecodeMappingTracer;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.SequenceHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeType;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
+import org.jetbrains.java.decompiler.struct.match.IMatchable;
+import org.jetbrains.java.decompiler.util.TextBuffer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,14 +20,14 @@ public class SynchronizedStatement extends Statement {
 
   private Statement body;
 
-  private final List<Exprent> headexprent = new ArrayList<>();
+  private final List<Exprent> headexprent = new ArrayList<>(1);
 
   // *****************************************************************************
   // constructors
   // *****************************************************************************
 
   public SynchronizedStatement() {
-    type = TYPE_SYNCRONIZED;
+    super(StatementType.SYNCHRONIZED);
 
     headexprent.add(null);
   }
@@ -56,10 +44,10 @@ public class SynchronizedStatement extends Statement {
 
     stats.addWithKey(exc, exc.id);
 
-    List<StatEdge> lstSuccs = body.getSuccessorEdges(STATEDGE_DIRECT_ALL);
+    List<StatEdge> lstSuccs = body.getSuccessorEdges(EdgeType.DIRECT_ALL);
     if (!lstSuccs.isEmpty()) {
       StatEdge edge = lstSuccs.get(0);
-      if (edge.getType() == StatEdge.TYPE_REGULAR) {
+      if (edge.getType() == EdgeType.REGULAR) {
         post = edge.getDestination();
       }
     }
@@ -70,13 +58,14 @@ public class SynchronizedStatement extends Statement {
   // public methods
   // *****************************************************************************
 
+  @Override
   public TextBuffer toJava(int indent, BytecodeMappingTracer tracer) {
     TextBuffer buf = new TextBuffer();
     buf.append(ExprProcessor.listToJava(varDefinitions, indent, tracer));
     buf.append(first.toJava(indent, tracer));
 
     if (isLabeled()) {
-      buf.appendIndent(indent).append("label").append(this.id.toString()).append(":").appendLineSeparator();
+      buf.appendIndent(indent).append("label").append(Integer.toString(id)).append(":").appendLineSeparator();
       tracer.incrementCurrentSourceLine();
     }
 
@@ -95,29 +84,33 @@ public class SynchronizedStatement extends Statement {
   private void mapMonitorExitInstr(BytecodeMappingTracer tracer) {
     BasicBlock block = body.getBasichead().getBlock();
     if (!block.getSeq().isEmpty() && block.getLastInstruction().opcode == CodeConstants.opc_monitorexit) {
-      Integer offset = block.getOldOffset(block.size() - 1);
+      Integer offset = block.getOriginalOffset(block.size() - 1);
       if (offset > -1) tracer.addMapping(offset);
     }
   }
 
+  @Override
   public void initExprents() {
     headexprent.set(0, first.getExprents().remove(first.getExprents().size() - 1));
   }
 
-  public List<Object> getSequentialObjects() {
+  @Override
+  public List<IMatchable> getSequentialObjects() {
 
-    List<Object> lst = new ArrayList<>(stats);
+    List<IMatchable> lst = new ArrayList<>(stats);
     lst.add(1, headexprent.get(0));
 
     return lst;
   }
 
+  @Override
   public void replaceExprent(Exprent oldexpr, Exprent newexpr) {
     if (headexprent.get(0) == oldexpr) {
       headexprent.set(0, newexpr);
     }
   }
 
+  @Override
   public void replaceStatement(Statement oldstat, Statement newstat) {
 
     if (body == oldstat) {
@@ -134,10 +127,12 @@ public class SynchronizedStatement extends Statement {
     stats.removeWithKey(exc.id);
   }
 
+  @Override
   public Statement getSimpleCopy() {
     return new SynchronizedStatement();
   }
 
+  @Override
   public void initSimpleCopy() {
     first = stats.get(0);
     body = stats.get(1);
@@ -151,15 +146,7 @@ public class SynchronizedStatement extends Statement {
     return body;
   }
 
-  public void setBody(Statement body) {
-    this.body = body;
-  }
-
   public List<Exprent> getHeadexprentList() {
     return headexprent;
-  }
-
-  public Exprent getHeadexprent() {
-    return headexprent.get(0);
   }
 }

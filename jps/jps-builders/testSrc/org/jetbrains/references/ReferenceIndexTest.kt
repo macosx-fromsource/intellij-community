@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.references
 
 import com.intellij.openapi.application.ex.PathManagerEx
@@ -78,6 +64,10 @@ class ReferenceIndexTest : ReferenceIndexTestBase() {
     assertIndexOnRebuild("myPackage/package-info.java")
   }
 
+  fun testPackageInfo2() {
+    assertIndexOnRebuild("myPackage/package-info.java")
+  }
+
   fun testArrayRefs() {
     assertIndexOnRebuild("Array.java", "Foo.java", "Bar.java")
   }
@@ -123,6 +113,91 @@ class ReferenceIndexTest : ReferenceIndexTestBase() {
 
   fun testStaticallyImportedConstant() {
     assertIndexOnRebuild("pack/Foo.java", "pack/Bar.java")
+  }
+
+  fun testOccurrences() {
+
+    assertIndexOnRebuild("Foo.java", "Bar.java")
+  }
+
+  fun testConstructors() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testAnnotation() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testUnqualifiedMethodCallResolution() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testUnqualifiedMethodCallResolution2() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testUnqualifiedMethodCallResolution3() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testUnqualifiedMethodCallResolution4() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testUnqualifiedMethodCallResolution5() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testQualifierResolution() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testSignatureDataIndex() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testClassWithModifiers() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testParameterlessExplicitConstructor() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testDefaultConstructorUsage() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testCastData() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testCastDataArrays() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testCastDataGenerics() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testNestedAnonymouses() {
+    assertIndexOnRebuild("Anonymouses.java", "Classes.java")
+  }
+
+  fun testImplicitToString() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testImplicitToStringPrimitives() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testImplicitToStringLongObject() {
+    assertIndexOnRebuild("Foo.java")
+  }
+
+  fun testImplicitToStringHierarchy() {
+    assertIndexOnRebuild("Foo.java")
   }
 }
 

@@ -1,44 +1,27 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi;
 
-import com.intellij.psi.meta.PsiMetaOwner;
+import com.intellij.lang.jvm.JvmAnnotation;
+import com.intellij.lang.jvm.annotation.JvmAnnotationAttribute;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.util.ArrayFactory;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Arrays;
+import java.util.List;
+
 /**
  * Represents a Java annotation.
- *
- * @author ven
  */
-public interface PsiAnnotation extends PsiAnnotationMemberValue, PsiMetaOwner {
+public interface PsiAnnotation extends PsiAnnotationMemberValue, JvmAnnotation {
   /**
    * The empty array of PSI annotations which can be reused to avoid unnecessary allocations.
    */
   PsiAnnotation[] EMPTY_ARRAY = new PsiAnnotation[0];
 
-  ArrayFactory<PsiAnnotation> ARRAY_FACTORY = new ArrayFactory<PsiAnnotation>() {
-    @NotNull
-    @Override
-    public PsiAnnotation[] create(final int count) {
-      return count == 0 ? EMPTY_ARRAY : new PsiAnnotation[count];
-    }
-  };
+  ArrayFactory<PsiAnnotation> ARRAY_FACTORY = count -> count == 0 ? EMPTY_ARRAY : new PsiAnnotation[count];
 
   @NonNls String DEFAULT_REFERENCED_METHOD_NAME = "value";
 
@@ -47,7 +30,7 @@ public interface PsiAnnotation extends PsiAnnotationMemberValue, PsiMetaOwner {
    */
   enum TargetType {
     // see java.lang.annotation.ElementType
-    TYPE, FIELD, METHOD, PARAMETER, CONSTRUCTOR, LOCAL_VARIABLE, ANNOTATION_TYPE, PACKAGE, TYPE_USE, TYPE_PARAMETER,
+    TYPE, FIELD, METHOD, PARAMETER, CONSTRUCTOR, LOCAL_VARIABLE, ANNOTATION_TYPE, PACKAGE, TYPE_USE, TYPE_PARAMETER, MODULE, RECORD_COMPONENT,
     // auxiliary value, used when it's impossible to determine annotation's targets
     UNKNOWN;
 
@@ -67,8 +50,8 @@ public interface PsiAnnotation extends PsiAnnotationMemberValue, PsiMetaOwner {
    *
    * @return the class name, or null if the annotation is unresolved.
    */
-  @Nullable
-  @NonNls
+  @Override
+  @Nullable @NlsSafe
   String getQualifiedName();
 
   /**
@@ -110,10 +93,33 @@ public interface PsiAnnotation extends PsiAnnotationMemberValue, PsiMetaOwner {
   <T extends PsiAnnotationMemberValue> T setDeclaredAttributeValue(@Nullable @NonNls String attributeName, @Nullable T value);
 
   /**
-   * Returns an owner of the annotation - usually a parent, but for type annotations the owner might be a type element.
+   * Returns an owner of the annotation - usually a parent, but for type annotations the owner might be a PsiType or PsiTypeElement.
    *
    * @return annotation owner
    */
   @Nullable
   PsiAnnotationOwner getOwner();
+
+  /**
+   * @return the target of {@link #getNameReferenceElement()}, if it's an {@code @interface}, otherwise null
+   */
+  default @Nullable PsiClass resolveAnnotationType() {
+    PsiJavaCodeReferenceElement element = getNameReferenceElement();
+    PsiElement declaration = element == null ? null : element.resolve();
+    if (!(declaration instanceof PsiClass) || !((PsiClass)declaration).isAnnotationType()) return null;
+    return (PsiClass)declaration;
+  }
+
+  @Override
+  default @NotNull List<JvmAnnotationAttribute> getAttributes() {
+    return Arrays.asList(getParameterList().getAttributes());
+  }
+
+  /**
+   * @return whether the annotation has the given qualified name. Specific languages may provide efficient implementation
+   * that doesn't always create/resolve annotation reference.
+   */
+  default boolean hasQualifiedName(@NotNull String qualifiedName) {
+    return qualifiedName.equals(getQualifiedName());
+  }
 }

@@ -1,36 +1,20 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.inspections;
 
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.codeInspection.actions.CleanupInspectionIntention;
-import com.intellij.openapi.application.PathManager;
-import com.intellij.openapi.editor.RangeMarker;
-import com.intellij.openapi.util.Pair;
-import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethodCallExpression;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.refactoring.typeMigration.TypeMigrationBundle;
 import com.intellij.refactoring.typeMigration.inspections.GuavaInspection;
 import com.intellij.testFramework.IdeaTestUtil;
+import com.intellij.testFramework.LightProjectDescriptor;
 import com.intellij.testFramework.PlatformTestUtil;
-import com.intellij.testFramework.builders.JavaModuleFixtureBuilder;
-import com.intellij.testFramework.fixtures.JavaCodeInsightFixtureTestCase;
-import org.junit.Assert;
+import com.intellij.testFramework.fixtures.DefaultLightProjectDescriptor;
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 import java.util.List;
@@ -38,7 +22,10 @@ import java.util.List;
 /**
  * @author Dmitry Batkovich
  */
-public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
+public class GuavaInspectionTest extends LightJavaCodeInsightFixtureTestCase {
+  private static final LightProjectDescriptor DESCRIPTOR =
+    new DefaultLightProjectDescriptor(IdeaTestUtil::getMockJdk18, List.of("com.google.guava:guava:20.0"));
+  
   private GuavaInspection myInspection;
 
   @Override
@@ -49,16 +36,13 @@ public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
   }
 
   @Override
-  protected String getTestDataPath()  {
-    return PlatformTestUtil.getCommunityPath() + "/java/typeMigration/testData/inspections/guava";
+  protected @NotNull LightProjectDescriptor getProjectDescriptor() {
+    return DESCRIPTOR;
   }
 
   @Override
-  protected void tuneFixture(JavaModuleFixtureBuilder moduleBuilder) throws Exception {
-    moduleBuilder.setLanguageLevel(LanguageLevel.JDK_1_8);
-    moduleBuilder.addLibraryJars("guava", PathManager.getHomePathFor(Assert.class) + "/lib/", "guava-19.0.jar");
-    moduleBuilder.addLibraryJars("jsr305", PathManager.getHomePathFor(Assert.class) + "/lib/", "jsr305.jar");
-    moduleBuilder.addJdk(IdeaTestUtil.getMockJdk18Path().getPath());
+  protected String getTestDataPath()  {
+    return PlatformTestUtil.getCommunityPath() + "/java/typeMigration/testData/inspections/guava";
   }
 
   public void testOptional() {
@@ -71,6 +55,14 @@ public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
 
   public void testOptional3() {
     doTest();
+  }
+  
+  public void testOptional4() {
+    doTest();
+  }
+
+  public void testOptionalArray() {
+    doTestAllFile();
   }
 
   public void testSimpleFluentIterable() {
@@ -121,7 +113,7 @@ public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
     doTest();
   }
 
-  public void _testChainedFluentIterableWithOf() {
+  public void testChainedFluentIterableWithOf() {
     doTest();
   }
 
@@ -175,6 +167,10 @@ public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
   }
 
   public void testConvertFluentIterableAsIterableParameter() {
+    doTest();
+  }
+
+  public void testConvertFluentIterableAsIterableParameter2() {
     doTest();
   }
 
@@ -263,6 +259,18 @@ public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
     doTestAllFile();
   }
 
+  public void testPredicates5() {
+    doTest();
+  }
+
+  public void testPredicates6() { doTestAllFile(); }
+
+  public void testPredicatesVarArg1() { doTestAllFile(); }
+
+  public void testPredicatesVarArg2() { doTestAllFile(); }
+
+  public void testPredicatesVarArg3() { doTestAllFile(); }
+
   public void testFluentIterableElementTypeChanged() {
     doTest();
   }
@@ -293,12 +301,16 @@ public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
     doTest();
   }
 
-  private void doTestNoQuickFixes(Class<? extends PsiElement>... highlightedElements) {
+  public void testLambdaImplementsBothInterfaces() {
+    doTest();
+  }
+
+  private void doTestNoQuickFixes(@NotNull Class<? extends PsiElement> @NotNull ... highlightedElements) {
     myFixture.configureByFile(getTestName(true) + ".java");
 
     myFixture.doHighlighting();
     for (IntentionAction action : myFixture.getAvailableIntentions()) {
-      if (action instanceof GuavaInspection.MigrateGuavaTypeFix) {
+      if (TypeMigrationBundle.message("migrate.guava.to.java.family.name").equals(action.getFamilyName())) {
         final PsiElement element = ((GuavaInspection.MigrateGuavaTypeFix)action).getStartElement();
         if (PsiTreeUtil.instanceOf(element, highlightedElements)) {
           fail("Quick fix is found but not expected for types " + Arrays.toString(highlightedElements));
@@ -313,7 +325,7 @@ public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
     boolean actionFound = false;
     myFixture.doHighlighting();
     for (IntentionAction action : myFixture.getAvailableIntentions()) {
-      if (action instanceof GuavaInspection.MigrateGuavaTypeFix) {
+      if (TypeMigrationBundle.message("migrate.guava.to.java.family.name").equals(action.getFamilyName())) {
         myFixture.launchAction(action);
         actionFound = true;
         break;
@@ -327,14 +339,12 @@ public class GuavaInspectionTest extends JavaCodeInsightFixtureTestCase {
     myFixture.configureByFile(getTestName(true) + ".java");
     myFixture.enableInspections(new GuavaInspection());
     for (HighlightInfo info : myFixture.doHighlighting())
-      if (GuavaInspection.PROBLEM_DESCRIPTION.equals(info.getDescription())) {
-        final Pair<HighlightInfo.IntentionActionDescriptor, RangeMarker> marker = info.quickFixActionMarkers.get(0);
+      if (TypeMigrationBundle.message("guava.functional.primitives.can.be.replaced.by.java.api.problem.description").equals(info.getDescription())) {
+        HighlightInfo.IntentionActionDescriptor desc = info.findRegisteredQuickFix((descriptor, range) -> descriptor);
         final PsiElement someElement = myFixture.getFile().findElementAt(0);
         assertNotNull(someElement);
-        final List<IntentionAction> options = marker.getFirst().getOptions(someElement, myFixture.getEditor());
-        assertNotNull(options);
         boolean doBreak = false;
-        for (IntentionAction option : options) {
+        for (IntentionAction option : desc.getOptions(someElement, myFixture.getEditor())) {
           if (option instanceof CleanupInspectionIntention) {
             myFixture.launchAction(option);
             doBreak = true;

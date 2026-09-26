@@ -1,39 +1,24 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiIntersectionType;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeVisitor;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.util.PsiTypesUtil;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrSafeCastExpression;
-import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeElement;
-import org.jetbrains.plugins.groovy.lang.psi.util.GrTraitUtil;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-public class GrTraitType extends PsiType {
+public final class GrTraitType extends PsiType {
 
   private final @NotNull PsiIntersectionType myDelegate;
   private final @NotNull PsiType myExprType;
@@ -43,39 +28,33 @@ public class GrTraitType extends PsiType {
     super(PsiAnnotation.EMPTY_ARRAY);
     myDelegate = delegate;
     myExprType = delegate.getConjuncts()[0];
-    myTraitTypes = ContainerUtil.newArrayList(delegate.getConjuncts(), 1, delegate.getConjuncts().length);
+    myTraitTypes = ContainerUtil.subArrayAsList(delegate.getConjuncts(), 1, delegate.getConjuncts().length);
   }
 
-  @NotNull
-  public PsiType getExprType() {
+  public @NotNull PsiType getExprType() {
     return myExprType;
   }
 
-  @NotNull
-  public List<PsiType> getTraitTypes() {
+  public @NotNull @Unmodifiable List<PsiType> getTraitTypes() {
     return myTraitTypes;
   }
 
-  @NotNull
-  public PsiType[] getConjuncts() {
+  public PsiType @NotNull [] getConjuncts() {
     return myDelegate.getConjuncts();
   }
 
-  @NotNull
   @Override
-  public String getPresentableText() {
+  public @NotNull String getPresentableText() {
     return myExprType.getPresentableText() + " as " + StringUtil.join(ContainerUtil.map(myTraitTypes, type -> type.getPresentableText()), ", ");
   }
 
-  @NotNull
   @Override
-  public String getCanonicalText() {
+  public @NotNull String getCanonicalText() {
     return myDelegate.getCanonicalText();
   }
 
-  @NotNull
   @Override
-  public String getInternalCanonicalText() {
+  public @NlsSafe @NotNull String getInternalCanonicalText() {
     return myExprType.getCanonicalText() + " as " + StringUtil.join(ContainerUtil.map(myTraitTypes, type -> type.getInternalCanonicalText()), ", ");
   }
 
@@ -94,46 +73,26 @@ public class GrTraitType extends PsiType {
     return myDelegate.accept(visitor);
   }
 
-  @Nullable
   @Override
-  public GlobalSearchScope getResolveScope() {
+  public @Nullable GlobalSearchScope getResolveScope() {
     return myDelegate.getResolveScope();
   }
 
-  @NotNull
   @Override
-  public PsiType[] getSuperTypes() {
+  public PsiType @NotNull [] getSuperTypes() {
     return myDelegate.getSuperTypes();
   }
 
-  // todo move this method to org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.types.GrSafeCastExpressionImpl
-  @Nullable
-  public static PsiType createTraitType(@NotNull GrSafeCastExpression safeCastExpression) {
-    GrExpression operand = safeCastExpression.getOperand();
-    PsiType exprType = operand.getType();
-    if (!(exprType instanceof PsiClassType) && !(exprType instanceof GrTraitType)) return null;
-
-    GrTypeElement typeElement = safeCastExpression.getCastTypeElement();
-    if (typeElement == null) return null;
-    PsiType type = typeElement.getType();
-    if (!GrTraitUtil.isTrait(PsiTypesUtil.getPsiClass(type))) return null;
-
-    return createTraitType(exprType, ContainerUtil.newSmartList(type));
-  }
-
-  @NotNull
-  public static PsiType createTraitType(@NotNull PsiType type, @NotNull List<PsiType> traits) {
+  public static @NotNull PsiType createTraitType(@NotNull PsiType type, @NotNull List<? extends PsiType> traits) {
     return createTraitType(ContainerUtil.prepend(traits, type instanceof GrTraitType ? ((GrTraitType)type).myDelegate : type));
   }
 
-  @NotNull
-  public static PsiType createTraitType(@NotNull List<PsiType> types) {
+  public static @NotNull PsiType createTraitType(@NotNull List<PsiType> types) {
     return createTraitType(types.toArray(PsiType.createArray(types.size())));
   }
 
-  @NotNull
-  public static PsiType createTraitType(@NotNull PsiType[] types) {
-    final Set<PsiType> flattened = PsiIntersectionType.flatten(types, new LinkedHashSet<PsiType>() {
+  public static @NotNull PsiType createTraitType(PsiType @NotNull [] types) {
+    final Set<PsiType> flattened = PsiIntersectionType.flatten(types, new LinkedHashSet<>() {
       @Override
       public boolean add(PsiType type) {
         remove(type);

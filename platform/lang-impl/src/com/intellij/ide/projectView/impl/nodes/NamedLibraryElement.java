@@ -23,8 +23,6 @@ import com.intellij.openapi.util.Comparing;
 
 /**
  * @author Eugene Zhuravlev
- * Date: Sep 17, 2003
- * Time: 7:08:30 PM
  */
 public final class NamedLibraryElement {
   public static final DataKey<NamedLibraryElement[]> ARRAY_DATA_KEY = DataKey.create("namedLibrary.array");
@@ -45,11 +43,10 @@ public final class NamedLibraryElement {
     return myEntry.getPresentableName();
   }
 
+  @Override
   public boolean equals(Object o) {
     if (this == o) return true;
-    if (!(o instanceof NamedLibraryElement)) return false;
-
-    final NamedLibraryElement namedLibraryElement = (NamedLibraryElement)o;
+    if (!(o instanceof NamedLibraryElement namedLibraryElement)) return false;
 
     if (!myEntry.equals(namedLibraryElement.myEntry)) return false;
     if (!Comparing.equal(myContextModule, namedLibraryElement.myContextModule)) return false;
@@ -57,6 +54,7 @@ public final class NamedLibraryElement {
     return true;
   }
 
+  @Override
   public int hashCode() {
     int result;
     result = myContextModule != null ? myContextModule.hashCode() : 0;

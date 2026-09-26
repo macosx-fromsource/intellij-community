@@ -1,26 +1,15 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vfs.impl.jrt;
 
-import com.intellij.openapi.application.Application;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.projectRoots.JdkUtil;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.vfs.impl.ArchiveHandler;
@@ -30,91 +19,112 @@ import com.intellij.openapi.vfs.newvfs.NewVirtualFile;
 import com.intellij.openapi.vfs.newvfs.RefreshQueue;
 import com.intellij.openapi.vfs.newvfs.VfsImplUtil;
 import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent;
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent;
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.CollectionFactory;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.intellij.util.containers.ContainerUtil.newTroveMap;
-
-public class JrtFileSystemImpl extends JrtFileSystem {
-  private final Map<String, ArchiveHandler> myHandlers = newTroveMap(FileUtil.PATH_HASHING_STRATEGY);
+public class JrtFileSystemImpl extends JrtFileSystem implements Disposable {
+  private final Map<String, ArchiveHandler> myHandlers = Collections.synchronizedMap(CollectionFactory.createFilePathMap());
   private final AtomicBoolean mySubscribed = new AtomicBoolean(false);
 
-  @NotNull
   @Override
-  public String getProtocol() {
+  public void dispose() {
+    myHandlers.forEach((_, handler) -> handler.clearCaches());
+    myHandlers.clear();
+  }
+
+  @Override
+  public @NotNull String getProtocol() {
     return PROTOCOL;
   }
 
-  @Nullable
   @Override
-  protected String normalize(@NotNull String path) {
-    int p = path.indexOf(SEPARATOR);
-    return p > 0 ? FileUtil.normalize(path.substring(0, p)) + path.substring(p) : super.normalize(path);
+  protected @Nullable String normalize(@NotNull String path) {
+    var separatorIndex = path.indexOf(SEPARATOR);
+    return separatorIndex > 0 ? FileUtil.normalize(path.substring(0, separatorIndex)) + path.substring(separatorIndex) : null;
   }
 
-  @NotNull
   @Override
-  protected String extractLocalPath(@NotNull String rootPath) {
+  protected @NotNull String extractLocalPath(@NotNull String rootPath) {
     return StringUtil.trimEnd(rootPath, SEPARATOR);
   }
 
-  @NotNull
   @Override
-  protected String composeRootPath(@NotNull String localPath) {
+  protected @NotNull String composeRootPath(@NotNull String localPath) {
     return localPath + SEPARATOR;
   }
 
-  @NotNull
   @Override
-  protected String extractRootPath(@NotNull String entryPath) {
-    int separatorIndex = entryPath.indexOf(SEPARATOR);
-    assert separatorIndex >= 0 : "Path passed to JrtFileSystem must have a separator '!/': " + entryPath;
-    return entryPath.substring(0, separatorIndex + SEPARATOR.length());
+  protected @NotNull String extractRootPath(@NotNull String normalizedPath) {
+    var separatorIndex = normalizedPath.indexOf(SEPARATOR);
+    return separatorIndex > 0 ? normalizedPath.substring(0, separatorIndex + SEPARATOR.length()) : "";
   }
 
-  @NotNull
   @Override
-  protected ArchiveHandler getHandler(@NotNull VirtualFile entryFile) {
+  protected @NotNull ArchiveHandler getHandler(@NotNull VirtualFile entryFile) {
     checkSubscription();
 
-    String homePath = extractLocalPath(extractRootPath(entryFile.getPath()));
-    ArchiveHandler handler = myHandlers.get(homePath);
-    if (handler == null) {
-      handler = isSupported() ? new JrtHandler(homePath) : new JrtHandlerStub(homePath);
-      myHandlers.put(homePath, handler);
-      ApplicationManager.getApplication().invokeLater(
-        () -> LocalFileSystem.getInstance().refreshAndFindFileByPath(homePath + "/release"),
-        ModalityState.defaultModalityState());
-    }
-    return handler;
+    var homePath = extractLocalPath(VfsUtilCore.getRootFile(entryFile).getPath());
+    return myHandlers.computeIfAbsent(homePath, key -> {
+      var handler = new JrtHandler(key);
+      loadReleaseFileIntoVfs(key);
+      return handler;
+    });
+  }
+
+  private static void loadReleaseFileIntoVfs(String homePath) {
+    var releasePath = homePath + "/release";
+    VfsImplUtil.refreshAndFindFileByPath(LocalFileSystem.getInstance(), releasePath, file -> {
+      if (file == null) {
+        Logger.getInstance(JrtFileSystemImpl.class).warn("Cannot load into VFS: " + releasePath);
+      }
+    });
   }
 
   private void checkSubscription() {
     if (mySubscribed.getAndSet(true)) return;
 
-    Application app = ApplicationManager.getApplication();
-    app.getMessageBus().connect(app).subscribe(VirtualFileManager.VFS_CHANGES, new BulkFileListener.Adapter() {
+    var app = ApplicationManager.getApplication();
+    if (app.isDisposed()) return;  // we might perform a shutdown activity that includes visiting archives (IDEA-181620)
+    //noinspection IncorrectParentDisposable
+    Disposer.register(app, this);
+    app.getMessageBus().connect(this).subscribe(VirtualFileManager.VFS_CHANGES, new BulkFileListener() {
       @Override
-      public void after(@NotNull List<? extends VFileEvent> events) {
+      public void after(@NotNull List<? extends @NotNull VFileEvent> events) {
         Set<VirtualFile> toRefresh = null;
 
-        for (VFileEvent event : events) {
-          if (event.getFileSystem() instanceof LocalFileSystem && event instanceof VFileContentChangeEvent) {
-            VirtualFile file = event.getFile();
-            if (file != null && "release".equals(file.getName())) {
-              String homePath = file.getParent().getPath();
-              if (myHandlers.remove(homePath) != null) {
-                VirtualFile root = findFileByPath(composeRootPath(homePath));
+        for (var e : events) {
+          if (e.getFileSystem().isLocal()) {
+            String homePath = null;
+
+            if (e instanceof VFileContentChangeEvent cce) {
+              var file = cce.getFile();
+              if ("release".equals(file.getName())) {
+                homePath = file.getParent().getPath();
+              }
+            }
+            else if (e instanceof VFileDeleteEvent de) {
+              homePath = de.getPath();
+            }
+
+            if (homePath != null) {
+              var handler = myHandlers.remove(homePath);
+              if (handler != null) {
+                handler.clearCaches();
+                var root = findFileByPath(composeRootPath(homePath));
                 if (root != null) {
                   ((NewVirtualFile)root).markDirtyRecursively();
-                  if (toRefresh == null) toRefresh = ContainerUtil.newHashSet();
+                  if (toRefresh == null) toRefresh = new HashSet<>();
                   toRefresh.add(root);
                 }
               }
@@ -123,8 +133,8 @@ public class JrtFileSystemImpl extends JrtFileSystem {
         }
 
         if (toRefresh != null) {
-          boolean async = !ApplicationManager.getApplication().isUnitTestMode();
-          RefreshQueue.getInstance().refresh(async, true, null, toRefresh);
+          var synchronous = ApplicationManager.getApplication().isUnitTestMode();
+          RefreshQueue.getInstance().refresh(!synchronous, true, null, toRefresh);
         }
       }
     });
@@ -132,12 +142,12 @@ public class JrtFileSystemImpl extends JrtFileSystem {
 
   @Override
   public VirtualFile findFileByPath(@NotNull String path) {
-    return VfsImplUtil.findFileByPath(this, path);
+    return findFileByPath(this, path);
   }
 
   @Override
   public VirtualFile findFileByPathIfCached(@NotNull String path) {
-    return VfsImplUtil.findFileByPathIfCached(this, path);
+    return findFileByPathIfCached(this, path);
   }
 
   @Override
@@ -152,6 +162,15 @@ public class JrtFileSystemImpl extends JrtFileSystem {
 
   @Override
   protected boolean isCorrectFileType(@NotNull VirtualFile local) {
-    return isModularJdk(FileUtil.toSystemDependentName(local.getPath()));
+    var path = local.toNioPath();
+    return JdkUtil.isModularRuntime(path) && !JdkUtil.isExplodedModularRuntime(path);
+  }
+
+  @TestOnly
+  public void release(@NotNull String localPath) {
+    if (!ApplicationManager.getApplication().isUnitTestMode()) throw new IllegalStateException();
+    var handler = myHandlers.remove(localPath);
+    if (handler == null) throw new IllegalArgumentException(localPath + " not in " + myHandlers.keySet());
+    handler.clearCaches();
   }
 }

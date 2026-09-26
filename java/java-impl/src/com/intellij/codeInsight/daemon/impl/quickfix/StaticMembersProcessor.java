@@ -1,121 +1,117 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon.impl.quickfix;
 
 import com.intellij.codeInsight.CodeInsightUtil;
+import com.intellij.codeInsight.ExpectedTypeInfo;
+import com.intellij.codeInsight.ExpectedTypesProvider;
 import com.intellij.codeInsight.ImportFilter;
+import com.intellij.codeInsight.JavaProjectCodeInsightSettings;
+import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.progress.ProgressManager;
-import com.intellij.psi.*;
-import com.intellij.psi.util.PsiTypesUtil;
+import com.intellij.openapi.util.Pair;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiDocCommentOwner;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiModifierList;
+import com.intellij.psi.PsiType;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.util.ArrayUtilRt;
+import com.intellij.psi.util.TypeConversionUtil;
 import com.intellij.util.Processor;
-import com.intellij.util.containers.LinkedMultiMap;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 abstract class StaticMembersProcessor<T extends PsiMember & PsiDocCommentOwner> implements Processor<T> {
-  private final MultiMap<PsiClass, T> mySuggestions = new LinkedMultiMap<>();
+  private final MultiMap<PsiClass, T> mySuggestions = MultiMap.createLinked();
 
-  private final Map<PsiClass, Boolean> myPossibleClasses = new HashMap<>();
+  private final Map<String, Boolean> myPossibleClasses = new HashMap<>();
 
-  private final PsiElement myPlace;
-  private PsiType myExpectedType;
+  private final @NotNull PsiElement myPlace;
+  private final boolean myInDefaultPackage;
+  private final boolean myAddStaticImport;
+  private ExpectedTypeInfo[] myExpectedTypes;
+  private final int myMaxResults;
 
-  protected StaticMembersProcessor(PsiElement place) {
+  StaticMembersProcessor(@NotNull PsiElement place, boolean addStaticImport, int maxResults) {
     myPlace = place;
-    myExpectedType = PsiType.NULL;
+    myMaxResults = maxResults;
+    myInDefaultPackage = PsiUtil.isFromDefaultPackage(place);
+    myAddStaticImport = addStaticImport;
   }
 
-  protected abstract boolean isApplicable(T member, PsiElement place);
+  enum ApplicableType {NONE, PARTLY, APPLICABLE}
 
-  @NotNull
-  public List<T> getMembersToImport(boolean applicableOnly) {
-    final List<T> list = new ArrayList<>();
+  protected abstract ApplicableType isApplicable(@NotNull T member, @NotNull PsiElement place);
+
+  record MembersToImport<K>(@NotNull List<K> applicable,@NotNull List<K> all) {
+  }
+
+  @NotNull MembersToImport<T> getMembersToImport() {
+    final List<Pair<T, ApplicableType>> list = new ArrayList<>();
     final List<T> applicableList = new ArrayList<>();
     for (Map.Entry<PsiClass, Collection<T>> methodEntry : mySuggestions.entrySet()) {
       registerMember(methodEntry.getKey(), methodEntry.getValue(), list, applicableList);
     }
 
-    List<T> result = !applicableOnly && applicableList.isEmpty() ? list : applicableList;
-    Collections.sort(result, CodeInsightUtil.createSortIdenticalNamedMembersComparator(myPlace));
-    return result;
+    Comparator<T> comparator = CodeInsightUtil.createSortIdenticalNamedMembersComparator(myPlace);
+    if (applicableList.isEmpty()) {
+      list.sort(Comparator.<Pair<T, ApplicableType>, ApplicableType>comparing(t -> t.getSecond(), Comparator.naturalOrder())
+                  .reversed()
+                  .thenComparing(t -> t.getFirst(), comparator));
+    }
+    else {
+      applicableList.sort(comparator);
+      applicableList.addAll(list.stream()
+                              .filter(t -> t.getSecond() == ApplicableType.PARTLY)
+                              .map(t -> t.getFirst())
+                              .sorted(comparator)
+                              .toList());
+    }
+    return new MembersToImport<>(applicableList, ContainerUtil.map(list, t -> t.getFirst()));
   }
 
-  public PsiType getExpectedType() {
-    if (myExpectedType == PsiType.NULL) {
-      myExpectedType = getExpectedTypeInternal();
+  protected ExpectedTypeInfo @NotNull [] getExpectedTypes() {
+    if (myExpectedTypes == null) {
+      if (myPlace instanceof PsiExpression) {
+        myExpectedTypes = ExpectedTypesProvider.getExpectedTypes((PsiExpression)myPlace, false);
+      }
+      else {
+        myExpectedTypes = ExpectedTypeInfo.EMPTY_ARRAY;
+      }
     }
-    return myExpectedType;
+    return myExpectedTypes;
   }
 
-  private PsiType getExpectedTypeInternal() {
-    if (myPlace == null) return null;
-    final PsiElement parent = PsiUtil.skipParenthesizedExprUp(myPlace.getParent());
-
-    if (parent instanceof PsiVariable) {
-      if (myPlace.equals(PsiUtil.skipParenthesizedExprDown(((PsiVariable)parent).getInitializer()))) {
-        return ((PsiVariable)parent).getType();
+  protected ApplicableType isApplicableFor(@NotNull PsiType fieldType) {
+    ExpectedTypeInfo[] expectedTypes = getExpectedTypes();
+    for (ExpectedTypeInfo info : expectedTypes) {
+      if (TypeConversionUtil.isAssignable(info.getType(), fieldType)) return ApplicableType.APPLICABLE;
+      if (info.getType() instanceof PsiClassType classType &&
+          classType.getParameters().length != 0 &&
+          TypeConversionUtil.isAssignable(TypeConversionUtil.erasure(info.getType()), fieldType)) {
+        return ApplicableType.PARTLY;
       }
     }
-    else if (parent instanceof PsiAssignmentExpression) {
-      if (myPlace.equals(PsiUtil.skipParenthesizedExprDown(((PsiAssignmentExpression)parent).getRExpression()))) {
-        return ((PsiAssignmentExpression)parent).getLExpression().getType();
-      }
-    }
-    else if (parent instanceof PsiReturnStatement) {
-      return PsiTypesUtil.getMethodReturnType(parent);
-    }
-    else if (parent instanceof PsiExpressionList) {
-      final PsiElement pParent = parent.getParent();
-      if (pParent instanceof PsiCallExpression && parent.equals(((PsiCallExpression)pParent).getArgumentList())) {
-        final JavaResolveResult resolveResult = ((PsiCallExpression)pParent).resolveMethodGenerics();
-        final PsiElement psiElement = resolveResult.getElement();
-        if (psiElement instanceof PsiMethod) {
-          final PsiMethod psiMethod = (PsiMethod)psiElement;
-          final PsiParameter[] parameters = psiMethod.getParameterList().getParameters();
-          final int idx = ArrayUtilRt.find(((PsiExpressionList)parent).getExpressions(), PsiUtil.skipParenthesizedExprUp(myPlace));
-          if (idx > -1 && parameters.length > 0) {
-            PsiType parameterType = parameters[Math.min(idx, parameters.length - 1)].getType();
-            if (idx >= parameters.length - 1) {
-              final PsiParameter lastParameter = parameters[parameters.length - 1];
-              if (lastParameter.isVarArgs()) {
-                parameterType = ((PsiEllipsisType)lastParameter.getType()).getComponentType();
-              }
-            }
-            return resolveResult.getSubstitutor().substitute(parameterType);
-          }
-          else {
-            return null;
-          }
-        }
-      }
-    }
-    else if (parent instanceof PsiLambdaExpression) {
-      return LambdaUtil.getFunctionalInterfaceReturnType(((PsiLambdaExpression)parent).getFunctionalInterfaceType());
-    }
-    return null;
+    return expectedTypes.length == 0 ? ApplicableType.APPLICABLE : ApplicableType.NONE;
   }
 
   @Override
   public boolean process(T member) {
     ProgressManager.checkCanceled();
-    if (StaticImportMemberFix.isExcluded(member)) {
+    if (isExcluded(member)) {
       return true;
     }
     final PsiClass containingClass = member.getContainingClass();
@@ -125,31 +121,46 @@ abstract class StaticMembersProcessor<T extends PsiMember & PsiDocCommentOwner> 
       if (qualifiedName != null && containingFile != null && !ImportFilter.shouldImport(containingFile, qualifiedName)) {
         return true;
       }
+
+      PsiModifierList modifierList = member.getModifierList();
+      if (modifierList != null && member instanceof PsiMethod &&
+          member.getLanguage().isKindOf(JavaLanguage.INSTANCE)
+          && !modifierList.hasExplicitModifier(PsiModifier.STATIC)) {
+        //methods in interfaces must have explicit static modifier, or they are not static;
+        return true;
+      }
+
+      if (myAddStaticImport) {
+        if (!PsiUtil.isFromDefaultPackage(member)) {
+          mySuggestions.putValue(containingClass, member);
+        }
+      }
+      else if (myInDefaultPackage || !PsiUtil.isFromDefaultPackage(member)) {
+        mySuggestions.putValue(containingClass, member);
+      }
     }
-    PsiFile file = member.getContainingFile();
-    if (file instanceof PsiJavaFile
-        //do not show methods from default package
-        && !((PsiJavaFile)file).getPackageName().isEmpty()) {
-      mySuggestions.putValue(containingClass, member);
-    }
-    return processCondition();
+
+    return mySuggestions.size() < myMaxResults;
   }
 
-  private boolean processCondition() {
-    return mySuggestions.size() < 100;
+  private static boolean isExcluded(@NotNull PsiMember method) {
+    String name = PsiUtil.getMemberQualifiedName(method);
+    return name != null && JavaProjectCodeInsightSettings.getSettings(method.getProject()).isExcluded(name);
   }
 
-  private void registerMember(PsiClass containingClass,
-                              Collection<T> members,
-                              List<T> list,
-                              List<T> applicableList) {
-    Boolean alreadyMentioned = myPossibleClasses.get(containingClass);
-    if (alreadyMentioned == Boolean.TRUE) return;
-    if (containingClass.getQualifiedName() == null) {
+  private void registerMember(@NotNull PsiClass containingClass,
+                              @NotNull Collection<? extends T> members,
+                              @NotNull List<Pair<T, ApplicableType>> list,
+                              @NotNull List<T> applicableList) {
+    String qualifiedName = containingClass.getQualifiedName();
+    if (qualifiedName == null) {
       return;
     }
+
+    Boolean alreadyMentioned = myPossibleClasses.get(qualifiedName);
+    if (alreadyMentioned == Boolean.TRUE) return;
     if (alreadyMentioned == null) {
-      myPossibleClasses.put(containingClass, false);
+      myPossibleClasses.put(qualifiedName, false);
     }
     for (T member : members) {
       if (!member.hasModifierProperty(PsiModifier.STATIC)) {
@@ -157,16 +168,31 @@ abstract class StaticMembersProcessor<T extends PsiMember & PsiDocCommentOwner> 
       }
 
       if (alreadyMentioned == null) {
-        list.add(member);
+        list.add(new Pair<>(member, ApplicableType.NONE));
         alreadyMentioned = Boolean.FALSE;
       }
 
       if (!PsiUtil.isAccessible(myPlace.getProject(), member, myPlace, containingClass)) {
         continue;
       }
-      if (isApplicable(member, myPlace)) {
+
+      if (myAddStaticImport && !PsiUtil.isAccessible(myPlace.getProject(), member, myPlace.getContainingFile(), containingClass)) {
+        continue;
+      }
+
+      ApplicableType type = isApplicable(member, myPlace);
+      if (!list.isEmpty()) {
+        Pair<T, ApplicableType> previousPair = list.getLast();
+        if (previousPair.getFirst().getContainingClass() == containingClass &&
+            previousPair.getSecond().ordinal() < type.ordinal()) {
+          list.removeLast();
+          list.add(new Pair<>(member, type));
+        }
+      }
+
+      if (type == ApplicableType.APPLICABLE) {
         applicableList.add(member);
-        myPossibleClasses.put(containingClass, true);
+        myPossibleClasses.put(qualifiedName, true);
         break;
       }
     }

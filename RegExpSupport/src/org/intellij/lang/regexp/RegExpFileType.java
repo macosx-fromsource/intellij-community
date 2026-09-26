@@ -16,51 +16,48 @@
 package org.intellij.lang.regexp;
 
 import com.intellij.icons.AllIcons;
+import com.intellij.lang.Language;
 import com.intellij.openapi.fileTypes.LanguageFileType;
-import com.intellij.ui.LayeredIcon;
-import icons.RegExpSupportIcons;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.Icon;
 
 public class RegExpFileType extends LanguageFileType {
     public static final RegExpFileType INSTANCE = new RegExpFileType();
 
-    private final Icon myIcon;
-
     private RegExpFileType() {
         super(RegExpLanguage.INSTANCE);
-
-        myIcon = new LayeredIcon(2);
-        ((LayeredIcon)myIcon).setIcon(AllIcons.FileTypes.Text, 0);
-        ((LayeredIcon)myIcon).setIcon(RegExpSupportIcons.Regexp_filetype_icon, 1);
-
-//        myIcon = LayeredIcon.create(
-//                IconLoader.getIcon("/fileTypes/text.png"),
-//                IconLoader.getIcon("regexp-filetype-icon.png"));
     }
 
-    @NotNull
-    @NonNls
-    public String getName() {
+    private RegExpFileType(@NotNull Language language) {
+        super(language);
+        if (!(language.getBaseLanguage() instanceof RegExpLanguage)) {
+            throw new IllegalArgumentException(String.valueOf(language.getBaseLanguage()));
+        }
+    }
+
+    @Override
+    public @NotNull @NonNls String getName() {
         return "RegExp";
     }
 
-    @NotNull
-    public String getDescription() {
-        return "Regular Expression";
+    @Override
+    public @NotNull String getDescription() {
+        return RegExpBundle.message("filetype.regular.expression.description");
     }
 
-    @NotNull
-    @NonNls
-    public String getDefaultExtension() {
+    @Override
+    public @NotNull @NonNls String getDefaultExtension() {
         return "regexp";
     }
 
-    @Nullable
+    @Override
     public Icon getIcon() {
-        return myIcon;
+        return getLanguage() == RegExpLanguage.INSTANCE ? AllIcons.FileTypes.Regexp : null;
+    }
+
+    public static @NotNull LanguageFileType forLanguage(@NotNull Language language) {
+        return new RegExpFileType(language);
     }
 }

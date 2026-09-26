@@ -1,62 +1,140 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.updater;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
-public class PatchFileCreator {
+import static com.intellij.updater.Runner.LOG;
+
+public final class PatchFileCreator {
   private static final String PATCH_INFO_FILE_NAME = ".patch-info";
 
-  public static Patch create(PatchSpec spec, File patchFile, UpdaterUI ui) throws IOException, OperationCancelledException {
-    Patch patchInfo = new Patch(spec, ui);
-    Runner.logger().info("Creating the patch file '" + patchFile + "'...");
-    ui.startProcess("Creating the patch file '" + patchFile + "'...");
-    ui.checkCancelled();
+  @SuppressWarnings("UseOfSystemOutOrSystemErr")
+  public static Patch create(PatchSpec spec, File patchFile, Path cacheDir) throws IOException {
+    LOG.info("Creating the patch file '" + patchFile + "'...");
+    System.out.println("Creating the patch file '" + patchFile + "'...");
+
+    var patchInfo = new Patch(spec);
+
+    LOG.info("Packing entries...");
+    System.out.println("Packing entries...");
+
+    List<PatchAction> actions = patchInfo.getActions();
+    File olderDir = new File(spec.getOldFolder());
+    File newerDir = new File(spec.getNewFolder());
+    ExecutorService executor = Executors.newFixedThreadPool(Math.max(Runtime.getRuntime().availableProcessors() - 1, 1));
+    Map<PatchAction, Future<Path>> tasks = new ConcurrentHashMap<>();
+
+    for (int i = 0; i < actions.size(); i++) {
+      PatchAction action = actions.get(i);
+      if (action instanceof UpdateAction && !action.isCritical()) {
+        int _i = i;
+        tasks.put(action, executor.submit(() -> {
+          Path cached = null;
+          if (cacheDir != null) {
+            String cachedName = getCachedFileName((UpdateAction)action, newerDir);
+            if (cachedName != null) {
+              cached = cacheDir.resolve(cachedName);
+              if (Files.exists(cached) && Files.isRegularFile(cached)) {
+                LOG.info("Reusing diff for " + action.getPath() + " : " + cachedName);
+                return cached;
+              }
+            }
+          }
+          Path temp = Utils.getTempFile("diff_" + _i).toPath();
+          try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(temp))) {
+            out.setLevel(0);
+            action.buildPatchFile(olderDir, newerDir, out);
+          }
+          if (cached != null) {
+            Files.createDirectories(cached.getParent());
+            Files.copy(temp, cached);
+            LOG.info("Caching diff for " + action.getPath() + " : " + cached.getFileName());
+          }
+          return temp;
+        }));
+      }
+    }
 
     try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(patchFile))) {
       out.setLevel(9);
 
+      LOG.info("Packing " + PATCH_INFO_FILE_NAME);
       out.putNextEntry(new ZipEntry(PATCH_INFO_FILE_NAME));
       patchInfo.write(out);
       out.closeEntry();
 
-      File olderDir = new File(spec.getOldFolder());
-      File newerDir = new File(spec.getNewFolder());
-      List<PatchAction> actions = patchInfo.getActions();
-      for (PatchAction each : actions) {
-
-        Runner.logger().info("Packing " + each.getPath());
-        ui.setStatus("Packing " + each.getPath());
-        ui.checkCancelled();
-        each.buildPatchFile(olderDir, newerDir, out);
+      for (PatchAction action : actions) {
+        LOG.info("Packing " + action.getPath());
+        Future<Path> task = tasks.get(action);
+        if (task == null) {
+          action.buildPatchFile(olderDir, newerDir, out);
+        }
+        else {
+          try {
+            Path temp = task.get();
+            try (ZipInputStream in = new ZipInputStream(Files.newInputStream(temp))) {
+              ZipEntry entry;
+              while ((entry = in.getNextEntry()) != null) {
+                out.putNextEntry(new ZipEntry(entry.getName()));
+                Utils.copyStream(in, out);
+                out.closeEntry();
+              }
+            }
+          }
+          catch (InterruptedException e) { throw new IOException(e); }
+          catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof IOException) throw (IOException)cause;
+            if (cause instanceof RuntimeException) throw (RuntimeException)cause;
+            if (cause instanceof Error) throw (Error)cause;
+            throw new RuntimeException(e);
+          }
+        }
       }
     }
+
+    executor.shutdown();
 
     return patchInfo;
   }
 
-  public static PreparationResult prepareAndValidate(File patchFile, File toDir, UpdaterUI ui) throws IOException, OperationCancelledException {
+  private static String getCachedFileName(UpdateAction action, File newerDir) {
+    if (action.isMove()) return null;
+    if (!Digester.isFile(action.getChecksum())) return null;
+    // Single file diff is a zip file with single entry corresponding to target file name, so entry name should be part of caching key
+    // Also both source and target digests are part of key
+    try {
+      return "diff-v1-" +
+             action.getPath().replaceAll("[^A-Za-z0-9_\\-]","_") +
+             '-' +
+             Long.toHexString(action.getChecksum()) +
+             '-' +
+             Long.toHexString(Digester.digestRegularFile(action.getFile(newerDir)));
+    }
+    catch (IOException ignored) {
+      return null;
+    }
+  }
+
+  public static PreparationResult prepareAndValidate(File patchFile,
+                                                     File toDir,
+                                                     UpdaterUI ui) throws IOException, OperationCancelledException {
     Patch patch;
 
     try (ZipFile zipFile = new ZipFile(patchFile);
@@ -64,22 +142,19 @@ public class PatchFileCreator {
       patch = new Patch(in);
     }
 
-    ui.setDescription(patch.getOldBuild(), patch.getNewBuild());
+    LOG.info(patch.getOldBuild() + " -> " + patch.getNewBuild());
+    var oldVersion = Utils.splitVersionString(patch.getOldBuild())[0];
+    var newVersion = Utils.splitVersionString(patch.getNewBuild())[0];
+    ui.setDescription(UpdaterUI.message("updating.x.to.y", oldVersion, newVersion));
 
     List<ValidationResult> validationResults = patch.validate(toDir, ui);
     return new PreparationResult(patch, patchFile, toDir, validationResults);
   }
 
-  public static boolean apply(PreparationResult preparationResult,
-                              Map<String, ValidationResult.Option> options,
-                              UpdaterUI ui) throws IOException, OperationCancelledException {
-    return apply(preparationResult, options, Utils.createTempDir(), ui).applied;
-  }
-
-  public static Patch.ApplicationResult apply(PreparationResult preparationResult,
-                                              Map<String, ValidationResult.Option> options,
-                                              File backupDir,
-                                              UpdaterUI ui) throws IOException, OperationCancelledException {
+  public static ApplicationResult apply(PreparationResult preparationResult,
+                                        Map<String, ValidationResult.Option> options,
+                                        File backupDir,
+                                        UpdaterUI ui) throws IOException {
     try (ZipFile zipFile = new ZipFile(preparationResult.patchFile)) {
       return preparationResult.patch.apply(zipFile, preparationResult.toDir, backupDir, options, ui);
     }
@@ -88,7 +163,7 @@ public class PatchFileCreator {
   public static void revert(PreparationResult preparationResult,
                             List<PatchAction> actionsToRevert,
                             File backupDir,
-                            UpdaterUI ui) throws IOException, OperationCancelledException {
+                            UpdaterUI ui) throws IOException {
     preparationResult.patch.revert(actionsToRevert, backupDir, preparationResult.toDir, ui);
   }
 
@@ -103,6 +178,22 @@ public class PatchFileCreator {
       this.patchFile = patchFile;
       this.toDir = toDir;
       this.validationResults = validationResults;
+    }
+  }
+
+  public static class ApplicationResult {
+    public final boolean applied;
+    public final List<PatchAction> appliedActions;
+    public final Throwable error;
+
+    public ApplicationResult(boolean applied, List<PatchAction> appliedActions) {
+      this(applied, appliedActions, null);
+    }
+
+    public ApplicationResult(boolean applied, List<PatchAction> appliedActions, Throwable error) {
+      this.applied = applied;
+      this.appliedActions = appliedActions;
+      this.error = error;
     }
   }
 }

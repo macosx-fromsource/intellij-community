@@ -24,12 +24,10 @@ import com.intellij.psi.impl.source.tree.JavaElementType;
 import com.intellij.psi.impl.source.tree.TreeUtil;
 import com.intellij.psi.tree.ChildRoleBase;
 import com.intellij.psi.tree.IElementType;
+import org.jetbrains.annotations.NotNull;
 
-/**
- * @author dsl
- */
 public class ImportStatementBaseElement extends CompositeElement {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.psi.impl.source.tree.java.ImportStatementBaseElement");
+  private static final Logger LOG = Logger.getInstance(ImportStatementBaseElement.class);
 
   protected ImportStatementBaseElement(IElementType type) {
     super(type);
@@ -39,9 +37,6 @@ public class ImportStatementBaseElement extends CompositeElement {
   public ASTNode findChildByRole(int role){
     LOG.assertTrue(ChildRole.isUnique(role));
     switch(role){
-      default:
-        return null;
-
       case ChildRole.IMPORT_KEYWORD:
         return getFirstChildNode();
 
@@ -53,11 +48,14 @@ public class ImportStatementBaseElement extends CompositeElement {
 
       case ChildRole.CLOSING_SEMICOLON:
         return TreeUtil.findChildBackward(this, JavaTokenType.SEMICOLON);
+
+      default:
+        return null;
     }
   }
 
   @Override
-  public int getChildRole(ASTNode child) {
+  public int getChildRole(@NotNull ASTNode child) {
     LOG.assertTrue(child.getTreeParent() == this);
     IElementType i = child.getElementType();
     if (i == JavaTokenType.IMPORT_KEYWORD) {

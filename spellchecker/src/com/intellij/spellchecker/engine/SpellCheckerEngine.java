@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,21 +15,26 @@
  */
 package com.intellij.spellchecker.engine;
 
+import com.intellij.openapi.project.Project;
+import com.intellij.spellchecker.dictionary.Dictionary;
+import com.intellij.spellchecker.dictionary.EditableDictionary;
 import com.intellij.spellchecker.dictionary.Loader;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
-
+import java.util.Set;
 
 public interface SpellCheckerEngine {
-
-
   void loadDictionary(@NotNull Loader loader);
+
+  void addModifiableDictionary(@NotNull EditableDictionary dictionary);
+
+  void addDictionary(@NotNull Dictionary dictionary);
 
   Transformation getTransformation();
 
   boolean isCorrect(@NotNull String word);
-
 
   @NotNull
   List<String> getSuggestions(@NotNull String word, int threshold, int quality);
@@ -37,10 +42,17 @@ public interface SpellCheckerEngine {
   @NotNull
   List<String> getVariants(@NotNull String prefix);
 
-
   void reset();
 
   boolean isDictionaryLoad(@NotNull String name);
 
+  Set<String> getDictionaryNames();
+
   void removeDictionary(@NotNull String name);
+
+  void removeDictionariesRecursively(@NotNull String directory);
+
+  static @Nullable SpellCheckerEngine getInstance(Project project) {
+    return project.getService(SpellCheckerEngine.class);
+  }
 }

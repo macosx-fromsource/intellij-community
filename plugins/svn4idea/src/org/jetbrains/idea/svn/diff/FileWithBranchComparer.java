@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.diff;
 
 import com.intellij.diff.DiffContentFactory;
@@ -23,30 +9,28 @@ import com.intellij.diff.requests.SimpleDiffRequest;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.svn.SvnBundle;
 import org.jetbrains.idea.svn.SvnUtil;
-import org.tmatesoft.svn.core.SVNException;
-import org.tmatesoft.svn.core.wc.SVNRevision;
-import org.tmatesoft.svn.core.wc2.SvnTarget;
+import org.jetbrains.idea.svn.api.Revision;
+import org.jetbrains.idea.svn.api.Target;
+import org.jetbrains.idea.svn.api.Url;
 
 import java.io.IOException;
 
-/**
- * @author Konstantin Kolosovsky.
- */
 public class FileWithBranchComparer extends ElementWithBranchComparer {
 
-  @NotNull private final Ref<byte[]> content = new Ref<>();
-  @NotNull private final StringBuilder remoteTitleBuilder = new StringBuilder();
-  @NotNull private final Ref<Boolean> success = new Ref<>();
+  private final @NotNull Ref<byte[]> content = new Ref<>();
+  private final @NlsContexts.Label @NotNull StringBuilder remoteTitleBuilder = new StringBuilder();
+  private final @NotNull Ref<Boolean> success = new Ref<>();
 
   public FileWithBranchComparer(@NotNull Project project,
                                 @NotNull VirtualFile virtualFile,
-                                @NotNull String branchUrl,
+                                @NotNull Url branchUrl,
                                 long branchRevision) {
     super(project, virtualFile, branchUrl, branchRevision);
   }
@@ -60,9 +44,9 @@ public class FileWithBranchComparer extends ElementWithBranchComparer {
   }
 
   @Override
-  protected void compare() throws SVNException, VcsException {
-    remoteTitleBuilder.append(myElementUrl);
-    content.set(SvnUtil.getFileContents(myVcs, SvnTarget.fromURL(myElementUrl), SVNRevision.HEAD, SVNRevision.UNDEFINED));
+  protected void compare() throws VcsException {
+    remoteTitleBuilder.append(myElementUrl.toDecodedString());
+    content.set(SvnUtil.getFileContents(myVcs, Target.on(myElementUrl), Revision.HEAD, Revision.UNDEFINED));
     success.set(true);
   }
 
@@ -89,7 +73,7 @@ public class FileWithBranchComparer extends ElementWithBranchComparer {
   }
 
   @Override
-  public String getTitle() {
+  public @NotNull String getTitle() {
     return SvnBundle.message("compare.with.branch.progress.loading.content");
   }
 }

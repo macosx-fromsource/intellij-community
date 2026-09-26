@@ -20,28 +20,40 @@ import com.intellij.codeInsight.intention.IntentionAction;
 import com.intellij.javaee.ExternalResourceManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Pair;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiFileFactory;
+import com.intellij.psi.PsiRecursiveElementVisitor;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlElement;
 import com.intellij.psi.xml.XmlFile;
+import com.intellij.psi.xml.XmlTag;
 import com.intellij.ui.EditorComboBox;
-import com.intellij.ui.ListCellRendererWrapper;
+import com.intellij.ui.dsl.listCellRenderer.BuilderKt;
 import com.intellij.uiDesigner.core.GridConstraints;
-import com.intellij.util.ArrayUtil;
+import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.LocalTimeCounter;
 import com.intellij.util.containers.BidirectionalMap;
 import org.intellij.lang.xpath.XPathFileType;
-import org.intellij.lang.xpath.context.*;
+import org.intellij.lang.xpath.context.ContextProvider;
+import org.intellij.lang.xpath.context.ContextType;
+import org.intellij.lang.xpath.context.NamespaceContext;
+import org.intellij.lang.xpath.context.SimpleVariableContext;
+import org.intellij.lang.xpath.context.VariableContext;
 import org.intellij.lang.xpath.psi.PrefixReference;
 import org.intellij.lang.xpath.psi.QNameElement;
 import org.intellij.lang.xpath.psi.XPathElement;
 import org.intellij.plugins.xpathView.Config;
 import org.intellij.plugins.xpathView.HistoryElement;
+import org.intellij.plugins.xpathView.XPathBundle;
 import org.intellij.plugins.xpathView.eval.EvalExpressionDialog;
 import org.intellij.plugins.xpathView.support.XPathSupport;
 import org.intellij.plugins.xpathView.util.Namespace;
@@ -50,13 +62,22 @@ import org.intellij.plugins.xpathView.util.Variable;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.SwingUtilities;
 import javax.swing.event.ListDataEvent;
 import javax.swing.event.ListDataListener;
 import javax.xml.namespace.QName;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @SuppressWarnings("unchecked")
 public abstract class InputExpressionDialog<FormType extends InputForm> extends ModeSwitchableDialog {
@@ -72,7 +93,7 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
     private final EditorComboBox myComboBox;
     private JComponent myEditorComponent;
 
-    @Nullable private Set<Namespace> myNamespaceCache;
+    private @Nullable Set<Namespace> myNamespaceCache;
     private InteractiveContextProvider myContextProvider;
     private final PsiFile myXPathFile;
 
@@ -95,35 +116,34 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         myModel.addListDataListener(new ListDataListener() {
             final DaemonCodeAnalyzer analyzer = DaemonCodeAnalyzer.getInstance(project);
 
+            @Override
             public void intervalAdded(ListDataEvent e) {
             }
 
+            @Override
             public void intervalRemoved(ListDataEvent e) {
             }
 
+            @Override
             public void contentsChanged(ListDataEvent e) {
                 final HistoryElement item = myModel.getSelectedItem();
                 if (item != null) {
                     myContextProvider.getNamespaceContext().setMap(asMap(item.namespaces));
                     if (myXPathFile != null) {
-                      analyzer.restart(myXPathFile);
+                      analyzer.restart(myXPathFile, this);
                     }
                 }
             }
         });
         myComboBox = new EditorComboBox(myDocument, project, XPathFileType.XPATH);
-        myComboBox.setRenderer(new ListCellRendererWrapper<HistoryElement>() {
-            @Override
-            public void customize(JList list, HistoryElement value, int index, boolean selected, boolean hasFocus) {
-                setText(value != null ? value.expression : "");
-            }
-        });
         myComboBox.setModel(myModel);
+        myComboBox.setRenderer(BuilderKt.<HistoryElement>textListCellRenderer("", value -> value.expression));
 
         myComboBox.setEditable(true);
 
-        myDocument.addDocumentListener(new DocumentAdapter() {
-            public void documentChanged(DocumentEvent e) {
+        myDocument.addDocumentListener(new DocumentListener() {
+            @Override
+            public void documentChanged(@NotNull DocumentEvent e) {
                 updateOkAction();
             }
         });
@@ -131,13 +151,14 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         init();
     }
 
+    @Override
     protected void init() {
         myForm.getIcon().setText(null);
         myForm.getIcon().setIcon(Messages.getQuestionIcon());
 
         myForm.getEditContextButton().addActionListener(new ActionListener() {
 
-            @SuppressWarnings({"unchecked"})
+            @Override
             public void actionPerformed(ActionEvent e) {
                 final HistoryElement selectedItem = myModel.getSelectedItem();
 
@@ -199,20 +220,20 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         }
 
         final DaemonCodeAnalyzer analyzer = DaemonCodeAnalyzer.getInstance(myProject);
-        analyzer.restart(myXPathFile);
+        analyzer.restart(myXPathFile, this);
     }
 
     private Set<String> findUnresolvedPrefixes() {
         final Set<String> prefixes = new HashSet<>();
 
         myXPathFile.accept(new PsiRecursiveElementVisitor(){
-            public void visitElement(PsiElement element) {
+            @Override
+            public void visitElement(@NotNull PsiElement element) {
                 if (element instanceof QNameElement) {
                     final PsiReference[] references = element.getReferences();
                     for (PsiReference reference : references) {
-                        if (reference instanceof PrefixReference) {
-                            final PrefixReference prefixReference = (PrefixReference)reference;
-                            if (prefixReference.isUnresolved()) {
+                        if (reference instanceof PrefixReference prefixReference) {
+                          if (prefixReference.isUnresolved()) {
                                 prefixes.add(prefixReference.getPrefix());
                             }
                         }
@@ -228,6 +249,7 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         return myForm;
     }
 
+    @Override
     protected JComponent createCenterPanel() {
         return myForm.getComponent();
     }
@@ -240,8 +262,7 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         return myEditor.getField().getDocument().getTextLength() > 0;
     }
 
-    @Nullable
-    protected Editor getEditor() {
+    protected @Nullable Editor getEditor() {
         if (getMode() == Mode.ADVANCED) {
             return myEditor.getField().getEditor();
         } else {
@@ -249,6 +270,7 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         }
     }
 
+    @Override
     protected void setModeImpl(Mode mode) {
 //        mySettingsPanel.setVisible(mode == Mode.ADVANCED);
         myForm.getEditContextButton().setVisible(mode == Mode.ADVANCED);
@@ -289,12 +311,11 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         // not sure why this is required...
         assert document != null;
         document.setReadOnly(false);
-        
+
         assert document.isWritable() : "WTF, document is not writable? Text = <" + expression + ">";
         return document;
     }
 
-    @SuppressWarnings({ "unchecked" })
     public boolean show(XmlElement contextElement) {
         prepareShow(contextElement);
 
@@ -303,7 +324,6 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         return isOK();
     }
 
-    @SuppressWarnings({"unchecked"})
     private void prepareShow(XmlElement contextElement) {
 
         final NamespaceCollector.CollectedInfo collectedInfo;
@@ -350,7 +370,6 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         return n;
     }
 
-    @SuppressWarnings({"unchecked"})
     protected Map<String, String> asMap(Collection<Namespace> namespaces) {
         if (namespaces == null) {
             if (myNamespaceCache != null) {
@@ -367,6 +386,7 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         return Namespace.makeMap(namespaces);
     }
 
+    @Override
     public JComponent getPreferredFocusedComponent() {
       final Editor editor = getEditor();
       if (editor != null) {
@@ -376,12 +396,11 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
       }
     }
 
-    @SuppressWarnings({"unchecked"})
     public Context getContext() {
         final HistoryElement context = myModel.getSelectedItem();
         if (context == null || context.expression == null) {
-            final Set<Namespace> cache = myNamespaceCache != null ? myNamespaceCache : Collections.<Namespace>emptySet();
-            return new Context(new HistoryElement(myDocument.getText(), Collections.<Variable>emptySet(), cache), getMode());
+            final Set<Namespace> cache = myNamespaceCache != null ? myNamespaceCache : Collections.emptySet();
+            return new Context(new HistoryElement(myDocument.getText(), Collections.emptySet(), cache), getMode());
         }
 
         final Collection<Namespace> namespaces = myNamespaceCache != null ?
@@ -402,17 +421,17 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
     private static class MyVariableResolver extends SimpleVariableContext {
         private final HistoryModel myModel;
 
-        public MyVariableResolver(HistoryModel model) {
+        MyVariableResolver(HistoryModel model) {
             myModel = model;
         }
 
-        @NotNull
-        public String[] getVariablesInScope(XPathElement element) {
+        @Override
+        public String @NotNull [] getVariablesInScope(XPathElement element) {
             final HistoryElement selectedItem = myModel.getSelectedItem();
             if (selectedItem != null) {
                 return Variable.asSet(selectedItem.variables).toArray(new String[selectedItem.variables.size()]);
             } else {
-                return ArrayUtil.EMPTY_STRING_ARRAY;
+                return ArrayUtilRt.EMPTY_STRING_ARRAY;
             }
         }
     }
@@ -423,32 +442,34 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
         private final MyVariableResolver myVariableResolver;
         private final EvalExpressionDialog.MyNamespaceContext myNamespaceContext;
 
-        public InteractiveContextProvider(XmlElement contextElement, NamespaceCollector.CollectedInfo collectedInfo, HistoryModel model) {
+        InteractiveContextProvider(XmlElement contextElement, NamespaceCollector.CollectedInfo collectedInfo, HistoryModel model) {
             myContextElement = contextElement;
             myCollectedInfo = collectedInfo;
             myVariableResolver = new MyVariableResolver(model);
             myNamespaceContext = new EvalExpressionDialog.MyNamespaceContext();
         }
 
-        @NotNull
-        public ContextType getContextType() {
+        @Override
+        public @NotNull ContextType getContextType() {
             return XPathSupport.TYPE;
         }
 
-        @Nullable
-        public XmlElement getContextElement() {
+        @Override
+        public @Nullable XmlElement getContextElement() {
             return myContextElement;
         }
 
-        @NotNull
-        public EvalExpressionDialog.MyNamespaceContext getNamespaceContext() {
+        @Override
+        public @NotNull EvalExpressionDialog.MyNamespaceContext getNamespaceContext() {
             return myNamespaceContext;
         }
 
+        @Override
         public VariableContext getVariableContext() {
             return myVariableResolver;
         }
 
+        @Override
         public Set<QName> getAttributes(boolean forValidation) {
             return myCollectedInfo.attributes;
         }
@@ -458,11 +479,11 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
             for (Iterator<QName> it = set.iterator(); it.hasNext();) {
                 final QName name = it.next();
                 final String prefix = name.getPrefix();
-                if (prefix == null || prefix.length() == 0) {
+                if (prefix == null || prefix.isEmpty()) {
                     final String uri = name.getNamespaceURI();
-                    if (uri != null && uri.length() > 0) {
+                    if (uri != null && !uri.isEmpty()) {
                         final String assignedPrefix = myNamespaceContext.getPrefixForURI(uri, null);
-                        if (assignedPrefix == null || assignedPrefix.length() == 0) {
+                        if (assignedPrefix == null) {
                             it.remove();
                         }
                     }
@@ -471,6 +492,7 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
             return set;
         }
 
+        @Override
         public Set<QName> getElements(boolean forValidation) {
             return filterDefaultNamespace(myCollectedInfo.elements);
         }
@@ -479,28 +501,28 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
     protected class MyNamespaceContext implements NamespaceContext {
         private BidirectionalMap<String, String> myMap;
 
-        @Nullable
-        public String getNamespaceURI(String prefix, XmlElement context) {
+        @Override
+        public @Nullable String getNamespaceURI(String prefix, XmlElement context) {
             final String s = myMap.get(prefix);
-            if (s == null && prefix.length() == 0) {
+            if (s == null && prefix.isEmpty()) {
                 return "";
             }
             return s;
         }
 
-        @Nullable
-        public String getPrefixForURI(String uri, XmlElement context) {
+        @Override
+        public @Nullable String getPrefixForURI(String uri, XmlElement context) {
             final List<String> list = myMap.getKeysByValue(uri);
             return list != null && !list.isEmpty() ? list.get(0) : null;
         }
 
-        @NotNull
-        public Collection<String> getKnownPrefixes(XmlElement context) {
+        @Override
+        public @NotNull Collection<String> getKnownPrefixes(XmlElement context) {
             return myMap.keySet();
         }
 
-        @Nullable
-        public PsiElement resolve(String prefix, XmlElement context) {
+        @Override
+        public @Nullable PsiElement resolve(String prefix, XmlElement context) {
             return null;
         }
 
@@ -509,38 +531,46 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
             myMap.putAll(map);
         }
 
-        public IntentionAction[] getUnresolvedNamespaceFixes(PsiReference reference, String localName) {
+        @Override
+        public IntentionAction[] getUnresolvedNamespaceFixes(@NotNull PsiReference reference, String localName) {
             return new IntentionAction[]{ new MyRegisterPrefixAction(reference) };
         }
 
         @Override
         public String getDefaultNamespace(XmlElement context) {
-          return null;
-      }
+            if (context instanceof XmlTag)
+                return ((XmlTag)context).getNamespaceByPrefix("");
+            else if (context instanceof XmlAttribute && ((XmlAttribute)context).getNamespacePrefix().isEmpty()) {
+                return ((XmlAttribute)context).getNamespace();
+            }
+            return null;
+        }
     }
 
     private class MyRegisterPrefixAction implements IntentionAction {
         private final PsiReference myReference;
 
-        public MyRegisterPrefixAction(PsiReference reference) {
+        MyRegisterPrefixAction(PsiReference reference) {
             myReference = reference;
         }
 
-        @NotNull
-        public String getText() {
-            return "Register namespace prefix";
+        @Override
+        public @NotNull String getText() {
+            return getFamilyName();
         }
 
-        @NotNull
-        public String getFamilyName() {
-            return getText();
+        @Override
+        public @NotNull String getFamilyName() {
+            return XPathBundle.message("intention.family.name.register.namespace.prefix");
         }
 
-        public boolean isAvailable(@NotNull Project project, Editor editor, PsiFile file) {
+        @Override
+        public boolean isAvailable(@NotNull Project project, Editor editor, PsiFile psiFile) {
             return myReference instanceof PrefixReference && myReference.getElement().isValid() && ((PrefixReference)myReference).isUnresolved();
         }
 
-        public void invoke(@NotNull Project project, Editor editor, PsiFile file) throws IncorrectOperationException {
+        @Override
+        public void invoke(@NotNull Project project, Editor editor, PsiFile psiFile) throws IncorrectOperationException {
             final Set<String> prefix = Collections.singleton(myReference.getCanonicalText());
 
             final Map<String, String> myMap = myContextProvider.getNamespaceContext().myMap;
@@ -575,7 +605,6 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
                 }
                 else {
                     n = Collections.singleton(namespace);
-                    //noinspection unchecked
                     v = Collections.emptySet();
                 }
 
@@ -583,6 +612,7 @@ public abstract class InputExpressionDialog<FormType extends InputForm> extends 
             }
         }
 
+        @Override
         public boolean startInWriteAction() {
             return false;
         }

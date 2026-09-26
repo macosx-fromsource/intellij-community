@@ -1,23 +1,9 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.properties;
 
 import com.intellij.lang.properties.psi.PropertiesFile;
 import com.intellij.lang.properties.xml.XmlPropertiesIndex;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.components.Service;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
@@ -37,61 +23,51 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentMap;
 
-/**
- * @author max
- */
-public class PropertiesReferenceManager {
+@Service(Service.Level.PROJECT)
+public final class PropertiesReferenceManager {
   private final PsiManager myPsiManager;
   private final DumbService myDumbService;
 
-  public static PropertiesReferenceManager getInstance(Project project) {
-    return ServiceManager.getService(project, PropertiesReferenceManager.class);
+  public static PropertiesReferenceManager getInstance(@NotNull Project project) {
+    return project.getService(PropertiesReferenceManager.class);
   }
 
-  public PropertiesReferenceManager(PsiManager psiManager, DumbService dumbService) {
-    myPsiManager = psiManager;
-    myDumbService = dumbService;
+  public PropertiesReferenceManager(@NotNull Project project) {
+    myPsiManager = PsiManager.getInstance(project);
+    myDumbService = DumbService.getInstance(project);
   }
 
-  @NotNull
-  public List<PropertiesFile> findPropertiesFiles(@NotNull final Module module, final String bundleName) {
-    ConcurrentFactoryMap<String, List<PropertiesFile>> map =
+  public @NotNull List<PropertiesFile> findPropertiesFiles(@NotNull Module module, @NotNull String bundleName) {
+    ConcurrentMap<String, List<PropertiesFile>> map =
       CachedValuesManager.getManager(module.getProject()).getCachedValue(module, () -> {
-        ConcurrentFactoryMap<String, List<PropertiesFile>> factoryMap = new ConcurrentFactoryMap<String, List<PropertiesFile>>() {
-          @Nullable
-          @Override
-          protected List<PropertiesFile> create(String bundleName1) {
-            return findPropertiesFiles(GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(module), bundleName1, BundleNameEvaluator.DEFAULT);
-          }
-        };
+        ConcurrentMap<String, List<PropertiesFile>> factoryMap = ConcurrentFactoryMap.createMap(
+          bundleName1 -> findPropertiesFiles(GlobalSearchScope.moduleRuntimeScope(module, true), bundleName1,
+                                             BundleNameEvaluator.DEFAULT));
         return CachedValueProvider.Result.create(factoryMap, PsiModificationTracker.MODIFICATION_COUNT);
       });
     return map.get(bundleName);
   }
 
-  @NotNull
-  public List<PropertiesFile> findPropertiesFiles(@NotNull final GlobalSearchScope searchScope,
-                                                  final String bundleName,
-                                                  BundleNameEvaluator bundleNameEvaluator) {
+  public @NotNull List<PropertiesFile> findPropertiesFiles(@NotNull GlobalSearchScope searchScope,
+                                                           @NotNull String bundleName,
+                                                           @NotNull BundleNameEvaluator bundleNameEvaluator) {
 
 
     final ArrayList<PropertiesFile> result = new ArrayList<>();
-    processPropertiesFiles(searchScope, new PropertiesFileProcessor() {
-      public boolean process(String baseName, PropertiesFile propertiesFile) {
-        if (baseName.equals(bundleName)) {
-          result.add(propertiesFile);
-        }
-        return true;
+    processPropertiesFiles(searchScope, (baseName, propertiesFile) -> {
+      if (baseName.equals(bundleName)) {
+        result.add(propertiesFile);
       }
+      return true;
     }, bundleNameEvaluator);
     return result;
   }
 
-  @Nullable
-  public PropertiesFile findPropertiesFile(final Module module,
-                                           final String bundleName,
-                                           final Locale locale) {
+  public @Nullable PropertiesFile findPropertiesFile(@NotNull Module module,
+                                                     @NotNull String bundleName,
+                                                     @Nullable Locale locale) {
     List<PropertiesFile> propFiles = findPropertiesFiles(module, bundleName);
     if (locale != null) {
       for(PropertiesFile propFile: propFiles) {
@@ -103,7 +79,7 @@ public class PropertiesReferenceManager {
 
     // fallback to default locale
     for(PropertiesFile propFile: propFiles) {
-      if (propFile.getLocale().getLanguage().length() == 0 || propFile.getLocale().equals(Locale.getDefault())) {
+      if (propFile.getLocale().getLanguage().isEmpty() || propFile.getLocale().equals(Locale.getDefault())) {
         return propFile;
       }
     }
@@ -116,13 +92,13 @@ public class PropertiesReferenceManager {
     return null;
   }
 
-  public boolean processAllPropertiesFiles(@NotNull final PropertiesFileProcessor processor) {
+  public boolean processAllPropertiesFiles(final @NotNull PropertiesFileProcessor processor) {
     return processPropertiesFiles(GlobalSearchScope.allScope(myPsiManager.getProject()), processor, BundleNameEvaluator.DEFAULT);
   }
 
-  public boolean processPropertiesFiles(@NotNull final GlobalSearchScope searchScope,
-                                        @NotNull final PropertiesFileProcessor processor,
-                                        @NotNull final BundleNameEvaluator evaluator) {
+  public boolean processPropertiesFiles(final @NotNull GlobalSearchScope searchScope,
+                                        final @NotNull PropertiesFileProcessor processor,
+                                        final @NotNull BundleNameEvaluator evaluator) {
     for(VirtualFile file:FileTypeIndex.getFiles(PropertiesFileType.INSTANCE, searchScope)) {
       if (!processFile(file, evaluator, processor)) return false;
     }
@@ -135,7 +111,7 @@ public class PropertiesReferenceManager {
     return true;
   }
 
-  private boolean processFile(VirtualFile file, BundleNameEvaluator evaluator, PropertiesFileProcessor processor) {
+  private boolean processFile(@NotNull VirtualFile file, @NotNull BundleNameEvaluator evaluator, @NotNull PropertiesFileProcessor processor) {
     final PsiFile psiFile = myPsiManager.findFile(file);
     PropertiesFile propertiesFile = PropertiesImplUtil.getPropertiesFile(psiFile);
     if (propertiesFile != null) {

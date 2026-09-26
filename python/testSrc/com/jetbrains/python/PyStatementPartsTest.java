@@ -15,18 +15,33 @@
  */
 package com.jetbrains.python;
 
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
 import com.intellij.psi.PsiElement;
 import com.jetbrains.python.fixtures.LightMarkedTestCase;
-import com.jetbrains.python.psi.*;
+import com.jetbrains.python.psi.PyElsePart;
+import com.jetbrains.python.psi.PyExceptPart;
+import com.jetbrains.python.psi.PyExpression;
+import com.jetbrains.python.psi.PyFinallyPart;
+import com.jetbrains.python.psi.PyForPart;
+import com.jetbrains.python.psi.PyForStatement;
+import com.jetbrains.python.psi.PyIfPart;
+import com.jetbrains.python.psi.PyIfStatement;
+import com.jetbrains.python.psi.PyStatementList;
+import com.jetbrains.python.psi.PyTryExceptStatement;
+import com.jetbrains.python.psi.PyTryPart;
+import com.jetbrains.python.psi.PyWhilePart;
+import com.jetbrains.python.psi.PyWhileStatement;
 import junit.framework.Assert;
 
 import java.util.Map;
 
 /**
  * Tests statement parts.
- * User: dcheryasov
- * Date: Mar 15, 2009 3:11:01 AM
  */
+@Subsystems.CodeInsight
+@Layers.Functional
 public class PyStatementPartsTest extends LightMarkedTestCase {
 
   @Override
@@ -34,7 +49,7 @@ public class PyStatementPartsTest extends LightMarkedTestCase {
     return PythonTestUtil.getTestDataPath() + "/psi/parts/";
   }
 
-  public void testIf() throws Exception {
+  public void testIf() {
     Map<String, PsiElement> marks = loadTest();
     Assert.assertEquals(2, marks.size());
     PsiElement elt = marks.get("<the_if>").getParent().getParent(); // if_keyword -> if_part -> if_stmt
@@ -46,7 +61,7 @@ public class PyStatementPartsTest extends LightMarkedTestCase {
     Assert.assertEquals(marks.get("<the_cond>").getParent(), if_cond);
   }
 
-  public void testIfElse() throws Exception {
+  public void testIfElse() {
     Map<String, PsiElement> marks = loadTest();
     Assert.assertEquals(4, marks.size());
     PsiElement elt = marks.get("<the_if>").getParent().getParent(); // if_keyword -> if_part -> if_stmt
@@ -71,7 +86,7 @@ public class PyStatementPartsTest extends LightMarkedTestCase {
 
   }
 
-  public void testIfElifElse() throws Exception {
+  public void testIfElifElse() {
     Map<String, PsiElement> marks = loadTest();
     Assert.assertEquals(6, marks.size());
     PsiElement elt = marks.get("<the_if>").getParent().getParent(); // if_keyword -> if_part -> if_stmt
@@ -105,7 +120,7 @@ public class PyStatementPartsTest extends LightMarkedTestCase {
 
   }
 
-  public void testWhile()  throws Exception {
+  public void testWhile() {
     Map<String, PsiElement> marks = loadTest();
     Assert.assertEquals(3, marks.size());
 
@@ -123,7 +138,7 @@ public class PyStatementPartsTest extends LightMarkedTestCase {
     Assert.assertEquals(while_stmt.getElsePart(), elt);
   }
 
-  public void testFor()  throws Exception {
+  public void testFor() {
     Map<String, PsiElement> marks = loadTest();
     Assert.assertEquals(4, marks.size());
 
@@ -144,9 +159,9 @@ public class PyStatementPartsTest extends LightMarkedTestCase {
     Assert.assertEquals(stmt.getElsePart(), elt);
   }
 
-  public void testTry() throws Exception {
+  public void testTry() {
     Map<String, PsiElement> marks = loadTest();
-    Assert.assertEquals(6, marks.size());
+    Assert.assertEquals(9, marks.size());
 
     PsiElement elt = marks.get("<stmt>").getParent().getParent(); // keyword -> part -> stmt
     Assert.assertTrue(elt instanceof PyTryExceptStatement);
@@ -157,13 +172,33 @@ public class PyStatementPartsTest extends LightMarkedTestCase {
     Assert.assertNotNull(stmt_list);
     Assert.assertEquals(marks.get("<body>").getParent().getParent(), stmt_list); // keyword -> stmt -> stmt_list
 
-    PyExceptPart exc_part = stmt.getExceptParts()[0];
-    Assert.assertEquals("ArithmeticError", exc_part.getExceptClass().getText());
-    Assert.assertEquals(marks.get("<ex1>").getParent(), exc_part);
+    PyExceptPart exc_part0 = stmt.getExceptParts()[0];
+    Assert.assertEquals("ArithmeticError", exc_part0.getExceptClass().getText());
+    Assert.assertNull(exc_part0.getTarget());
+    Assert.assertEquals(marks.get("<ex0>").getParent(), exc_part0);
 
-    exc_part = (PyExceptPart)marks.get("<ex2>").getParent(); // keyword -> part
-    Assert.assertEquals(stmt.getExceptParts()[1], exc_part);
-    Assert.assertNull(exc_part.getExceptClass());
+    PyExceptPart exc_part1 = stmt.getExceptParts()[1];
+    Assert.assertEquals("ArithmeticError, ImportError", exc_part1.getExceptClass().getText());
+    Assert.assertNull(exc_part1.getTarget());
+    Assert.assertEquals(marks.get("<ex1>").getParent(), exc_part1);
+
+    PyExceptPart exc_part2 = stmt.getExceptParts()[2];
+    Assert.assertEquals("ArithmeticError", exc_part2.getExceptClass().getText());
+    Assert.assertNotNull(exc_part2.getTarget());
+    Assert.assertEquals("e2", exc_part2.getTarget().getText());
+    Assert.assertEquals(marks.get("<ex2>").getParent(), exc_part2);
+
+    PyExceptPart exc_part3 = stmt.getExceptParts()[3];
+    Assert.assertEquals("(ArithmeticError, ImportError)", exc_part3.getExceptClass().getText());
+    Assert.assertNotNull(exc_part3.getTarget());
+    Assert.assertEquals("e3", exc_part3.getTarget().getText());
+    Assert.assertEquals(marks.get("<ex3>").getParent(), exc_part3);
+
+    PyExceptPart exc_part4 = stmt.getExceptParts()[4];
+    Assert.assertNull(exc_part4.getExceptClass());
+    Assert.assertNull(exc_part4.getTarget());
+    Assert.assertEquals(marks.get("<ex4>").getParent(), exc_part4);
+    Assert.assertNull(exc_part4.getExceptClass());
 
     elt = marks.get("<else>").getParent(); // keyword -> part
     Assert.assertTrue(elt instanceof PyElsePart);

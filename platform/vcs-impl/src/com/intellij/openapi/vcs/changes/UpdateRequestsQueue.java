@@ -1,101 +1,67 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.changes;
 
-import com.intellij.ide.startup.impl.StartupManagerImpl;
+import com.intellij.diagnostic.ThreadDumper;
+import com.intellij.ide.startup.StartupManagerEx;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.progress.SomeQueue;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.startup.StartupManager;
-import com.intellij.openapi.util.Getter;
 import com.intellij.openapi.vcs.ProjectLevelVcsManager;
-import com.intellij.util.Consumer;
 import com.intellij.util.concurrency.Semaphore;
-import com.intellij.util.io.storage.HeavyProcessLatch;
+import com.intellij.util.ui.EDT;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
-import javax.swing.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Future;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 /**
  * ChangeListManager updates scheduler.
  * Tries to zip several update requests into one (if starts and see several requests in the queue)
  * own inner synchronization
  */
-@SomeQueue
-public class UpdateRequestsQueue {
-  private final Logger LOG = Logger.getInstance("#com.intellij.openapi.vcs.changes.UpdateRequestsQueue");
-  private static final String ourHeavyLatchOptimization = "vcs.local.changes.track.heavy.latch";
+@ApiStatus.Internal
+public final class UpdateRequestsQueue {
+  private static final Logger LOG = Logger.getInstance(UpdateRequestsQueue.class);
+
   private final Project myProject;
-  private final AtomicReference<Future> myFuture;
-  private final ScheduledExecutorService myExecutor;
-  private final Runnable myDelegate;
-  private final Object myLock;
+  private final ChangeListScheduler myScheduler;
+  private final BooleanSupplier myRefreshDelegate;
+  private final BooleanSupplier myFastTrackDelegate;
+  private final Object myLock = new Object();
   private volatile boolean myStarted;
   private volatile boolean myStopped;
   private volatile boolean myIgnoreBackgroundOperation;
 
   private boolean myRequestSubmitted;
   private boolean myRequestRunning;
-  private final List<Runnable> myWaitingUpdateCompletionQueue;
+  private final List<Runnable> myWaitingUpdateCompletionQueue = new ArrayList<>();
   private final List<Semaphore> myWaitingUpdateCompletionSemaphores = new ArrayList<>();
-  private final ProjectLevelVcsManager myPlVcsManager;
-  //private final ScheduledSlowlyClosingAlarm mySharedExecutor;
-  private final StartupManager myStartupManager;
-  private final boolean myTrackHeavyLatch;
-  private final Getter<Boolean> myIsStoppedGetter;
 
-  public UpdateRequestsQueue(final Project project, final AtomicReference<Future> future, @NotNull ScheduledExecutorService executor, final Runnable delegate) {
+  public UpdateRequestsQueue(@NotNull Project project,
+                             @NotNull ChangeListScheduler scheduler,
+                             @NotNull BooleanSupplier refreshDelegate,
+                             @NotNull BooleanSupplier fastTrackDelegate) {
     myProject = project;
-    myFuture = future;
-    myExecutor = executor;
-    myTrackHeavyLatch = Boolean.parseBoolean(System.getProperty(ourHeavyLatchOptimization));
+    myScheduler = scheduler;
+    myRefreshDelegate = refreshDelegate;
+    myFastTrackDelegate = fastTrackDelegate;
 
-    myDelegate = delegate;
-    myPlVcsManager = ProjectLevelVcsManager.getInstance(myProject);
-    myStartupManager = StartupManager.getInstance(myProject);
-    myLock = new Object();
-    myWaitingUpdateCompletionQueue = new ArrayList<>();
     // not initialized
     myStarted = false;
     myStopped = false;
-    myIsStoppedGetter = new Getter<Boolean>() {
-      @Override
-      public Boolean get() {
-        return isStopped();
-      }
-    };
   }
 
   public void initialized() {
-    LOG.debug("Initialized for project: " + myProject.getName());
+    debug("Initialized");
     myStarted = true;
-  }
-
-  public Getter<Boolean> getIsStoppedGetter() {
-    return myIsStoppedGetter;
   }
 
   public boolean isStopped() {
@@ -103,17 +69,28 @@ public class UpdateRequestsQueue {
   }
 
   public void schedule() {
-    synchronized (myLock) {
-      if (! myStarted && ApplicationManager.getApplication().isUnitTestMode()) return;
+    schedule(false);
+  }
 
-      if (! myStopped) {
-        if (! myRequestSubmitted) {
-          final MyRunnable runnable = new MyRunnable();
-          myRequestSubmitted = true;
-          myFuture.set(myExecutor.schedule(runnable, 300, TimeUnit.MILLISECONDS));
-          LOG.debug("Scheduled for project: " + myProject.getName() + ", runnable: " + runnable.hashCode());
-        }
+  public void schedule(boolean withFastTrack) {
+    synchronized (myLock) {
+      if (!myStarted && ApplicationManager.getApplication().isUnitTestMode()) {
+        LOG.error("Update was scheduled, but queue wasn't initialized", new Throwable());
       }
+
+      if (myStopped) return;
+      if (myRequestSubmitted) return;
+      myRequestSubmitted = true;
+
+      if (withFastTrack) {
+        FastTrackRunnable fastRunnable = new FastTrackRunnable();
+        myScheduler.submit(fastRunnable);
+        debug("Scheduled fast-track", fastRunnable);
+      }
+
+      RefreshRunnable runnable = new RefreshRunnable();
+      myScheduler.schedule(runnable, 300, TimeUnit.MILLISECONDS);
+      debug("Scheduled", runnable);
     }
   }
 
@@ -123,6 +100,7 @@ public class UpdateRequestsQueue {
     }
   }
 
+  @TestOnly
   public void forceGo() {
     synchronized (myLock) {
       myStopped = false;
@@ -140,19 +118,16 @@ public class UpdateRequestsQueue {
   }
 
   public void stop() {
-    LOG.debug("Calling stop for project: " + myProject.getName());
-    final List<Runnable> waiters = new ArrayList<>(myWaitingUpdateCompletionQueue.size());
+    debug("Stop called");
+    List<Runnable> waiters;
     synchronized (myLock) {
       myStopped = true;
-      waiters.addAll(myWaitingUpdateCompletionQueue);
+      waiters = new ArrayList<>(myWaitingUpdateCompletionQueue);
       myWaitingUpdateCompletionQueue.clear();
     }
-    LOG.debug("Calling runnables in stop for project: " + myProject.getName());
-    // do not run under lock
-    for (Runnable runnable : waiters) {
-      runnable.run();
-    }
-    LOG.debug("Stop finished for project: " + myProject.getName());
+    debug("Stop - calling runnables");
+    runWaiters(waiters);
+    debug("Stop - finished");
   }
 
   @TestOnly
@@ -165,19 +140,30 @@ public class UpdateRequestsQueue {
         }
 
         if (!myRequestRunning) {
-          myFuture.set(myExecutor.submit(new MyRunnable()));
+          myScheduler.submit(new RefreshRunnable());
         }
 
         semaphore.down();
         myWaitingUpdateCompletionSemaphores.add(semaphore);
       }
-      if (!semaphore.waitFor(100*1000)) {
-        LOG.error("Too long VCS update");
-        return;
+      if (EDT.isCurrentThreadEdt()) {
+        ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
+          if (!semaphore.waitFor(100 * 1000)) {
+            LOG.error("Too long VCS update\n" + ThreadDumper.dumpThreadsToString());
+          }
+        }, "", true, myProject);
+      } else {
+        if (!semaphore.waitFor(100 * 1000)) {
+          LOG.error("Too long VCS update\n" + ThreadDumper.dumpThreadsToString());
+          return;
+        }
       }
     }
   }
 
+  /**
+   * For tests only
+   */
   private void freeSemaphores() {
     synchronized (myLock) {
       for (Semaphore semaphore : myWaitingUpdateCompletionSemaphores) {
@@ -189,114 +175,183 @@ public class UpdateRequestsQueue {
 
   public void invokeAfterUpdate(@NotNull Runnable afterUpdate,
                                 @NotNull InvokeAfterUpdateMode mode,
-                                @Nullable String title,
-                                @Nullable Consumer<VcsDirtyScopeManager> dirtyScopeManagerFiller,
-                                @Nullable ModalityState state) {
-    LOG.debug("invokeAfterUpdate for project: " + myProject.getName());
-    final CallbackData data = CallbackData.create(myProject, mode, afterUpdate, title, state);
+                                @Nullable @Nls String title) {
+    debug("invokeAfterUpdate called");
+    InvokeAfterUpdateCallback.Callback callback = InvokeAfterUpdateCallback.create(myProject, mode, afterUpdate, title);
 
-    if (dirtyScopeManagerFiller != null) {
-      VcsDirtyScopeManagerProxy managerProxy = new VcsDirtyScopeManagerProxy();
-
-      dirtyScopeManagerFiller.consume(managerProxy);
-      if (!myProject.isDisposed()) {
-        managerProxy.callRealManager(VcsDirtyScopeManager.getInstance(myProject));
-      }
-    }
-
+    boolean stopped;
     synchronized (myLock) {
-      if (! myStopped) {
-        myWaitingUpdateCompletionQueue.add(data.getCallback());
-        schedule();
+      stopped = myStopped;
+      if (!stopped) {
+        myWaitingUpdateCompletionQueue.add(callback::endProgress);
+        schedule(true);
       }
     }
-    // do not run under lock; stopped cannot be switched into not stopped - can check without lock
-    if (myStopped) {
-      LOG.debug("invokeAfterUpdate: stopped, invoke right now for project: " + myProject.getName());
-      SwingUtilities.invokeLater(new Runnable() {
-        public void run() {
-          if (!myProject.isDisposed()) {
-            afterUpdate.run();
-          }
-        }
-      });
-      return;
+    if (stopped) {
+      debug("invokeAfterUpdate: stopped, invoke right now");
+      callback.handleStoppedQueue();
     }
-    // invoke progress if needed
-    data.getWrapperStarter().run();
-    LOG.debug("invokeAfterUpdate: exit for project: " + myProject.getName());
+    else {
+      callback.startProgress();
+      debug("invokeAfterUpdate: start progress");
+    }
   }
 
-  // true = do not execute
+  /**
+   * @return true if refresh should not be performed.
+   */
   private boolean checkHeavyOperations() {
-    if (myIgnoreBackgroundOperation) return false;
-    return myPlVcsManager.isBackgroundVcsOperationRunning() || myTrackHeavyLatch && HeavyProcessLatch.INSTANCE.isRunning();
+    return !myIgnoreBackgroundOperation && ProjectLevelVcsManager.getInstance(myProject).isBackgroundVcsOperationRunning();
   }
 
-  // true = do not execute
+  /**
+   * @return true if refresh should not be performed.
+   */
   private boolean checkLifeCycle() {
-    return !myStarted || !((StartupManagerImpl)myStartupManager).startupActivityPassed();
+    return !myStarted || !StartupManagerEx.getInstanceEx(myProject).startupActivityPassed();
   }
 
-  private class MyRunnable implements Runnable {
+  private final class FastTrackRunnable implements Runnable {
+    @Override
     public void run() {
-      final List<Runnable> copy = new ArrayList<>(myWaitingUpdateCompletionQueue.size());
-      try {
-        synchronized (myLock) {
-          if (!myRequestSubmitted) return;
-          
-          LOG.assertTrue(!myRequestRunning);
-          myRequestRunning = true;
-          if (myStopped) {
-            myRequestSubmitted = false;
-            LOG.debug("MyRunnable: STOPPED, project: " + myProject.getName() + ", runnable: " + hashCode());
-            return;
-          }
+      List<Runnable> copy;
+      synchronized (myLock) {
+        if (!myRequestSubmitted) return;
+        myRequestSubmitted = false;
 
-          if (checkLifeCycle() || checkHeavyOperations()) {
-            LOG.debug("MyRunnable: reschedule, project: " + myProject.getName() + ", runnable: " + hashCode());
-            myRequestSubmitted = false;
-            // try again after time
-            schedule();
-            return;
-          }
+        LOG.assertTrue(!myRequestRunning);
 
-          copy.addAll(myWaitingUpdateCompletionQueue);
-          myRequestSubmitted = false;
+        if (myStopped) {
+          debug("Stopped", this);
+          return;
         }
 
-        LOG.debug("MyRunnable: INVOKE, project: " + myProject.getName() + ", runnable: " + hashCode());
-        myDelegate.run();
-        LOG.debug("MyRunnable: invokeD, project: " + myProject.getName() + ", runnable: " + hashCode());
+        copy = new ArrayList<>(myWaitingUpdateCompletionQueue);
+        myWaitingUpdateCompletionQueue.clear();
       }
-      finally {
-        synchronized (myLock) {
-          myRequestRunning = false;
-          LOG.debug("MyRunnable: delete executed, project: " + myProject.getName() + ", runnable: " + hashCode());
-          if (! copy.isEmpty()) {
-            myWaitingUpdateCompletionQueue.removeAll(copy);
-          }
 
-          if (! myWaitingUpdateCompletionQueue.isEmpty() && ! myRequestSubmitted && ! myStopped) {
-            LOG.error("No update task to handle request(s)");
-          }
+      debug("Before callback", this);
+      boolean nothingToUpdate = false;
+      try {
+        nothingToUpdate = myFastTrackDelegate.getAsBoolean(); // CLM.hasNothingToUpdate
+      }
+      catch (ProcessCanceledException ignore) {
+      }
+      catch (Throwable e) {
+        LOG.error(e);
+      }
+      debug("After callback", this);
+
+      if (nothingToUpdate) {
+        runWaiters(copy);
+        debug("Runnables executed", this);
+      }
+      else {
+        // Need to do a fair refresh, will fire events later
+        debug("Restoring runnables", this);
+        synchronized (myLock) {
+          myRequestSubmitted = true; // no need to schedule runnable - it's already pending
+
+          myWaitingUpdateCompletionQueue.addAll(0, copy);
         }
-        // do not run under lock
-        for (Runnable runnable : copy) {
-          runnable.run();
-        }
-        freeSemaphores();
-        LOG.debug("MyRunnable: Runnables executed, project: " + myProject.getName() + ", runnable: " + hashCode());
       }
     }
 
     @Override
     public String toString() {
-      return "UpdateRequestQueue delegate: "+myDelegate;
+      return "CLM Refresh Fast-Track runnable@" + hashCode();
+    }
+  }
+
+  private final class RefreshRunnable implements Runnable {
+    @Override
+    public void run() {
+      final List<Runnable> copy = new ArrayList<>();
+      try {
+        synchronized (myLock) {
+          if (!myRequestSubmitted) return;
+          myRequestSubmitted = false;
+
+          LOG.assertTrue(!myRequestRunning);
+          myRequestRunning = true;
+
+          if (myStopped) {
+            debug("Stopped", this);
+            return;
+          }
+
+          if (checkLifeCycle() || checkHeavyOperations()) {
+            debug("Reschedule", this);
+            schedule(); // try again later
+            return;
+          }
+
+          copy.addAll(myWaitingUpdateCompletionQueue);
+          myWaitingUpdateCompletionQueue.clear();
+        }
+
+        debug("Before callback", this);
+        boolean success = myRefreshDelegate.getAsBoolean(); // CLM.updateImmediately
+        debug("After callback, was success: " + success, this);
+
+        if (!success) {
+          // Refresh was cancelled, will fire events after the next successful one
+          debug("Restoring runnables", this);
+          synchronized (myLock) {
+            myWaitingUpdateCompletionQueue.addAll(0, copy);
+            copy.clear();
+          }
+        }
+      }
+      finally {
+        synchronized (myLock) {
+          debug("Finally", this);
+          myRequestRunning = false;
+
+          if (!myWaitingUpdateCompletionQueue.isEmpty() && !myRequestSubmitted && !myStopped) {
+            LOG.error("No update task to handle request(s)");
+          }
+        }
+        runWaiters(copy);
+        freeSemaphores();
+        debug("Runnables executed", this);
+      }
+    }
+
+    @Override
+    public String toString() {
+      return "CLM Refresh runnable@" + hashCode();
     }
   }
 
   public void setIgnoreBackgroundOperation(boolean ignoreBackgroundOperation) {
     myIgnoreBackgroundOperation = ignoreBackgroundOperation;
+    debug("Ignore background operations: " + ignoreBackgroundOperation);
+  }
+
+  private void debug(@NotNull String text, @NotNull Runnable runnable) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(String.format("%s. Runnable: %s, Project: %s", text, runnable, myProject));
+    }
+  }
+
+  private void debug(@NotNull String text) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(String.format("%s. Project: %s", text, myProject));
+    }
+  }
+
+  private static void runWaiters(List<? extends Runnable> copy) {
+    // do not run under lock
+    for (Runnable runnable : copy) {
+      try {
+        runnable.run();
+      }
+      catch (ProcessCanceledException ignore) {
+      }
+      catch (Throwable e) {
+        LOG.error(e);
+      }
+    }
   }
 }

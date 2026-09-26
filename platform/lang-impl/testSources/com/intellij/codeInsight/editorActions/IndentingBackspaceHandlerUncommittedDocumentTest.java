@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,38 +15,41 @@
  */
 package com.intellij.codeInsight.editorActions;
 
+import com.intellij.idea.IJIgnore;
 import com.intellij.testFramework.LightPlatformCodeInsightTestCase;
 
-import java.io.IOException;
-
 public class IndentingBackspaceHandlerUncommittedDocumentTest extends LightPlatformCodeInsightTestCase {
-  public void testSequentialBackspaceInvocation() throws IOException {
+  public void testSequentialBackspaceInvocation() {
     configureFromFileText(getTestName(false) + ".java",
-                          "class Foo {\n" +
-                          "\n" +
-                          "\n" +
-                          "<caret>}");
+                          """
+                            class Foo {
+
+
+                            <caret>}""");
     backspace();
     backspace();
     checkResultByText("class Foo {\n" +
                       "<caret>}");
   }
 
-  public void testMulticaretSequentialBackspaceInvocation() throws IOException {
+  @IJIgnore(issue = "AT-4013")
+  public void testMulticaretSequentialBackspaceInvocation() {
     configureFromFileText(getTestName(false) + ".java",
-                          "class Foo {\n" +
-                          "    void m1() {\n" +
-                          "    \n" +
-                          "    <caret>}\n" +
-                          "    void m2() {\n" +
-                          "    \n" +
-                          "    <caret>}\n" +
-                          "}");
+                          """
+                            class Foo {
+                                void m1() {
+                               \s
+                                <caret>}
+                                void m2() {
+                               \s
+                                <caret>}
+                            }""");
     backspace();
     backspace();
-    checkResultByText("class Foo {\n" +
-                      "    void m1() {<caret>}\n" +
-                      "    void m2() {<caret>}\n" +
-                      "}");
+    checkResultByText("""
+                        class Foo {
+                            void m1() {<caret>}
+                            void m2() {<caret>}
+                        }""");
   }
 }

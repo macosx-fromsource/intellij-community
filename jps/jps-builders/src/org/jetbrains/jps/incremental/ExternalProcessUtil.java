@@ -1,89 +1,36 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.jps.incremental;
 
 import com.intellij.execution.CommandLineWrapperUtil;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.cmdline.ClasspathBootstrap;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.jar.Manifest;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: 10/28/11
  */
-public class ExternalProcessUtil {
-  private static final Logger LOG = Logger.getInstance("#org.jetbrains.jps.incremental.ExternalProcessUtil");
+public final class ExternalProcessUtil {
+  private static final Logger LOG = Logger.getInstance(ExternalProcessUtil.class);
 
-  private static class CommandLineWrapperClassHolder {
-    static final Class ourWrapperClass;
+  private static final class CommandLineWrapperClassHolder {
+    static final Class<?> ourWrapperClass;
     static {
       Class<?> aClass = null;
       try {
         aClass = Class.forName("com.intellij.rt.execution.CommandLineWrapper");
       }
-      catch (Throwable ignored) {
-      }
+      catch (Throwable ignored) { }
       ourWrapperClass = aClass;
     }
-  }
-
-  private static final char QUOTE = '\uEFEF';
-  // please keep in sync with GeneralCommandLine.prepareCommand()
-  public static String prepareCommand(String parameter) {
-    if (SystemInfo.isWindows) {
-      if (parameter.contains("\"")) {
-        parameter = StringUtil.replace(parameter, "\"", "\\\"");
-      }
-      else if (parameter.length() == 0) {
-        parameter = "\"\"";
-      }
-    }
-
-    if (parameter.length() >= 2 && parameter.charAt(0) == QUOTE && parameter.charAt(parameter.length() - 1) == QUOTE) {
-      parameter = '"' + parameter.substring(1, parameter.length() - 1) + '"';
-    }
-
-    return parameter;
-  }
-  
-  public static List<String> buildJavaCommandLine(String javaExecutable,
-                                                String mainClass,
-                                                List<String> bootClasspath,
-                                                List<String> classpath,
-                                                List<String> vmParams,
-                                                List<String> programParams) {
-    return buildJavaCommandLine(javaExecutable, mainClass, bootClasspath, classpath, vmParams, programParams, true);
-  }
-
-  public static List<String> buildJavaCommandLine(String javaExecutable,
-                                                String mainClass,
-                                                List<String> bootClasspath,
-                                                List<String> classpath,
-                                                List<String> vmParams,
-                                                List<String> programParams, final boolean useCommandLineWrapper) {
-    return buildJavaCommandLine(javaExecutable, mainClass, bootClasspath, classpath, vmParams, programParams, useCommandLineWrapper, true);
   }
 
   public static List<String> buildJavaCommandLine(String javaExecutable,
@@ -91,14 +38,33 @@ public class ExternalProcessUtil {
                                                   List<String> bootClasspath,
                                                   List<String> classpath,
                                                   List<String> vmParams,
-                                                  List<String> programParams, final boolean useCommandLineWrapper, boolean useClasspathJar) {
-    final List<String> cmdLine = new ArrayList<String>();
+                                                  List<String> programParams) {
+    return buildJavaCommandLine(javaExecutable, mainClass, bootClasspath, classpath, vmParams, programParams, true);
+  }
+
+  public static List<String> buildJavaCommandLine(String javaExecutable,
+                                                  String mainClass,
+                                                  List<String> bootClasspath,
+                                                  List<String> classpath,
+                                                  List<String> vmParams,
+                                                  List<String> programParams,
+                                                  boolean shortenClasspath) {
+    return buildJavaCommandLine(javaExecutable, mainClass, bootClasspath, classpath, vmParams, programParams, shortenClasspath, true);
+  }
+
+  public static List<String> buildJavaCommandLine(String javaExecutable,
+                                                  String mainClass,
+                                                  List<String> bootClasspath,
+                                                  List<String> classpath,
+                                                  List<String> vmParams,
+                                                  List<String> programParams,
+                                                  boolean shortenClasspath,
+                                                  boolean preferClasspathJar) {
+    List<String> cmdLine = new ArrayList<>();
 
     cmdLine.add(javaExecutable);
 
-    for (String param : vmParams) {
-      cmdLine.add(param);
-    }
+    cmdLine.addAll(vmParams);
 
     if (!bootClasspath.isEmpty()) {
       cmdLine.add("-bootclasspath");
@@ -106,49 +72,40 @@ public class ExternalProcessUtil {
     }
 
     if (!classpath.isEmpty()) {
-      List<String> commandLineWrapperArgs = null;
-      if (useCommandLineWrapper) {
-        final Class wrapperClass = getCommandLineWrapperClass();
-        if (wrapperClass != null) {
-          try {
-            if (useClasspathJar) {
-              final String classpathFile = CommandLineWrapperUtil.createClasspathJarFile(new Manifest(), classpath).getAbsolutePath();
-              commandLineWrapperArgs = Arrays.asList(
-                "-classpath",
-                classpathFile
-              );
+      List<String> shortenedCp = null;
+
+      if (shortenClasspath) {
+        try {
+          Charset cs = Charset.defaultCharset();  // todo detect JNU charset from VM options?
+          if (isModularRuntime(javaExecutable)) {
+            List<String> args = Arrays.asList("-classpath", StringUtil.join(classpath, File.pathSeparator));
+            File argFile = CommandLineWrapperUtil.createArgumentFile(args, cs);
+            shortenedCp = Collections.singletonList('@' + argFile.getAbsolutePath());
+          }
+          else if (preferClasspathJar) {
+            File classpathJar = CommandLineWrapperUtil.createClasspathJarFile(new Manifest(), classpath);
+            shortenedCp = Arrays.asList("-classpath", classpathJar.getAbsolutePath());
+          }
+          else {
+            Class<?> wrapperClass = CommandLineWrapperClassHolder.ourWrapperClass;
+            if (wrapperClass != null) {
+              File classpathFile = CommandLineWrapperUtil.createWrapperFile(classpath, cs);
+              shortenedCp = Arrays.asList(
+                "-classpath", ClasspathBootstrap.getResourcePath(wrapperClass), wrapperClass.getName(), classpathFile.getAbsolutePath());
             }
             else {
-              File classpathFile = FileUtil.createTempFile("classpath", null);
-              final PrintWriter writer = new PrintWriter(new BufferedWriter(new FileWriter(classpathFile)));
-              try {
-                for (String path : classpath) {
-                  writer.println(path);
-                }
-              }
-              finally {
-                writer.close();
-              }
-              commandLineWrapperArgs = Arrays.asList(
-                "-classpath",
-                ClasspathBootstrap.getResourcePath(wrapperClass),
-                wrapperClass.getName(),
-                classpathFile.getAbsolutePath()
-              );
+              LOG.info("CommandLineWrapper class not found; classpath shortening won't be used");
             }
           }
-          catch (IOException ex) {
-            LOG.info("Error starting " + mainClass + "; Classpath wrapper will not be used: ", ex);
-          }
         }
-        else {
-          LOG.info("CommandLineWrapper class not found, classpath wrapper will not be used");
+        catch (IOException e) {
+          LOG.warn("can't create temp file; classpath shortening won't be used", e);
         }
       }
 
       // classpath
-      if (commandLineWrapperArgs != null) {
-        cmdLine.addAll(commandLineWrapperArgs);
+      if (shortenedCp != null) {
+        cmdLine.addAll(shortenedCp);
       }
       else {
         cmdLine.add("-classpath");
@@ -159,16 +116,13 @@ public class ExternalProcessUtil {
     // main class and params
     cmdLine.add(mainClass);
 
-    for (String param : programParams) {
-      cmdLine.add(param);
-    }
+    cmdLine.addAll(programParams);
 
     return cmdLine;
   }
 
-  @Nullable
-  private static Class getCommandLineWrapperClass() {
-    return CommandLineWrapperClassHolder.ourWrapperClass;
+  private static boolean isModularRuntime(String javaExec) {
+    File jreHome = new File(javaExec).getParentFile().getParentFile();
+    return jreHome != null && (new File(jreHome, "lib/jrt-fs.jar").isFile() || new File(jreHome, "modules/java.base").isDirectory());
   }
-
 }

@@ -1,202 +1,350 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.keymap.impl;
 
+import com.intellij.configurationStore.SchemeDataHolder;
+import com.intellij.openapi.actionSystem.KeyboardGestureAction;
+import com.intellij.openapi.actionSystem.KeyboardModifierGestureShortcut;
 import com.intellij.openapi.actionSystem.KeyboardShortcut;
-import com.intellij.openapi.keymap.ex.KeymapManagerEx;
-import com.intellij.testFramework.PlatformTestCase;
+import com.intellij.openapi.actionSystem.MouseShortcut;
+import com.intellij.openapi.actionSystem.Shortcut;
+import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
+import com.intellij.openapi.keymap.Keymap;
+import com.intellij.testFramework.LightPlatformTestCase;
+import org.jdom.Element;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.KeyStroke;
+import java.awt.event.InputEvent;
+import java.awt.event.MouseEvent;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
-public class KeymapTest extends PlatformTestCase {
+import static org.assertj.core.api.Assertions.assertThat;
+
+public class KeymapTest extends LightPlatformTestCase {
   private static final String ACTION_1 = "ACTION_1";
   private static final String ACTION_2 = "ACTION_2";
   private static final String ACTION_NON_EXISTENT = "NON_EXISTENT";
+
   KeyboardShortcut shortcut1 = new KeyboardShortcut(KeyStroke.getKeyStroke('1'), null);
   KeyboardShortcut shortcut2 = new KeyboardShortcut(KeyStroke.getKeyStroke('2'), null);
   KeyboardShortcut shortcutA = new KeyboardShortcut(KeyStroke.getKeyStroke('a'), null);
   KeyboardShortcut shortcutB = new KeyboardShortcut(KeyStroke.getKeyStroke('b'), null);
 
-  private KeymapImpl myParent;
-  private KeymapImpl myChild;
+  private KeymapImpl parent;
+  private KeymapImpl child;
 
   @Override
   public void setUp() throws Exception {
     super.setUp();
 
-    myParent = new KeymapImpl();
-    myParent.setName("Parent");
-    myParent.setCanModify(false);
+    parent = new KeymapImpl();
+    parent.setName("Parent");
+    parent.setCanModify(false);
 
-    myParent.addShortcut(ACTION_1, shortcut1);
-    myParent.addShortcut(ACTION_2, shortcut2);
+    parent.addShortcut(ACTION_1, shortcut1);
+    parent.addShortcut(ACTION_2, shortcut2);
 
-    myChild = myParent.deriveKeymap("Child");
-    assertSame(myParent, myChild.getParent());
+    child = parent.deriveKeymap("Child");
+    child.setCanModify(false);
+    assertThat(parent).isSameAs(child.getParent());
 
-    myChild.addShortcut(ACTION_1, shortcutA);
+    child.addShortcut(ACTION_1, shortcutA);
   }
 
-  public void testParentAndChildShortcuts() throws Exception {
-    assertTrue(myParent.hasOwnActionId(ACTION_1));
-    assertTrue(myParent.hasOwnActionId(ACTION_2));
-    assertFalse(myParent.hasOwnActionId(ACTION_NON_EXISTENT));
+  public void testParentAndChildShortcuts() {
+    assertTrue(parent.hasOwnActionId(ACTION_1));
+    assertTrue(parent.hasOwnActionId(ACTION_2));
+    assertFalse(parent.hasOwnActionId(ACTION_NON_EXISTENT));
 
-    assertSameElements(myParent.getShortcuts(ACTION_1), shortcut1);
-    assertSameElements(myParent.getShortcuts(ACTION_2), shortcut2);
-    assertSameElements(myParent.getShortcuts(ACTION_NON_EXISTENT));
+    assertSameElements(parent.getShortcuts(ACTION_1), shortcut1);
+    assertSameElements(parent.getShortcuts(ACTION_2), shortcut2);
+    assertSameElements(parent.getShortcuts(ACTION_NON_EXISTENT));
 
-    assertSameElements(myParent.getActionIds(shortcut1), ACTION_1);
-    assertSameElements(myParent.getActionIds(shortcut2), ACTION_2);
-    assertSameElements(myParent.getActionIds(shortcutA));
-    assertSameElements(myParent.getActionIds(shortcutB));
+    assertSameElements(parent.getActionIdList(shortcut1), ACTION_1);
+    assertSameElements(parent.getActionIdList(shortcut2), ACTION_2);
+    assertSameElements(parent.getActionIdList(shortcutA));
+    assertSameElements(parent.getActionIdList(shortcutB));
 
-    assertTrue(myChild.hasOwnActionId(ACTION_1));
-    assertFalse(myChild.hasOwnActionId(ACTION_2));
-    assertFalse(myChild.hasOwnActionId(ACTION_NON_EXISTENT));
+    assertTrue(child.hasOwnActionId(ACTION_1));
+    assertFalse(child.hasOwnActionId(ACTION_2));
+    assertFalse(child.hasOwnActionId(ACTION_NON_EXISTENT));
 
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcut1, shortcutA);
-    assertSameElements(myChild.getShortcuts(ACTION_2), shortcut2);
-    assertSameElements(myChild.getShortcuts(ACTION_NON_EXISTENT));
+    assertSameElements(child.getShortcuts(ACTION_1), shortcut1, shortcutA);
+    assertSameElements(child.getShortcuts(ACTION_2), shortcut2);
+    assertSameElements(child.getShortcuts(ACTION_NON_EXISTENT));
 
-    assertSameElements(myChild.getActionIds(shortcut1), ACTION_1);
-    assertSameElements(myChild.getActionIds(shortcut2), ACTION_2);
-    assertSameElements(myChild.getActionIds(shortcutA), ACTION_1);
-    assertSameElements(myChild.getActionIds(shortcutB));
+    assertSameElements(child.getActionIdList(shortcut1), ACTION_1);
+    assertSameElements(child.getActionIdList(shortcut2), ACTION_2);
+    assertSameElements(child.getActionIdList(shortcutA), ACTION_1);
+    assertSameElements(child.getActionIdList(shortcutB));
   }
 
-  public void testRemovingShortcutsFromParentAndChild() throws Exception {
-    myParent.removeShortcut(ACTION_1, shortcut1);
+  public void testKeyboardGestureShortcutSerialization() {
+    String actionId = "GESTURE_ACTION";
+    Shortcut shortcut = KeyboardModifierGestureShortcut.newInstance(KeyboardGestureAction.ModifierType.dblClick,
+                                                                    KeyStroke.getKeyStroke("control CONTROL"));
+    parent.addShortcut(actionId, shortcut);
 
-    assertFalse(myParent.hasOwnActionId(ACTION_1));
-    assertTrue(myParent.hasOwnActionId(ACTION_2));
-    assertFalse(myParent.hasOwnActionId(ACTION_NON_EXISTENT));
+    Element keymapElement = parent.writeScheme();
+    Element actionElement = keymapElement.getChildren("action").stream()
+      .filter(element -> actionId.equals(element.getAttributeValue("id")))
+      .findFirst()
+      .orElseThrow();
+    Element shortcutElement = actionElement.getChild("keyboard-gesture-shortcut");
 
-    assertSameElements(myParent.getShortcuts(ACTION_1));
-    assertSameElements(myParent.getShortcuts(ACTION_2), shortcut2);
+    assertThat(shortcutElement).isNotNull();
+    assertThat(shortcutElement.getAttributeValue("keystroke")).isEqualTo("ctrl control");
+    assertThat(shortcutElement.getAttributeValue("modifier")).isEqualTo("dblClick");
+    assertThat(shortcutElement.getAttributeValue("keyboard-gesture-shortcut")).isNull();
+  }
 
-    assertSameElements(myParent.getActionIds(shortcut1));
-    assertSameElements(myParent.getActionIds(shortcut2), ACTION_2);
+  public void testKeyboardGestureShortcutWriteReadRoundTrip() {
+    String actionId = "GESTURE_ACTION";
+    Shortcut bareCtrl = KeyboardModifierGestureShortcut.newInstance(KeyboardGestureAction.ModifierType.dblClick,
+                                                                    KeyStroke.getKeyStroke("control CONTROL"));
+    Shortcut altCtrl = KeyboardModifierGestureShortcut.newInstance(KeyboardGestureAction.ModifierType.dblClick,
+                                                                   KeyStroke.getKeyStroke("alt control CONTROL"));
+    parent.addShortcut(actionId, bareCtrl);
+    parent.addShortcut(actionId, altCtrl);
+
+    Element written = parent.writeScheme();
+    KeymapImpl restored = new KeymapImpl(new SchemeDataHolder<>() {
+      @Override
+      public @NotNull Element read() { return written; }
+    });
+
+    assertThat(restored.getShortcuts(actionId)).containsExactlyInAnyOrder(bareCtrl, altCtrl);
+  }
+
+  public void testMultipleKeyboardGestureShortcutsForOneAction() {
+    String actionId = "GESTURE_ACTION";
+    Shortcut doubleCtrl = KeyboardModifierGestureShortcut.newInstance(KeyboardGestureAction.ModifierType.dblClick,
+                                                                      KeyStroke.getKeyStroke("control CONTROL"));
+    Shortcut altDoubleCtrl = KeyboardModifierGestureShortcut.newInstance(KeyboardGestureAction.ModifierType.dblClick,
+                                                                         KeyStroke.getKeyStroke("alt control CONTROL"));
+
+    parent.addShortcut(actionId, doubleCtrl);
+    parent.addShortcut(actionId, altDoubleCtrl);
+
+    assertThat(parent.getShortcuts(actionId)).contains(doubleCtrl, altDoubleCtrl);
+    assertThat(parent.getActionIdList(doubleCtrl)).containsExactly(actionId);
+    assertThat(parent.getActionIdList(altDoubleCtrl)).containsExactly(actionId);
+  }
+
+  public void testKeyboardGestureShortcutLookupRequiresSameDoubledModifierKey() {
+    String doubleCtrlActionId = "DOUBLE_CTRL_ACTION";
+    String doubleAltActionId = "DOUBLE_ALT_ACTION";
+    Shortcut altDoubleCtrl = KeyboardModifierGestureShortcut.newInstance(KeyboardGestureAction.ModifierType.dblClick,
+                                                                         KeyStroke.getKeyStroke("alt control CONTROL"));
+    Shortcut ctrlDoubleAlt = KeyboardModifierGestureShortcut.newInstance(KeyboardGestureAction.ModifierType.dblClick,
+                                                                         KeyStroke.getKeyStroke("ctrl alt ALT"));
+
+    parent.addShortcut(doubleCtrlActionId, altDoubleCtrl);
+    parent.addShortcut(doubleAltActionId, ctrlDoubleAlt);
+
+    assertThat(parent.getActionIdList(altDoubleCtrl)).containsExactly(doubleCtrlActionId);
+    assertThat(parent.getActionIdList(ctrlDoubleAlt)).containsExactly(doubleAltActionId);
+  }
+
+  public void testRemovingShortcutsFromParentAndChild() {
+    parent.removeShortcut(ACTION_1, shortcut1);
+
+    assertFalse(parent.hasOwnActionId(ACTION_1));
+    assertTrue(parent.hasOwnActionId(ACTION_2));
+    assertFalse(parent.hasOwnActionId(ACTION_NON_EXISTENT));
+
+    assertSameElements(parent.getShortcuts(ACTION_1));
+    assertSameElements(parent.getShortcuts(ACTION_2), shortcut2);
+
+    assertSameElements(parent.getActionIdList(shortcut1));
+    assertSameElements(parent.getActionIdList(shortcut2), ACTION_2);
 
     // child keymap still lists inherited shortcut
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcut1, shortcutA);
+    assertSameElements(child.getShortcuts(ACTION_1), shortcut1, shortcutA);
 
-    myChild.removeShortcut(ACTION_1, shortcut1);
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcutA);
-    assertSameElements(myChild.getActionIds(shortcut1));
-    assertSameElements(myChild.getActionIds(shortcutA), ACTION_1);
-    assertTrue(myChild.hasOwnActionId(ACTION_1));
+    child.removeShortcut(ACTION_1, shortcut1);
+    assertSameElements(child.getShortcuts(ACTION_1), shortcutA);
+    assertSameElements(child.getActionIdList(shortcut1));
+    assertSameElements(child.getActionIdList(shortcutA), ACTION_1);
+    assertTrue(child.hasOwnActionId(ACTION_1));
 
-    myChild.removeShortcut(ACTION_1, shortcutA);
-    assertSameElements(myChild.getShortcuts(ACTION_1));
-    assertSameElements(myChild.getActionIds(shortcutA));
-    assertFalse(myChild.hasOwnActionId(ACTION_1)); // since equal to parent list
+    child.removeShortcut(ACTION_1, shortcutA);
+    assertSameElements(child.getShortcuts(ACTION_1));
+    assertSameElements(child.getActionIdList(shortcutA));
+    assertFalse(child.hasOwnActionId(ACTION_1)); // since equal to parent list
 
-    myChild.removeShortcut(ACTION_2, shortcut2);
-    assertSameElements(myChild.getShortcuts(ACTION_2));
-    assertSameElements(myChild.getActionIds(shortcut2));
-    assertTrue(myChild.hasOwnActionId(ACTION_2)); // since different from parent list
+    child.removeShortcut(ACTION_2, shortcut2);
+    assertSameElements(child.getShortcuts(ACTION_2));
+    assertSameElements(child.getActionIdList(shortcut2));
+    assertTrue(child.hasOwnActionId(ACTION_2)); // since different from parent list
   }
 
-  public void testRemovingShortcutFromChildWhenInheritedDontChangeTheListIfShortcutIsAbsent() throws Exception {
-    myParent.clearOwnActionsIds();
-    myChild.clearOwnActionsIds();
+  public void testRemovingShortcutFromChildWhenInheritedDontChangeTheListIfShortcutIsAbsent() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
 
-    myParent.addShortcut(ACTION_1, shortcut1);
+    parent.addShortcut(ACTION_1, shortcut1);
 
-    assertTrue(myParent.hasOwnActionId(ACTION_1));
-    assertFalse(myChild.hasOwnActionId(ACTION_1));
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcut1);
+    assertThat(parent.hasOwnActionId(ACTION_1)).isTrue();
+    assertThat(child.hasOwnActionId(ACTION_1)).isFalse();
+    assertThat(child.getShortcuts(ACTION_1)).containsExactly(shortcut1);
 
-    myChild.removeShortcut(ACTION_1, shortcutA); // should not have any effect
+    // should not have any effect
+    child.removeShortcut(ACTION_1, shortcutA);
 
-    assertTrue(myParent.hasOwnActionId(ACTION_1));
-    assertFalse(myChild.hasOwnActionId(ACTION_1));
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcut1);
+    assertThat(parent.hasOwnActionId(ACTION_1)).isTrue();
+    assertThat(child.hasOwnActionId(ACTION_1)).isFalse();
+    assertThat(child.getShortcuts(ACTION_1)).containsExactly(shortcut1);
+
+    parent.addShortcut(ACTION_2, shortcut2);
+    parent.addShortcut(ACTION_2, shortcutA);
+    parent.addShortcut(ACTION_2, shortcutB);
+
+    child.removeShortcut(ACTION_2, shortcutA);
+    assertThat(child.getShortcuts(ACTION_2)).containsExactly(shortcut2, shortcutB);
   }
 
-  public void testRemovingShortcutFromChildWhenInherited() throws Exception {
-    myParent.clearOwnActionsIds();
-    myChild.clearOwnActionsIds();
+  public void testRemovingShortcutFirst() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
 
-    myParent.addShortcut(ACTION_1, shortcut1);
-    myParent.addShortcut(ACTION_1, shortcut2);
+    parent.addShortcut(ACTION_2, shortcut2);
+    parent.addShortcut(ACTION_2, shortcutA);
+    parent.addShortcut(ACTION_2, shortcutB);
 
-    assertTrue(myParent.hasOwnActionId(ACTION_1));
-    assertSameElements(myParent.getShortcuts(ACTION_1), shortcut1, shortcut2);
-    assertFalse(myChild.hasOwnActionId(ACTION_1));
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcut1, shortcut2);
-
-    myChild.removeShortcut(ACTION_1, shortcut1);
-
-    assertTrue(myParent.hasOwnActionId(ACTION_1));
-    assertSameElements(myParent.getShortcuts(ACTION_1), shortcut1, shortcut2);
-    assertTrue(myChild.hasOwnActionId(ACTION_1));
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcut2);
+    child.removeShortcut(ACTION_2, shortcut2);
+    assertThat(child.getShortcuts(ACTION_2)).containsExactly(shortcutA, shortcutB);
   }
 
-  public void testRemovingShortcutFromChildWhenInheritedAndBound() throws Exception {
-    myParent.clearOwnActionsIds();
-    myChild.clearOwnActionsIds();
+  public void testRemoveMouseShortcut() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
+
+    MouseShortcut mouseShortcut = new MouseShortcut(1, InputEvent.BUTTON2_MASK, 1);
+    parent.addShortcut(ACTION_2, mouseShortcut);
+    assertThat(child.getActionIdList(mouseShortcut)).containsExactly(ACTION_2);
+    child.removeShortcut(ACTION_2, mouseShortcut);
+    assertThat(child.getActionIdList(mouseShortcut)).isEmpty();
+  }
+
+  // decided to not change order and keep old behavior
+  //public void testChangeMouseShortcut() throws Exception {
+  //  myParent.clearOwnActionsIds();
+  //  myChild.clearOwnActionsIds();
+  //
+  //  ActionManager actionManager = ActionManager.getInstance();
+  //  actionManager.registerAction(ACTION_2, new EmptyAction());
+  //  actionManager.registerAction(ACTION_1, new EmptyAction());
+  //  try {
+  //    MouseShortcut mouseShortcut = new MouseShortcut(1, InputEvent.BUTTON2_MASK, 1);
+  //    myParent.addShortcut(ACTION_2, mouseShortcut);
+  //    assertThat(myChild.getActionIdList(mouseShortcut)).containsExactly(ACTION_2);
+  //
+  //    Keymap grandChild = myChild.deriveKeymap("GrandChild");
+  //    myChild.addShortcut(ACTION_2, mouseShortcut);
+  //
+  //    grandChild.addShortcut(ACTION_1, mouseShortcut);
+  //    assertThat(grandChild.getActionIdList(mouseShortcut)).containsExactly(ACTION_1, ACTION_2);
+  //  }
+  //  finally {
+  //    actionManager.unregisterAction(ACTION_2);
+  //    actionManager.unregisterAction(ACTION_1);
+  //  }
+  //}
+
+  public void testChangingMouseShortcutInGrandChild() {
+    MouseShortcut mouseShortcut = new MouseShortcut(MouseEvent.BUTTON1, 0, 1);
+    parent.addShortcut(ACTION_2, mouseShortcut);
+    Keymap grandChild = child.deriveKeymap("GrandChild");
+    grandChild.removeShortcut(ACTION_2, mouseShortcut);
+    grandChild.addShortcut(ACTION_1, mouseShortcut);
+    assertThat(grandChild.getActionIdList(mouseShortcut)).containsExactly(ACTION_1);
+  }
+
+  public void testRemovingShortcutLast() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
+
+    parent.addShortcut(ACTION_2, shortcut2);
+    parent.addShortcut(ACTION_2, shortcutA);
+    parent.addShortcut(ACTION_2, shortcutB);
+
+    child.removeShortcut(ACTION_2, shortcutB);
+    assertThat(child.getShortcuts(ACTION_2)).containsExactly(shortcut2, shortcutA);
+  }
+
+  public void testRemovingShortcutFromChildWhenInherited() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
+
+    parent.addShortcut(ACTION_1, shortcut1);
+    parent.addShortcut(ACTION_1, shortcut2);
+
+    assertTrue(parent.hasOwnActionId(ACTION_1));
+    assertSameElements(parent.getShortcuts(ACTION_1), shortcut1, shortcut2);
+    assertFalse(child.hasOwnActionId(ACTION_1));
+    assertSameElements(child.getShortcuts(ACTION_1), shortcut1, shortcut2);
+
+    child.removeShortcut(ACTION_1, shortcut1);
+
+    assertTrue(parent.hasOwnActionId(ACTION_1));
+    assertSameElements(parent.getShortcuts(ACTION_1), shortcut1, shortcut2);
+    assertTrue(child.hasOwnActionId(ACTION_1));
+    assertSameElements(child.getShortcuts(ACTION_1), shortcut2);
+  }
+
+  public void testRemovingShortcutFromChildWhenInheritedAndBound() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
 
     String BASE = "BASE_ACTION";
     String DEPENDENT = "DEPENDENT_ACTION";
 
-    KeymapManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
+    ActionManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
     try {
-      myParent.addShortcut(BASE, shortcut1);
-      myParent.addShortcut(BASE, shortcut2);
+      parent.addShortcut(BASE, shortcut1);
+      parent.addShortcut(BASE, shortcut2);
 
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1, shortcut2);
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertSameElements(parent.getShortcuts(BASE), shortcut1, shortcut2);
 
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertFalse(child.hasOwnActionId(BASE));
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
+      assertFalse(child.hasOwnActionId(DEPENDENT));
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
 
       // child::BASE don't have it's own mapping
-      myChild.removeShortcut(DEPENDENT, shortcut1);
+      child.removeShortcut(DEPENDENT, shortcut1);
 
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut2);
+      assertFalse(child.hasOwnActionId(BASE));
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
+      assertTrue(child.hasOwnActionId(DEPENDENT));
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut2);
 
-      myChild.clearOwnActionsIds();
+      child.clearOwnActionsIds();
 
       // child::BASE has it's own mapping
-      myChild.addShortcut(BASE, shortcutA);
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2, shortcutA);
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
+      child.addShortcut(BASE, shortcutA);
+      assertTrue(child.hasOwnActionId(BASE));
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2, shortcutA);
+      assertFalse(child.hasOwnActionId(DEPENDENT));
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
 
-      myChild.removeShortcut(DEPENDENT, shortcut1);
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2, shortcutA);
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut2, shortcutA);
+      child.removeShortcut(DEPENDENT, shortcut1);
+      assertTrue(child.hasOwnActionId(BASE));
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2, shortcutA);
+      assertTrue(child.hasOwnActionId(DEPENDENT));
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut2, shortcutA);
     }
     finally {
-      KeymapManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
+      ActionManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
     }
   }
 
-  public void testRemovingShortcutNotInheritedBoundAndNotBound() throws Exception {
+  public void testRemovingShortcutNotInheritedBoundAndNotBound() {
     KeymapImpl standalone = new KeymapImpl();
     standalone.setName("standalone");
 
@@ -205,8 +353,8 @@ public class KeymapTest extends PlatformTestCase {
     String BASE2 = "BASE_ACTION2";
     String DEPENDENT2 = "DEPENDENT_ACTION2";
 
-    KeymapManagerEx.getInstanceEx().bindShortcuts(BASE1, DEPENDENT1);
-    KeymapManagerEx.getInstanceEx().bindShortcuts(BASE2, DEPENDENT2);
+    ActionManagerEx.getInstanceEx().bindShortcuts(BASE1, DEPENDENT1);
+    ActionManagerEx.getInstanceEx().bindShortcuts(BASE2, DEPENDENT2);
     try {
       standalone.addShortcut(ACTION_1, shortcut1);
       standalone.addShortcut(BASE1, shortcut1);
@@ -232,70 +380,70 @@ public class KeymapTest extends PlatformTestCase {
       assertFalse(standalone.hasOwnActionId(BASE2));
       assertFalse(standalone.hasOwnActionId(DEPENDENT2));
     }
-    finally{
-      KeymapManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT1);
-      KeymapManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT2);
+    finally {
+      ActionManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT1);
+      ActionManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT2);
     }
   }
 
-  public void testResettingMappingInChild() throws Exception {
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcut1, shortcutA);
-    assertSameElements(myChild.getActionIds(shortcut1), ACTION_1);
-    assertSameElements(myChild.getActionIds(shortcutA), ACTION_1);
-    assertTrue(myChild.hasOwnActionId(ACTION_1));
+  public void testResettingMappingInChild() {
+    assertSameElements(child.getShortcuts(ACTION_1), shortcut1, shortcutA);
+    assertSameElements(child.getActionIdList(shortcut1), ACTION_1);
+    assertSameElements(child.getActionIdList(shortcutA), ACTION_1);
+    assertTrue(child.hasOwnActionId(ACTION_1));
 
-    myChild.clearOwnActionsId(ACTION_1);
-    assertSameElements(myChild.getShortcuts(ACTION_1), shortcut1);
-    assertSameElements(myChild.getActionIds(shortcut1), ACTION_1);
-    assertSameElements(myChild.getActionIds(shortcutA));
-    assertFalse(myChild.hasOwnActionId(ACTION_1));
+    child.clearOwnActionsId(ACTION_1);
+    assertSameElements(child.getShortcuts(ACTION_1), shortcut1);
+    assertSameElements(child.getActionIdList(shortcut1), ACTION_1);
+    assertSameElements(child.getActionIdList(shortcutA));
+    assertFalse(child.hasOwnActionId(ACTION_1));
 
-    myChild.removeShortcut(ACTION_2, shortcut2);
-    assertSameElements(myChild.getShortcuts(ACTION_2));
-    assertSameElements(myChild.getActionIds(shortcut2));
-    assertTrue(myChild.hasOwnActionId(ACTION_2));
-    myChild.clearOwnActionsId(ACTION_2);
+    child.removeShortcut(ACTION_2, shortcut2);
+    assertSameElements(child.getShortcuts(ACTION_2));
+    assertSameElements(child.getActionIdList(shortcut2));
+    assertTrue(child.hasOwnActionId(ACTION_2));
+    child.clearOwnActionsId(ACTION_2);
 
-    assertSameElements(myChild.getShortcuts(ACTION_2), shortcut2);
-    assertSameElements(myChild.getActionIds(shortcut2), ACTION_2);
-    assertFalse(myChild.hasOwnActionId(ACTION_2));
+    assertSameElements(child.getShortcuts(ACTION_2), shortcut2);
+    assertSameElements(child.getActionIdList(shortcut2), ACTION_2);
+    assertFalse(child.hasOwnActionId(ACTION_2));
   }
 
-  public void testChangingAndResettingBoundShortcutsInParentKeymap() throws Exception {
-    myParent.clearOwnActionsIds();
-    myChild.clearOwnActionsIds();
+  public void testChangingAndResettingBoundShortcutsInParentKeymap() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
 
     String BASE = "BASE_ACTION";
     String DEPENDENT = "DEPENDENT_ACTION";
 
-    KeymapManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
+    ActionManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
     try {
-      assertSameElements(myParent.getShortcuts(BASE));
-      assertSameElements(myParent.getShortcuts(DEPENDENT));
-      assertSameElements(myParent.getActionIds(shortcut1));
+      assertSameElements(parent.getShortcuts(BASE));
+      assertSameElements(parent.getShortcuts(DEPENDENT));
+      assertSameElements(parent.getActionIdList(shortcut1));
 
-      assertSameElements(myChild.getShortcuts(BASE));
-      assertSameElements(myChild.getShortcuts(DEPENDENT));
-      assertSameElements(myChild.getActionIds(shortcut1));
+      assertSameElements(child.getShortcuts(BASE));
+      assertSameElements(child.getShortcuts(DEPENDENT));
+      assertSameElements(child.getActionIdList(shortcut1));
 
-      myParent.addShortcut(BASE, shortcut1);
+      parent.addShortcut(BASE, shortcut1);
 
       // parent:
       //  BASE -> shortcut1
       //  DEPENDENT -> BASE
       // child:
       //  -
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1);
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myParent.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertFalse(myParent.hasOwnActionId(DEPENDENT));
+      assertSameElements(parent.getShortcuts(BASE), shortcut1);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(parent.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertFalse(parent.hasOwnActionId(DEPENDENT));
 
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertFalse(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
 
       // override BASE action in child
       // parent:
@@ -304,13 +452,13 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1, shortcut2
       //  DEPENDENT -> child:BASE
-      myChild.addShortcut(BASE, shortcut2);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      child.addShortcut(BASE, shortcut2);
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertTrue(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
 
       // extend BASE action, overridden in child
       // parent:
@@ -319,22 +467,22 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1, shortcut2
       //  DEPENDENT -> child:BASE
-      myParent.addShortcut(BASE, shortcutA);
+      parent.addShortcut(BASE, shortcutA);
       // parent
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1, shortcutA);
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1, shortcutA);
-      assertSameElements(myParent.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myParent.getActionIds(shortcutA), BASE, DEPENDENT);
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertFalse(myParent.hasOwnActionId(DEPENDENT));
+      assertSameElements(parent.getShortcuts(BASE), shortcut1, shortcutA);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1, shortcutA);
+      assertSameElements(parent.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcutA), BASE, DEPENDENT);
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertFalse(parent.hasOwnActionId(DEPENDENT));
       // child is not affected since the action is overridden
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutA));
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutA));
+      assertTrue(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
 
       // extend DEPENDENT action, not-overridden in child
       // parent:
@@ -343,26 +491,26 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1, shortcut2
       //  DEPENDENT -> child:BASE
-      myParent.removeShortcut(BASE, shortcutA);
-      myParent.addShortcut(DEPENDENT, shortcutB);
+      parent.removeShortcut(BASE, shortcutA);
+      parent.addShortcut(DEPENDENT, shortcutB);
       // parent
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1);
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1, shortcutB);
-      assertSameElements(myParent.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myParent.getActionIds(shortcut2));
-      assertSameElements(myParent.getActionIds(shortcutA));
-      assertSameElements(myParent.getActionIds(shortcutB), DEPENDENT);
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertTrue(myParent.hasOwnActionId(DEPENDENT));
+      assertSameElements(parent.getShortcuts(BASE), shortcut1);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1, shortcutB);
+      assertSameElements(parent.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut2));
+      assertSameElements(parent.getActionIdList(shortcutA));
+      assertSameElements(parent.getActionIdList(shortcutB), DEPENDENT);
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertTrue(parent.hasOwnActionId(DEPENDENT));
       // child
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutA));
-      assertSameElements(myChild.getActionIds(shortcutB));
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutA));
+      assertSameElements(child.getActionIdList(shortcutB));
+      assertTrue(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
 
       // override DEPENDENT action in child
       // parent:
@@ -371,56 +519,56 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1, shortcut2
       //  DEPENDENT -> shortcut1, shortcut2, shortcutA
-      myChild.addShortcut(DEPENDENT, shortcutA);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutA), DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutB));
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      child.addShortcut(DEPENDENT, shortcutA);
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutA), DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutB));
+      assertTrue(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
     }
     finally {
-      KeymapManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
+      ActionManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
     }
   }
 
-  public void testChangingAndResettingBoundShortcutsInChildKeymap() throws Exception {
-    myParent.clearOwnActionsIds();
-    myChild.clearOwnActionsIds();
+  public void testChangingAndResettingBoundShortcutsInChildKeymap() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
 
     String BASE = "BASE_ACTION";
     String DEPENDENT = "DEPENDENT_ACTION";
 
-    KeymapManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
+    ActionManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
     try {
-      assertSameElements(myParent.getShortcuts(BASE));
-      assertSameElements(myParent.getShortcuts(DEPENDENT));
-      assertSameElements(myParent.getActionIds(shortcut1));
+      assertSameElements(parent.getShortcuts(BASE));
+      assertSameElements(parent.getShortcuts(DEPENDENT));
+      assertSameElements(parent.getActionIdList(shortcut1));
 
-      assertSameElements(myChild.getShortcuts(BASE));
-      assertSameElements(myChild.getShortcuts(DEPENDENT));
-      assertSameElements(myChild.getActionIds(shortcut1));
+      assertSameElements(child.getShortcuts(BASE));
+      assertSameElements(child.getShortcuts(DEPENDENT));
+      assertSameElements(child.getActionIdList(shortcut1));
 
-      myParent.addShortcut(BASE, shortcut1);
+      parent.addShortcut(BASE, shortcut1);
 
       // parent:
       //  BASE -> shortcut1
       //  DEPENDENT -> BASE
       // child:
       //  -
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1);
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myParent.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertFalse(myParent.hasOwnActionId(DEPENDENT));
+      assertSameElements(parent.getShortcuts(BASE), shortcut1);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(parent.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertFalse(parent.hasOwnActionId(DEPENDENT));
 
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertFalse(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
 
       // overriding BASE in child
       // parent:
@@ -429,13 +577,13 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1, shortcut2
       //  DEPENDENT -> child:BASE
-      myChild.addShortcut(BASE, shortcut2);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      child.addShortcut(BASE, shortcut2);
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertTrue(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
 
       // overriding DEPENDENT in child
       // parent:
@@ -444,14 +592,14 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1, shortcut2
       //  DEPENDENT -> shortcut1, shortcut2, shortcutA
-      myChild.addShortcut(DEPENDENT, shortcutA);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutA), DEPENDENT);
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      child.addShortcut(DEPENDENT, shortcutA);
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutA), DEPENDENT);
+      assertTrue(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
 
       // removing one of BASE binding
       // parent:
@@ -460,14 +608,14 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut2
       //  DEPENDENT -> shortcut1, shortcut2, shortcutA
-      myChild.removeShortcut(BASE, shortcut1);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut2);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
-      assertSameElements(myChild.getActionIds(shortcut1), DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutA), DEPENDENT);
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      child.removeShortcut(BASE, shortcut1);
+      assertSameElements(child.getShortcuts(BASE), shortcut2);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
+      assertSameElements(child.getActionIdList(shortcut1), DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutA), DEPENDENT);
+      assertTrue(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
 
       // removing last of BASE binding
       // parent:
@@ -476,14 +624,14 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> -
       //  DEPENDENT -> shortcut1, shortcut2, shortcutA
-      myChild.removeShortcut(BASE, shortcut2);
-      assertSameElements(myChild.getShortcuts(BASE));
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
-      assertSameElements(myChild.getActionIds(shortcut1), DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2), DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutA), DEPENDENT);
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      child.removeShortcut(BASE, shortcut2);
+      assertSameElements(child.getShortcuts(BASE));
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
+      assertSameElements(child.getActionIdList(shortcut1), DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2), DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutA), DEPENDENT);
+      assertTrue(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
 
       // clearing BASE binding
       // parent:
@@ -492,14 +640,14 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> parent:BASE
       //  DEPENDENT -> shortcut1, shortcut2, shortcutA
-      myChild.clearOwnActionsId(BASE);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
-      assertSameElements(myChild.getActionIds(shortcut1), DEPENDENT, BASE);
-      assertSameElements(myChild.getActionIds(shortcut2), DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutA), DEPENDENT);
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      child.clearOwnActionsId(BASE);
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
+      assertSameElements(child.getActionIdList(shortcut1), DEPENDENT, BASE);
+      assertSameElements(child.getActionIdList(shortcut2), DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutA), DEPENDENT);
+      assertFalse(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
 
       // clearing DEPENDENT binding
       // parent:
@@ -508,43 +656,43 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> parent:BASE
       //  DEPENDENT -> child:BASE
-      myChild.clearOwnActionsId(DEPENDENT);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2));
-      assertSameElements(myChild.getActionIds(shortcutA));
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      child.clearOwnActionsId(DEPENDENT);
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2));
+      assertSameElements(child.getActionIdList(shortcutA));
+      assertFalse(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
     }
     finally {
-      KeymapManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
+      ActionManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
     }
   }
 
-  public void testRemovingChildMappingIsTheSameAsResetting() throws Exception {
-    myParent.clearOwnActionsIds();
-    myChild.clearOwnActionsIds();
+  public void testRemovingChildMappingIsTheSameAsResetting() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
 
     String BASE = "BASE_ACTION";
     String DEPENDENT = "DEPENDENT_ACTION";
 
-    KeymapManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
+    ActionManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
     try {
-      assertSameElements(myParent.getShortcuts(BASE));
-      assertSameElements(myParent.getShortcuts(DEPENDENT));
-      assertSameElements(myParent.getActionIds(shortcut1));
+      assertSameElements(parent.getShortcuts(BASE));
+      assertSameElements(parent.getShortcuts(DEPENDENT));
+      assertSameElements(parent.getActionIdList(shortcut1));
 
-      assertSameElements(myChild.getShortcuts(BASE));
-      assertSameElements(myChild.getShortcuts(DEPENDENT));
-      assertSameElements(myChild.getActionIds(shortcut1));
+      assertSameElements(child.getShortcuts(BASE));
+      assertSameElements(child.getShortcuts(DEPENDENT));
+      assertSameElements(child.getActionIdList(shortcut1));
 
       // parent:
       //  BASE -> shortcut1
       //  DEPENDENT -> BASE
       // child:
       //  -
-      myParent.addShortcut(BASE, shortcut1);
+      parent.addShortcut(BASE, shortcut1);
 
       // parent:
       //  BASE -> shortcut1
@@ -552,16 +700,16 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1, shortcutA
       //  DEPENDENT -> shortcut1, shortcutA, shortcutB
-      myChild.addShortcut(BASE, shortcutA);
-      myChild.addShortcut(DEPENDENT, shortcutB);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcutA);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcutA, shortcutB);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2));
-      assertSameElements(myChild.getActionIds(shortcutA), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutB), DEPENDENT);
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      child.addShortcut(BASE, shortcutA);
+      child.addShortcut(DEPENDENT, shortcutB);
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcutA);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcutA, shortcutB);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2));
+      assertSameElements(child.getActionIdList(shortcutA), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutB), DEPENDENT);
+      assertTrue(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
       // remove from child:BASE first
       // parent:
       //  BASE -> shortcut1
@@ -569,15 +717,15 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1
       //  DEPENDENT -> shortcut1, shortcutA, shortcutB
-      myChild.removeShortcut(BASE, shortcutA);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcutA, shortcutB);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2));
-      assertSameElements(myChild.getActionIds(shortcutA), DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcutB), DEPENDENT);
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      child.removeShortcut(BASE, shortcutA);
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcutA, shortcutB);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2));
+      assertSameElements(child.getActionIdList(shortcutA), DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcutB), DEPENDENT);
+      assertFalse(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
       // remove dependent child:BASE first
       // parent:
       //  BASE -> shortcut1
@@ -585,32 +733,32 @@ public class KeymapTest extends PlatformTestCase {
       // child:
       //  BASE -> shortcut1 == parent:BASE
       //  DEPENDENT -> shortcut1 == child:BASE
-      myChild.removeShortcut(DEPENDENT, shortcutA);
-      myChild.removeShortcut(DEPENDENT, shortcutB);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut2));
-      assertSameElements(myChild.getActionIds(shortcutA));
-      assertSameElements(myChild.getActionIds(shortcutB));
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      child.removeShortcut(DEPENDENT, shortcutA);
+      child.removeShortcut(DEPENDENT, shortcutB);
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut2));
+      assertSameElements(child.getActionIdList(shortcutA));
+      assertSameElements(child.getActionIdList(shortcutB));
+      assertFalse(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
     }
     finally {
-      KeymapManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
+      ActionManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
     }
   }
 
-  public void testLookingForShortcutsInParentFirstAndOnlyThenConsiderBoundActions() throws Exception {
-    myParent.clearOwnActionsIds();
-    myChild.clearOwnActionsIds();
-    KeymapImpl myGrandChild = myChild.deriveKeymap("GrandChild");
-    assertSame(myChild, myGrandChild.getParent());
+  public void testLookingForShortcutsInParentFirstAndOnlyThenConsiderBoundActions() {
+    parent.clearOwnActionsIds();
+    child.clearOwnActionsIds();
+    KeymapImpl myGrandChild = child.deriveKeymap("GrandChild");
+    assertSame(child, myGrandChild.getParent());
 
     String BASE = "BASE_ACTION";
     String DEPENDENT = "DEPENDENT_ACTION";
 
-    KeymapManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
+    ActionManagerEx.getInstanceEx().bindShortcuts(BASE, DEPENDENT);
     try {
       // parent:
       //  BASE -> shortcut1  <-- change is here
@@ -619,20 +767,20 @@ public class KeymapTest extends PlatformTestCase {
       //  -
       // grand-child:
       //  -
-      myParent.addShortcut(BASE, shortcut1);
+      parent.addShortcut(BASE, shortcut1);
 
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
+      assertSameElements(parent.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
       assertSameElements(myGrandChild.getShortcuts(BASE), shortcut1);
 
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1);
       assertSameElements(myGrandChild.getShortcuts(DEPENDENT), shortcut1);
 
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertFalse(myParent.hasOwnActionId(DEPENDENT));
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertFalse(parent.hasOwnActionId(DEPENDENT));
+      assertFalse(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
       assertFalse(myGrandChild.hasOwnActionId(BASE));
       assertFalse(myGrandChild.hasOwnActionId(DEPENDENT));
 
@@ -645,27 +793,27 @@ public class KeymapTest extends PlatformTestCase {
       // grand-child:
       //  BASE -> parent:BASE
       //  DEPENDENT -> child:DEPENDENT
-      myChild.addShortcut(DEPENDENT, shortcut2);
+      child.addShortcut(DEPENDENT, shortcut2);
 
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
+      assertSameElements(parent.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
       assertSameElements(myGrandChild.getShortcuts(BASE), shortcut1);
 
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
       assertSameElements(myGrandChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
 
-      assertSameElements(myParent.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myGrandChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myParent.getActionIds(shortcut2));
-      assertSameElements(myChild.getActionIds(shortcut2), DEPENDENT);
-      assertSameElements(myGrandChild.getActionIds(shortcut2), DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(myGrandChild.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut2));
+      assertSameElements(child.getActionIdList(shortcut2), DEPENDENT);
+      assertSameElements(myGrandChild.getActionIdList(shortcut2), DEPENDENT);
 
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertFalse(myParent.hasOwnActionId(DEPENDENT));
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertFalse(parent.hasOwnActionId(DEPENDENT));
+      assertFalse(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
       assertFalse(myGrandChild.hasOwnActionId(BASE));
       assertFalse(myGrandChild.hasOwnActionId(DEPENDENT));
 
@@ -680,33 +828,33 @@ public class KeymapTest extends PlatformTestCase {
       //  DEPENDENT -> shortcut1, shortcut2, + shortcutA  <-- change is here
       myGrandChild.addShortcut(DEPENDENT, shortcutA);
 
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1);
+      assertSameElements(parent.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(BASE), shortcut1);
       assertSameElements(myGrandChild.getShortcuts(BASE), shortcut1);
 
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
       assertSameElements(myGrandChild.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
 
-      assertSameElements(myParent.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myGrandChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myParent.getActionIds(shortcut2));
-      assertSameElements(myChild.getActionIds(shortcut2), DEPENDENT);
-      assertSameElements(myGrandChild.getActionIds(shortcut2), DEPENDENT);
-      assertSameElements(myParent.getActionIds(shortcutA));
-      assertSameElements(myChild.getActionIds(shortcutA));
-      assertSameElements(myGrandChild.getActionIds(shortcutA), DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(myGrandChild.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut2));
+      assertSameElements(child.getActionIdList(shortcut2), DEPENDENT);
+      assertSameElements(myGrandChild.getActionIdList(shortcut2), DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcutA));
+      assertSameElements(child.getActionIdList(shortcutA));
+      assertSameElements(myGrandChild.getActionIdList(shortcutA), DEPENDENT);
 
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertFalse(myParent.hasOwnActionId(DEPENDENT));
-      assertFalse(myChild.hasOwnActionId(BASE));
-      assertTrue(myChild.hasOwnActionId(DEPENDENT));
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertFalse(parent.hasOwnActionId(DEPENDENT));
+      assertFalse(child.hasOwnActionId(BASE));
+      assertTrue(child.hasOwnActionId(DEPENDENT));
       assertFalse(myGrandChild.hasOwnActionId(BASE));
       assertTrue(myGrandChild.hasOwnActionId(DEPENDENT));
 
       // Now let's try the other way round - redefine base shortcut in children and check that DEPENDENT action uses the correct one
-      myChild.clearOwnActionsIds();
+      child.clearOwnActionsIds();
       myGrandChild.clearOwnActionsIds();
 
       // parent:
@@ -718,27 +866,27 @@ public class KeymapTest extends PlatformTestCase {
       // grand-child:
       //  BASE -> child:BASE
       //  DEPENDENT -> child:BASE
-      myChild.addShortcut(BASE, shortcut2);
+      child.addShortcut(BASE, shortcut2);
 
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
+      assertSameElements(parent.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
       assertSameElements(myGrandChild.getShortcuts(BASE), shortcut1, shortcut2);
 
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
       assertSameElements(myGrandChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
 
-      assertSameElements(myParent.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myGrandChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myParent.getActionIds(shortcut2));
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertSameElements(myGrandChild.getActionIds(shortcut2), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(myGrandChild.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut2));
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertSameElements(myGrandChild.getActionIdList(shortcut2), BASE, DEPENDENT);
 
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertFalse(myParent.hasOwnActionId(DEPENDENT));
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertFalse(parent.hasOwnActionId(DEPENDENT));
+      assertTrue(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
       assertFalse(myGrandChild.hasOwnActionId(BASE));
       assertFalse(myGrandChild.hasOwnActionId(DEPENDENT));
 
@@ -753,33 +901,57 @@ public class KeymapTest extends PlatformTestCase {
       //  DEPENDENT -> grand-child:BASE
       myGrandChild.addShortcut(BASE, shortcutA);
 
-      assertSameElements(myParent.getShortcuts(BASE), shortcut1);
-      assertSameElements(myChild.getShortcuts(BASE), shortcut1, shortcut2);
+      assertSameElements(parent.getShortcuts(BASE), shortcut1);
+      assertSameElements(child.getShortcuts(BASE), shortcut1, shortcut2);
       assertSameElements(myGrandChild.getShortcuts(BASE), shortcut1, shortcut2, shortcutA);
 
-      assertSameElements(myParent.getShortcuts(DEPENDENT), shortcut1);
-      assertSameElements(myChild.getShortcuts(DEPENDENT), shortcut1, shortcut2);
+      assertSameElements(parent.getShortcuts(DEPENDENT), shortcut1);
+      assertSameElements(child.getShortcuts(DEPENDENT), shortcut1, shortcut2);
       assertSameElements(myGrandChild.getShortcuts(DEPENDENT), shortcut1, shortcut2, shortcutA);
 
-      assertSameElements(myParent.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myGrandChild.getActionIds(shortcut1), BASE, DEPENDENT);
-      assertSameElements(myParent.getActionIds(shortcut2));
-      assertSameElements(myChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertSameElements(myGrandChild.getActionIds(shortcut2), BASE, DEPENDENT);
-      assertSameElements(myParent.getActionIds(shortcutA));
-      assertSameElements(myChild.getActionIds(shortcutA));
-      assertSameElements(myGrandChild.getActionIds(shortcutA), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(child.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(myGrandChild.getActionIdList(shortcut1), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcut2));
+      assertSameElements(child.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertSameElements(myGrandChild.getActionIdList(shortcut2), BASE, DEPENDENT);
+      assertSameElements(parent.getActionIdList(shortcutA));
+      assertSameElements(child.getActionIdList(shortcutA));
+      assertSameElements(myGrandChild.getActionIdList(shortcutA), BASE, DEPENDENT);
 
-      assertTrue(myParent.hasOwnActionId(BASE));
-      assertFalse(myParent.hasOwnActionId(DEPENDENT));
-      assertTrue(myChild.hasOwnActionId(BASE));
-      assertFalse(myChild.hasOwnActionId(DEPENDENT));
+      assertTrue(parent.hasOwnActionId(BASE));
+      assertFalse(parent.hasOwnActionId(DEPENDENT));
+      assertTrue(child.hasOwnActionId(BASE));
+      assertFalse(child.hasOwnActionId(DEPENDENT));
       assertTrue(myGrandChild.hasOwnActionId(BASE));
       assertFalse(myGrandChild.hasOwnActionId(DEPENDENT));
     }
     finally {
-      KeymapManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
+      ActionManagerEx.getInstanceEx().unbindShortcuts(DEPENDENT);
     }
+  }
+
+  public void testParallelGetShortcuts() {
+    Keymap grandChild = child.deriveKeymap("GrandChild");
+    Runnable task = () -> {
+      for (int i = 0; i < 1000; i++) {
+        //noinspection UnresolvedPluginConfigReference
+        assertEquals(Shortcut.EMPTY_ARRAY, grandChild.getShortcuts("none"));
+        List<Shortcut> shortcuts = Arrays.asList(grandChild.getShortcuts(ACTION_1));
+        assertTrue(shortcuts.size() >= 2 && shortcuts.size() <= 3);
+        String message = shortcuts.toString();
+        assertTrue(message, shortcuts.contains(shortcut1));
+        assertTrue(message, shortcuts.contains(shortcutA));
+        if (shortcuts.size() == 3) {
+          assertTrue(message, shortcuts.contains(shortcut2));
+        }
+      }
+    };
+    List<CompletableFuture<Void>> tasks = Stream.generate(() -> task).limit(10).map(CompletableFuture::runAsync).toList();
+    for (int i = 0; i < 10000; i++) {
+      grandChild.addShortcut(ACTION_1, shortcut2);
+      grandChild.removeShortcut(ACTION_1, shortcut2);
+    }
+    tasks.forEach(CompletableFuture::join);
   }
 }

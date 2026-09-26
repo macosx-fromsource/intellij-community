@@ -26,6 +26,6 @@ class Test {
       .map(object -> Arrays.stream(functions)
         .map(fn -> fn.apply(object))
         .collect(toList()))
-      .collect(toList<error descr="'toList()' in 'java.util.stream.Collectors' cannot be applied to '()'">()</error>);
+      .<error descr="Incompatible types. Found: 'java.util.List<java.util.List<capture<?>>>', required: 'java.util.List<java.util.List<java.lang.Object>>'">collect</error>(toList());
   }
 }

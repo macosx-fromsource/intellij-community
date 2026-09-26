@@ -1,117 +1,106 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.dialogs;
 
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
-import com.intellij.openapi.help.HelpManager;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Ref;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.idea.svn.SvnBundle;
 import org.jetbrains.idea.svn.SvnUtil;
 import org.jetbrains.idea.svn.SvnVcs;
+import org.jetbrains.idea.svn.api.Url;
 import org.jetbrains.idea.svn.commandLine.SvnBindException;
 import org.jetbrains.idea.svn.dialogs.browser.UrlOpeningExpander;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.internal.util.SVNEncodingUtil;
-import org.tmatesoft.svn.core.internal.util.SVNPathUtil;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JSeparator;
+import javax.swing.JTextField;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.event.TreeSelectionEvent;
-import javax.swing.event.TreeSelectionListener;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.util.Objects;
 
 import static com.intellij.openapi.util.Pair.create;
+import static org.jetbrains.idea.svn.SvnBundle.message;
+import static org.jetbrains.idea.svn.SvnUtil.append;
 
 /**
  * @author alex
  */
-public class SelectLocationDialog extends DialogWrapper {
+public final class SelectLocationDialog extends DialogWrapper {
   private final Project myProject;
   private RepositoryBrowserComponent myRepositoryBrowser;
-  private final SVNURL myURL;
+  private final Url myURL;
   private final String myDstName;
-  private final String myDstLabel;
+  private final @NlsContexts.Label @Nullable String myDstLabel;
   private JTextField myDstText;
   private final boolean myIsShowFiles;
   private final boolean myAllowActions;
 
-  @NonNls private static final String HELP_ID = "vcs.subversion.common";
+  private static final @NonNls String HELP_ID = "vcs.subversion.common";
 
   // todo check that works when authenticated
-  @Nullable
-  public static SVNURL selectLocation(Project project, String url) {
-    SelectLocationDialog dialog = openDialog(project, url, null, null, true, false, null);
+  public static @Nullable Url selectLocation(Project project, @NotNull Url url) {
+    SelectLocationDialog dialog = openDialog(project, url, null, null, true, null);
 
     return dialog == null || !dialog.isOK() ? null : dialog.getSelectedURL();
   }
 
-  @Nullable
-  public static Pair<SVNURL, SVNURL> selectLocation(Project project, @NotNull SVNURL url) {
+  public static @Nullable Pair<Url, Url> selectLocationAndRoot(Project project, @NotNull Url url) {
     SelectLocationDialog dialog = new SelectLocationDialog(project, url, null, null, true, true);
     return dialog.showAndGet() ? create(dialog.getSelectedURL(), dialog.getRootUrl()) : null;
   }
 
-  @Nullable
-  public static String selectCopyDestination(Project project, String url, String dstLabel, String dstName, boolean showFiles) {
-    SelectLocationDialog dialog =
-      openDialog(project, url, dstLabel, dstName, showFiles, false, SvnBundle.message("select.location.invalid.url.message", url));
+  public static @Nullable Url selectCopyDestination(@NotNull Project project, @NotNull Url url, @NotNull String dstName) throws SvnBindException {
+    SelectLocationDialog dialog = openDialog(project, url, message("label.copy.select.location.dialog.copy.as"), dstName, false,
+                                             message("select.location.invalid.url.message", url));
 
-    return dialog == null || !dialog.isOK() ? null : SVNPathUtil.append(dialog.getSelectedURL().toString(), dialog.getDestinationName());
+    return dialog == null || !dialog.isOK() ? null : append(Objects.requireNonNull(dialog.getSelectedURL()), dialog.getDestinationName());
   }
 
-  @Nullable
-  private static SelectLocationDialog openDialog(Project project,
-                                                 String url,
-                                                 String dstLabel,
-                                                 String dstName,
-                                                 boolean showFiles,
-                                                 boolean allowActions,
-                                                 String errorMessage) {
+  private static @Nullable SelectLocationDialog openDialog(Project project,
+                                                           @NotNull Url url,
+                                                           @NlsContexts.Label @Nullable String dstLabel,
+                                                           String dstName,
+                                                           boolean showFiles,
+                                                           @NlsContexts.DialogMessage @Nullable String errorMessage) {
     try {
-      SVNURL svnUrl = SvnUtil.createUrl(url);
-      final SVNURL repositoryUrl = initRoot(project, svnUrl);
+      final Url repositoryUrl = initRoot(project, url);
       if (repositoryUrl == null) {
-        Messages.showErrorDialog(project, "Can not detect repository root for URL: " + url,
-                                 SvnBundle.message("dialog.title.select.repository.location"));
+        Messages.showErrorDialog(project, message("dialog.message.can.not.detect.repository.root.for.url", url),
+                                 message("dialog.title.select.repository.location"));
         return null;
       }
-      SelectLocationDialog dialog = new SelectLocationDialog(project, repositoryUrl, dstLabel, dstName, showFiles, allowActions);
+      SelectLocationDialog dialog = new SelectLocationDialog(project, repositoryUrl, dstLabel, dstName, showFiles, false);
       dialog.show();
       return dialog;
     }
     catch (SvnBindException e) {
       Messages.showErrorDialog(project, errorMessage != null ? errorMessage : e.getMessage(),
-                               SvnBundle.message("dialog.title.select.repository.location"));
+                               message("dialog.title.select.repository.location"));
       return null;
     }
   }
 
-  private SelectLocationDialog(Project project, SVNURL url, String dstLabel, String dstName, boolean showFiles, boolean allowActions) {
+  private SelectLocationDialog(Project project,
+                               Url url,
+                               @NlsContexts.Label @Nullable String dstLabel,
+                               String dstName,
+                               boolean showFiles,
+                               boolean allowActions) {
     super(project, true);
     myProject = project;
     myDstLabel = dstLabel;
@@ -119,59 +108,49 @@ public class SelectLocationDialog extends DialogWrapper {
     myURL = url;
     myIsShowFiles = showFiles;
     myAllowActions = allowActions;
-    setTitle(SvnBundle.message("dialog.title.select.repository.location"));
-    getHelpAction().setEnabled(true);
+    setTitle(message("dialog.title.select.repository.location"));
     init();
   }
 
-  protected void doHelpAction() {
-    HelpManager.getInstance().invokeHelp(HELP_ID);
+  @Override
+  protected @NotNull String getHelpId() {
+    return HELP_ID;
   }
 
-  @NotNull
-  protected Action[] createActions() {
-    return new Action[]{getOKAction(), getCancelAction(), getHelpAction()};
-  }
-
+  @Override
   protected String getDimensionServiceKey() {
     return "svn.repositoryBrowser";
   }
 
-  @Nullable
-  private static SVNURL initRoot(final Project project, final SVNURL url) throws SvnBindException {
-    final Ref<SVNURL> result = new Ref<>();
+  private static @Nullable Url initRoot(final Project project, final Url url) throws SvnBindException {
+    final Ref<Url> result = new Ref<>();
     final Ref<SvnBindException> excRef = new Ref<>();
 
-    ProgressManager.getInstance().runProcessWithProgressSynchronously(new Runnable() {
-      public void run() {
-        try {
-          result.set(SvnUtil.getRepositoryRoot(SvnVcs.getInstance(project), url));
-        } catch (SvnBindException e) {
-          excRef.set(e);
-        }
+    ProgressManager.getInstance().runProcessWithProgressSynchronously(() -> {
+      try {
+        result.set(SvnUtil.getRepositoryRoot(SvnVcs.getInstance(project), url));
       }
-    }, "Detecting repository root", true, project);
-    if (! excRef.isNull()) {
+      catch (SvnBindException e) {
+        excRef.set(e);
+      }
+    }, message("progress.title.detecting.repository.root"), true, project);
+    if (!excRef.isNull()) {
       throw excRef.get();
     }
     return result.get();
   }
 
+  @Override
   protected void init() {
     super.init();
-    final String urlString = myURL.toString();
     if (myAllowActions) {
       // initialize repo browser this way - to make actions work correctly
-      myRepositoryBrowser.setRepositoryURLs(new SVNURL[]{myURL}, myIsShowFiles, new UrlOpeningExpander.Factory(urlString, urlString), true);
+      myRepositoryBrowser.setRepositoryURLs(new Url[]{myURL}, myIsShowFiles, new UrlOpeningExpander.Factory(myURL), true);
     }
     else {
-      myRepositoryBrowser.setRepositoryURL(myURL, myIsShowFiles, new UrlOpeningExpander.Factory(urlString, urlString));
+      myRepositoryBrowser.setRepositoryURL(myURL, myIsShowFiles, new UrlOpeningExpander.Factory(myURL));
     }
-    myRepositoryBrowser.addChangeListener(new TreeSelectionListener() {
-      public void valueChanged(TreeSelectionEvent e) {
-        getOKAction().setEnabled(isOKActionEnabled());
-      }
-    });
+    myRepositoryBrowser.addChangeListener(e -> getOKAction().setEnabled(isOKActionEnabled()));
   }
 
   @Override
@@ -180,6 +159,7 @@ public class SelectLocationDialog extends DialogWrapper {
     Disposer.dispose(myRepositoryBrowser);
   }
 
+  @Override
   protected JComponent createCenterPanel() {
     JPanel panel = new JPanel();
     panel.setLayout(new BorderLayout());
@@ -222,14 +202,17 @@ public class SelectLocationDialog extends DialogWrapper {
       browserPanel.add(myDstText, gc);
 
       myDstText.getDocument().addDocumentListener(new DocumentListener() {
+        @Override
         public void insertUpdate(DocumentEvent e) {
           getOKAction().setEnabled(isOKActionEnabled());
         }
 
+        @Override
         public void removeUpdate(DocumentEvent e) {
           getOKAction().setEnabled(isOKActionEnabled());
         }
 
+        @Override
         public void changedUpdate(DocumentEvent e) {
           getOKAction().setEnabled(isOKActionEnabled());
         }
@@ -251,41 +234,41 @@ public class SelectLocationDialog extends DialogWrapper {
     return panel;
   }
 
-  @NotNull
-  private JComponent createToolbar() {
+  private @NotNull JComponent createToolbar() {
     DefaultActionGroup group = new DefaultActionGroup();
     group.add(new RepositoryBrowserDialog.EditLocationAction(myRepositoryBrowser));
 
     return ActionManager.getInstance().createActionToolbar(RepositoryBrowserDialog.PLACE_TOOLBAR, group, true).getComponent();
   }
 
+  @Override
   public JComponent getPreferredFocusedComponent() {
     return (JComponent)myRepositoryBrowser.getPreferredFocusedComponent();
   }
 
+  @Override
   public boolean shouldCloseOnCross() {
     return true;
   }
 
+  @Override
   public boolean isOKActionEnabled() {
     boolean ok = myRepositoryBrowser.getSelectedURL() != null;
     if (ok && myDstText != null) {
-      return myDstText.getText().trim().length() > 0;
+      return !myDstText.getText().trim().isEmpty();
     }
     return ok;
   }
 
-  public String getDestinationName() {
-    return SVNEncodingUtil.uriEncode(myDstText.getText().trim());
+  public @NotNull String getDestinationName() {
+    return myDstText.getText().trim();
   }
 
-  @Nullable
-  public SVNURL getSelectedURL() {
+  public @Nullable Url getSelectedURL() {
     return myRepositoryBrowser.getSelectedSVNURL();
   }
 
-  @Nullable
-  public SVNURL getRootUrl() {
+  public @Nullable Url getRootUrl() {
     RepositoryTreeNode node = myRepositoryBrowser.getSelectedNode();
 
     // find the most top parent of type RepositoryTreeNode

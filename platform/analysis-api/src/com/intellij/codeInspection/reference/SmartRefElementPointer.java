@@ -19,10 +19,6 @@ import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * User: anna
- * Date: 28-Dec-2005
- */
 public interface SmartRefElementPointer {
 
   @NonNls String FILE = "file";
@@ -36,7 +32,7 @@ public interface SmartRefElementPointer {
 
   RefEntity getRefElement();
 
-  void writeExternal(Element parentNode);
+  void writeExternal(@NotNull Element parentNode);
 
   boolean resolve(@NotNull RefManager manager);
 

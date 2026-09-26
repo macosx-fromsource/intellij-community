@@ -1,24 +1,19 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl;
 
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.pom.java.LanguageLevel;
-import com.intellij.psi.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeParameter;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.Function;
 import org.jetbrains.annotations.NonNls;
@@ -26,37 +21,40 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.TypesUtil;
 
-/**
- * @author peter
- */
+import static com.intellij.openapi.util.RecursionManager.doPreventingRecursion;
+import static com.intellij.openapi.util.text.StringUtil.getShortName;
+
 public abstract class GrLiteralClassType extends PsiClassType {
   protected final GlobalSearchScope myScope;
   protected final JavaPsiFacade myFacade;
   private final GroovyPsiManager myGroovyPsiManager;
+  private final Object myResolveResultGuardKey = new Object();
 
-  public GrLiteralClassType(LanguageLevel languageLevel, @NotNull GlobalSearchScope scope, @NotNull JavaPsiFacade facade) {
+  public GrLiteralClassType(@NotNull LanguageLevel languageLevel, @NotNull GlobalSearchScope scope, @NotNull JavaPsiFacade facade) {
     super(languageLevel);
     myScope = scope;
     myFacade = facade;
     myGroovyPsiManager = GroovyPsiManager.getInstance(myFacade.getProject());
   }
 
-  @NotNull
-  protected abstract String getJavaClassName();
+  protected GrLiteralClassType(@NotNull LanguageLevel languageLevel, @NotNull PsiElement context) {
+    super(languageLevel);
+    myScope = context.getResolveScope();
+    Project project = context.getProject();
+    myFacade = JavaPsiFacade.getInstance(project);
+    myGroovyPsiManager = GroovyPsiManager.getInstance(project);
+  }
+
+  protected abstract @NotNull String getJavaClassName();
 
   @Override
-  @NotNull
-  public ClassResolveResult resolveGenerics() {
+  public @NotNull ClassResolveResult resolveGenerics() {
     return new ClassResolveResult() {
       private final PsiClass myBaseClass = resolve();
 
-      private final NotNullLazyValue<PsiSubstitutor> mySubstitutor = new NotNullLazyValue<PsiSubstitutor>() {
-        @NotNull
-        @Override
-        protected PsiSubstitutor compute() {
-          return inferSubstitutor(myBaseClass);
-        }
-      };
+      private final NotNullLazyValue<PsiSubstitutor> mySubstitutor = NotNullLazyValue.lazy(() -> {
+        return inferSubstitutor(myBaseClass);
+      });
 
       @Override
       public PsiClass getElement() {
@@ -64,9 +62,9 @@ public abstract class GrLiteralClassType extends PsiClassType {
       }
 
       @Override
-      @NotNull
-      public PsiSubstitutor getSubstitutor() {
-        return mySubstitutor.getValue();
+      public @NotNull PsiSubstitutor getSubstitutor() {
+        PsiSubstitutor substitutor = doPreventingRecursion(myResolveResultGuardKey, false, () -> mySubstitutor.getValue());
+        return substitutor == null ? PsiSubstitutor.EMPTY : substitutor;
       }
 
       @Override
@@ -85,8 +83,7 @@ public abstract class GrLiteralClassType extends PsiClassType {
       }
 
       @Override
-      @Nullable
-      public PsiElement getCurrentFileResolveScope() {
+      public @Nullable PsiElement getCurrentFileResolveScope() {
         return null;
       }
 
@@ -97,8 +94,7 @@ public abstract class GrLiteralClassType extends PsiClassType {
     };
   }
 
-  @NotNull
-  private PsiSubstitutor inferSubstitutor(@Nullable PsiClass myBaseClass) {
+  private @NotNull PsiSubstitutor inferSubstitutor(@Nullable PsiClass myBaseClass) {
     if (myBaseClass != null) {
       final PsiType[] typeArgs = getParameters();
       final PsiTypeParameter[] typeParams = myBaseClass.getTypeParameters();
@@ -115,50 +111,42 @@ public abstract class GrLiteralClassType extends PsiClassType {
   }
 
   @Override
-  @NotNull
-  public abstract String getClassName() ;
+  public @NotNull String getClassName() {
+    return getShortName(getJavaClassName());
+  }
 
   @Override
-  @NotNull
-  public String getPresentableText() {
+  public @NotNull String getPresentableText() {
     String name = getClassName();
     final PsiType[] params = getParameters();
     if (params.length == 0 || params[0] == null) return name;
 
-    return name + "<" + StringUtil.join(params, psiType -> psiType.getPresentableText(), ", ") + ">";
-  }
-
-  @Override
-  @NotNull
-  public String getCanonicalText() {
-    String name = getJavaClassName();
-    final PsiType[] params = getParameters();
-    if (params.length == 0 || params[0] == null) return name;
-
-    final Function<PsiType, String> f = psiType -> psiType.getCanonicalText();
+    Function<PsiType, String> f = psiType -> psiType == this ? getClassName() : psiType.getPresentableText();
     return name + "<" + StringUtil.join(params, f, ", ") + ">";
   }
 
   @Override
-  @NotNull
-  public LanguageLevel getLanguageLevel() {
+  public @NotNull String getCanonicalText() {
+    String name = getJavaClassName();
+    final PsiType[] params = getParameters();
+    if (params.length == 0 || params[0] == null) return name;
+
+    final Function<PsiType, String> f = psiType -> psiType == this ? getJavaClassName() : psiType.getCanonicalText();
+    return name + "<" + StringUtil.join(params, f, ", ") + ">";
+  }
+
+  @Override
+  public @NotNull LanguageLevel getLanguageLevel() {
     return myLanguageLevel;
   }
 
-  @NotNull
-  public GlobalSearchScope getScope() {
-    return myScope;
+  @Override
+  public @Nullable PsiClass resolve() {
+    return myFacade.findClass(getJavaClassName(), getResolveScope());
   }
 
   @Override
-  @Nullable
-  public PsiClass resolve() {
-    return myGroovyPsiManager.findClassWithCache(getJavaClassName(), getResolveScope());
-  }
-
-  @Override
-  @NotNull
-  public PsiClassType rawType() {
+  public @NotNull PsiClassType rawType() {
     return myGroovyPsiManager.createTypeByFQClassName(getJavaClassName(), myScope);
   }
 
@@ -168,17 +156,16 @@ public abstract class GrLiteralClassType extends PsiClassType {
   }
 
   @Override
-  @NotNull
-  public GlobalSearchScope getResolveScope() {
+  public @NotNull GlobalSearchScope getResolveScope() {
     return myScope;
   }
 
   protected static String getInternalCanonicalText(@Nullable PsiType type) {
-    return type == null ? CommonClassNames.JAVA_LANG_OBJECT : type.getInternalCanonicalText();
+    if (type == null) return CommonClassNames.JAVA_LANG_OBJECT;
+    return doPreventingRecursion(type, false, () -> type.getInternalCanonicalText());
   }
 
-  @NotNull
-  protected PsiType getLeastUpperBound(PsiType... psiTypes) {
+  protected @NotNull PsiType getLeastUpperBound(PsiType... psiTypes) {
     PsiType result = null;
     final PsiManager manager = getPsiManager();
     for (final PsiType other : psiTypes) {

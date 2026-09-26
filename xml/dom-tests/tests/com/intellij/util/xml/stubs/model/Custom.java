@@ -15,12 +15,11 @@
  */
 package com.intellij.util.xml.stubs.model;
 
-import com.intellij.util.xml.Stubbed;
 import com.intellij.util.xml.GenericAttributeValue;
+import com.intellij.util.xml.Stubbed;
 
 /**
  * @author Dmitry Avdeev
- *         Date: 8/15/12
  */
 @Stubbed
 public interface Custom extends GenericAttributeValue<String> {

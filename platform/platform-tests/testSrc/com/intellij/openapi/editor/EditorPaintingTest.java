@@ -1,54 +1,74 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.editor;
 
-import com.intellij.openapi.application.ex.PathManagerEx;
+import com.intellij.codeInsight.daemon.impl.indentGuide.IndentGuidePass;
+import com.intellij.codeInsight.daemon.impl.indentGuide.IndentGuideRenderer;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.ex.ActionUtil;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.colors.EditorColors;
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
+import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.editor.ex.EditorEx;
-import com.intellij.openapi.editor.highlighter.EditorHighlighter;
-import com.intellij.openapi.editor.highlighter.HighlighterClient;
-import com.intellij.openapi.editor.highlighter.HighlighterIterator;
-import com.intellij.openapi.editor.impl.AbstractEditorTest;
-import com.intellij.openapi.editor.impl.view.FontLayoutService;
+import com.intellij.openapi.editor.impl.FoldingKeys;
 import com.intellij.openapi.editor.markup.EffectType;
+import com.intellij.openapi.editor.markup.GutterIconRenderer;
 import com.intellij.openapi.editor.markup.HighlighterLayer;
-import com.intellij.openapi.editor.markup.HighlighterTargetArea;
+import com.intellij.openapi.editor.markup.RangeHighlighter;
+import com.intellij.openapi.editor.markup.SeparatorPlacement;
 import com.intellij.openapi.editor.markup.TextAttributes;
-import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.psi.tree.IElementType;
-import com.intellij.rt.execution.junit.FileComparisonFailure;
-import com.intellij.testFramework.MockFontLayoutService;
-import com.intellij.testFramework.TestDataFile;
+import com.intellij.openapi.progress.EmptyProgressIndicator;
+import com.intellij.openapi.util.registry.Registry;
+import com.intellij.testFramework.EdtTestUtil;
 import com.intellij.testFramework.TestDataPath;
-import com.intellij.ui.Graphics2DDelegate;
+import com.intellij.ui.IslandsState;
+import com.intellij.ui.JBColor;
+import com.intellij.util.ui.ColorIcon;
 import org.jetbrains.annotations.NotNull;
 
-import javax.imageio.ImageIO;
-import javax.swing.*;
-import java.awt.*;
-import java.awt.font.GlyphVector;
+import javax.swing.Icon;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Rectangle;
+import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
-import java.io.File;
 import java.io.IOException;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 @TestDataPath("$CONTENT_ROOT/testData/editor/painting")
-public class EditorPaintingTest extends AbstractEditorTest {
+public class EditorPaintingTest extends EditorPaintingTestCase {
+  @Override
+  protected boolean runInDispatchThread() {
+    return !getName().endsWith("_Async");
+  }
+
+  @Override
+  protected boolean isRunInCommand() {
+    return super.isRunInCommand() && !getName().endsWith("_Async");
+  }
+
+  private record SelectionState(boolean enabled, boolean islands) {}
+
+  private static SelectionState setNewSelectionEnabled(boolean enabled) {
+    var value = Registry.get("editor.old.full.horizontal.selection.enabled");
+    var islands = IslandsState.Companion.isEnabled();
+
+    var state = new SelectionState(enabled, islands);
+    value.setValue(!enabled);
+    IslandsState.Companion.setEnabled(enabled, false);
+    return state;
+  }
+
+  private static void restoreSelectionState(SelectionState state) {
+    Registry.get("editor.old.full.horizontal.selection.enabled").setValue(!state.enabled());
+    IslandsState.Companion.setEnabled(state.islands(), false);
+  }
 
   public void testWholeLineHighlighterAtDocumentEnd() throws Exception {
     initText("foo");
@@ -68,38 +88,79 @@ public class EditorPaintingTest extends AbstractEditorTest {
     addRangeHighlighter(2, 3, HighlighterLayer.ERROR, Color.black, null);
     checkResult();
   }
-  
+
   public void testCaretRowWinsOverSyntaxEvenInPresenceOfHighlighter() throws Exception {
     initText("foo");
     setUniformEditorHighlighter(new TextAttributes(null, Color.red, null, null, Font.PLAIN));
     addRangeHighlighter(0, 3, 0, null, Color.blue);
     checkResult();
   }
-  
+
   public void testEmptyBorderInEmptyDocument() throws Exception {
     initText("");
     addBorderHighlighter(0, 0, HighlighterLayer.WARNING, Color.red);
     checkResult();
   }
-  
+
   public void testPrefixWithEmptyText() throws Exception {
     initText("");
-    ((EditorEx)myEditor).setPrefixTextAndAttributes(">", new TextAttributes(Color.blue, Color.gray, null, null, Font.PLAIN));
+    ((EditorEx)getEditor()).setPrefixTextAndAttributes(">", new TextAttributes(Color.blue, Color.gray, null, null, Font.PLAIN));
     checkResult();
   }
-  
+
   public void testBorderAtLastLine() throws Exception {
     initText("a\nbc");
     addBorderHighlighter(3, 4, HighlighterLayer.WARNING, Color.red);
     checkResult();
   }
-  
+
   public void testFoldedRegionShownOnlyWithBorder() throws Exception {
     initText("abc");
     addCollapsedFoldRegion(0, 3, "...");
-    myEditor.getColorsScheme().setAttributes(EditorColors.FOLDED_TEXT_ATTRIBUTES, 
-                                             new TextAttributes(null, null, Color.blue, EffectType.BOXED, Font.PLAIN));
+    getEditor().getColorsScheme().setAttributes(
+      EditorColors.FOLDED_TEXT_ATTRIBUTES,
+      new TextAttributes(null, null, Color.blue, EffectType.BOXED, Font.PLAIN)
+    );
     checkResult();
+  }
+
+  public void testFoldedRegionCanHidePlaceholderBackground() throws Exception {
+    initText("abc\ndef\nghi");
+    getEditor().getColorsScheme().setAttributes(
+      HighlighterColors.TEXT,
+      new TextAttributes(Color.black, Color.white, null, null, Font.PLAIN)
+    );
+    getEditor().getColorsScheme().setAttributes(
+      EditorColors.FOLDED_TEXT_ATTRIBUTES,
+      new TextAttributes(null, Color.red, null, null, Font.PLAIN)
+    );
+    getEditor().getColorsScheme().setColor(EditorColors.CARET_ROW_COLOR, Color.green);
+    FoldRegion previousRegion = addCollapsedFoldRegion(0, 3, ".");
+    FoldRegion caretRegion = addCollapsedFoldRegion(4, 7, ".");
+    FoldRegion nextRegion = addCollapsedFoldRegion(8, 11, ".");
+    assertTrue(containsRed(paintEditor(false, null, null)));
+
+    previousRegion.putUserData(FoldingKeys.HIDE_PLACEHOLDER_BACKGROUND, true);
+    caretRegion.putUserData(FoldingKeys.HIDE_PLACEHOLDER_BACKGROUND, true);
+    nextRegion.putUserData(FoldingKeys.HIDE_PLACEHOLDER_BACKGROUND, true);
+    getEditor().getCaretModel().moveToOffset(7);
+
+    BufferedImage image = paintEditor(false, null, null);
+    assertFalse(containsRed(image));
+    assertFoldBackground(image, 0, Color.white);
+    assertFoldBackground(image, 4, Color.green);
+    assertFoldBackground(image, 8, Color.white);
+  }
+
+  public void testIndentGuideStartingAtInlineFold() throws Exception {
+    initText("  - parent\n    child\n    child\n  next");
+    getEditor().getColorsScheme().setColor(EditorColors.INDENT_GUIDE_COLOR, Color.red);
+    addCollapsedFoldRegion(2, 3, "•");
+    int guideEnd = getEditor().getDocument().getLineStartOffset(3);
+    RangeHighlighter guide = addRangeHighlighter(0, guideEnd, 0, null);
+    guide.setCustomRenderer(new IndentGuideRenderer());
+
+    assertTrue(containsRed(paintEditor(false, null, null)));
   }
 
   public void testEraseMarker() throws Exception {
@@ -108,304 +169,482 @@ public class EditorPaintingTest extends AbstractEditorTest {
     addRangeHighlighter(1, 2, 0, TextAttributes.ERASE_MARKER);
     checkResult();
   }
-  
-  private static void setUniformEditorHighlighter(TextAttributes attributes) {
-    ((EditorEx)myEditor).setHighlighter(new UniformHighlighter(attributes));
+
+  public void testInlayAtEmptyLine() throws Exception {
+    initText("\n");
+    getEditor().getInlayModel().addInlineElement(0, new MyInlayRenderer());
+    checkResult();
   }
 
-  private static void addRangeHighlighter(int startOffset, int endOffset, int layer, Color foregroundColor, Color backgroundColor) {
-    addRangeHighlighter(startOffset, endOffset, layer, new TextAttributes(foregroundColor, backgroundColor, null, null, Font.PLAIN));
+  /** An inline inlay reads exactly where the hint does, so the line goes to the inlay and the hint is not painted at all. */
+  public void testInlineInlaySuppressesPlaceholder() throws Exception {
+    initText("");
+    EditorEx editor = (EditorEx)getEditor();
+    editor.setPlaceholder("placeholder");
+    editor.setShowPlaceholderWhenFocused(true);
+    editor.getInlayModel().addInlineElement(0, new MyInlayRenderer());
+    checkResult();
   }
 
-  private static void addLineHighlighter(int startOffset, int endOffset, int layer, Color foregroundColor, Color backgroundColor) {
-    addLineHighlighter(startOffset, endOffset, layer, new TextAttributes(foregroundColor, backgroundColor, null, null, Font.PLAIN));
+  public void testMultilineBorderWithInlays() throws Exception {
+    initText("abc\ndef");
+    getEditor().getInlayModel().addInlineElement(1, new MyInlayRenderer());
+    getEditor().getInlayModel().addInlineElement(6, new MyInlayRenderer());
+    addBorderHighlighter(0, 7, 0, Color.red);
+    checkResult();
   }
 
-  private static void addRangeHighlighter(int startOffset, int endOffset, int layer, TextAttributes textAttributes) {
-    myEditor.getMarkupModel().addRangeHighlighter(startOffset, endOffset, layer, textAttributes, HighlighterTargetArea.EXACT_RANGE);
+  public void testSoftWrapAtHighlighterBoundary() throws Exception {
+    initText("a bc");
+    configureSoftWraps(2);
+    assertNotNull(getEditor().getSoftWrapModel().getSoftWrap(2));
+    addRangeHighlighter(1, 3, HighlighterLayer.CARET_ROW + 1, null, Color.red);
+    addRangeHighlighter(1, 2, HighlighterLayer.CARET_ROW + 2, null, Color.blue);
+    checkResult();
   }
 
-  private static void addLineHighlighter(int startOffset, int endOffset, int layer, TextAttributes textAttributes) {
-    myEditor.getMarkupModel().addRangeHighlighter(startOffset, endOffset, layer, textAttributes, HighlighterTargetArea.LINES_IN_RANGE);
+  public void testFontStyleAfterMove() throws Exception {
+    initText("text\ntext\n");
+    addRangeHighlighter(0, 4, 0, new TextAttributes(null, null, null, null, Font.BOLD));
+    addRangeHighlighter(5, 9, 0, new TextAttributes(null, null, null, null, Font.BOLD));
+    checkResult(); // initial text layout cache population
+
+    getEditor().getDocument().addDocumentListener(new DocumentListener() {
+      @Override
+      public void documentChanged(@NotNull DocumentEvent event) {
+        // force population of text layout cache on document update
+        // this can be done by editor implementation in real life,
+        // but we're doing it manually here to cover more potential cases
+        getEditor().visualPositionToXY(new VisualPosition(0, 10));
+      }
+    });
+
+    WriteCommandAction.runWriteCommandAction(getProject(), () -> ((DocumentEx)getEditor().getDocument()).moveText(5, 10, 0));
+    checkResult();
   }
 
-  private static void addBorderHighlighter(int startOffset, int endOffset, int layer, Color borderColor) {
-    addRangeHighlighter(startOffset, endOffset, layer, new TextAttributes(null, null, borderColor, EffectType.BOXED, Font.PLAIN));
+  public void testSoftWrapWithWithLineSeparator() throws Exception {
+    initText("x\nabcef\ny");
+    configureSoftWraps(2);
+    verifySoftWrapPositions(4, 5);
+
+    addLineSeparator(4, SeparatorPlacement.TOP, Color.red);
+    addLineSeparator(4, SeparatorPlacement.BOTTOM, Color.blue);
+
+    checkResult();
   }
 
-  @Override
-  protected void setUp() throws Exception {
-    super.setUp();
-    FontLayoutService.setInstance(new MockFontLayoutService(BitmapFont.CHAR_WIDTH, BitmapFont.CHAR_HEIGHT, BitmapFont.CHAR_DESCENT));
+  public void testSoftWrappedLineHighlighterWithBlockInlay() throws Exception {
+    initText("some text");
+    configureSoftWraps(5);
+    addBlockInlay(0);
+    addLineHighlighter(0, 0, HighlighterLayer.CARET_ROW + 1, null, Color.red);
+    checkResultWithGutterForNewUI();
   }
 
-  @Override
-  protected void tearDown() throws Exception {
+  public void testBlockInlayBelowCustomFoldRegionIsPaintedAtItsBounds() throws Exception {
+    initText("line1\nline2");
+    CustomFoldRegion region = addCustomFoldRegion(0, 0, 50);
+    assertNotNull(region);
+    List<Double> paintedY = new ArrayList<>();
+    Inlay<?> inlay = getEditor().getInlayModel().addBlockElement(5, new InlayProperties().relatesToPrecedingText(true), new EditorCustomElementRenderer() {
+      @Override
+      public int calcWidthInPixels(@NotNull Inlay inlay) {
+        return 10;
+      }
+
+      @Override
+      public int calcHeightInPixels(@NotNull Inlay inlay) {
+        return 20;
+      }
+
+      @Override
+      public void paint(@NotNull Inlay inlay, @NotNull Graphics2D g, @NotNull Rectangle2D targetRegion, @NotNull TextAttributes textAttributes) {
+        paintedY.add(targetRegion.getY());
+      }
+    });
+    assertNotNull(inlay);
+
+    paintEditor(false, null, null);
+
+    Rectangle bounds = inlay.getBounds();
+    assertNotNull(bounds);
+    assertEquals(region.getLocation().y + region.getHeightInPixels(), bounds.y);
+    assertEquals(Collections.singletonList((double)bounds.y), paintedY);
+  }
+
+  private void runTestBlockInlaysWithSelection() throws Exception {
+    initText("line 1\nline 2\na");
+    addBlockInlay(getEditor().getDocument().getLineStartOffset(0));
+    addBlockInlay(getEditor().getDocument().getLineStartOffset(1));
+    executeAction(IdeActions.ACTION_EDITOR_TEXT_END);
+    executeAction(IdeActions.ACTION_EDITOR_MOVE_CARET_UP_WITH_SELECTION);
+    executeAction(IdeActions.ACTION_EDITOR_MOVE_CARET_LEFT_WITH_SELECTION);
+    checkResult();
+  }
+
+  public void testBlockInlaysWithSelection() throws Exception {
+    var state = setNewSelectionEnabled(false);
     try {
-      FontLayoutService.setInstance(null);
-    }
-    finally {
-      super.tearDown();
+      runTestBlockInlaysWithSelection();
+    } finally {
+      restoreSelectionState(state);
     }
   }
 
-  private void checkResult() throws IOException {
-    checkResult(getTestName(true) + ".png");
-  }
-
-  private void checkResult(@TestDataFile String expectedResultFileName) throws IOException {
-    myEditor.getSettings().setAdditionalLinesCount(0);
-    myEditor.getSettings().setAdditionalColumnsCount(1);
-    JComponent editorComponent = myEditor.getContentComponent();
-    Dimension size = editorComponent.getPreferredSize();
-    editorComponent.setSize(size);
-    //noinspection UndesirableClassUsage
-    BufferedImage image = new BufferedImage(size.width, size.height, BufferedImage.TYPE_INT_ARGB);
-    BitmapFont plainFont = BitmapFont.loadFromFile(getFontFile(false));
-    BitmapFont boldFont = BitmapFont.loadFromFile(getFontFile(true));
-    MyGraphics graphics = new MyGraphics(image.createGraphics(), plainFont, boldFont);
+  public void testBlockInlaysWithNewSelection() throws Exception {
+    var state = setNewSelectionEnabled(true);
     try {
-      editorComponent.paint(graphics);
-    }
-    finally {
-      graphics.dispose();
-    }
-
-    File fileWithExpectedResult = getTestDataFile(expectedResultFileName);
-    if (OVERWRITE_TESTDATA) {
-      ImageIO.write(image, "png", fileWithExpectedResult);
-      System.out.println("File " + fileWithExpectedResult.getPath() + " created.");
-    }
-    if (fileWithExpectedResult.exists()) {
-      BufferedImage expectedResult = ImageIO.read(fileWithExpectedResult);
-      if (expectedResult.getWidth() != image.getWidth()) {
-        fail("Unexpected image width", fileWithExpectedResult, image);
-      }
-      if (expectedResult.getHeight() != image.getHeight()) {
-        fail("Unexpected image height", fileWithExpectedResult, image);
-      }
-      for (int i = 0; i < expectedResult.getWidth(); i++) {
-        for (int j = 0; j < expectedResult.getHeight(); j++) {
-          if (expectedResult.getRGB(i, j) != image.getRGB(i, j)) {
-            fail("Unexpected image contents", fileWithExpectedResult, image);
-          }
-        }
-      }
-    }
-    else {
-      ImageIO.write(image, "png", fileWithExpectedResult);
-      fail("Missing test data created: " + fileWithExpectedResult.getPath());
+      runTestBlockInlaysWithSelection();
+    } finally {
+      restoreSelectionState(state);
     }
   }
 
-  private void fail(@NotNull String message, @NotNull File expectedResultsFile, BufferedImage actualImage) throws IOException {
-    File savedImage = FileUtil.createTempFile(getName(), ".png", false);
-    addTmpFileToKeep(savedImage);
-    ImageIO.write(actualImage, "png", savedImage);
-    throw new FileComparisonFailure(message, expectedResultsFile.getAbsolutePath(), savedImage.getAbsolutePath(),
-                                    expectedResultsFile.getAbsolutePath(), savedImage.getAbsolutePath());
-  }
+  public void testBlockInlaysWithNewSelection2() throws Exception {
+    var state = setNewSelectionEnabled(true);
 
-  private static File getFontFile(boolean bold) {
-    return getTestDataFile(bold ? "_fontBold.png" : "_font.png");
-  }
-
-  private static File getTestDataFile(String fileName) {
-    return new File(PathManagerEx.findFileUnderCommunityHome("platform/platform-tests/testData/editor/painting"), fileName);
-  }
-
-  // renders font characters to be used for text painting in tests (to make font rendering platform-independent)
-  public static void main(String[] args) throws Exception {
-    Font font = Font.createFont(Font.TRUETYPE_FONT, EditorPaintingTest.class.getResourceAsStream("/fonts/Inconsolata.ttf"));
-    BitmapFont plainFont = BitmapFont.createFromFont(font);
-    plainFont.saveToFile(getFontFile(false));
-    BitmapFont boldBont = BitmapFont.createFromFont(font.deriveFont(Font.BOLD));
-    boldBont.saveToFile(getFontFile(true));
-  }
-
-  public static class MyGraphics extends Graphics2DDelegate {
-    private final BitmapFont myPlainFont;
-    private final BitmapFont myBoldFont;
-
-    public MyGraphics(Graphics2D g2d, BitmapFont plainFont, BitmapFont boldFont) {
-      super(g2d);
-      myPlainFont = plainFont;
-      myBoldFont = boldFont;
-    }
-
-    @Override
-    public void addRenderingHints(Map hints) {
-    }
-
-    @Override
-    public void setRenderingHint(RenderingHints.Key hintKey, Object hintValue) {
-    }
-
-    @Override
-    public void setRenderingHints(Map hints) {
-    }
-
-    @NotNull
-    @Override
-    public Graphics create() {
-      return new MyGraphics((Graphics2D)myDelegate.create(), myPlainFont, myBoldFont);
-    }
-
-    @Override
-    public void drawGlyphVector(GlyphVector g, float x, float y) {
-      for (int i = 0; i < g.getNumGlyphs(); i++) {
-        drawChar((char)g.getGlyphCode(i),(int)x, (int)y);
-        x += BitmapFont.CHAR_WIDTH;
-      }
-    }
-
-    @Override
-    public void drawChars(char[] data, int offset, int length, int x, int y) {
-      for (int i = offset; i < offset + length; i++) {
-        drawChar(data[i], x, y);
-        x += BitmapFont.CHAR_WIDTH;
-      }
-    }
-
-    private void drawChar(char c, int x, int y) {
-      (((getFont().getStyle() & Font.BOLD) == 0) ? myPlainFont : myBoldFont).draw(myDelegate, c, x, y);
+    try {
+      initText("line 1\nline 2\n");
+      addBlockInlay(getEditor().getDocument().getLineStartOffset(0));
+      addBlockInlay(getEditor().getDocument().getLineStartOffset(1));
+      executeAction(IdeActions.ACTION_EDITOR_TEXT_END);
+      executeAction(IdeActions.ACTION_EDITOR_MOVE_CARET_UP_WITH_SELECTION);
+      checkResult();
+    } finally {
+      restoreSelectionState(state);
     }
   }
 
-  // font which, once created, should be rendered identically on all platforms
-  private static class BitmapFont {
-    private static final float FONT_SIZE = 12;
-    private static final int CHAR_WIDTH = 10;
-    private static final int CHAR_HEIGHT = 12;
-    private static final int CHAR_DESCENT = 2;
-    private static final int NUM_CHARACTERS = 128;
+  public void testBlockInlaysAboveWithNewSelection() throws Exception {
+    var state = setNewSelectionEnabled(true);
 
-    private final BufferedImage myImage;
-
-    private BitmapFont(BufferedImage image) {
-      myImage = image;
-    }
-
-    public static BitmapFont createFromFont(Font font) {
-      font = font.deriveFont(FONT_SIZE);
-      int imageWidth = CHAR_WIDTH * NUM_CHARACTERS;
-      //noinspection UndesirableClassUsage
-      BufferedImage image = new BufferedImage(imageWidth, CHAR_HEIGHT, BufferedImage.TYPE_BYTE_BINARY);
-      Graphics2D g = image.createGraphics();
-      g.setColor(Color.white);
-      g.fillRect(0, 0, imageWidth, CHAR_HEIGHT);
-      g.setColor(Color.black);
-      g.setFont(font);
-      char[] c = new char[1];
-      for (c[0] = 0; c[0] < NUM_CHARACTERS; c[0]++) {
-        if (font.canDisplay(c[0])) {
-          int x = c[0] * CHAR_WIDTH;
-          g.setClip(x, 0, CHAR_WIDTH, CHAR_HEIGHT);
-          g.drawChars(c, 0, 1, x, CHAR_HEIGHT - CHAR_DESCENT);
-        }
+    try {
+      initText("\n\nline 1\nline 2\n");
+      addBlockInlay(getEditor().getDocument().getLineStartOffset(2), true);
+      executeAction(IdeActions.ACTION_EDITOR_MOVE_CARET_DOWN_WITH_SELECTION);
+      executeAction(IdeActions.ACTION_EDITOR_MOVE_CARET_DOWN_WITH_SELECTION);
+      for (int i = 0; i < 2; i++) {
+        executeAction(IdeActions.ACTION_EDITOR_MOVE_CARET_RIGHT_WITH_SELECTION);
       }
-      g.dispose();
-      return new BitmapFont(image);
-    }
-
-    public static BitmapFont loadFromFile(File file) throws IOException {
-      BufferedImage image = ImageIO.read(file);
-      return new BitmapFont(image);
-    }
-
-    public void saveToFile(File file) throws IOException {
-      ImageIO.write(myImage, "png", file);
-    }
-
-    public void draw(Graphics2D g, char c, int x, int y) {
-      if (c >= NUM_CHARACTERS) return;
-      for (int i = 0; i < CHAR_HEIGHT; i++) {
-        for (int j = 0; j < CHAR_WIDTH; j++) {
-          if (myImage.getRGB(j + c * CHAR_WIDTH, i) == 0xFF000000) {
-            g.fillRect(x + j, y + i - CHAR_HEIGHT + CHAR_DESCENT, 1, 1);
-          }
-        }
-      }
+      checkResult();
+    } finally {
+      restoreSelectionState(state);
     }
   }
 
-  private static class UniformHighlighter implements EditorHighlighter {
-    private final TextAttributes myAttributes;
-    private Document myDocument;
+  public void testNewSelectionStaysMergedAfterInlayShift() throws Exception {
+    var state = setNewSelectionEnabled(true);
+    try {
+      initText("aaaa\naaaa\naaaa\naaaa\naaaa\naaaa\naaaa\naaaa\naaaa\naaaa");
+      setNewSelectionEnabled(true);
 
-    private UniformHighlighter(TextAttributes attributes) {
-      myAttributes = attributes;
+      executeAction(IdeActions.ACTION_SELECT_ALL);
+      paintEditor(false, null, null);
+
+      addBlockInlay(getEditor().getDocument().getLineStartOffset(4), true, 0, 5);
+      checkResult();
+    } finally {
+      restoreSelectionState(state);
+    }
+  }
+
+  private void runTestMarginIsShownOverSelectionInBlockInlayRange() throws Exception {
+    initText("  \n ");
+    addBlockInlay(0);
+    executeAction(IdeActions.ACTION_SELECT_ALL);
+    getEditor().getSettings().setRightMargin(1);
+    checkResult();
+  }
+
+  public void testMarginIsShownOverSelectionInBlockInlayRange() throws Exception {
+    var state = setNewSelectionEnabled(false);
+    try {
+      runTestMarginIsShownOverSelectionInBlockInlayRange();
+    } finally {
+      restoreSelectionState(state);
+    }
+  }
+
+  public void testMarginIsShownOverSelectionInBlockInlayRangeWithNewSelection() throws Exception {
+    var state = setNewSelectionEnabled(true);
+    try {
+      runTestMarginIsShownOverSelectionInBlockInlayRange();
+    } finally {
+      restoreSelectionState(state);
+    }
+  }
+
+  public void testIndentGuideOverBlockInlayWithSoftWraps_Async() throws Exception {
+    EdtTestUtil.runInEdtAndWait(() -> {
+      initText("  a\n    b c");
+      configureSoftWraps(5, false);
+    });
+    runIndentsPass();
+    EdtTestUtil.runInEdtAndWait(() -> {
+      addBlockInlay(0);
+      try {
+        checkResult();
+      }
+      catch (IOException e) {
+        throw new RuntimeException(e);
+      }
+    });
+  }
+
+  public void testLineSeparatorRepaint() throws Exception {
+    initText("a\nb");
+    addLineSeparator(3, SeparatorPlacement.TOP, Color.red);
+    checkPartialRepaint(0);
+  }
+
+  public void testLineSeparatorNearBlockInlay() throws Exception {
+    initText("a\nb");
+    addBlockInlay(2, true);
+    addLineSeparator(2, SeparatorPlacement.TOP, Color.red);
+    checkResult();
+  }
+
+  public void testLineSeparatorNearBlockInlay2() throws Exception {
+    initText("a\nb");
+    addBlockInlay(2, true);
+    addLineSeparator(1, SeparatorPlacement.BOTTOM, Color.red);
+    checkResult();
+  }
+
+  public void testLineSeparatorNearBlockInlay3() throws Exception {
+    initText("a\nb");
+    addBlockInlay(1, false);
+    addLineSeparator(2, SeparatorPlacement.TOP, Color.red);
+    checkResult();
+  }
+
+  public void testLineSeparatorNearBlockInlay4() throws Exception {
+    initText("a\nb");
+    addBlockInlay(1, false);
+    addLineSeparator(1, SeparatorPlacement.BOTTOM, Color.red);
+    checkResult();
+  }
+
+  public void testBlockInlayWithLineHighlighterEndingAtEmptyLine() throws Exception {
+    initText("\n");
+    addBlockInlay(0);
+    addLineHighlighter(0, 1, HighlighterLayer.SELECTION + 1, null, Color.green);
+    checkResult();
+  }
+
+  public void testEmptyEditorWithGutterIcon() throws Exception {
+    initText("");
+    addRangeHighlighter(0, 0, 0, null).setGutterIconRenderer(new ColorGutterIconRenderer(Color.green));
+    checkResultWithGutterForNewUI();
+  }
+
+  public void testBlockInlaysInAnEmptyEditor() throws Exception {
+    initText("");
+    addRangeHighlighter(0, 0, 0, null).setGutterIconRenderer(new ColorGutterIconRenderer(Color.green));
+    getEditor().getInlayModel().addBlockElement(0, false, true, 0, new ColorBlockElementRenderer(Color.red));
+    getEditor().getInlayModel().addBlockElement(0, false, false, 0, new ColorBlockElementRenderer(Color.blue));
+    checkResultWithGutterForNewUI();
+  }
+
+  public void testAfterLineEndInlayWithLineExtension() throws Exception {
+    initText("");
+    getEditor().getInlayModel().addAfterLineEndElement(0, false, new EditorCustomElementRenderer() {
+      @Override
+      public int calcWidthInPixels(@NotNull Inlay inlay) {
+        return 10;
+      }
+
+      @Override
+      public void paint(@NotNull Inlay inlay,
+                        @NotNull Graphics g,
+                        @NotNull Rectangle targetRegion,
+                        @NotNull TextAttributes textAttributes) {
+        g.setColor(Color.red);
+        g.fillRect(targetRegion.x, targetRegion.y, targetRegion.width, targetRegion.height);
+      }
+    });
+    ((EditorEx)getEditor()).registerLineExtensionPainter(
+      line -> Collections.singleton(new LineExtensionInfo("ABC", new TextAttributes(Color.black, null, null, null, Font.PLAIN)))
+    );
+    paintEditor(false, null, null); // first paint triggers size update due to line extensions
+    checkResult();
+  }
+
+  public void testEmptyBorderAtInlay1() throws Exception {
+    initText("ab");
+    getEditor().getInlayModel().addInlineElement(1, false, new MyInlayRenderer());
+    addBorderHighlighter(1, 1, 0, Color.red);
+    checkResult();
+  }
+
+  public void testEmptyBorderAtInlay2() throws Exception {
+    initText("ab");
+    getEditor().getInlayModel().addInlineElement(1, true, new MyInlayRenderer());
+    addBorderHighlighter(1, 1, 0, Color.red);
+    checkResult();
+  }
+
+  public void testCaretAtFoldRegion() throws Exception {
+    initText("test");
+    addCollapsedFoldRegion(0, 4, ".");
+    checkResultWithGutterForNewUI();
+  }
+
+  public void testCustomFoldRegion() throws Exception {
+    initText("a\nb\nc");
+    addCustomLinesFolding(1, 1);
+    checkResultWithGutterForNewUI();
+  }
+
+  public void testCustomFoldRegionWithCaret() throws Exception {
+    initText("a\n<caret>b\nc");
+    addCustomLinesFolding(1, 1);
+    checkResultWithGutterForNewUI();
+  }
+
+  public void testCustomFoldRegionWithCaretAtEnd() throws Exception {
+    initText("a\nb<caret>\nc");
+    addCustomLinesFolding(1, 1);
+    checkResultWithGutterForNewUI();
+  }
+
+  private void runTestCustomFoldRegionInsideSelection() throws Exception {
+    initText("<selection>\ntext\n<caret></selection>");
+    addCustomLinesFolding(1, 1);
+    checkResult();
+  }
+
+  public void testCustomFoldRegionInsideSelection() throws Exception {
+    var state = setNewSelectionEnabled(false);
+    try {
+      runTestCustomFoldRegionInsideSelection();
+    } finally {
+      restoreSelectionState(state);
+    }
+  }
+
+  public void testCustomFoldRegionInsideSelectionWithNewSelection() throws Exception {
+    var state = setNewSelectionEnabled(true);
+    try {
+      runTestCustomFoldRegionInsideSelection();
+    } finally {
+      restoreSelectionState(state);
+    }
+  }
+
+  public void testInlineInlaysAroundCustomWrap() throws Exception {
+    setUpCustomWrapSupport();
+    initText("0123456789");
+    getEditor().getCustomWrapModel().runBatchMutation(mutator -> mutator.addWrap(4, 2, 0));
+    getEditor().getInlayModel().addInlineElement(4, true, new MyInlayRenderer(JBColor.CYAN));
+    getEditor().getInlayModel().addInlineElement(4, false, new MyInlayRenderer(JBColor.GREEN));
+    checkResult();
+  }
+
+  private void addCustomLinesFolding(int startLine, int endLine) {
+    FoldingModel foldingModel = getEditor().getFoldingModel();
+    foldingModel.runBatchFoldingOperation(() -> foldingModel.addCustomLinesFolding(startLine, endLine, new OurCustomFoldRegionRenderer()));
+  }
+
+  private static boolean containsRed(BufferedImage image) {
+    int rgb = Color.red.getRGB();
+    for (int x = 0; x < image.getWidth(); x++) {
+      for (int y = 0; y < image.getHeight(); y++) {
+        if (image.getRGB(x, y) == rgb) return true;
+      }
+    }
+    return false;
+  }
+
+  private void assertFoldBackground(BufferedImage image, int offset, Color color) {
+    var foldStart = getEditor().offsetToXY(offset);
+    assertEquals(color.getRGB(), image.getRGB(foldStart.x + 1, foldStart.y + 1));
+  }
+
+  private void runIndentsPass() {
+    IndentGuidePass indentsPass = EdtTestUtil.runInEdtAndGet(
+      () -> ActionUtil.underModalProgress(getProject(), "", () -> new IndentGuidePass(getProject(), getEditor(), getFile())));
+    ReadAction.run(() -> indentsPass.doCollectInformation(new EmptyProgressIndicator()));
+    EdtTestUtil.runInEdtAndWait(() -> indentsPass.doApplyInformationToEditor());
+  }
+
+  private void addLineSeparator(int offset, SeparatorPlacement placement, Color color) {
+    RangeHighlighter highlighter = addRangeHighlighter(offset, offset, 0, null);
+    highlighter.setLineSeparatorColor(color);
+    highlighter.setLineSeparatorPlacement(placement);
+  }
+
+  private static final class ColorGutterIconRenderer extends GutterIconRenderer {
+    private final Icon myIcon;
+
+    private ColorGutterIconRenderer(@NotNull Color color) {
+      myIcon = new ColorIcon(TEST_LINE_HEIGHT, color);
     }
 
-    @NotNull
     @Override
-    public HighlighterIterator createIterator(int startOffset) {
-      return new Iterator(startOffset);
+    public boolean equals(Object obj) {
+      return false;
     }
 
     @Override
-    public void setText(@NotNull CharSequence text) {}
-
-    @Override
-    public void setEditor(@NotNull HighlighterClient editor) {
-      myDocument = editor.getDocument();
+    public int hashCode() {
+      return 0;
     }
 
     @Override
-    public void setColorScheme(@NotNull EditorColorsScheme scheme) {}
+    public @NotNull Icon getIcon() {
+      return myIcon;
+    }
+  }
+
+  private static final class ColorBlockElementRenderer implements EditorCustomElementRenderer {
+    private final GutterIconRenderer myGutterIconRenderer;
+
+    private ColorBlockElementRenderer(@NotNull Color color) {
+      myGutterIconRenderer = new ColorGutterIconRenderer(color);
+    }
 
     @Override
-    public void beforeDocumentChange(DocumentEvent event) {}
+    public int calcWidthInPixels(@NotNull Inlay inlay) {
+      return 0;
+    }
 
     @Override
-    public void documentChanged(DocumentEvent event) {}
+    public GutterIconRenderer calcGutterIconRenderer(@NotNull Inlay inlay) {
+      return myGutterIconRenderer;
+    }
+  }
 
-    private class Iterator implements HighlighterIterator {
-      private int myOffset;
-      
-      public Iterator(int startOffset) {
-        myOffset = startOffset;
-      }
+  private static class OurCustomFoldRegionRenderer implements CustomFoldRegionRenderer {
+    private static final int WIDTH = 25;
+    private static final int HEIGHT = 15;
 
-      @Override
-      public TextAttributes getTextAttributes() {
-        return myAttributes;
-      }
+    @Override
+    public int calcWidthInPixels(@NotNull CustomFoldRegion region) {
+      return WIDTH;
+    }
 
-      @Override
-      public int getStart() {
-        return myOffset;
-      }
+    @Override
+    public int calcHeightInPixels(@NotNull CustomFoldRegion region) {
+      return HEIGHT;
+    }
 
-      @Override
-      public int getEnd() {
-        return myDocument.getTextLength();
-      }
-
-      @Override
-      public IElementType getTokenType() {
-        return null;
-      }
-
-      @Override
-      public void advance() {
-        myOffset = myDocument.getTextLength();
-      }
-
-      @Override
-      public void retreat() {
-        myOffset = 0;
-      }
-
-      @Override
-      public boolean atEnd() {
-        return myOffset == myDocument.getTextLength();
-      }
-
-      @Override
-      public Document getDocument() {
-        return myDocument;
-      }
+    @Override
+    public void paint(@NotNull CustomFoldRegion region,
+                      @NotNull Graphics2D g,
+                      @NotNull Rectangle2D targetRegion,
+                      @NotNull TextAttributes textAttributes) {
+      g.setColor(Color.pink);
+      Rectangle r = targetRegion.getBounds();
+      int startX = r.x;
+      int endX = r.x + r.width - 1;
+      int startY = r.y;
+      int endY = r.y + r.height - 1;
+      g.drawLine(startX, startY, startX, endY);
+      g.drawLine(startX, endY, endX, endY);
+      g.drawLine(endX, endY, endX, startY);
+      g.drawLine(endX, startY, startX, startY);
     }
   }
 }

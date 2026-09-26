@@ -1,4 +1,4 @@
-// "Move 'return' closer to computation of the value of 's'" "true"
+// "Move 'return' closer to computation of the value of 's'" "true-preview"
 class T {
     String f(String a) {
         String s = a;
@@ -7,13 +7,14 @@ class T {
             // end of line
         }
         else if (s.startsWith("@")) {
+            /* inline 1 */
             return s.substring(1); // return comment
-    /* inline 1 *//* inline 2 */
+            /* inline 2 */
         }
         else if (s.startsWith("#")) {
             return "#"; // return comment
-    /* inline */
+            /* inline */
         }
-        return s; // return comment
+        return (s); // return comment
     }
 }

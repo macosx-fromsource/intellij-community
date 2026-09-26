@@ -1,33 +1,20 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
-/*
- * Created by IntelliJ IDEA.
- * User: max
- * Date: Jun 10, 2002
- * Time: 5:54:59 PM
- * To change template for new interface use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.openapi.editor.ex;
 
+import com.intellij.openapi.editor.FoldRegion;
+import com.intellij.openapi.editor.colors.EditorColorsScheme;
+import com.intellij.openapi.editor.colors.TextAttributesKey;
+import com.intellij.openapi.editor.markup.HighlighterTargetArea;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.editor.markup.TextAttributes;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.util.Consumer;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+import java.awt.Color;
 import java.util.Comparator;
 
 public interface RangeHighlighterEx extends RangeHighlighter, RangeMarkerEx {
@@ -35,11 +22,99 @@ public interface RangeHighlighterEx extends RangeHighlighter, RangeMarkerEx {
   boolean isAfterEndOfLine();
   void setAfterEndOfLine(boolean value);
 
+  @ApiStatus.Internal
+  default void fireChanged(boolean renderersChanged, boolean fontStyleChanged, boolean foregroundColorChanged) {
+    throw new UnsupportedOperationException();
+  }
+
   int getAffectedAreaStartOffset();
 
   int getAffectedAreaEndOffset();
 
-  void setTextAttributes(@NotNull TextAttributes textAttributes);
+  @ApiStatus.Internal
+  default @Nullable TextAttributes getForcedTextAttributes() {
+    return null;
+  }
 
-  Comparator<RangeHighlighterEx> BY_AFFECTED_START_OFFSET = (r1, r2) -> r1.getAffectedAreaStartOffset() - r2.getAffectedAreaStartOffset();
+  @ApiStatus.Internal
+  default @Nullable Color getForcedErrorStripeMarkColor() {
+    return null;
+  }
+
+  /**
+   * Sets text attributes used for highlighting.
+   * Manually set attributes have priority over {@link #getTextAttributesKey()}
+   * during the calculation of {@link #getTextAttributes(EditorColorsScheme)}
+   *
+   * Can be also used to temporary hide the highlighter
+   * {@link TextAttributes#ERASE_MARKER }
+   */
+  void setTextAttributes(@Nullable TextAttributes textAttributes);
+
+  /**
+   * @see #isVisibleIfFolded()
+   */
+  void setVisibleIfFolded(boolean value);
+
+  /**
+   * If {@code true}, there will be a visual indication that this highlighter is present inside a collapsed fold region.
+   * By default, it's not visible, use {@link #setVisibleIfFolded(boolean)} to change it.
+   *
+   * @see FoldRegion#setInnerHighlightersMuted(boolean)
+   */
+  boolean isVisibleIfFolded();
+
+  /**
+   * If {@code true}, this highlighter is persistent and is retained between code analyzer runs and IDE restarts.
+   *
+   * @see MarkupModelEx#addPersistentLineHighlighter(TextAttributesKey, int, int)
+   * @see MarkupModelEx#addRangeHighlighterAndChangeAttributes(TextAttributesKey, int, int, int, HighlighterTargetArea, boolean, Consumer)
+   */
+  default boolean isPersistent() {
+    return false;
+  }
+
+  default boolean isRenderedInGutter() {
+    return getGutterIconRenderer() != null || getLineMarkerRenderer() != null;
+  }
+
+  default void copyFrom(@NotNull RangeHighlighterEx other) {
+    setAfterEndOfLine(other.isAfterEndOfLine());
+    setGreedyToLeft(other.isGreedyToLeft());
+    setGreedyToRight(other.isGreedyToRight());
+    setVisibleIfFolded(other.isVisibleIfFolded());
+
+    if (other.getForcedTextAttributes() != null) {
+      setTextAttributes(other.getForcedTextAttributes());
+    }
+    if (other.getTextAttributesKey() != null) {
+      setTextAttributesKey(other.getTextAttributesKey());
+    }
+
+    setLineMarkerRenderer(other.getLineMarkerRenderer());
+    setCustomRenderer(other.getCustomRenderer());
+    setGutterIconRenderer(other.getGutterIconRenderer());
+
+    setErrorStripeMarkColor(other.getForcedErrorStripeMarkColor());
+    setErrorStripeTooltip(other.getErrorStripeTooltip());
+    setThinErrorStripeMark(other.isThinErrorStripeMark());
+
+    setLineSeparatorColor(other.getLineSeparatorColor());
+    setLineSeparatorPlacement(other.getLineSeparatorPlacement());
+    setLineSeparatorRenderer(other.getLineSeparatorRenderer());
+
+    setEditorFilter(other.getEditorFilter());
+  }
+
+  Comparator<RangeHighlighterEx> BY_AFFECTED_START_OFFSET = Comparator.comparingInt(RangeHighlighterEx::getAffectedAreaStartOffset);
+
+  @ApiStatus.Internal
+  default @NotNull String debugOffsets() {
+    TextRange range = getTextRange();
+    return (isGreedyToLeft() ? "[" : "(")
+           + range.getStartOffset()
+           + ","
+           + range.getEndOffset()
+           + (isGreedyToLeft() ? "]" : ")");
+  }
 }

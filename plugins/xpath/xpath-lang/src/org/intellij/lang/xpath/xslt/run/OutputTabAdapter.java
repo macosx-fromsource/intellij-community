@@ -21,7 +21,7 @@ import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.process.ProcessOutputTypes;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.vfs.CharsetToolkit;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -32,6 +32,7 @@ import java.net.ConnectException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 
 class OutputTabAdapter extends ProcessAdapter {
     private static final int CONNECT_TIMEOUT = Integer.parseInt(System.getProperty("xslt.connect.timeout", "8000"));
@@ -39,13 +40,13 @@ class OutputTabAdapter extends ProcessAdapter {
     private final ProcessHandler myStartedProcess;
     private final HighlightingOutputConsole myConsole;
 
-  public OutputTabAdapter(ProcessHandler startedProcess, HighlightingOutputConsole console) {
+  OutputTabAdapter(ProcessHandler startedProcess, HighlightingOutputConsole console) {
         myStartedProcess = startedProcess;
         myConsole = console;
     }
 
     @Override
-    public void startNotified(ProcessEvent event) {
+    public void startNotified(@NotNull ProcessEvent event) {
         final XsltCommandLineState state = event.getProcessHandler().getUserData(XsltCommandLineState.STATE);
         if (state != null) {
           attachOutputConsole(state.getPort());
@@ -63,12 +64,12 @@ class OutputTabAdapter extends ProcessAdapter {
                         return;
                     }
 
-                    final InputStreamReader reader = new InputStreamReader(stream, CharsetToolkit.UTF8_CHARSET);
+                    final InputStreamReader reader = new InputStreamReader(stream, StandardCharsets.UTF_8);
                     final HighlightingProcessHandler process = new HighlightingProcessHandler(reader) {
                         private boolean mySelectionChanged;
 
                         @Override
-                        public void notifyTextAvailable(String text, Key outputType) {
+                        public void notifyTextAvailable(@NotNull String text, @NotNull Key outputType) {
                             super.notifyTextAvailable(text, outputType);
 
                             if (mySelectionChanged) {
@@ -92,8 +93,7 @@ class OutputTabAdapter extends ProcessAdapter {
         });
     }
 
-    @Nullable
-    private InputStream connect(int port) throws IOException {
+    private @Nullable InputStream connect(int port) throws IOException {
         final long s = System.currentTimeMillis();
         final InetSocketAddress endpoint = new InetSocketAddress(InetAddress.getLoopbackAddress(), port);
 

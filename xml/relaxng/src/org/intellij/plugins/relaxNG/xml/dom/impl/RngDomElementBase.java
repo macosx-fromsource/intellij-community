@@ -27,11 +27,6 @@ import org.intellij.plugins.relaxNG.xml.dom.RngDomElement;
 
 import java.util.List;
 
-/**
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 31.08.2007
- */
 public abstract class RngDomElementBase implements RngDomElement, Pattern<XmlElement> {
   @Override
   public XmlElement getPsiElement() {
@@ -53,7 +48,7 @@ public abstract class RngDomElementBase implements RngDomElement, Pattern<XmlEle
       @Override
       public void visitDomElement(DomElement element) {
         if (element instanceof CommonElement) {
-          ((CommonElement)element).accept(visitor);
+          ((CommonElement<?>)element).accept(visitor);
         }
       }
     });
@@ -62,6 +57,6 @@ public abstract class RngDomElementBase implements RngDomElement, Pattern<XmlEle
   protected static Pattern getPatternFrom(RngDomElement t) {
     if (t == null) return null;
     final List<Pattern> list = DomUtil.getChildrenOfType(t, Pattern.class);
-    return list.size() > 0 ? list.get(0) : null;
+    return !list.isEmpty() ? list.get(0) : null;
   }
 }

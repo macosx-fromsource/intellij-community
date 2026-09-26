@@ -1,22 +1,24 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.psi;
 
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.*;
+import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocComment;
+import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocFieldReference;
+import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocMethodParameter;
+import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocMethodParams;
+import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocMethodReference;
+import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocTag;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrArrayInitializer;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrBlockLambdaBody;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrDoWhileStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrExpressionLambdaBody;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrExpressionList;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrFunctionalExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrInExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrLambdaBody;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrLambdaExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrRangeExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrTryResourceList;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.GrListOrMap;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.GrThrowsClause;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList;
@@ -24,17 +26,60 @@ import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.annotation.
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.annotation.GrAnnotationArgumentList;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.annotation.GrAnnotationArrayInitializer;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.annotation.GrAnnotationNameValuePair;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.*;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrBlockStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrCatchClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrClassInitializer;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrConstructorInvocation;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrField;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrFinallyClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrForStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrIfStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrLabeledStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrPatternVariable;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrSwitchStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrSynchronizedStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrTryCatchStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrWhileStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrArgumentLabel;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrArgumentList;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrNamedArgument;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrSpreadArgument;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.*;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.*;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.*;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.arithmetic.GrRangeExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrAssertStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrBreakStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrContinueStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrFlowInterruptingStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrReturnStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrThrowStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.branch.GrYieldStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrCaseSection;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrForClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrForInClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrTraditionalForClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrApplicationStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrArrayDeclaration;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrBinaryExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrBuiltinTypeClassExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrCommandArgumentList;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrConditionalExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrElvisExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrInstanceOfExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrNewExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrParenthesizedExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrSafeCastExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrSwitchExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrTuple;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrTupleAssignmentExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrTypeCastExpression;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrUnaryExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrLiteral;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrRegex;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrString;
@@ -45,21 +90,39 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrM
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrPropertySelection;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameter;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameterList;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.*;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrAnnotationTypeDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrAnonymousClassDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrClassDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrEnumDefinitionBody;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrEnumTypeDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrExtendsClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrImplementsClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrInterfaceDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrPermitsClause;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrRecordDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTraitTypeDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinitionBody;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrAnnotationMethod;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrEnumConstant;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrEnumConstantList;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.imports.GrImportStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.packaging.GrPackageDefinition;
-import org.jetbrains.plugins.groovy.lang.psi.api.types.*;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrArrayTypeElement;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrBuiltInTypeElement;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrClassTypeElement;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrCodeReferenceElement;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrDisjunctionTypeElement;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeArgumentList;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeElement;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeParameter;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeParameterList;
+import org.jetbrains.plugins.groovy.lang.psi.api.types.GrWildcardTypeArgument;
 
-/**
- * @author ven
- */
 public abstract class GroovyElementVisitor {
-  public void visitElement(@NotNull GroovyPsiElement element) {
-  }
+
+  public void visitElement(@NotNull GroovyPsiElement element) {}
 
   public void visitFile(@NotNull GroovyFileBase file) {
     visitElement(file);
@@ -74,11 +137,31 @@ public abstract class GroovyElementVisitor {
   }
 
   public void visitClosure(@NotNull GrClosableBlock closure) {
-    visitStatement(closure);
+    visitFunctionalExpression(closure);
+  }
+
+  public void visitFunctionalExpression(@NotNull GrFunctionalExpression expression) {
+    visitExpression(expression);
   }
 
   public void visitOpenBlock(@NotNull GrOpenBlock block) {
     visitElement(block);
+  }
+
+  public void visitLambdaExpression(@NotNull GrLambdaExpression expression) {
+    visitFunctionalExpression(expression);
+  }
+
+  public void visitBlockLambdaBody(@NotNull GrBlockLambdaBody body) {
+    visitLambdaBody(body);
+  }
+
+  public void visitExpressionLambdaBody(@NotNull GrExpressionLambdaBody body) {
+    visitLambdaBody(body);
+  }
+
+  public void visitLambdaBody(@NotNull GrLambdaBody body) {
+    visitElement(body);
   }
 
   public void visitEnumConstants(@NotNull GrEnumConstantList enumConstantsSection) {
@@ -109,6 +192,10 @@ public abstract class GroovyElementVisitor {
     visitStatement(returnStatement);
   }
 
+  public void visitYieldStatement(@NotNull GrYieldStatement yieldStatement) {
+    visitStatement(yieldStatement);
+  }
+
   public void visitAssertStatement(@NotNull GrAssertStatement assertStatement) {
     visitStatement(assertStatement);
   }
@@ -129,16 +216,20 @@ public abstract class GroovyElementVisitor {
     visitExpression(callExpression);
   }
 
-  public void visitMethodCallExpression(@NotNull GrMethodCallExpression methodCallExpression) {
-    visitCallExpression(methodCallExpression);
-  }
-
   public void visitNewExpression(@NotNull GrNewExpression newExpression) {
     visitCallExpression(newExpression);
   }
 
+  public void visitMethodCall(@NotNull GrMethodCall call) {
+    visitCallExpression(call);
+  }
+
+  public void visitMethodCallExpression(@NotNull GrMethodCallExpression methodCallExpression) {
+    visitMethodCall(methodCallExpression);
+  }
+
   public void visitApplicationStatement(@NotNull GrApplicationStatement applicationStatement) {
-    visitStatement(applicationStatement);
+    visitMethodCall(applicationStatement);
   }
 
   public void visitArrayDeclaration(@NotNull GrArrayDeclaration arrayDeclaration) {
@@ -161,8 +252,16 @@ public abstract class GroovyElementVisitor {
     visitExpression(expression);
   }
 
+  public void visitTupleAssignmentExpression(@NotNull GrTupleAssignmentExpression expression) {
+    visitExpression(expression);
+  }
+
   public void visitBinaryExpression(@NotNull GrBinaryExpression expression) {
     visitExpression(expression);
+  }
+
+  public void visitInExpression(@NotNull GrInExpression expression) {
+    visitBinaryExpression(expression);
   }
 
   public void visitUnaryExpression(@NotNull GrUnaryExpression expression) {
@@ -261,6 +360,10 @@ public abstract class GroovyElementVisitor {
     visitTypeDefinition(classDefinition);
   }
 
+  public void visitRecordDefinition(@NotNull GrRecordDefinition recordDefinition) {
+    visitTypeDefinition(recordDefinition);
+  }
+
   public void visitEnumDefinition(@NotNull GrEnumTypeDefinition enumDefinition) {
     visitTypeDefinition(enumDefinition);
   }
@@ -289,6 +392,10 @@ public abstract class GroovyElementVisitor {
     visitElement(implementsClause);
   }
 
+  public void visitPermitsClause(@NotNull GrPermitsClause permitsClause) {
+    visitElement(permitsClause);
+  }
+
   public void visitTypeArgumentList(@NotNull GrTypeArgumentList typeArgumentList) {
     visitElement(typeArgumentList);
   }
@@ -305,19 +412,19 @@ public abstract class GroovyElementVisitor {
     visitElement(method);
   }
 
-  public void visitDocMethodReference(@NotNull GrDocMethodReference reference){
+  public void visitDocMethodReference(@NotNull GrDocMethodReference reference) {
     visitElement(reference);
   }
 
-  public void visitDocFieldReference(@NotNull GrDocFieldReference reference){
+  public void visitDocFieldReference(@NotNull GrDocFieldReference reference) {
     visitElement(reference);
   }
 
-  public void visitDocMethodParameterList(@NotNull GrDocMethodParams params){
+  public void visitDocMethodParameterList(@NotNull GrDocMethodParams params) {
     visitElement(params);
   }
 
-  public void visitDocMethodParameter(@NotNull GrDocMethodParameter parameter){
+  public void visitDocMethodParameter(@NotNull GrDocMethodParameter parameter) {
     visitElement(parameter);
   }
 
@@ -377,16 +484,16 @@ public abstract class GroovyElementVisitor {
     visitStatement(whileStatement);
   }
 
+  public void visitDoWhileStatement(@NotNull GrDoWhileStatement statement) {
+    visitStatement(statement);
+  }
+
   public void visitSwitchStatement(@NotNull GrSwitchStatement switchStatement) {
     visitStatement(switchStatement);
   }
 
   public void visitCaseSection(@NotNull GrCaseSection caseSection) {
     visitElement(caseSection);
-  }
-
-  public void visitCaseLabel(@NotNull GrCaseLabel caseLabel) {
-    visitElement(caseLabel);
   }
 
   public void visitForInClause(@NotNull GrForInClause forInClause) {
@@ -405,6 +512,10 @@ public abstract class GroovyElementVisitor {
     visitStatement(tryCatchStatement);
   }
 
+  public void visitTryResourceList(@NotNull GrTryResourceList resourceList) {
+    visitElement(resourceList);
+  }
+
   public void visitBlockStatement(@NotNull GrBlockStatement blockStatement) {
     visitStatement(blockStatement);
   }
@@ -415,6 +526,10 @@ public abstract class GroovyElementVisitor {
 
   public void visitDocComment(@NotNull GrDocComment comment) {
     visitElement(comment);
+  }
+
+  public void visitSwitchExpression(@NotNull GrSwitchExpression switchExpression) {
+    visitExpression(switchExpression);
   }
 
   public void visitDocTag(@NotNull GrDocTag docTag) {
@@ -433,6 +548,10 @@ public abstract class GroovyElementVisitor {
     visitStatement(variableDeclaration);
   }
 
+  public void visitPatternVariable(@NotNull GrPatternVariable variable) {
+    visitVariable(variable);
+  }
+
   public void visitVariable(@NotNull GrVariable variable) {
     visitElement(variable);
   }
@@ -442,7 +561,7 @@ public abstract class GroovyElementVisitor {
   }
 
   public void visitRangeExpression(@NotNull GrRangeExpression range) {
-    visitBinaryExpression(range);
+    visitExpression(range);
   }
 
   public void visitGStringInjection(@NotNull GrStringInjection injection) {
@@ -453,7 +572,7 @@ public abstract class GroovyElementVisitor {
     visitElement(list);
   }
 
-  public  void visitClassInitializer(@NotNull GrClassInitializer initializer) {
+  public void visitClassInitializer(@NotNull GrClassInitializer initializer) {
     visitElement(initializer);
   }
 
@@ -461,11 +580,19 @@ public abstract class GroovyElementVisitor {
     visitTypeDefinition(typeParameter);
   }
 
-  public void visitTupleExpression(@NotNull GrTupleExpression tupleExpression) {
-    visitExpression(tupleExpression);
+  public void visitTuple(@NotNull GrTuple tuple) {
+    visitElement(tuple);
   }
 
   public void visitSpreadArgument(@NotNull GrSpreadArgument spreadArgument) {
     visitExpression(spreadArgument);
+  }
+
+  public void visitExpressionList(@NotNull GrExpressionList expressionList) {
+    visitElement(expressionList);
+  }
+
+  public void visitArrayInitializer(@NotNull GrArrayInitializer arrayInitializer) {
+    visitElement(arrayInitializer);
   }
 }

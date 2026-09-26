@@ -1,31 +1,18 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.util.objectTree;
 
+import com.intellij.openapi.diagnostic.UntraceableException;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.SystemInfo;
-import com.intellij.util.concurrency.AtomicFieldUpdater;
-import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.FilteringIterator;
+import com.intellij.util.ExceptionUtilRt;
+import com.intellij.util.containers.HashingStrategy;
+import com.intellij.util.containers.Interner;
 import com.intellij.util.containers.WeakInterner;
-import gnu.trove.TObjectHashingStrategy;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
+import java.util.Objects;
 
 /**
  * Please don't look, there's nothing interesting here.
@@ -38,20 +25,15 @@ import java.util.Arrays;
  * The available method Throwable.getStackTrace() unfortunately can't be used for that because it's
  * 1) too slow and 2) explodes Throwable retained size by polluting Throwable.stackTrace fields.
  */
-public class ThrowableInterner {
-  private static final WeakInterner<Throwable> myTraceInterner = new WeakInterner<Throwable>(new TObjectHashingStrategy<Throwable>() {
+@ApiStatus.Internal
+public final class ThrowableInterner {
+  private ThrowableInterner() {
+  }
+
+  private static final Interner<Throwable> myTraceInterner = new WeakInterner<>(new HashingStrategy<Throwable>() {
     @Override
-    public int computeHashCode(Throwable throwable) {
-      String message = throwable.getMessage();
-      if (message != null) {
-        return message.hashCode();
-      }
-      Object[] backtrace = getBacktrace(throwable);
-      if (backtrace != null) {
-        Object[] stack = (Object[])ContainerUtil.find(backtrace, FilteringIterator.instanceOf(Object[].class));
-        return Arrays.hashCode(stack);
-      }
-      return Arrays.hashCode(throwable.getStackTrace());
+    public int hashCode(Throwable throwable) {
+      return computeHashCode(throwable);
     }
 
     @Override
@@ -60,7 +42,7 @@ public class ThrowableInterner {
       if (o1 == null || o2 == null) return false;
 
       if (!Comparing.equal(o1.getClass(), o2.getClass())) return false;
-      if (!Comparing.equal(o1.getMessage(), o2.getMessage())) return false;
+      if (!Objects.equals(o1.getMessage(), o2.getMessage())) return false;
       if (!equals(o1.getCause(), o2.getCause())) return false;
       Object[] backtrace1 = getBacktrace(o1);
       Object[] backtrace2 = getBacktrace(o2);
@@ -71,32 +53,96 @@ public class ThrowableInterner {
     }
   });
 
-  private static final long BACKTRACE_FIELD_OFFSET;
-  static {
-    if ((SystemInfo.isOracleJvm || SystemInfo.isJetbrainsJvm) && SystemInfo.isJavaVersionAtLeast("1.7")) {
-      Field firstField = Throwable.class.getDeclaredFields()[1];
-      long firstFieldOffset = AtomicFieldUpdater.getUnsafe().objectFieldOffset(firstField);
-      BACKTRACE_FIELD_OFFSET = firstFieldOffset == 12 ? 8 : firstFieldOffset == 16 ? 12 : firstFieldOffset == 24 ? 16 : -1;
-      if (BACKTRACE_FIELD_OFFSET == -1
-          || !firstField.getName().equals("detailMessage")
-          || !(AtomicFieldUpdater.getUnsafe().getObject(new Throwable(), BACKTRACE_FIELD_OFFSET) instanceof Object[])) {
-        throw new RuntimeException("Unknown layout: "+firstField+";"+firstFieldOffset+". Please specify -Didea.disposer.debug=off in idea.properties to suppress");
-      }
+  private static int computeHashCode(@NotNull Throwable throwable) {
+    int mHash;
+    String message = throwable.getMessage();
+    if (message == null) {
+      mHash = 0;
     }
     else {
-      BACKTRACE_FIELD_OFFSET = -1;
+      mHash = message.hashCode() * 37;
     }
+    return mHash + computeTraceHashCode(throwable);
+  }
+
+  public static int computeTraceHashCode(@NotNull Throwable throwable) {
+    Object[] backtrace = getBacktrace(throwable);
+    if (backtrace == null) {
+      return Arrays.hashCode(throwable.getStackTrace());
+    }
+
+    for (Object element : backtrace) {
+      if (element instanceof Object[]) {
+        return Arrays.hashCode((Object[])element);
+      }
+    }
+    return 0;
+  }
+
+  // more accurate hash code (different for different line numbers inside same method) but more expensive than computeTraceHashCode
+  public static int computeAccurateTraceHashCode(@NotNull Throwable throwable) {
+    Object[] backtrace = getBacktrace(throwable);
+    if (backtrace == null) {
+      StackTraceElement[] trace = throwable instanceof UntraceableException ? null : throwable.getStackTrace();
+      return Arrays.hashCode(trace);
+    }
+    return Arrays.deepHashCode(backtrace);
+  }
+
+  private static final Field BACKTRACE_FIELD;
+
+  static {
+    try {
+      Field j9WalkBack;
+      try {
+        // OpenJ9 has java.lang.Throwable.walkback instead of java.lang.Throwable.backtrace
+        j9WalkBack = Throwable.class.getDeclaredField("walkback");
+      }
+      catch (NoSuchFieldException e) {
+        j9WalkBack = null;
+      }
+      BACKTRACE_FIELD = j9WalkBack == null ? Throwable.class.getDeclaredField("backtrace") : j9WalkBack;
+    }
+    catch (NoSuchFieldException e) {
+      throw new RuntimeException(e);
+    }
+    BACKTRACE_FIELD.setAccessible(true);
   }
 
   private static Object[] getBacktrace(@NotNull Throwable throwable) {
-    // the JVM blocks access to Throwable.backtrace via reflection
-    Object backtrace = BACKTRACE_FIELD_OFFSET == -1 ? null : AtomicFieldUpdater.getUnsafe().getObject(throwable, BACKTRACE_FIELD_OFFSET);
+    // the JVM blocks access to Throwable.backtrace via reflection sometimes
+    Object backtrace;
+    try {
+      backtrace = BACKTRACE_FIELD != null ? BACKTRACE_FIELD.get(throwable) : null;
+    }
+    catch (Throwable e) {
+      return null;
+    }
     // obsolete jdk
-    return backtrace instanceof Object[] && ((Object[])backtrace).length == 5 ? (Object[])backtrace : null;
+    return backtrace instanceof Object[] ? (Object[])backtrace : null;
   }
 
-  @NotNull
-  public static Throwable intern(@NotNull Throwable throwable) {
+  public static void clearBacktrace(@NotNull Throwable throwable) {
+    try {
+      throwable.setStackTrace(new StackTraceElement[0]);
+      if (BACKTRACE_FIELD != null) {
+        BACKTRACE_FIELD.set(throwable, null);
+      }
+    }
+    catch (Throwable e) {
+      ExceptionUtilRt.rethrowUnchecked(e);
+      throw new RuntimeException(e);
+    }
+  }
+
+  public static @NotNull Throwable intern(@NotNull Throwable throwable) {
     return getBacktrace(throwable) == null ? throwable : myTraceInterner.intern(throwable);
+  }
+
+  public static void clearInternedBacktraces() {
+    for (Throwable t : myTraceInterner.getValues()) {
+      clearBacktrace(t);
+    }
+    myTraceInterner.clear();
   }
 }

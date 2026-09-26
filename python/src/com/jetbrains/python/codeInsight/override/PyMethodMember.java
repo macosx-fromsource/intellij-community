@@ -1,70 +1,60 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.codeInsight.override;
 
 import com.intellij.codeInsight.generation.ClassMember;
 import com.intellij.codeInsight.generation.MemberChooserObject;
 import com.intellij.codeInsight.generation.PsiElementMemberChooserObject;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.ui.SimpleColoredComponent;
-import com.intellij.util.Function;
-import com.jetbrains.python.PyNames;
-import com.jetbrains.python.psi.*;
+import com.jetbrains.python.psi.PyClass;
+import com.jetbrains.python.psi.PyElement;
+import com.jetbrains.python.psi.PyFunction;
+import com.jetbrains.python.psi.PyNamedParameter;
+import com.jetbrains.python.psi.types.PyCallableParameter;
 import com.jetbrains.python.psi.types.TypeEvalContext;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
 import java.util.List;
 
-/**
- * @author Alexey.Ivanov
- */
 public class PyMethodMember extends PsiElementMemberChooserObject implements ClassMember {
-  private final String myFullName;
-  private static String buildNameFor(final PyElement element) {
+  private static @NlsSafe String buildNameFor(final PyElement element) {
     if (element instanceof PyFunction) {
       final TypeEvalContext context = TypeEvalContext.userInitiated(element.getProject(), element.getContainingFile());
-      final List<PyParameter> parameters = PyUtil.getParameters((PyFunction)element, context);
-      return element.getName() + "(" + StringUtil.join(parameters, parameter -> PyUtil.getReadableRepr(parameter, false), ", ") + ")";
-    }
-    if (element instanceof PyClass && PyNames.FAKE_OLD_BASE.equals(element.getName())) {
-      return "<old-style class>";
+      final List<PyCallableParameter> parameters = ((PyFunction)element).getParameters(context);
+
+      final StringBuilder result = new StringBuilder();
+
+      result.append(element.getName()).append('(');
+      StringUtil.join(parameters, parameter -> buildParameterText(parameter, context), ", ", result);
+      result.append(')');
+
+      return result.toString();
     }
     return element.getName();
   }
 
+  private static @NlsSafe String buildParameterText(@NotNull PyCallableParameter parameter, @NotNull TypeEvalContext context) {
+    // The type of the receiver (self/cls) is implicit; render it only when it was annotated explicitly.
+    if (parameter.isSelf() && !isExplicitlyAnnotated(parameter)) {
+      return parameter.getPresentableText(true, context, ignored -> true);
+    }
+    return parameter.getPresentableText(true, context);
+  }
+
+  private static boolean isExplicitlyAnnotated(@NotNull PyCallableParameter parameter) {
+    return parameter.getParameter() instanceof PyNamedParameter namedParameter && namedParameter.getAnnotationValue() != null;
+  }
+
   public PyMethodMember(final PyElement element) {
-    super(element, trimUnderscores(buildNameFor(element)), element.getIcon(0));
-    myFullName = buildNameFor(element);
+    super(element, buildNameFor(element), element.getIcon(0));
   }
 
-  public static String trimUnderscores(String s) {
-    return StringUtil.trimStart(StringUtil.trimStart(s, "_"), "_");
-  }
-
+  @Override
   public MemberChooserObject getParentNodeDelegate() {
     final PyElement element = (PyElement)getPsiElement();
     final PyClass parent = PsiTreeUtil.getParentOfType(element, PyClass.class, false);
     assert (parent != null);
     return new PyMethodMember(parent);
-  }
-
-  @Override
-  public void renderTreeNode(SimpleColoredComponent component, JTree tree) {
-    component.append(myFullName, getTextAttributes(tree));
-    component.setIcon(getPsiElement().getIcon(0));
   }
 }

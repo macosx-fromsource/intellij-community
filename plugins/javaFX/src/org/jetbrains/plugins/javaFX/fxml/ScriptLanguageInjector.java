@@ -1,3 +1,4 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.javaFX.fxml;
 
 import com.intellij.lang.Language;
@@ -16,13 +17,15 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Collections;
 import java.util.List;
 
-public class ScriptLanguageInjector implements MultiHostInjector {
+public final class ScriptLanguageInjector implements MultiHostInjector {
+  private static final class Holder {
+    private static final XmlElementPattern.XmlTextPattern SCRIPT_PATTERN = XmlPatterns.xmlText().withParent(
+      XmlPatterns.xmlTag().withName(FxmlConstants.FX_SCRIPT));
+  }
 
-  private static final XmlElementPattern.XmlTextPattern SCRIPT_PATTERN = XmlPatterns.xmlText().withParent(
-    XmlPatterns.xmlTag().withName(FxmlConstants.FX_SCRIPT));
-
-  public void getLanguagesToInject(@NotNull final MultiHostRegistrar registrar, @NotNull final PsiElement host) {
-    if (SCRIPT_PATTERN.accepts(host)) {
+  @Override
+  public void getLanguagesToInject(final @NotNull MultiHostRegistrar registrar, final @NotNull PsiElement host) {
+    if (Holder.SCRIPT_PATTERN.accepts(host)) {
       final List<String> registeredLanguages = JavaFxPsiUtil.parseInjectedLanguages((XmlFile)host.getContainingFile());
       for (Language language : Language.getRegisteredLanguages()) {
         for (String registeredLanguage : registeredLanguages) {
@@ -38,8 +41,8 @@ public class ScriptLanguageInjector implements MultiHostInjector {
     }
   }
 
-  @NotNull
-  public List<? extends Class<? extends PsiElement>> elementsToInjectIn() {
+  @Override
+  public @NotNull List<? extends Class<? extends PsiElement>> elementsToInjectIn() {
     return Collections.singletonList(XmlText.class);
   }
 

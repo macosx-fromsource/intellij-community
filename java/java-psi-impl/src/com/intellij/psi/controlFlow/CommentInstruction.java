@@ -15,19 +15,22 @@
  */
 package com.intellij.psi.controlFlow;
 
+import org.jetbrains.annotations.NotNull;
+
 public class CommentInstruction extends SimpleInstruction {
   private final String myText;
 
-  public CommentInstruction(String text) {
+  public CommentInstruction(@NotNull String text) {
     myText = text;
   }
 
+  @Override
   public String toString() {
     return ";  " + myText;
   }
 
   @Override
-  public void accept(ControlFlowInstructionVisitor visitor, int offset, int nextOffset) {
+  public void accept(@NotNull ControlFlowInstructionVisitor visitor, int offset, int nextOffset) {
     visitor.visitCommentInstruction(this, offset, nextOffset);
   }
 }

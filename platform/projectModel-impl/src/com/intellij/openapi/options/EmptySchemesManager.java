@@ -1,20 +1,10 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.options;
 
+import com.intellij.openapi.components.SettingsCategory;
+import com.intellij.openapi.extensions.PluginDescriptor;
+import kotlin.sequences.Sequence;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -23,54 +13,90 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-public class EmptySchemesManager extends SchemeManager {
+@ApiStatus.Internal
+public final class EmptySchemesManager extends SchemeManager<Object> {
   @Override
-  @NotNull
-  public Collection loadSchemes() {
+  public @NotNull Collection<Object> loadSchemes() {
     return Collections.emptySet();
   }
 
   @Override
-  public void addNewScheme(@NotNull final Scheme scheme, final boolean replaceExisting) {
+  public void reload() {
   }
 
   @Override
-  public void clearAllSchemes() {
+  public void addScheme(final @NotNull Object scheme, final boolean replaceExisting) {
   }
 
   @Override
-  @NotNull
-  public List getAllSchemes() {
+  public @NotNull List<Object> getAllSchemes() {
     return Collections.emptyList();
   }
 
   @Override
-  public Scheme findSchemeByName(@NotNull String schemeName) {
+  public Object findSchemeByName(@NotNull String schemeName) {
     return null;
   }
 
   @Override
-  public Scheme getCurrentScheme() {
+  public @Nullable String getCurrentSchemeName() {
     return null;
   }
 
   @Override
-  public boolean removeScheme(@NotNull Scheme scheme) {
+  public boolean removeScheme(@NotNull Object scheme) {
     return false;
   }
 
   @Override
-  @NotNull
-  public Collection getAllSchemeNames() {
+  public @NotNull Collection<String> getAllSchemeNames() {
     return Collections.emptySet();
   }
 
   @Override
-  public File getRootDirectory() {
+  public @NotNull File getRootDirectory() {
+    //noinspection ConstantConditions
     return null;
   }
 
   @Override
   public void setCurrentSchemeName(@Nullable String schemeName, boolean notify) {
+  }
+
+  @Override
+  public void setCurrentSchemeName(@Nullable String s) {
+  }
+
+  @Override
+  public @Nullable Scheme getActiveScheme() {
+    return null;
+  }
+
+  @Override
+  public @Nullable Object removeScheme(@NotNull String name) {
+    return null;
+  }
+
+  @Override
+  public Object loadBundledScheme(@NotNull String resourceName, @Nullable Object requestor, @Nullable PluginDescriptor pluginDescriptor) {
+    return null;
+  }
+
+  @Override
+  public boolean isMetadataEditable(Object scheme) {
+    return true;
+  }
+
+  @Override
+  public void save() {
+  }
+
+  @Override
+  public @NotNull SettingsCategory getSettingsCategory() {
+    return SettingsCategory.OTHER;
+  }
+
+  @Override
+  public void loadBundledSchemes(@NotNull Sequence<? extends LoadBundleSchemeRequest<Object>> providers) {
   }
 }

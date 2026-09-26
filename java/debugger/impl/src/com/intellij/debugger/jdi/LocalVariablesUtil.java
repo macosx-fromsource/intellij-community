@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.jdi;
 
 import com.intellij.debugger.SourcePosition;
@@ -22,15 +8,38 @@ import com.intellij.debugger.engine.StackFrameContext;
 import com.intellij.debugger.engine.evaluation.EvaluateException;
 import com.intellij.debugger.impl.DebuggerUtilsEx;
 import com.intellij.debugger.impl.SimpleStackFrameContext;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.java.syntax.parser.JavaKeywords;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Computable;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaRecursiveElementVisitor;
+import com.intellij.psi.PsiArrayType;
+import com.intellij.psi.PsiCatchSection;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiForStatement;
+import com.intellij.psi.PsiForeachStatement;
+import com.intellij.psi.PsiLocalVariable;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiResourceList;
+import com.intellij.psi.PsiSynchronizedStatement;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypes;
+import com.intellij.psi.PsiVariable;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ReflectionUtil;
 import com.intellij.util.containers.MultiMap;
-import com.sun.jdi.*;
+import com.jetbrains.jdi.SlotLocalVariable;
+import com.jetbrains.jdi.StackFrameImpl;
+import com.sun.jdi.InternalException;
+import com.sun.jdi.Location;
+import com.sun.jdi.StackFrame;
+import com.sun.jdi.VMDisconnectedException;
+import com.sun.jdi.Value;
+import com.sun.jdi.VirtualMachine;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.org.objectweb.asm.MethodVisitor;
 import org.jetbrains.org.objectweb.asm.Opcodes;
 
@@ -38,9 +47,19 @@ import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 
-/**
+/*
  * From JDI sources:
  *
       validateStackFrame();
@@ -92,8 +111,8 @@ import java.util.*;
       }
       return map;
  */
-public class LocalVariablesUtil {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.jdi.LocalVariablesUtil");
+public final class LocalVariablesUtil {
+  private static final Logger LOG = Logger.getInstance(LocalVariablesUtil.class);
 
   private static final boolean ourInitializationOk;
   private static Class<?> ourSlotInfoClass;
@@ -147,7 +166,9 @@ public class LocalVariablesUtil {
     ourInitializationOkSet = success;
   }
 
-  public static Map<DecompiledLocalVariable, Value> fetchValues(@NotNull StackFrameProxyImpl frameProxy, DebugProcess process) throws Exception {
+  public static Map<DecompiledLocalVariable, Value> fetchValues(@NotNull StackFrameProxyImpl frameProxy,
+                                                                DebugProcess process,
+                                                                boolean full) throws Exception {
     Map<DecompiledLocalVariable, Value> map = new LinkedHashMap<>(); // LinkedHashMap for correct order
 
     Location location = frameProxy.location();
@@ -155,7 +176,8 @@ public class LocalVariablesUtil {
     final int firstLocalVariableSlot = getFirstLocalsSlot(method);
 
     // gather code variables names
-    MultiMap<Integer, String> namesMap = calcNames(new SimpleStackFrameContext(frameProxy, process), firstLocalVariableSlot);
+    MultiMap<Integer, String> namesMap =
+      full ? calcNames(new SimpleStackFrameContext(frameProxy, process), firstLocalVariableSlot) : MultiMap.empty();
 
     // first add arguments
     int slot = getFirstArgsSlot(method);
@@ -166,7 +188,7 @@ public class LocalVariablesUtil {
       slot += getTypeSlotSize(typeNames.get(i));
     }
 
-    if (!ourInitializationOk) {
+    if (!full || !ourInitializationOk) {
       return map;
     }
 
@@ -179,7 +201,7 @@ public class LocalVariablesUtil {
         return fetchSlotValues(map, vars.subList(0, size), frame);
       }
       catch (Exception e) {
-        LOG.info(e);
+        LOG.debug(e);
       }
       size--; // try with the reduced list
     }
@@ -188,24 +210,31 @@ public class LocalVariablesUtil {
   }
 
   private static Map<DecompiledLocalVariable, Value> fetchSlotValues(Map<DecompiledLocalVariable, Value> map,
-                                                                     List<DecompiledLocalVariable> vars,
+                                                                     List<? extends DecompiledLocalVariable> vars,
                                                                      StackFrame frame) throws Exception {
-    final Long frameId = ReflectionUtil.getField(frame.getClass(), frame, long.class, "id");
-    final VirtualMachine vm = frame.virtualMachine();
-    final Method stateMethod = ReflectionUtil.getDeclaredMethod(vm.getClass(), "state");
-
-    Object slotInfoArray = createSlotInfoArray(vars);
-
-    Object ps;
-    final Object vmState = stateMethod.invoke(vm);
-    synchronized(vmState) {
-      ps = ourEnqueueMethod.invoke(null, vm, frame.thread(), frameId, slotInfoArray);
+    final Value[] values;
+    if (frame instanceof StackFrameImpl stackFrame) {
+      values = stackFrame.getSlotsValues(vars);
     }
+    else {
+      final Long frameId = ReflectionUtil.getField(frame.getClass(), frame, long.class, "id");
+      final VirtualMachine vm = frame.virtualMachine();
+      final Method stateMethod = vm.getClass().getDeclaredMethod("state");
+      stateMethod.setAccessible(true);
 
-    final Object reply = ourWaitForReplyMethod.invoke(null, vm, ps);
-    final Value[] values = ReflectionUtil.getField(reply.getClass(), reply, Value[].class, "values");
-    if (vars.size() != values.length) {
-      throw new InternalException("Wrong number of values returned from target VM");
+      Object slotInfoArray = createSlotInfoArray(vars);
+
+      Object ps;
+      final Object vmState = stateMethod.invoke(vm);
+      synchronized (vmState) {
+        ps = ourEnqueueMethod.invoke(null, vm, frame.thread(), frameId, slotInfoArray);
+      }
+
+      final Object reply = ourWaitForReplyMethod.invoke(null, vm, ps);
+      values = ReflectionUtil.getField(reply.getClass(), reply, Value[].class, "values");
+      if (vars.size() != values.length) {
+        throw new InternalException("Wrong number of values returned from target VM");
+      }
     }
     int idx = 0;
     for (DecompiledLocalVariable var : vars) {
@@ -218,21 +247,27 @@ public class LocalVariablesUtil {
     return ourInitializationOkSet;
   }
 
-  public static void setValue(StackFrame frame, int slot, Value value) throws EvaluateException {
+  public static void setValue(StackFrame frame, SlotLocalVariable variable, Value value) throws EvaluateException {
     try {
-      final Long frameId = ReflectionUtil.getField(frame.getClass(), frame, long.class, "id");
-      final VirtualMachine vm = frame.virtualMachine();
-      final Method stateMethod = ReflectionUtil.getDeclaredMethod(vm.getClass(), "state");
-
-      Object slotInfoArray = createSlotInfoArraySet(slot, value);
-
-      Object ps;
-      final Object vmState = stateMethod.invoke(vm);
-      synchronized (vmState) {
-        ps = ourEnqueueMethodSet.invoke(null, vm, frame.thread(), frameId, slotInfoArray);
+      if (frame instanceof StackFrameImpl stackFrame) {
+        stackFrame.setSlotValue(variable, value);
       }
+      else {
+        final Long frameId = ReflectionUtil.getField(frame.getClass(), frame, long.class, "id");
+        final VirtualMachine vm = frame.virtualMachine();
+        final Method stateMethod = vm.getClass().getDeclaredMethod("state");
+        stateMethod.setAccessible(true);
 
-      ourWaitForReplyMethodSet.invoke(null, vm, ps);
+        Object slotInfoArray = createSlotInfoArraySet(variable.slot(), value);
+
+        Object ps;
+        final Object vmState = stateMethod.invoke(vm);
+        synchronized (vmState) {
+          ps = ourEnqueueMethodSet.invoke(null, vm, frame.thread(), frameId, slotInfoArray);
+        }
+
+        ourWaitForReplyMethodSet.invoke(null, vm, ps);
+      }
     }
     catch (Exception e) {
       throw new EvaluateException("Unable to set value", e);
@@ -246,19 +281,19 @@ public class LocalVariablesUtil {
     return arrayInstance;
   }
 
-  private static Object createSlotInfoArray(Collection<DecompiledLocalVariable> vars) throws Exception {
+  private static Object createSlotInfoArray(Collection<? extends DecompiledLocalVariable> vars) throws Exception {
     final Object arrayInstance = Array.newInstance(ourSlotInfoClass, vars.size());
 
     int idx = 0;
     for (DecompiledLocalVariable var : vars) {
-      final Object info = slotInfoConstructor.newInstance(var.getSlot(), (byte)var.getSignature().charAt(0));
+      final Object info = slotInfoConstructor.newInstance(var.slot(), (byte)var.signature().charAt(0));
       Array.set(arrayInstance, idx++, info);
     }
 
     return arrayInstance;
   }
 
-  private static Method getDeclaredMethodByName(Class aClass, String methodName) throws NoSuchMethodException {
+  private static Method getDeclaredMethodByName(Class<?> aClass, String methodName) throws NoSuchMethodException {
     for (Method method : aClass.getDeclaredMethods()) {
       if (methodName.equals(method.getName())) {
         method.setAccessible(true);
@@ -268,11 +303,10 @@ public class LocalVariablesUtil {
     throw new NoSuchMethodException(aClass.getName() + "." + methodName);
   }
 
-  @NotNull
-  private static List<DecompiledLocalVariable> collectVariablesFromBytecode(VirtualMachineProxyImpl vm,
-                                                                            Location location,
-                                                                            MultiMap<Integer, String> namesMap) {
-    if (!vm.canGetBytecodes()) {
+  private static @NotNull List<DecompiledLocalVariable> collectVariablesFromBytecode(VirtualMachineProxyImpl vm,
+                                                                                     Location location,
+                                                                                     MultiMap<Integer, String> namesMap) {
+    if (!vm.canGetBytecodes() || !vm.canGetConstantPool()) {
       return Collections.emptyList();
     }
     try {
@@ -284,70 +318,77 @@ public class LocalVariablesUtil {
         return Collections.emptyList();
       }
 
-      final byte[] bytecodes = method.bytecodes();
-      if (bytecodes != null && bytecodes.length > 0) {
-        final int firstLocalVariableSlot = getFirstLocalsSlot(method);
-        final HashMap<Integer, DecompiledLocalVariable> usedVars = new HashMap<>();
-        MethodBytecodeUtil.visit(method, location.codeIndex(),
-          new MethodVisitor(Opcodes.API_VERSION) {
-           @Override
-           public void visitVarInsn(int opcode, int slot) {
-             if (slot >= firstLocalVariableSlot) {
-               DecompiledLocalVariable variable = usedVars.get(slot);
-               String typeSignature = MethodBytecodeUtil.getVarInstructionType(opcode).getDescriptor();
-               if (variable == null || !typeSignature.equals(variable.getSignature())) {
-                 variable = new DecompiledLocalVariable(slot, false, typeSignature, namesMap.get(slot));
-                 usedVars.put(slot, variable);
-               }
-             }
-           }
-          }, false);
-        if (usedVars.isEmpty()) {
-          return Collections.emptyList();
-        }
+      long codeIndex = location.codeIndex();
+      if (codeIndex > 0) {
+        final byte[] bytecodes = method.bytecodes();
+        if (bytecodes != null && bytecodes.length > 0) {
+          final int firstLocalVariableSlot = getFirstLocalsSlot(method);
+          final HashMap<Integer, DecompiledLocalVariable> usedVars = new HashMap<>();
+          MethodBytecodeUtil.visit(method, codeIndex,
+                                   new MethodVisitor(Opcodes.API_VERSION) {
+                                     @Override
+                                     public void visitVarInsn(int opcode, int slot) {
+                                       if (slot >= firstLocalVariableSlot) {
+                                         DecompiledLocalVariable variable = usedVars.get(slot);
+                                         String typeSignature = MethodBytecodeUtil.getVarInstructionType(opcode).getDescriptor();
+                                         if (variable == null || !typeSignature.equals(variable.signature())) {
+                                           variable = new DecompiledLocalVariable(slot, false, typeSignature, namesMap.get(slot));
+                                           usedVars.put(slot, variable);
+                                         }
+                                       }
+                                     }
+                                   }, false);
+          if (usedVars.isEmpty()) {
+            return Collections.emptyList();
+          }
 
-        List<DecompiledLocalVariable> vars = new ArrayList<>(usedVars.values());
-        vars.sort(Comparator.comparingInt(DecompiledLocalVariable::getSlot));
-        return vars;
+          List<DecompiledLocalVariable> vars = new ArrayList<>(usedVars.values());
+          vars.sort(Comparator.comparingInt(DecompiledLocalVariable::slot));
+          return vars;
+        }
       }
     }
     catch (UnsupportedOperationException ignored) {
     }
+    catch (VMDisconnectedException e) {
+      throw e;
+    }
     catch (Exception e) {
-      LOG.error(e);
+      if (!vm.canBeModified()) { // do not care in read only vms
+        LOG.debug(e);
+      }
+      else {
+        LOG.warn(e);
+      }
     }
     return Collections.emptyList();
   }
 
-  @NotNull
-  private static MultiMap<Integer, String> calcNames(@NotNull final StackFrameContext context, final int firstLocalsSlot) {
+  private static @NotNull MultiMap<Integer, String> calcNames(final @NotNull StackFrameContext context, final int firstLocalsSlot) {
     SourcePosition position = ContextUtil.getSourcePosition(context);
     if (position != null) {
-      return ApplicationManager.getApplication().runReadAction(new Computable<MultiMap<Integer, String>>() {
-        @Override
-        public MultiMap<Integer, String> compute() {
-          PsiElement element = position.getElementAt();
-          PsiElement method = DebuggerUtilsEx.getContainingMethod(element);
-          if (method != null) {
-            MultiMap<Integer, String> res = new MultiMap<>();
-            int slot = Math.max(0, firstLocalsSlot - getParametersStackSize(method));
-            for (PsiParameter parameter : DebuggerUtilsEx.getParameters(method)) {
-              res.putValue(slot, parameter.getName());
-              slot += getTypeSlotSize(parameter.getType());
-            }
-            PsiElement body = DebuggerUtilsEx.getBody(method);
-            if (body != null) {
-              try {
-                body.accept(new LocalVariableNameFinder(firstLocalsSlot, res, element));
-              }
-              catch (Exception e) {
-                LOG.info(e);
-              }
-            }
-            return res;
+      return ReadAction.compute(() -> {
+        PsiElement element = position.getElementAt();
+        PsiElement method = DebuggerUtilsEx.getContainingMethod(element);
+        if (method != null) {
+          MultiMap<Integer, String> res = new MultiMap<>();
+          int slot = Math.max(0, firstLocalsSlot - getParametersStackSize(method));
+          for (PsiParameter parameter : DebuggerUtilsEx.getParameters(method)) {
+            res.putValue(slot, parameter.getName());
+            slot += getTypeSlotSize(parameter.getType());
           }
-          return MultiMap.empty();
+          PsiElement body = DebuggerUtilsEx.getBody(method);
+          if (body != null) {
+            try {
+              body.accept(new LocalVariableNameFinder(firstLocalsSlot, res, element));
+            }
+            catch (Exception e) {
+              LOG.info(e);
+            }
+          }
+          return res;
         }
+        return MultiMap.empty();
       });
     }
     return MultiMap.empty();
@@ -363,7 +404,7 @@ public class LocalVariablesUtil {
     private final Deque<Integer> myIndexStack = new LinkedList<>();
     private boolean myReached = false;
 
-    public LocalVariableNameFinder(int startSlot, MultiMap<Integer, String> names, PsiElement element) {
+    LocalVariableNameFinder(int startSlot, MultiMap<Integer, String> names, PsiElement element) {
       myNames = names;
       myCurrentSlotIndex = startSlot;
       myElement = element;
@@ -374,7 +415,7 @@ public class LocalVariablesUtil {
     }
 
     @Override
-    public void visitElement(PsiElement element) {
+    public void visitElement(@NotNull PsiElement element) {
       if (element == myElement) {
         myReached = true;
       }
@@ -384,20 +425,19 @@ public class LocalVariablesUtil {
     }
 
     @Override
-    public void visitLocalVariable(PsiLocalVariable variable) {
+    public void visitLocalVariable(@NotNull PsiLocalVariable variable) {
       super.visitLocalVariable(variable);
       if (!myReached) {
-        appendName(variable.getName());
-        myCurrentSlotIndex += getTypeSlotSize(variable.getType());
+        appendName(variable);
       }
     }
 
-    public void visitSynchronizedStatement(PsiSynchronizedStatement statement) {
+    @Override
+    public void visitSynchronizedStatement(@NotNull PsiSynchronizedStatement statement) {
       if (shouldVisit(statement)) {
         myIndexStack.push(myCurrentSlotIndex);
         try {
-          appendName("<monitor>");
-          myCurrentSlotIndex++;
+          appendName("<monitor>", 1);
           super.visitSynchronizedStatement(statement);
         }
         finally {
@@ -406,12 +446,19 @@ public class LocalVariablesUtil {
       }
     }
 
-    private void appendName(String varName) {
+    private void appendName(@Nullable PsiVariable variable) {
+      if (variable != null) {
+        appendName(variable.getName(), getTypeSlotSize(variable.getType()));
+      }
+    }
+
+    private void appendName(String varName, int size) {
       myNames.putValue(myCurrentSlotIndex, varName);
+      myCurrentSlotIndex += size;
     }
 
     @Override
-    public void visitCodeBlock(PsiCodeBlock block) {
+    public void visitCodeBlock(@NotNull PsiCodeBlock block) {
       if (shouldVisit(block)) {
         myIndexStack.push(myCurrentSlotIndex);
         try {
@@ -424,7 +471,7 @@ public class LocalVariablesUtil {
     }
 
     @Override
-    public void visitForStatement(PsiForStatement statement) {
+    public void visitForStatement(@NotNull PsiForStatement statement) {
       if (shouldVisit(statement)) {
         myIndexStack.push(myCurrentSlotIndex);
         try {
@@ -437,10 +484,20 @@ public class LocalVariablesUtil {
     }
 
     @Override
-    public void visitForeachStatement(PsiForeachStatement statement) {
+    public void visitForeachStatement(@NotNull PsiForeachStatement statement) {
       if (shouldVisit(statement)) {
         myIndexStack.push(myCurrentSlotIndex);
         try {
+          PsiExpression value = statement.getIteratedValue();
+          if (value != null && value.getType() instanceof PsiArrayType) {
+            appendName("", 1); // array copy
+            appendName("<length>", 1);
+            appendName("<index>", 1);
+          }
+          else {
+            appendName("<iterator>", 1);
+          }
+          appendName(statement.getIterationParameter());
           super.visitForeachStatement(statement);
         }
         finally {
@@ -450,10 +507,11 @@ public class LocalVariablesUtil {
     }
 
     @Override
-    public void visitCatchSection(PsiCatchSection section) {
+    public void visitCatchSection(@NotNull PsiCatchSection section) {
       if (shouldVisit(section)) {
         myIndexStack.push(myCurrentSlotIndex);
         try {
+          appendName(section.getParameter());
           super.visitCatchSection(section);
         }
         finally {
@@ -463,7 +521,7 @@ public class LocalVariablesUtil {
     }
 
     @Override
-    public void visitResourceList(PsiResourceList resourceList) {
+    public void visitResourceList(@NotNull PsiResourceList resourceList) {
       if (shouldVisit(resourceList)) {
         myIndexStack.push(myCurrentSlotIndex);
         try {
@@ -476,7 +534,7 @@ public class LocalVariablesUtil {
     }
 
     @Override
-    public void visitClass(PsiClass aClass) {
+    public void visitClass(@NotNull PsiClass aClass) {
       // skip local and anonymous classes
     }
   }
@@ -486,7 +544,7 @@ public class LocalVariablesUtil {
   }
 
   private static int getTypeSlotSize(PsiType varType) {
-    if (PsiType.DOUBLE.equals(varType) || PsiType.LONG.equals(varType)) {
+    if (PsiTypes.doubleType().equals(varType) || PsiTypes.longType().equals(varType)) {
       return 2;
     }
     return 1;
@@ -501,7 +559,7 @@ public class LocalVariablesUtil {
   }
 
   private static int getTypeSlotSize(String name) {
-    if (PsiKeyword.DOUBLE.equals(name) || PsiKeyword.LONG.equals(name)) {
+    if (JavaKeywords.DOUBLE.equals(name) || JavaKeywords.LONG.equals(name)) {
       return 2;
     }
     return 1;

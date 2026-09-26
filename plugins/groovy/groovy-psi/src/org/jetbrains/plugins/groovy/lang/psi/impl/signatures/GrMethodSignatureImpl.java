@@ -1,20 +1,7 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl.signatures;
 
+import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiSubstitutor;
@@ -22,31 +9,30 @@ import com.intellij.psi.PsiType;
 import com.intellij.psi.util.TypeConversionUtil;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.plugins.groovy.lang.psi.api.signatures.GrClosureSignature;
+import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory;
 import org.jetbrains.plugins.groovy.lang.psi.api.signatures.GrSignature;
-import org.jetbrains.plugins.groovy.lang.psi.api.signatures.GrSignatureVisitor;
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrClosureParameter;
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
 
-/**
- * Created by Max Medvedev on 14/03/14
- */
-class GrMethodSignatureImpl implements GrClosureSignature {
+class GrMethodSignatureImpl implements GrSignature {
 
   private final PsiMethod myMethod;
   private final PsiSubstitutor mySubstitutor;
   private final boolean myEraseParameterTypes;
+  private final PsiElement myContext;
 
-  public GrMethodSignatureImpl(@NotNull PsiMethod method, @NotNull PsiSubstitutor substitutor, boolean eraseParameterTypes) {
+  GrMethodSignatureImpl(@NotNull PsiMethod method,
+                        @NotNull PsiSubstitutor substitutor,
+                        boolean eraseParameterTypes,
+                        @NotNull PsiElement context) {
     myMethod = method;
     mySubstitutor = substitutor;
     myEraseParameterTypes = eraseParameterTypes;
+    myContext = context;
   }
 
-  @NotNull
   @Override
-  public PsiSubstitutor getSubstitutor() {
+  public @NotNull PsiSubstitutor getSubstitutor() {
     return mySubstitutor;
   }
 
@@ -54,12 +40,11 @@ class GrMethodSignatureImpl implements GrClosureSignature {
     return myMethod;
   }
 
-  @NotNull
   @Override
-  public GrClosureParameter[] getParameters() {
+  public GrClosureParameter @NotNull [] getParameters() {
     return ContainerUtil.map(
       myMethod.getParameterList().getParameters(),
-      (parameter) -> new GrClosureParameterImpl(parameter, mySubstitutor, myEraseParameterTypes),
+      (parameter) -> new GrClosureParameterImpl(parameter, mySubstitutor, myEraseParameterTypes, myContext),
       GrClosureParameter.EMPTY_ARRAY
     );
   }
@@ -76,8 +61,20 @@ class GrMethodSignatureImpl implements GrClosureSignature {
 
   @Override
   public PsiType getReturnType() {
-    PsiType type = getSubstitutor().substitute(PsiUtil.getSmartReturnType(myMethod));
+    PsiType type = getReturnTypeInner();
     return myEraseParameterTypes ? TypeConversionUtil.erasure(type) : type;
+  }
+
+  private PsiType getReturnTypeInner() {
+    PsiSubstitutor substitutor = getSubstitutor();
+    if (myMethod.isConstructor()) {
+      PsiClass clazz = myMethod.getContainingClass();
+      if (clazz == null) return null;
+      return GroovyPsiElementFactory.getInstance(myMethod.getProject()).createType(clazz, substitutor);
+    }
+    else {
+      return substitutor.substitute(PsiUtil.getSmartReturnType(myMethod));
+    }
   }
 
   @Override
@@ -87,17 +84,6 @@ class GrMethodSignatureImpl implements GrClosureSignature {
 
   @Override
   public boolean isValid() {
-    return myMethod.isValid() && getSubstitutor().isValid();
-  }
-
-  @Nullable
-  @Override
-  public GrSignature curry(@NotNull PsiType[] args, int position, @NotNull PsiElement context) {
-    return GrClosureSignatureUtil.curryImpl(this, args, position, context);
-  }
-
-  @Override
-  public void accept(@NotNull GrSignatureVisitor visitor) {
-    visitor.visitClosureSignature(this);
+    return myContext.isValid() && myMethod.isValid() && getSubstitutor().isValid();
   }
 }

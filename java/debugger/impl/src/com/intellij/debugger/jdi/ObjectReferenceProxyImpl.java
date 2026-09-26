@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 /*
  * @author Eugene Zhuravlev
@@ -20,13 +6,23 @@
 package com.intellij.debugger.jdi;
 
 import com.intellij.util.ThreeState;
-import com.sun.jdi.*;
+import com.intellij.util.containers.ContainerUtil;
+import com.sun.jdi.ClassNotLoadedException;
+import com.sun.jdi.Field;
+import com.sun.jdi.IncompatibleThreadStateException;
+import com.sun.jdi.InvalidTypeException;
+import com.sun.jdi.ObjectReference;
+import com.sun.jdi.ReferenceType;
+import com.sun.jdi.Type;
+import com.sun.jdi.VMDisconnectedException;
+import com.sun.jdi.Value;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Unmodifiable;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ObjectReferenceProxyImpl extends JdiProxy {
   private final ObjectReference myObjectReference;
@@ -34,7 +30,7 @@ public class ObjectReferenceProxyImpl extends JdiProxy {
   //caches
   private ReferenceType myReferenceType;
   private Type myType;
-  private ThreeState myIsCollected = ThreeState.UNSURE;
+  private final AtomicReference<ThreeState> myIsCollected = new AtomicReference<>(ThreeState.UNSURE);
 
   public ObjectReferenceProxyImpl(VirtualMachineProxyImpl virtualMachineProxy, @NotNull ObjectReference objectReference) {
     super(virtualMachineProxy);
@@ -47,7 +43,7 @@ public class ObjectReferenceProxyImpl extends JdiProxy {
   }
 
   public VirtualMachineProxyImpl getVirtualMachineProxy() {
-    return (VirtualMachineProxyImpl) myTimer;
+    return (VirtualMachineProxyImpl)myTimer;
   }
 
   public ReferenceType referenceType() {
@@ -66,11 +62,10 @@ public class ObjectReferenceProxyImpl extends JdiProxy {
     return myType;
   }
 
-  @NonNls
-  public String toString() {
+  @Override
+  public @NonNls String toString() {
     final ObjectReference objectReference = getObjectReference();
-    //noinspection HardCodedStringLiteral
-    final String objRefString = objectReference != null? objectReference.toString() : "[referenced object collected]";
+    final String objRefString = objectReference != null ? objectReference.toString() : "[referenced object collected]";
     return "ObjectReferenceProxyImpl: " + objRefString + " " + super.toString();
   }
 
@@ -84,15 +79,22 @@ public class ObjectReferenceProxyImpl extends JdiProxy {
 
   public boolean isCollected() {
     checkValid();
-    if (myIsCollected != ThreeState.YES) {
-      try {
-        myIsCollected = ThreeState.fromBoolean(VirtualMachineProxyImpl.isCollected(myObjectReference));
-      }
-      catch (VMDisconnectedException ignored) {
-        myIsCollected = ThreeState.YES;
-      }
+    switch (myIsCollected.get()) {
+      case YES:
+        return true;
+      case NO:
+        return false;
+      default:
+        try {
+          boolean res = VirtualMachineProxyImpl.isCollected(myObjectReference);
+          myIsCollected.set(ThreeState.fromBoolean(res));
+          return res;
+        }
+        catch (VMDisconnectedException ignored) {
+          myIsCollected.set(ThreeState.YES);
+          return true;
+        }
     }
-    return myIsCollected.toBoolean();
   }
 
   public long uniqueID() {
@@ -101,38 +103,31 @@ public class ObjectReferenceProxyImpl extends JdiProxy {
 
   /**
    * @return a list of waiting ThreadReferenceProxies
-   * @throws IncompatibleThreadStateException
    */
-  public List<ThreadReferenceProxyImpl> waitingThreads() throws IncompatibleThreadStateException {
-    List<ThreadReference> list = getObjectReference().waitingThreads();
-    List<ThreadReferenceProxyImpl> proxiesList = new ArrayList<>(list.size());
-
-    for (ThreadReference threadReference : list) {
-      proxiesList.add(getVirtualMachineProxy().getThreadReferenceProxy(threadReference));
-    }
-    return proxiesList;
+  public @Unmodifiable List<ThreadReferenceProxyImpl> waitingThreads() throws IncompatibleThreadStateException {
+    return ContainerUtil.map(getObjectReference().waitingThreads(), getVirtualMachineProxy()::getThreadReferenceProxy);
   }
 
   public ThreadReferenceProxyImpl owningThread() throws IncompatibleThreadStateException {
-    ThreadReference threadReference = getObjectReference().owningThread();
-    return getVirtualMachineProxy().getThreadReferenceProxy(threadReference);
+    return getVirtualMachineProxy().getThreadReferenceProxy(getObjectReference().owningThread());
   }
 
   public int entryCount() throws IncompatibleThreadStateException {
     return getObjectReference().entryCount();
   }
 
+  @Override
   public boolean equals(Object o) {
-    if (!(o instanceof ObjectReferenceProxyImpl)) {
+    if (!(o instanceof ObjectReferenceProxyImpl proxy)) {
       return false;
     }
-    if(this == o) return true;
+    if (this == o) return true;
 
-    ObjectReference ref = myObjectReference;
-    return ref.equals(((ObjectReferenceProxyImpl)o).myObjectReference);
+    return myObjectReference.equals(proxy.myObjectReference);
   }
 
 
+  @Override
   public int hashCode() {
     return myObjectReference.hashCode();
   }
@@ -142,9 +137,7 @@ public class ObjectReferenceProxyImpl extends JdiProxy {
    */
   @Override
   protected void clearCaches() {
-    if (myIsCollected == ThreeState.NO) {
-      // clearing cache makes sense only if the object has not been collected yet
-      myIsCollected = ThreeState.UNSURE;
-    }
+    // clearing cache makes sense only if the object has not been collected yet
+    myIsCollected.compareAndSet(ThreeState.NO, ThreeState.UNSURE);
   }
 }

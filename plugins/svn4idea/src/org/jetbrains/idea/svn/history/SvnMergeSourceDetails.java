@@ -1,33 +1,16 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.history;
 
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.MasterDetailsComponent;
 import com.intellij.openapi.ui.NamedConfigurable;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.vcs.changes.committed.CommittedChangeListRenderer;
-import com.intellij.openapi.vcs.changes.ui.ChangeListViewerDialog;
+import com.intellij.openapi.vcs.changes.ui.ChangesViewContentManager;
+import com.intellij.openapi.vcs.changes.ui.CommittedChangeListPanel;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.ToolWindow;
-import com.intellij.openapi.wm.ToolWindowId;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.ColoredTreeCellRenderer;
 import com.intellij.ui.SimpleTextAttributes;
@@ -36,22 +19,31 @@ import com.intellij.ui.content.ContentFactory;
 import com.intellij.ui.content.ContentManager;
 import com.intellij.util.ContentsUtil;
 import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.svn.SvnBundle;
-import org.jetbrains.idea.svn.SvnRevisionNumber;
 import org.jetbrains.idea.svn.SvnVcs;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JTree;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
-import java.awt.*;
+import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class SvnMergeSourceDetails extends MasterDetailsComponent {
+import static com.intellij.openapi.util.text.StringUtil.ELLIPSIS;
+import static com.intellij.openapi.util.text.StringUtil.notNullize;
+import static com.intellij.openapi.vcs.changes.committed.CommittedChangeListRenderer.getDescriptionOfChangeList;
+import static com.intellij.openapi.vcs.changes.committed.CommittedChangeListRenderer.truncateDescription;
+import static com.intellij.util.text.DateFormatUtil.formatPrettyDateTime;
+
+public final class SvnMergeSourceDetails extends MasterDetailsComponent {
   private final Project myProject;
   private final SvnFileRevision myRevision;
   private final VirtualFile myFile;
@@ -69,16 +61,16 @@ public class SvnMergeSourceDetails extends MasterDetailsComponent {
   }
 
   public static void showMe(final Project project, final SvnFileRevision revision, final VirtualFile file) {
-    if (ModalityState.NON_MODAL.equals(ModalityState.current())) {
-    ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow(ToolWindowId.VCS);
+    if (ModalityState.nonModal().equals(ModalityState.current())) {
+    ToolWindow toolWindow = ToolWindowManager.getInstance(project).getToolWindow(ChangesViewContentManager.TOOLWINDOW_ID);
     final ContentManager contentManager = toolWindow.getContentManager();
 
     final MyDialog dialog = new MyDialog(project, revision, file);
     // TODO: Temporary memory leak fix - rewrite this part not to create dialog if only createCenterPanel(), but not show() is invoked
     Disposer.register(project, dialog.getDisposable());
 
-    Content content = ContentFactory.SERVICE.getInstance().createContent(dialog.createCenterPanel(),
-        SvnBundle.message("merge.source.details.title", (file == null) ? revision.getURL() : file.getName(), revision.getRevisionNumber().asString()), true);
+    Content content = ContentFactory.getInstance().createContent(dialog.createCenterPanel(),
+        SvnBundle.message("merge.source.details.title", (file == null) ? revision.getURL().toDecodedString() : file.getName(), revision.getRevisionNumber().asString()), true);
     ContentsUtil.addOrReplaceContent(contentManager, content, true);
 
     toolWindow.activate(null);
@@ -87,19 +79,12 @@ public class SvnMergeSourceDetails extends MasterDetailsComponent {
     }
   }
 
-  protected void processRemovedItems() {
-
-  }
-
-  protected boolean wasObjectStored(final Object editableObject) {
-    return false;
-  }
-
-  @Nls
-  public String getDisplayName() {
+  @Override
+  public @Nls String getDisplayName() {
     return null;
   }
 
+  @Override
   public String getHelpTopic() {
     return null;
   }
@@ -116,10 +101,10 @@ public class SvnMergeSourceDetails extends MasterDetailsComponent {
   }
 
   private class MyTreeCellRenderer extends ColoredTreeCellRenderer {
-    private final static int ourMaxWidth = 100;
-    private final static String ourDots = "(...)";
+    private static final int ourMaxWidth = 100;
 
-    public void customizeCellRenderer(final JTree tree,
+    @Override
+    public void customizeCellRenderer(@NotNull JTree tree,
                                       final Object value,
                                       final boolean selected,
                                       final boolean expanded,
@@ -130,34 +115,27 @@ public class SvnMergeSourceDetails extends MasterDetailsComponent {
       final SvnFileRevision revision;
       if (value instanceof MyRootNode) {
         revision = myRevision;
-      } else {
+      }
+      else {
         final MyNode myNode = (MyNode)value;
-        final MyNamedConfigurable configurable = (MyNamedConfigurable) myNode.getConfigurable();
+        final MyNamedConfigurable configurable = (MyNamedConfigurable)myNode.getConfigurable();
         revision = configurable.getRevision();
       }
 
-      final String revisonNumber = revision.getRevisionNumber().asString();
-      final Pair<String,Boolean> info = CommittedChangeListRenderer.getDescriptionOfChangeList(revision.getCommitMessage());
-      String description = info.getFirst();
-      int width = metrics.stringWidth(description);
-      int dotsWidth = metrics.stringWidth(ourDots);
-      boolean descriptionTruncated = info.getSecond();
-      if ((descriptionTruncated && (ourMaxWidth - dotsWidth < width)) || (! descriptionTruncated) && (ourMaxWidth < width)) {
-        description = CommittedChangeListRenderer.truncateDescription(description, metrics, ourMaxWidth - dotsWidth);
-        descriptionTruncated = true;
-      }
-      if (descriptionTruncated) {
-        description += ourDots;
+      String description = getDescriptionOfChangeList(revision.getCommitMessage());
+      if (metrics.stringWidth(description) > ourMaxWidth) {
+        description = truncateDescription(description, metrics, ourMaxWidth - metrics.stringWidth(getTruncatedSuffix()));
+        description += getTruncatedSuffix();
       }
 
-      final String date = CommittedChangeListRenderer.getDateOfChangeList(revision.getRevisionDate());
-
-      final String author = revision.getAuthor();
-
-      append(revisonNumber + " ", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+      append(revision.getRevisionNumber().asString() + " ", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
       append(description + " ", SimpleTextAttributes.REGULAR_ATTRIBUTES);
-      append(author, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
-      append(", " + date, SimpleTextAttributes.REGULAR_ATTRIBUTES);
+      append(notNullize(revision.getAuthor()), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+      append(", " + formatPrettyDateTime(revision.getRevisionDate()), SimpleTextAttributes.REGULAR_ATTRIBUTES);
+    }
+
+    private static @Nls @NotNull String getTruncatedSuffix() {
+      return "(" + ELLIPSIS + ")";
     }
   }
 
@@ -175,7 +153,7 @@ public class SvnMergeSourceDetails extends MasterDetailsComponent {
     myTree.getSelectionModel().setSelectionMode(TreeSelectionModel.SINGLE_TREE_SELECTION);
   }
 
-  private static class MyNamedConfigurable extends NamedConfigurable<SvnFileRevision> {
+  private static final class MyNamedConfigurable extends NamedConfigurable<SvnFileRevision> {
     private final SvnFileRevision myRevision;
     private final VirtualFile myFile;
     private final Project myProject;
@@ -190,61 +168,61 @@ public class SvnMergeSourceDetails extends MasterDetailsComponent {
       myListsMap = listsMap;
     }
 
+    @Override
     public void setDisplayName(final String name) {
     }
 
+    @Override
     public SvnFileRevision getEditableObject() {
       return myRevision;
     }
 
+    @Override
     public String getBannerSlogan() {
       return myRevision.getRevisionNumber().asString();
     }
 
     private SvnChangeList getList() {
-      SvnChangeList list = myListsMap.get(myRevision);
+      SvnChangeList list = myListsMap.get(myRevision.getRevision().getNumber());
       if (list == null) {
         list = (SvnChangeList)SvnVcs.getInstance(myProject).loadRevisions(myFile, myRevision.getRevisionNumber());
-        myListsMap.put(((SvnRevisionNumber) myRevision.getRevisionNumber()).getRevision().getNumber(), list);
+        myListsMap.put(myRevision.getRevision().getNumber(), list);
       }
       return list;
     }
 
+    @Override
     public JComponent createOptionsPanel() {
       if (myPanel == null) {
         final SvnChangeList list = getList();
         if (list == null) {
           myPanel = new JPanel();
         } else {
-          ChangeListViewerDialog dialog = new ChangeListViewerDialog(myProject, list);
-          // TODO: Temporary memory leak fix - rewrite this part not to create dialog if only createCenterPanel(), but not show() is invoked
-          Disposer.register(myProject, dialog.getDisposable());
-          myPanel = dialog.createCenterPanel();
+          CommittedChangeListPanel panel = new CommittedChangeListPanel(myProject);
+          panel.setChangeList(list);
+          myPanel = panel;
         }
       }
       return myPanel;
     }
 
-    @Nls
-    public String getDisplayName() {
-      return getBannerSlogan();  
+    @Override
+    public @Nls String getDisplayName() {
+      return getBannerSlogan();
     }
 
+    @Override
     public String getHelpTopic() {
       return null;
     }
 
+    @Override
     public boolean isModified() {
       return false;
     }
 
-    public void apply() throws ConfigurationException {
-    }
-
-    public void reset() {
-    }
-
-    public void disposeUIResources() {
+    @Override
+    public void apply() {
     }
 
     public SvnFileRevision getRevision() {
@@ -252,7 +230,7 @@ public class SvnMergeSourceDetails extends MasterDetailsComponent {
     }
   }
 
-  private static class MyDialog extends DialogWrapper {
+  private static final class MyDialog extends DialogWrapper {
     private final Project myProject;
     private final SvnFileRevision myRevision;
     private final VirtualFile myFile;
@@ -262,10 +240,11 @@ public class SvnMergeSourceDetails extends MasterDetailsComponent {
       myProject = project;
       myRevision = revision;
       myFile = file;
-      setTitle(SvnBundle.message("merge.source.details.title", (myFile == null) ? myRevision.getURL() : myFile.getName(), myRevision.getRevisionNumber().asString()));
+      setTitle(SvnBundle.message("merge.source.details.title", (myFile == null) ? myRevision.getURL().toDecodedString() : myFile.getName(), myRevision.getRevisionNumber().asString()));
       init();
     }
 
+    @Override
     public JComponent createCenterPanel() {
       final JComponent component = new SvnMergeSourceDetails(myProject, myRevision, myFile).createComponent();
       component.setMinimumSize(new Dimension(300, 200));

@@ -1,321 +1,230 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.dvcs.ui;
 
 import com.intellij.dvcs.DvcsRememberedInputs;
-import com.intellij.ide.FrameStateListener;
-import com.intellij.ide.FrameStateManager;
-import com.intellij.ide.impl.ProjectUtil;
-import com.intellij.openapi.fileChooser.FileChooserDescriptor;
+import com.intellij.dvcs.repo.ClonePathProvider;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
-import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.*;
-import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.ui.TextFieldWithBrowseButton;
+import com.intellij.openapi.ui.ValidationInfo;
+import com.intellij.openapi.ui.popup.Balloon;
+import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.io.OSAgnosticPathUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.ComboBoxCompositeEditor;
 import com.intellij.ui.DocumentAdapter;
-import com.intellij.ui.EditorComboBox;
-import com.intellij.util.ArrayUtil;
+import com.intellij.ui.awt.RelativePoint;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.xml.util.XmlStringUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
 import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.io.File;
-import java.net.URI;
-import java.net.URISyntaxException;
+import java.awt.Point;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
+import java.util.Objects;
 
-import static com.intellij.util.ObjectUtils.assertNotNull;
-
+/**
+ * @deprecated Migrate to {@link com.intellij.openapi.vcs.ui.cloneDialog.VcsCloneDialogExtension}
+ * or {@link com.intellij.openapi.vcs.ui.VcsCloneComponent}
+ */
+@Deprecated(forRemoval = true)
 public abstract class CloneDvcsDialog extends DialogWrapper {
-  /**
-   * The pattern for SSH URL-s in form [user@]host:path
-   */
-  private static final Pattern SSH_URL_PATTERN;
 
-  static {
-    // TODO make real URL pattern
-    @NonNls final String ch = "[\\p{ASCII}&&[\\p{Graph}]&&[^@:/]]";
-    @NonNls final String host = ch + "+(?:\\." + ch + "+)*";
-    @NonNls final String path = "/?" + ch + "+(?:/" + ch + "+)*/?";
-    @NonNls final String all = "(?:" + ch + "+@)?" + host + ":" + path;
-    SSH_URL_PATTERN = Pattern.compile(all);
-  }
+  protected final @NotNull Project myProject;
+  protected final @NotNull String myVcsDirectoryName;
 
-  private JPanel myRootPanel;
-  private EditorComboBox myRepositoryURL;
-  private TextFieldWithBrowseButton myParentDirectory;
-  private JButton myTestButton; // test repository
-  private JTextField myDirectoryName;
-  private JLabel myRepositoryUrlLabel;
+  private final @NotNull CloneDvcsDialogUi ui;
 
-  @NotNull private String myTestURL; // the repository URL at the time of the last test
-  @Nullable private Boolean myTestResult; // the test result of the last test or null if not tested
-  @NotNull private String myDefaultDirectoryName = "";
-  @NotNull protected final Project myProject;
-  @NotNull protected final String myVcsDirectoryName;
-  @Nullable private final String myDefaultRepoUrl;
+  private @Nullable ValidationInfo myCreateDirectoryValidationInfo;
+  private @Nullable ValidationInfo myRepositoryTestValidationInfo;
+  private @Nullable ProgressIndicator myRepositoryTestProgressIndicator;
 
-  public CloneDvcsDialog(@NotNull Project project, @NotNull String displayName, @NotNull String vcsDirectoryName) {
+  public CloneDvcsDialog(@NotNull Project project, @NotNull @Nls String displayName, @NotNull String vcsDirectoryName) {
     this(project, displayName, vcsDirectoryName, null);
   }
 
-  public CloneDvcsDialog(@NotNull Project project, @NotNull String displayName, @NotNull String vcsDirectoryName, @Nullable String defaultUrl) {
+  public CloneDvcsDialog(@NotNull Project project,
+                         @NotNull @Nls String displayName,
+                         @NotNull String vcsDirectoryName,
+                         @Nullable String defaultUrl) {
     super(project, true);
-    myDefaultRepoUrl = defaultUrl;
     myProject = project;
     myVcsDirectoryName = vcsDirectoryName;
-    init();
-    initListeners();
-    setTitle(DvcsBundle.getString("clone.title"));
-    myRepositoryUrlLabel.setText(DvcsBundle.message("clone.repository.url", displayName));
-    myRepositoryUrlLabel.setDisplayedMnemonic('R');
-    setOKButtonText(DvcsBundle.getString("clone.button"));
+    ui = new CloneDvcsDialogUi(project, getRememberedInputs());
 
-    FrameStateManager.getInstance().addListener(new FrameStateListener.Adapter() {
-      @Override
-      public void onFrameActivated() {
-        updateButtons();
-      }
-    }, getDisposable());
+    initComponents(defaultUrl);
+    setTitle(DvcsBundle.message("clone.title"));
+    setOKButtonText(DvcsBundle.message("clone.button"));
+    init();
   }
 
   @Override
   protected void doOKAction() {
-    File parent = new File(getParentDirectory());
-    if (parent.exists() && parent.isDirectory() && parent.canWrite() || parent.mkdirs()) {
-      super.doOKAction();
-      return;
-    }
-    setErrorText("Couldn't create " + parent + "<br/>Check your access rights");
-    setOKActionEnabled(false);
+    String path = ui.directoryField.getText();
+    new Task.Modal(myProject, DvcsBundle.message("progress.title.creating.destination.directory"), true) {
+      private ValidationInfo error = null;
+
+      @Override
+      public void run(@NotNull ProgressIndicator indicator) {
+        error = CloneDvcsValidationUtils.createDestination(path);
+      }
+
+      @Override
+      public void onSuccess() {
+        if (error == null) {
+          CloneDvcsDialog.super.doOKAction();
+        }
+        else {
+          myCreateDirectoryValidationInfo = error;
+          startTrackingValidation();
+        }
+      }
+    }.queue();
   }
 
-  @NotNull
-  public String getSourceRepositoryURL() {
+  public @NotNull String getSourceRepositoryURL() {
     return getCurrentUrlText();
   }
 
-  public String getParentDirectory() {
-    return myParentDirectory.getText();
+  public @NotNull String getParentDirectory() {
+    Path parent = Paths.get(ui.directoryField.getText()).toAbsolutePath().getParent();
+    return Objects.requireNonNull(parent).toAbsolutePath().toString();
   }
 
-  public String getDirectoryName() {
-    return myDirectoryName.getText();
+  public @NotNull String getDirectoryName() {
+    return Paths.get(ui.directoryField.getText()).getFileName().toString();
   }
 
-  /**
-   * Init components
-   */
-  private void initListeners() {
-    FileChooserDescriptor fcd = FileChooserDescriptorFactory.createSingleFolderDescriptor();
-    fcd.setShowFileSystemRoots(true);
-    fcd.setTitle(DvcsBundle.getString("clone.destination.directory.title"));
-    fcd.setDescription(DvcsBundle.getString("clone.destination.directory.description"));
-    fcd.setHideIgnored(false);
-    myParentDirectory.addActionListener(
-      new ComponentWithBrowseButton.BrowseFolderActionListener<JTextField>(fcd.getTitle(), fcd.getDescription(), myParentDirectory,
-                                                                           myProject, fcd, TextComponentAccessor.TEXT_FIELD_WHOLE_TEXT) {
-        @Override
-        protected VirtualFile getInitialFile() {
-          // suggest project base directory only if nothing is typed in the component.
-          String text = getComponentText();
-          if (text.length() == 0) {
-            VirtualFile file = myProject.getBaseDir();
-            if (file != null) {
-              return file;
-            }
-          }
-          return super.getInitialFile();
-        }
-      }
-    );
+  private void initComponents(@Nullable String defaultUrl) {
+    ui.repositoryUrlFieldSpinner.setVisible(false);
 
-    final DocumentListener updateOkButtonListener = new DocumentAdapter() {
+    Disposer.register(getDisposable(), ui.spinnerProgressManager);
+
+    ui.repositoryUrlCombobox.setEditable(true);
+    ui.repositoryUrlCombobox.setEditor(ComboBoxCompositeEditor.withComponents(ui.repositoryUrlField, ui.repositoryUrlFieldSpinner));
+    ui.repositoryUrlCombobox.setModel(ui.repositoryUrlComboboxModel);
+
+    ui.repositoryUrlField.addDocumentListener(new DocumentListener() {
       @Override
-      protected void textChanged(DocumentEvent e) {
-        updateButtons();
+      public void documentChanged(@NotNull com.intellij.openapi.editor.event.DocumentEvent event) {
+        ui.directoryField.trySetChildPath(defaultDirectoryPath(ui.repositoryUrlField.getText().trim()));
       }
-    };
-    myParentDirectory.getChildComponent().getDocument().addDocumentListener(updateOkButtonListener);
-    String parentDir = getRememberedInputs().getCloneParentDir();
-    if (StringUtil.isEmptyOrSpaces(parentDir)) {
-      parentDir = ProjectUtil.getBaseDir();
-    }
-    myParentDirectory.setText(parentDir);
-
-    myDirectoryName.getDocument().addDocumentListener(updateOkButtonListener);
-
-    myTestButton.addActionListener(new ActionListener() {
-      public void actionPerformed(final ActionEvent e) {
-        test();
+    });
+    ui.repositoryUrlField.addDocumentListener(new DocumentListener() {
+      @Override
+      public void documentChanged(@NotNull com.intellij.openapi.editor.event.DocumentEvent event) {
+        myRepositoryTestValidationInfo = null;
       }
     });
 
-    setOKActionEnabled(false);
-    myTestButton.setEnabled(false);
+    ui.testButton.addActionListener(e -> test());
+
+    ui.directoryField.addBrowseFolderListener(myProject, FileChooserDescriptorFactory.createSingleFolderDescriptor()
+      .withTitle(DvcsBundle.message("clone.destination.directory.browser.title"))
+      .withDescription(DvcsBundle.message("clone.destination.directory.browser.description"))
+      .withShowFileSystemRoots(true)
+      .withHideIgnored(false));
+
+    if (defaultUrl != null) {
+      ui.repositoryUrlField.setText(defaultUrl);
+      ui.repositoryUrlField.selectAll();
+      ui.testButton.setEnabled(true);
+    }
   }
 
   private void test() {
-    myTestURL = getCurrentUrlText();
-    TestResult testResult = ProgressManager.getInstance().runProcessWithProgressSynchronously(
-      () -> test(myTestURL), DvcsBundle.message("clone.testing", myTestURL), true, myProject);
-    if (testResult.isSuccess()) {
-      Messages.showInfoMessage(myTestButton, DvcsBundle.message("clone.test.success.message", myTestURL),
-                               DvcsBundle.getString("clone.test.connection.title"));
-      myTestResult = Boolean.TRUE;
+    String testUrl = getCurrentUrlText();
+    if (myRepositoryTestProgressIndicator != null) {
+      myRepositoryTestProgressIndicator.cancel();
+      myRepositoryTestProgressIndicator = null;
     }
-    else {
-      Messages.showErrorDialog(myProject, assertNotNull(testResult.getError()), "Repository Test Failed");
-      myTestResult = Boolean.FALSE;
-    }
-    updateButtons();
+    myRepositoryTestProgressIndicator =
+      ui.spinnerProgressManager
+        .run(new Task.Backgroundable(myProject, DvcsBundle.message("clone.repository.url.test.title", testUrl), true) {
+          private TestResult myTestResult;
+
+          @Override
+          public void run(@NotNull ProgressIndicator indicator) {
+            myTestResult = test(testUrl);
+          }
+
+          @Override
+          public void onSuccess() {
+            if (myTestResult.isSuccess()) {
+              myRepositoryTestValidationInfo = null;
+              Disposable dialogDisposable = getDisposable();
+              if (Disposer.isDisposed(dialogDisposable)) return;
+              JBPopupFactory.getInstance()
+                .createBalloonBuilder(new JLabel(DvcsBundle.message("clone.repository.url.test.success.message")))
+                .setDisposable(dialogDisposable)
+                .createBalloon()
+                .show(new RelativePoint(ui.testButton, new Point(ui.testButton.getWidth() / 2,
+                                                                      ui.testButton.getHeight())),
+                      Balloon.Position.below);
+            }
+            else {
+              myRepositoryTestValidationInfo =
+                new ValidationInfo(DvcsBundle.message("clone.repository.url.test.failed.message",
+                                                      XmlStringUtil.escapeString(myTestResult.myErrorMessage)),
+                                   ui.repositoryUrlCombobox);
+              startTrackingValidation();
+            }
+            myRepositoryTestProgressIndicator = null;
+          }
+        });
   }
 
-  @NotNull
-  protected abstract TestResult test(@NotNull String url);
+  protected abstract @NotNull TestResult test(@NotNull String url);
 
-  @NotNull
-  protected abstract DvcsRememberedInputs getRememberedInputs();
+  protected abstract @NotNull DvcsRememberedInputs getRememberedInputs();
 
-  /**
-   * Check fields and display error in the wrapper if there is a problem
-   */
-  private void updateButtons() {
-    if (!checkRepositoryURL()) {
-      return;
-    }
-    if (!checkDestination()) {
-      return;
-    }
-    setErrorText(null);
-    setOKActionEnabled(true);
-  }
-
-  /**
-   * Check destination directory and set appropriate error text if there are problems
-   *
-   * @return true if destination components are OK.
-   */
-  private boolean checkDestination() {
-    if (myParentDirectory.getText().length() == 0 || myDirectoryName.getText().length() == 0) {
-      setErrorText(null);
-      setOKActionEnabled(false);
-      return false;
-    }
-    File file = new File(myParentDirectory.getText(), myDirectoryName.getText());
-    if (file.exists() && (!file.isDirectory()) || !ArrayUtil.isEmpty(file.list())) {
-      setErrorText(DvcsBundle.message("clone.destination.exists.error", file));
-      setOKActionEnabled(false);
-      return false;
-    }
+  @Override
+  protected boolean continuousValidation() {
+    // Force continuousValidation for custom validation in doValidateAll
     return true;
   }
 
+  @Override
+  protected @NotNull List<ValidationInfo> doValidateAll() {
+    ValidationInfo urlValidation = CloneDvcsValidationUtils.checkRepositoryURL(ui.repositoryUrlCombobox, getCurrentUrlText());
+    ValidationInfo directoryValidation = CloneDvcsValidationUtils.checkDirectory(ui.directoryField.getText(),
+                                                                                 ui.directoryField.getTextField());
+
+    ui.testButton.setEnabled(urlValidation == null);
+
+    List<ValidationInfo> infoList = new ArrayList<>();
+    ContainerUtil.addIfNotNull(infoList, myRepositoryTestValidationInfo);
+    ContainerUtil.addIfNotNull(infoList, myCreateDirectoryValidationInfo);
+    ContainerUtil.addIfNotNull(infoList, urlValidation);
+    ContainerUtil.addIfNotNull(infoList, directoryValidation);
+    return infoList;
+  }
+
+  private @NotNull String getCurrentUrlText() {
+    return OSAgnosticPathUtil.expandUserHome(ui.repositoryUrlField.getText().trim());
+  }
+
   /**
-   * Check repository URL and set appropriate error text if there are problems
-   *
-   * @return true if repository URL is OK.
+   * @deprecated use {@link #getRepositoryHostingServices()}
    */
-  private boolean checkRepositoryURL() {
-    String repository = getCurrentUrlText();
-    if (repository.length() == 0) {
-      setErrorText(null);
-      setOKActionEnabled(false);
-      return false;
-    }
-    if (myTestResult != null && repository.equals(myTestURL)) {
-      if (!myTestResult.booleanValue()) {
-        setErrorText(DvcsBundle.getString("clone.test.failed.error"));
-        setOKActionEnabled(false);
-        return false;
-      }
-      else {
-        return true;
-      }
-    }
-    try {
-      if (new URI(repository).isAbsolute()) {
-        return true;
-      }
-    }
-    catch (URISyntaxException urlExp) {
-      // do nothing
-    }
-    // check if ssh url pattern
-    if (SSH_URL_PATTERN.matcher(repository).matches()) {
-      return true;
-    }
-    try {
-      File file = new File(repository);
-      if (file.exists()) {
-        if (!file.isDirectory()) {
-          setErrorText(DvcsBundle.getString("clone.url.is.not.directory.error"));
-          setOKActionEnabled(false);
-        }
-        return true;
-      }
-    }
-    catch (Exception fileExp) {
-      // do nothing
-    }
-    setErrorText(DvcsBundle.getString("clone.invalid.url"));
-    setOKActionEnabled(false);
-    return false;
-  }
-
-  @NotNull
-  private String getCurrentUrlText() {
-    return FileUtil.expandUserHome(myRepositoryURL.getText().trim());
-  }
-
-  private void createUIComponents() {
-    myRepositoryURL = new EditorComboBox("");
-    final DvcsRememberedInputs rememberedInputs = getRememberedInputs();
-    List<String> urls = new ArrayList<>(rememberedInputs.getVisitedUrls());
-    if (myDefaultRepoUrl != null) {
-      urls.add(0, myDefaultRepoUrl);
-    }
-    myRepositoryURL.setHistory(ArrayUtil.toObjectArray(urls, String.class));
-    myRepositoryURL.addDocumentListener(new com.intellij.openapi.editor.event.DocumentAdapter() {
-      @Override
-      public void documentChanged(com.intellij.openapi.editor.event.DocumentEvent e) {
-        // enable test button only if something is entered in repository URL
-        final String url = getCurrentUrlText();
-        myTestButton.setEnabled(url.length() != 0);
-        if (myDefaultDirectoryName.equals(myDirectoryName.getText()) || myDirectoryName.getText().length() == 0) {
-          // modify field if it was unmodified or blank
-          myDefaultDirectoryName = defaultDirectoryName(url, myVcsDirectoryName);
-          myDirectoryName.setText(myDefaultDirectoryName);
-        }
-        updateButtons();
-      }
-    });
-  }
-
-  public void prependToHistory(@NotNull final String item) {
-    myRepositoryURL.prependItem(item);
+  @Deprecated(forRemoval = true)
+  public void prependToHistory(final @NotNull String item) {
+    ui.repositoryUrlComboboxModel.add(item);
   }
 
   public void rememberSettings() {
@@ -330,40 +239,23 @@ public abstract class CloneDvcsDialog extends DialogWrapper {
    * @param url an URL to checkout
    * @return a default repository name
    */
-  @NotNull
-  private static String defaultDirectoryName(@NotNull final String url, @NotNull final String vcsDirName) {
-    String nonSystemName;
-    if (url.endsWith("/" + vcsDirName) || url.endsWith(File.separator + vcsDirName)) {
-      nonSystemName = url.substring(0, url.length() - vcsDirName.length() - 1);
-    }
-    else {
-      if (url.endsWith(vcsDirName)) {
-        nonSystemName = url.substring(0, url.length() - vcsDirName.length());
-      }
-      else {
-        nonSystemName = url;
-      }
-    }
-    int i = nonSystemName.lastIndexOf('/');
-    if (i == -1 && File.separatorChar != '/') {
-      i = nonSystemName.lastIndexOf(File.separatorChar);
-    }
-    return i >= 0 ? nonSystemName.substring(i + 1) : "";
+  private @NotNull String defaultDirectoryPath(final @NotNull String url) {
+    return StringUtil.trimEnd(ClonePathProvider.relativeDirectoryPathForVcsUrl(myProject, url), myVcsDirectoryName);
   }
 
-  @Nullable
   @Override
-  public JComponent getPreferredFocusedComponent() {
-    return myRepositoryURL;
+  public @Nullable JComponent getPreferredFocusedComponent() {
+    return ui.repositoryUrlField;
   }
 
-  protected JComponent createCenterPanel() {
-    return myRootPanel;
+  @Override
+  protected @NotNull JComponent createCenterPanel() {
+    return ui.panel;
   }
 
   protected static class TestResult {
-    @NotNull public static final TestResult SUCCESS = new TestResult(null);
-    @Nullable private final String myErrorMessage;
+    public static final @NotNull TestResult SUCCESS = new TestResult(null);
+    private final @Nullable String myErrorMessage;
 
     public TestResult(@Nullable String errorMessage) {
       myErrorMessage = errorMessage;
@@ -373,9 +265,37 @@ public abstract class CloneDvcsDialog extends DialogWrapper {
       return myErrorMessage == null;
     }
 
-    @Nullable
-    public String getError() {
+    public @Nullable String getError() {
       return myErrorMessage;
+    }
+  }
+
+  static final class MyTextFieldWithBrowseButton extends TextFieldWithBrowseButton {
+    private final @NotNull Path myDefaultParentPath;
+    private boolean myModifiedByUser = false;
+
+    MyTextFieldWithBrowseButton(@NotNull @NonNls String defaultParentPath) {
+      myDefaultParentPath = Paths.get(defaultParentPath).toAbsolutePath();
+      setText(myDefaultParentPath.toString());
+      getTextField().getDocument().addDocumentListener(new DocumentAdapter() {
+        @Override
+        protected void textChanged(@NotNull DocumentEvent e) {
+          myModifiedByUser = true;
+        }
+      });
+    }
+
+    public void trySetChildPath(@NotNull String child) {
+      if (!myModifiedByUser) {
+        try {
+          setText(myDefaultParentPath.resolve(child).toString());
+        }
+        catch (InvalidPathException ignored) {
+        }
+        finally {
+          myModifiedByUser = false;
+        }
+      }
     }
   }
 }

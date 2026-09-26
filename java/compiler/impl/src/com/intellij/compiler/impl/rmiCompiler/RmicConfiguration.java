@@ -1,22 +1,7 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.compiler.impl.rmiCompiler;
 
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
@@ -28,16 +13,17 @@ import org.jetbrains.jps.model.java.compiler.RmicCompilerOptions;
 public class RmicConfiguration implements PersistentStateComponent<RmicCompilerOptions> {
   private final RmicCompilerOptions mySettings = new RmicCompilerOptions();
 
-  @NotNull
-  public RmicCompilerOptions getState() {
+  @Override
+  public @NotNull RmicCompilerOptions getState() {
     return mySettings;
   }
 
-  public void loadState(RmicCompilerOptions state) {
+  @Override
+  public void loadState(@NotNull RmicCompilerOptions state) {
     XmlSerializerUtil.copyBean(state, mySettings);
   }
 
   public static RmicCompilerOptions getOptions(Project project) {
-    return ServiceManager.getService(project, RmicConfiguration.class).getState();
+    return project.getService(RmicConfiguration.class).getState();
   }
 }

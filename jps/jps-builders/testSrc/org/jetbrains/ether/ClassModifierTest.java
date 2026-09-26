@@ -1,54 +1,58 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.ether;
 
-/**
- * @author: db
- * Date: 09.08.11
- */
+import org.jetbrains.jps.builders.java.JavaBuilderUtil;
+
+import java.util.Set;
+
 public class ClassModifierTest extends IncrementalTestCase {
-  public ClassModifierTest() throws Exception {
+  private static final Set<String> GRAPH_ONLY_TESTS = Set.of("becameSealed");
+
+  public ClassModifierTest() {
     super("classModifiers");
   }
 
-  public void testAddStatic() throws Exception {
+  @Override
+  protected boolean shouldRunTest() {
+    if (JavaBuilderUtil.isDepGraphEnabled()) {
+      return super.shouldRunTest();
+    }
+    return !GRAPH_ONLY_TESTS.contains(getTestName(true));
+  }
+
+  public void testAddStatic() {
     doTest();
   }
 
-  public void testRemoveStatic() throws Exception {
+  public void testRemoveStatic() {
     doTest();
   }
 
-  public void testDecAccess() throws Exception {
+  public void testDecAccess() {
     doTest();
   }
 
-  public void testSetAbstract() throws Exception {
+  public void testSetAbstract() {
     doTest();
   }
 
-  public void testDropAbstract() throws Exception {
+  public void testDropAbstract() {
     doTest();
   }
 
-  public void testSetFinal() throws Exception {
+  public void testSetFinal() {
     doTest();
   }
 
-  public void testSetFinal1() throws Exception {
+  public void testSetFinal1() {
+    doTest();
+  }
+
+  public void testBecameSealed() {
+    doTest().assertFailed();
+  }
+
+  public void testChangeInnerClassModifiers() {
     doTest();
   }
 }

@@ -1,42 +1,21 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.application.options.editor;
 
 import com.intellij.lang.XmlCodeFoldingSettings;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.components.SettingsCategory;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.util.xmlb.XmlSerializerUtil;
 import org.jetbrains.annotations.NotNull;
 
-@State(name = "XmlFoldingSettings", storages = @Storage("editor.codeinsight.xml"))
-public class XmlFoldingSettings implements XmlCodeFoldingSettings, PersistentStateComponent<XmlFoldingSettings.State> {
+@State(name = "XmlFoldingSettings", storages = @Storage("editor.xml"), category = SettingsCategory.CODE)
+public final class XmlFoldingSettings implements XmlCodeFoldingSettings, PersistentStateComponent<XmlFoldingSettings.State> {
   private final XmlFoldingSettings.State myState = new State();
 
   public static XmlFoldingSettings getInstance() {
-    return ServiceManager.getService(XmlFoldingSettings.class);
-  }
-
-  public XmlFoldingSettings() {
-    // todo: remove after 2017.1 release
-    CssFoldingSettings cssFoldingSettings = CssFoldingSettings.getInstance();
-    if (cssFoldingSettings != null) {
-      myState.COLLAPSE_DATA_URI = cssFoldingSettings.isCollapseDataUri();
-    }
+    return ApplicationManager.getApplication().getService(XmlFoldingSettings.class);
   }
 
   @Override
@@ -60,13 +39,12 @@ public class XmlFoldingSettings implements XmlCodeFoldingSettings, PersistentSta
   }
 
   @Override
-  @NotNull
-  public State getState() {
+  public @NotNull State getState() {
     return myState;
   }
 
   @Override
-  public void loadState(State state) {
+  public void loadState(@NotNull State state) {
     XmlSerializerUtil.copyBean(state, myState);
   }
 

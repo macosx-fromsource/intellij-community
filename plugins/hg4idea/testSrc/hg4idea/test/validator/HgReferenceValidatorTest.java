@@ -15,11 +15,8 @@
  */
 package hg4idea.test.validator;
 
-import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.ui.UIUtil;
 import hg4idea.test.HgPlatformTest;
 import org.jetbrains.annotations.NotNull;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -29,6 +26,7 @@ import org.zmlx.hg4idea.repo.HgRepositoryImpl;
 import org.zmlx.hg4idea.util.HgBranchReferenceValidator;
 
 import java.util.Collection;
+import java.util.List;
 
 import static com.intellij.openapi.vcs.Executor.cd;
 import static com.intellij.openapi.vcs.Executor.echo;
@@ -44,10 +42,8 @@ public class HgReferenceValidatorTest extends HgPlatformTest {
   @NotNull private final String myBranchName;
   private final boolean myExpected;
 
-  @Override
   @Before
-  public void setUp() throws Exception {
-    super.setUp();
+  public void before() {
     HgRepository hgRepository = HgRepositoryImpl.getInstance(myRepository, myProject, myProject);
     assertNotNull(hgRepository);
     myValidator = new HgBranchReferenceValidator(hgRepository);
@@ -60,23 +56,7 @@ public class HgReferenceValidatorTest extends HgPlatformTest {
     hgRepository.update();
   }
 
-  @Override
-  @After
-  public void tearDown() throws Exception {
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        try {
-          HgReferenceValidatorTest.super.tearDown();
-        }
-        catch (Exception e) {
-          throw new RuntimeException(e);
-        }
-      }
-    });
-  }
-
-  @SuppressWarnings({"JUnitTestCaseWithNonTrivialConstructors", "UnusedParameters"})
+  @SuppressWarnings({"JUnitTestCaseWithNonTrivialConstructors"})
   public HgReferenceValidatorTest(@NotNull String name, @NotNull String branchName, boolean expected) {
     myBranchName = branchName;
     myExpected = expected;
@@ -85,7 +65,7 @@ public class HgReferenceValidatorTest extends HgPlatformTest {
 
   @Parameterized.Parameters(name = "{0}")
   public static Collection<Object[]> createData() {
-    return ContainerUtil.newArrayList(new Object[][]{
+    return List.of(new Object[][]{
       {"WORD", "branch", true},
       {"UNDERSCORED_WORD", "new_branch", true},
       {"HIERARCHY", "user/branch", true},

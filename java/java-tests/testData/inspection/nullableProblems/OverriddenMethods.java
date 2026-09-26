@@ -2,8 +2,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 abstract class P2 {
-    <warning descr="Overridden methods are not annotated">@NotNull</warning>
-    String foo(<warning descr="Overridden method parameters are not annotated">@NotNull</warning> <error descr="Cannot resolve symbol 'P'">P</error> p) {
+    <warning descr="Overriding methods are not annotated">@NotNull</warning>
+    String foo(<warning descr="Overriding method parameters are not annotated">@NotNull</warning> <error descr="Cannot resolve symbol 'P'">P</error> p) {
         return "";
     }
 }
@@ -22,14 +22,9 @@ class PPP2 extends P2 {
 
 ///////  in library
 interface Foo {
-    @NotNull
-    String getTitle();
+    @NotNull Object get(int i );
 }
-<error descr="Unhandled exception: java.awt.HeadlessException">class FooImpl extends java.awt.Frame implements Foo</error> {
-//    public String getTitle() {
-//        return super.getTitle();    //To change body of overridden methods use File | Settings | File Templates.
-//    }
-}
+class FooImpl extends java.util.ArrayList implements <warning descr="Non-annotated method 'get' from 'ArrayList' implements non-null method from 'Foo'">Foo</warning> { }
 
 
 interface I1 {
@@ -49,5 +44,19 @@ class A implements I1 {
   <error descr="Missing return statement">}</error>
 }
 
-class B extends A implements I2 {
+class B extends A implements <warning descr="Non-annotated method 'foo' from 'A' implements non-null method from 'I2'">I2</warning> {
+}
+
+interface InheritorMethodOverriddenButParameterNot {
+  @NotNull
+  Integer get(<warning descr="Overriding method parameters are not annotated">@NotNull</warning> String param);
+}
+
+class InheritorMethodOverriddenButParameterNot_Impl implements InheritorMethodOverriddenButParameterNot {
+
+  @NotNull
+  @Override
+  public Integer get(String <warning descr="Not annotated parameter overrides @NotNull parameter">param</warning>) {
+    return 1;
+  }
 }

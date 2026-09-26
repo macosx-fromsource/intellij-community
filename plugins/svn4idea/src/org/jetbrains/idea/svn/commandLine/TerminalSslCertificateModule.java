@@ -1,25 +1,11 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.commandLine;
 
 import com.intellij.openapi.util.Key;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.svn.SvnUtil;
+import org.jetbrains.idea.svn.api.Url;
 import org.jetbrains.idea.svn.auth.AcceptResult;
-import org.tmatesoft.svn.core.SVNURL;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,20 +18,19 @@ import java.util.regex.Pattern;
  * Certificate information:
  * %certificate_info%
  * (R)eject, accept (t)emporarily or accept (p)ermanently?
- *
- * @author Konstantin Kolosovsky.
  */
 public class TerminalSslCertificateModule extends BaseTerminalModule {
 
   private static final Pattern ERROR_VALIDATING_CERTIFICATE_MESSAGE =
-    Pattern.compile("Error validating server certificate for \\'(.*)\\':\\s?");
+    Pattern.compile("Error validating server certificate for '(.*)':\\s?");
   private static final Pattern CERTIFICATE_INFORMATION_MESSAGE = Pattern.compile("Certificate information:\\s?");
   // messages could be either "(R)eject or accept (t)emporarily?" or "(R)eject, accept (t)emporarily or accept (p)ermanently?" depending on
   // if credentials caching is allowed
   private static final Pattern ACCEPT_CERTIFICATE_PROMPT = Pattern.compile("\\(R\\)eject.*\\?\\s?");
 
-  @NotNull private final StringBuilder certificateError = new StringBuilder();
-  @NotNull private final StringBuilder certificateInfo = new StringBuilder();
+  // TODO: display it
+  @SuppressWarnings("MismatchedQueryAndUpdateOfStringBuilder") private final @NotNull StringBuilder certificateError = new StringBuilder();
+  private final @NotNull StringBuilder certificateInfo = new StringBuilder();
   private boolean collectingCertificateError;
   private boolean collectingCertificateInfo;
   private String serverUrl;
@@ -104,7 +89,7 @@ public class TerminalSslCertificateModule extends BaseTerminalModule {
 
   private void handleAcceptCertificatePrompt() {
     // TODO: show 'certificateError' in dialog
-    SVNURL url = SvnUtil.parseUrl(serverUrl);
+    Url url = SvnUtil.parseUrl(serverUrl);
     AcceptResult result = myRuntime.getAuthenticationService().acceptCertificate(url, certificateInfo.toString());
 
     sendData(result.toString());

@@ -1,56 +1,52 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.structuralsearch;
 
-import com.intellij.codeInsight.daemon.quickFix.LightQuickFixTestCase;
-import com.intellij.openapi.roots.LanguageLevelProjectExtension;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.vfs.CharsetToolkit;
-import com.intellij.pom.java.LanguageLevel;
+import com.intellij.psi.search.LocalSearchScope;
+import com.intellij.structuralsearch.impl.matcher.CompiledPattern;
+import com.intellij.structuralsearch.impl.matcher.compiler.PatternCompiler;
 import com.intellij.structuralsearch.plugin.replace.ReplaceOptions;
 import com.intellij.structuralsearch.plugin.replace.impl.Replacer;
+import com.intellij.testFramework.LightPlatformCodeInsightTestCase;
 
 import java.io.File;
 import java.io.IOException;
 
-/**
- * Created by IntelliJ IDEA.
- * User: maxim.mossienko
- * Date: Oct 11, 2005
- * Time: 10:10:48 PM
- * To change this template use File | Settings | File Templates.
- */
-abstract class StructuralReplaceTestCase extends LightQuickFixTestCase {
-  protected Replacer replacer;
+public abstract class StructuralReplaceTestCase extends LightPlatformCodeInsightTestCase {
   protected ReplaceOptions options;
 
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-
-    StructuralSearchUtil.ourUseUniversalMatchingAlgorithm = false;
-
-    LanguageLevelProjectExtension.getInstance(getProject()).setLanguageLevel(LanguageLevel.JDK_1_4);
-
     options = new ReplaceOptions();
-    options.setMatchOptions(new MatchOptions());
-    replacer = new Replacer(getProject(), null);
   }
 
   protected String loadFile(String fileName) throws IOException {
     return FileUtilRt.loadFile(new File(getTestDataPath() + FileUtilRt.getExtension(fileName) + "/" + fileName), CharsetToolkit.UTF8, true);
+  }
+
+  protected String replace(String in, String what, String by) {
+    return replace(in, what, by, false);
+  }
+
+  protected String replace(String in, String what, String by, boolean sourceIsFile) {
+    return replace(in, what, by, sourceIsFile, false);
+  }
+
+  protected String replace(String in, String what, String by, boolean sourceIsFile, boolean createPhysicalFile) {
+    if (in == null && (sourceIsFile || createPhysicalFile)) {
+      throw new IllegalArgumentException("can't create file when 'in' argument is null");
+    }
+    final MatchOptions matchOptions = options.getMatchOptions();
+    if (createPhysicalFile) {
+      configureFromFileText("Source." + matchOptions.getFileType().getDefaultExtension(), in);
+      matchOptions.setScope(new LocalSearchScope(getFile()));
+    }
+    matchOptions.fillSearchCriteria(what);
+    final CompiledPattern compiledPattern = PatternCompiler.compilePattern(getProject(), matchOptions, true, false);
+    final String message = StructuralSearchTestCase.checkApplicableConstraints(matchOptions, compiledPattern);
+    assertNull(message, message);
+    return Replacer.testReplace(in, what, by, options, getProject(), sourceIsFile);
   }
 }

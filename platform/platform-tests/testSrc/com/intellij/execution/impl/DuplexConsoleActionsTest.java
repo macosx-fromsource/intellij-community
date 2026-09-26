@@ -16,6 +16,7 @@
 package com.intellij.execution.impl;
 
 import com.intellij.execution.console.DuplexConsoleView;
+import com.intellij.execution.process.NopProcessHandler;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.Disposable;
@@ -39,11 +40,7 @@ public class DuplexConsoleActionsTest extends LightPlatformTestCase {
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    myDisposable = new Disposable() {
-      @Override
-      public void dispose() {
-      }
-    };
+    myDisposable = Disposer.newDisposable();
   }
 
   @Override
@@ -51,15 +48,18 @@ public class DuplexConsoleActionsTest extends LightPlatformTestCase {
     try {
       Disposer.dispose(myDisposable);
     }
+    catch (Throwable e) {
+      addSuppressedException(e);
+    }
     finally {
-      //noinspection ThrowFromFinallyBlock
+      myDisposable = null;
       super.tearDown();
     }
   }
 
   public void testMergeSameConsoles() {
-    final ConsoleViewImpl console1 = ConsoleViewImplTest.createConsole();
-    final ConsoleViewImpl console2 = ConsoleViewImplTest.createConsole();
+    final ConsoleViewImpl console1 = ConsoleViewImplTest.createConsole(false, getProject());
+    final ConsoleViewImpl console2 = ConsoleViewImplTest.createConsole(false, getProject());
     final DuplexConsoleView<ConsoleViewImpl, ConsoleViewImpl> duplexConsoleView = new DuplexConsoleView<>(console1, console2);
     Disposer.register(myDisposable, duplexConsoleView);
 
@@ -68,11 +68,11 @@ public class DuplexConsoleActionsTest extends LightPlatformTestCase {
     final AnAction[] mergedActions = duplexConsoleView.createConsoleActions();
     assertEquals(actions1.length, actions2.length);
     assertEquals(actions1.length, mergedActions.length - 1);
-    assertHasActions(mergedActions, "Up", "Down", "Soft Wraps", "Scroll", "Clear", "Print");
+    assertHasActions(mergedActions, "Up", "Down", "Soft-Wrap", "Scroll", "Clear", "Print");
   }
 
   public void testMergeReversedConsoles() {
-    final ConsoleViewImpl console1 = ConsoleViewImplTest.createConsole();
+    final ConsoleViewImpl console1 = ConsoleViewImplTest.createConsole(false, getProject());
     final ConsoleViewImpl console2 = createConsoleWithReversedActions();
     final DuplexConsoleView<ConsoleViewImpl, ConsoleViewImpl> duplexConsoleView = new DuplexConsoleView<>(console1, console2);
     Disposer.register(myDisposable, duplexConsoleView);
@@ -82,12 +82,12 @@ public class DuplexConsoleActionsTest extends LightPlatformTestCase {
     final AnAction[] mergedActions = duplexConsoleView.createConsoleActions();
     assertEquals(actions1.length, actions2.length);
     assertEquals(actions1.length, mergedActions.length - 1);
-    assertHasActions(mergedActions, "Up", "Down", "Soft Wraps", "Scroll", "Clear", "Print");
+    assertHasActions(mergedActions, "Up", "Down", "Soft-Wrap", "Scroll", "Clear", "Print");
   }
   
   public void testMergedClear() {
-    final ConsoleViewImpl console1 = ConsoleViewImplTest.createConsole();
-    final ConsoleViewImpl console2 = ConsoleViewImplTest.createConsole();
+    final ConsoleViewImpl console1 = ConsoleViewImplTest.createConsole(false, getProject());
+    final ConsoleViewImpl console2 = ConsoleViewImplTest.createConsole(false, getProject());
     final DuplexConsoleView<ConsoleViewImpl, ConsoleViewImpl> duplexConsoleView = new DuplexConsoleView<>(console1, console2);
     Disposer.register(myDisposable, duplexConsoleView);
     final AnAction clearAction = findAction(duplexConsoleView.createConsoleActions(), "Clear");
@@ -99,37 +99,38 @@ public class DuplexConsoleActionsTest extends LightPlatformTestCase {
     console2.flushDeferredText();
     
     clearAction.actionPerformed(AnActionEvent.createFromAnAction(clearAction, null, ActionPlaces.EDITOR_TOOLBAR, DataContext.EMPTY_CONTEXT));
-    
+    console1.waitAllRequests();
+    console2.waitAllRequests();
+
     assertEquals(0, console1.getContentSize());
     assertEquals(0, console2.getContentSize());
   }
 
   private static void assertHasActions(AnAction[] mergedActions, String... actionNames) {
     for (String name : actionNames) {
-      assertNotNull(findAction(mergedActions, name));
+      assertNotNull(name + " in " + Arrays.toString(mergedActions), findAction(mergedActions, name));
     }
   }
   
   @Nullable
-  private static AnAction findAction(@NotNull AnAction[] actions, @NotNull String name) {
-    return ContainerUtil.find(actions, action -> action.getTemplatePresentation().toString().contains(name));
+  private static AnAction findAction(AnAction @NotNull [] actions, @NotNull String name) {
+    return ContainerUtil.find(actions, action -> action.getTemplateText().contains(name));
   }
 
   @NotNull
-  private static ConsoleViewImpl createConsoleWithReversedActions() {
+  private ConsoleViewImpl createConsoleWithReversedActions() {
     Project project = getProject();
     ConsoleViewImpl console = new ConsoleViewImpl(project,
                                                   GlobalSearchScope.allScope(project),
                                                   false,
                                                   false) {
-      @NotNull
       @Override
-      public AnAction[] createConsoleActions() {
+      public AnAction @NotNull [] createConsoleActions() {
         return ContainerUtil.reverse(Arrays.asList(super.createConsoleActions())).toArray(AnAction.EMPTY_ARRAY);
       }
     };
     console.getComponent();
-    ProcessHandler processHandler = new ConsoleViewImplTest.MyProcessHandler();
+    ProcessHandler processHandler = new NopProcessHandler();
     processHandler.startNotify();
     console.attachToProcess(processHandler);
     return console;

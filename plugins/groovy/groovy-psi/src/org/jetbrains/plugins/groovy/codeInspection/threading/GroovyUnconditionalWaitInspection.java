@@ -19,8 +19,8 @@ import com.intellij.psi.CommonClassNames;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiModifier;
-import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.codeInspection.BaseInspection;
 import org.jetbrains.plugins.groovy.codeInspection.BaseInspectionVisitor;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrIfStatement;
@@ -32,30 +32,15 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrRefere
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrMethodCallExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 
-public class GroovyUnconditionalWaitInspection extends BaseInspection {
+public final class GroovyUnconditionalWaitInspection extends BaseInspection {
 
   @Override
-  @Nls
-  @NotNull
-  public String getGroupDisplayName() {
-    return THREADING_ISSUES;
+  protected @NotNull String buildErrorString(Object... infos) {
+    return GroovyBundle.message("inspection.message.unconditional.call.to.ref");
   }
 
   @Override
-  @NotNull
-  public String getDisplayName() {
-    return "Unconditional 'wait' call";
-  }
-
-  @Override
-  @NotNull
-  protected String buildErrorString(Object... infos) {
-    return "Unconditional call to <code>#ref()</code> #loc";
-  }
-
-  @NotNull
-  @Override
-  public BaseInspectionVisitor buildVisitor() {
+  public @NotNull BaseInspectionVisitor buildVisitor() {
     return new UnconditionalWaitVisitor();
   }
 
@@ -85,24 +70,18 @@ public class GroovyUnconditionalWaitInspection extends BaseInspection {
 
     private void checkBody(GrCodeBlock body) {
       final GrStatement[] statements = body.getStatements();
-      if (statements.length == 0) {
-        return;
-      }
       for (final GrStatement statement : statements) {
         if (isConditional(statement)) {
           return;
         }
 
-        if (!(statement instanceof GrMethodCallExpression)) {
+        if (!(statement instanceof GrMethodCallExpression methodCallExpression)) {
           continue;
         }
-        final GrMethodCallExpression methodCallExpression =
-            (GrMethodCallExpression) statement;
         final GrExpression methodExpression = methodCallExpression.getInvokedExpression();
-        if (!(methodExpression instanceof GrReferenceExpression)) {
+        if (!(methodExpression instanceof GrReferenceExpression reference)) {
           return;
         }
-        final GrReferenceExpression reference = (GrReferenceExpression) methodExpression;
         final String name = reference.getReferenceName();
         if (!"wait".equals(name)) {
           return;

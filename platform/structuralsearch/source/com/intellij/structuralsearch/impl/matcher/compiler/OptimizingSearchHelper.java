@@ -1,6 +1,8 @@
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.impl.matcher.compiler;
 
-import com.intellij.psi.PsiFile;
+import com.intellij.openapi.vfs.VirtualFile;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Set;
 
@@ -11,17 +13,18 @@ public interface OptimizingSearchHelper {
   boolean doOptimizing();
   void clear();
 
-  boolean addWordToSearchInCode(final String refname);
+  void addWordToSearchInCode(@NotNull String word);
 
-  boolean addWordToSearchInText(final String refname);
+  void addWordToSearchInText(@NotNull String word);
 
-  boolean addWordToSearchInComments(final String refname);
+  void addWordToSearchInComments(@NotNull String word);
 
-  boolean addWordToSearchInLiterals(final String refname);
+  void addWordToSearchInLiterals(@NotNull String word);
 
   void endTransaction();
 
   boolean isScannedSomething();
 
-  Set<PsiFile> getFilesSetToScan();
+  @NotNull
+  Set<VirtualFile> getFilesSetToScan();
 }

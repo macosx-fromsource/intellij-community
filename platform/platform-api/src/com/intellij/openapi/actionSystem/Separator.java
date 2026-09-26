@@ -1,53 +1,69 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.actionSystem;
 
+import com.intellij.ide.IdeBundle;
+import com.intellij.ide.lightEdit.LightEditCompatible;
 import com.intellij.openapi.project.DumbAware;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.text.StringUtil;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * Represents a separator.
  */
-public final class Separator extends AnAction implements DumbAware {
-  private static final Separator ourInstance = new Separator();
+public final class Separator extends DecorativeElement implements DumbAware, LightEditCompatible, SeparatorAction {
 
-  private String myText;
+  private static final Separator ourInstance = new Separator();
+  private final Supplier<@NlsContexts.Separator String> myDynamicText;
+
+  public static @NotNull Separator getInstance() {
+    return ourInstance;
+  }
+
+  public static @NotNull Separator create() {
+    return create(null);
+  }
+
+  public static @NotNull Separator create(@Nullable @NlsContexts.Separator String text) {
+    return StringUtil.isEmptyOrSpaces(text)? ourInstance : new Separator(text);
+  }
 
   public Separator() {
+    myDynamicText = () -> null;
   }
 
-  public Separator(@Nullable final String text) {
-    myText = text;
+  public Separator(@Nullable @NlsContexts.Separator String text) {
+    myDynamicText = () -> text;
   }
 
-  public String getText() {
-    return myText;
+  public Separator(@NotNull Supplier<@NlsContexts.Separator String> dynamicText) {
+    myDynamicText = dynamicText;
   }
 
-  public static Separator getInstance() {
-    return ourInstance;
+  @Override
+  public @NotNull ActionUpdateThread getActionUpdateThread() {
+    return ActionUpdateThread.BGT;
+  }
+
+  public @NlsContexts.Separator String getText() {
+    return myDynamicText.get();
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (this == obj) return true;
+    if (obj == null || getClass() != obj.getClass()) return false;
+
+    Separator other = (Separator) obj;
+    return Objects.equals(myDynamicText, other.myDynamicText);
   }
 
   @Override
   public String toString() {
-    return "Separator (" + myText + ")";
-  }
-
-  @Override
-  public void actionPerformed(AnActionEvent e){
-    throw new UnsupportedOperationException();
+    return IdeBundle.message("action.separator", myDynamicText.get());
   }
 }

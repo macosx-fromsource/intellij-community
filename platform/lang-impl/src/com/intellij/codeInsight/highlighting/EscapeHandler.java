@@ -1,90 +1,87 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.highlighting;
 
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
+import com.intellij.find.EditorSearchSession;
 import com.intellij.find.FindManager;
 import com.intellij.find.FindModel;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.actionSystem.EditorActionHandler;
-import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.StatusBar;
 import com.intellij.openapi.wm.WindowManager;
+import com.intellij.psi.impl.source.tree.injected.InjectedLanguageEditorUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 
-import java.util.Map;
+import static com.intellij.codeInsight.highlighting.HighlightManager.HIDE_BY_ANY_KEY;
+import static com.intellij.codeInsight.highlighting.HighlightManager.HIDE_BY_ESCAPE;
 
-public class EscapeHandler extends EditorActionHandler {
-  private final EditorActionHandler myOriginalHandler;
+@ApiStatus.Internal
+public final class EscapeHandler extends EditorActionHandler {
+  private final @NotNull EditorActionHandler myOriginalHandler;
 
-  public EscapeHandler(EditorActionHandler originalHandler){
+  public EscapeHandler(@NotNull EditorActionHandler originalHandler) {
     myOriginalHandler = originalHandler;
   }
 
   @Override
-  public void execute(Editor editor, DataContext dataContext){
-    editor.setHeaderComponent(null);
+  protected void doExecute(@NotNull Editor editor, Caret caret, DataContext dataContext){
+    if (editor.getCaretModel().getCaretCount() == 1) {
+      // Search results highlighting is disabled when the search popup is hidden from the screen,
+      // but in tests it is not working, so we need to disable it manually.
+      var realEditor = InjectedLanguageEditorUtil.getTopLevelEditor(editor);
+      var searchSession = EditorSearchSession.get(realEditor);
+      if (searchSession != null) {
+        searchSession.disableLivePreview();
+      }
+      editor.setHeaderComponent(null);
 
-    Project project = CommonDataKeys.PROJECT.getData(dataContext);
-    if (project != null) {
-      HighlightManagerImpl highlightManager = (HighlightManagerImpl)HighlightManager.getInstance(project);
-      if (highlightManager != null && highlightManager.hideHighlights(editor, HighlightManager.HIDE_BY_ESCAPE | HighlightManager.HIDE_BY_ANY_KEY)) {
-
-        StatusBar statusBar = WindowManager.getInstance().getStatusBar(project);
-        if (statusBar != null) {
-          statusBar.setInfo("");
-        }
-
-        FindManager findManager = FindManager.getInstance(project);
-        if (findManager != null) {
-          FindModel model = findManager.getFindNextModel(editor);
-          if (model != null) {
-            model.setSearchHighlighters(false);
-            findManager.setFindNextModel(model);
+      Project project = CommonDataKeys.PROJECT.getData(dataContext);
+      if (project != null) {
+        HighlightManagerImpl highlightManager = (HighlightManagerImpl)HighlightManager.getInstance(project);
+        if (highlightManager != null && highlightManager.hideHighlights(editor, HIDE_BY_ESCAPE | HIDE_BY_ANY_KEY)) {
+          StatusBar statusBar = WindowManager.getInstance().getStatusBar(project);
+          if (statusBar != null) {
+            statusBar.setInfo("");
           }
+          FindManager findManager = FindManager.getInstance(project);
+          if (findManager != null) {
+            FindModel model = findManager.getFindNextModel(editor);
+            if (model != null) {
+              model.setSearchHighlighters(false);
+              findManager.setFindNextModel(model);
+            }
+          }
+          return;
         }
-
-        return;
       }
     }
 
-    myOriginalHandler.execute(editor, dataContext);
+    myOriginalHandler.execute(editor, caret, dataContext);
   }
 
   @Override
-  public boolean isEnabled(Editor editor, DataContext dataContext) {
-    if (editor.hasHeaderComponent()) return true;
+  public boolean isEnabledForCaret(@NotNull Editor editor, @NotNull Caret caret, DataContext dataContext) {
+    if (editor.hasHeaderComponent()) {
+      return true;
+    }
     Project project = CommonDataKeys.PROJECT.getData(dataContext);
 
     if (project != null) {
       HighlightManagerImpl highlightManager = (HighlightManagerImpl)HighlightManager.getInstance(project);
-      if (highlightManager != null) {
-        Map<RangeHighlighter, HighlightManagerImpl.HighlightInfo> map = highlightManager.getHighlightInfoMap(editor, false);
-        if (map != null) {
-          for (HighlightManagerImpl.HighlightInfo info : map.values()) {
-            if (!info.editor.equals(editor)) continue;
-            if ((info.flags & HighlightManager.HIDE_BY_ESCAPE) != 0) {
-              return true;
-            }
-          }
-        }
+      if (highlightManager != null && highlightManager.hasHighlightersToHide(editor, HIDE_BY_ESCAPE | HIDE_BY_ANY_KEY)) {
+        return true;
+      }
+      // Escape can be used to get rid of light bulb
+      if (DaemonCodeAnalyzerEx.getInstanceEx(project).hasVisibleLightBulbOrPopup()) {
+        return true;
       }
     }
 
-    return myOriginalHandler.isEnabled(editor, dataContext);
+    return myOriginalHandler.isEnabled(editor, caret, dataContext);
   }
 }

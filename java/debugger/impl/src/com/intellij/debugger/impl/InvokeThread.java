@@ -1,47 +1,53 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.impl;
 
+import com.intellij.concurrency.ContextAwareRunnable;
+import com.intellij.concurrency.ThreadContext;
+import com.intellij.debugger.engine.DebuggerManagerThreadImpl;
+import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.ProcessCanceledException;
-import com.intellij.openapi.project.DumbService;
-import com.intellij.openapi.project.Project;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.util.ConcurrencyUtil;
+import com.intellij.util.concurrency.BlockingJob;
+import com.intellij.util.indexing.DumbModeAccessType;
 import com.sun.jdi.VMDisconnectedException;
+import kotlin.Unit;
+import kotlin.coroutines.CoroutineContext;
+import kotlinx.coroutines.CompletableJob;
+import kotlinx.coroutines.Job;
+import kotlinx.coroutines.SupervisorKt;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Async;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.concurrent.*;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * @author lex
- */
 public abstract class InvokeThread<E extends PrioritizedTask> {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.impl.InvokeThread");
+  private static final Logger LOG = Logger.getInstance(InvokeThread.class);
 
-  private static final ThreadLocal<WorkerThreadRequest> ourWorkerRequest = new ThreadLocal<>();
+  private static final ThreadLocal<WorkerThreadRequest<?>> ourWorkerRequest = new ThreadLocal<>();
+  private static final AtomicInteger ourWorkerCounter = new AtomicInteger(1);
 
-  protected final Project myProject;
-
-  public static final class WorkerThreadRequest<E extends PrioritizedTask> implements Runnable {
+  public static final class WorkerThreadRequest<E extends PrioritizedTask> implements ContextAwareRunnable {
     private final InvokeThread<E> myOwner;
+    private final CompletableJob myWorkerJob;
+    private final ProgressIndicator myProgressIndicator = new EmptyProgressIndicator();
     private volatile Future<?> myRequestFuture;
-    private volatile boolean myStopRequested = false;
+    private final int myId = ourWorkerCounter.getAndIncrement();
 
-    WorkerThreadRequest(InvokeThread<E> owner) {
+    WorkerThreadRequest(InvokeThread<E> owner, @NotNull Job workJob) {
       myOwner = owner;
+      myWorkerJob = SupervisorKt.SupervisorJob(workJob);
     }
 
     @Override
@@ -57,25 +63,40 @@ public abstract class InvokeThread<E extends PrioritizedTask> {
       }
       ourWorkerRequest.set(this);
       try {
-        myOwner.run(this);
-      } 
+        ThreadContext.installThreadContext(workerContext(), true, () -> {
+          ConcurrencyUtil.runUnderThreadName("DebuggerManagerThread", () -> {
+            myOwner.run(this);
+          });
+          return Unit.INSTANCE;
+        });
+      }
       finally {
-        ourWorkerRequest.set(null);
+        ourWorkerRequest.remove();
+        myWorkerJob.complete();
         boolean b = Thread.interrupted(); // reset interrupted status to return into pool
       }
+    }
+
+    private @NotNull CoroutineContext workerContext() {
+      return ambientContextWithoutJobs().plus(new BlockingJob(myWorkerJob));
     }
 
     public void requestStop() {
       final Future<?> future = myRequestFuture;
       assert future != null;
-      myStopRequested = true;
+      myProgressIndicator.cancel();
       future.cancel(true);
     }
 
     public boolean isStopRequested() {
       final Future<?> future = myRequestFuture;
       assert future != null;
-      return myStopRequested || future.isCancelled() || future.isDone();
+      return myProgressIndicator.isCanceled() || future.isCancelled() || future.isDone();
+    }
+
+    @ApiStatus.Internal
+    public @NotNull ProgressIndicator getProgressIndicator() {
+      return myProgressIndicator;
     }
 
     public void join() throws InterruptedException, ExecutionException {
@@ -83,7 +104,7 @@ public abstract class InvokeThread<E extends PrioritizedTask> {
       try {
         myRequestFuture.get();
       }
-      catch(CancellationException ignored) {
+      catch (CancellationException ignored) {
       }
     }
 
@@ -92,13 +113,11 @@ public abstract class InvokeThread<E extends PrioritizedTask> {
       try {
         myRequestFuture.get(timeout, TimeUnit.MILLISECONDS);
       }
-      catch (TimeoutException ignored) {
-      } 
-      catch (CancellationException ignored) {
+      catch (TimeoutException | CancellationException ignored) {
       }
     }
 
-    final void setRequestFuture(Future<?> requestFuture) {
+    void setRequestFuture(Future<?> requestFuture) {
       synchronized (this) {
         myRequestFuture = requestFuture;
         notifyAll();
@@ -113,116 +132,192 @@ public abstract class InvokeThread<E extends PrioritizedTask> {
       assert myRequestFuture != null;
       return myRequestFuture.isDone() && ourWorkerRequest.get() == null;
     }
+
+    @Override
+    public String toString() {
+      return String.valueOf(myId);
+    }
   }
 
   protected final EventQueue<E> myEvents;
+  private final Job myWorkJob;
 
-  private volatile WorkerThreadRequest myCurrentRequest = null;
+  private WorkerThreadRequest<E> myCurrentRequest = null;
 
-  public InvokeThread(Project project) {
-    myProject = project;
+  /**
+   * Creates a manager with the process job shared by all workers. The owner completes this job after final disposal.
+   * The subclass starts the first worker after its initialization.
+   */
+  protected InvokeThread(@NotNull Job workJob) {
+    myWorkJob = workJob;
     myEvents = new EventQueue<>(PrioritizedTask.Priority.values().length);
-    startNewWorkerThread();
   }
 
-  protected abstract void processEvent(E e);
+  protected abstract void processEvent(@NotNull E e);
+
+  private static @NotNull CoroutineContext ambientContextWithoutJobs() {
+    return ThreadContext.currentThreadContext().minusKey(Job.Key).minusKey(BlockingJob.Companion);
+  }
 
   protected void startNewWorkerThread() {
-    final WorkerThreadRequest workerRequest = new WorkerThreadRequest<>(this);
-    myCurrentRequest = workerRequest;
-    workerRequest.setRequestFuture( ApplicationManager.getApplication().executeOnPooledThread(workerRequest) );
+    // myCurrentRequest has to be updated atomically with calling setRequestFuture
+    // otherwise we may have asserts triggering inside workerRequest.requestStop etc.
+    synchronized (this) {
+      assertCurrentThreadIsActive();
+
+      final WorkerThreadRequest<E> workerRequest = new WorkerThreadRequest<>(this, myWorkJob);
+      WorkerThreadRequest<E> oldRequest = myCurrentRequest; // just for logging
+      myCurrentRequest = workerRequest;
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Started new worker thread request " + workerRequest + ", was " + oldRequest);
+      }
+      // the executor captures the submitter context for the worker's whole lifetime; keep the jobs out of it
+      ThreadContext.installThreadContext(ambientContextWithoutJobs(), true, () -> {
+        workerRequest.setRequestFuture(ApplicationManager.getApplication().executeOnPooledThread(workerRequest));
+        return Unit.INSTANCE;
+      });
+    }
   }
 
-  private void run(final @NotNull WorkerThreadRequest threadRequest) {
+  protected static boolean assertCurrentThreadIsActive() {
+    InvokeThread<?> thread = currentThread();
+    if (thread == null) {
+      return true;
+    }
+    WorkerThreadRequest<?> currentRequest = thread.getCurrentRequest();
+    WorkerThreadRequest<?> threadRequest = getCurrentThreadRequest();
+    if (currentRequest != threadRequest) {
+      String message =
+        "Expected worker request " + threadRequest + " instead of " + currentRequest + " closed=" + thread.myEvents.isClosed();
+      reportCommandError(new IllegalStateException(message)); // do not throw AssertionError in tests, we need to return false here
+      return false;
+    }
+    return true;
+  }
+
+  // Extracted to have a separate method for @Async.Execute
+  private void doProcessEvent(@Async.Execute E event) {
+    processEvent(event);
+  }
+
+  private void run(final @NotNull WorkerThreadRequest<?> threadRequest) {
     try {
-      DumbService.getInstance(myProject).setAlternativeResolveEnabled(true);
-      while(true) {
-        try {
-          if(threadRequest.isStopRequested()) {
-            break;
-          }
-
-          final WorkerThreadRequest currentRequest = getCurrentRequest();
-          if(currentRequest != threadRequest) {
-            LOG.error("Expected " + threadRequest + " instead of " + currentRequest);
-            if (currentRequest != null && !currentRequest.isDone()) {
-              continue; // ensure events are processed by one thread at a time
+      DumbModeAccessType.RELIABLE_DATA_ONLY.ignoreDumbMode(() -> ProgressManager.getInstance().runProcess(() -> {
+        while (true) {
+          try {
+            if (threadRequest.isStopRequested()) {
+              break;
             }
-          }
 
-          processEvent(myEvents.get());
-        }
-        catch (VMDisconnectedException ignored) {
-          break;
-        }
-        catch (EventQueueClosedException ignored) {
-          break;
-        }
-        catch (ProcessCanceledException ignored) {}
-        catch (RuntimeException e) {
-          if(e.getCause() instanceof InterruptedException) {
+            if (!assertCurrentThreadIsActive()) {
+              break;
+            }
+
+            doProcessEvent(myEvents.get());
+          }
+          catch (VMDisconnectedException | EventQueueClosedException ignored) {
             break;
           }
-          LOG.error(e);
+          catch (ProcessCanceledException ignored) {
+          }
+          catch (CompletionException e) {
+            if (e.getCause() instanceof VMDisconnectedException) {
+              break;
+            }
+            reportCommandError(e);
+          }
+          catch (RuntimeException e) {
+            if (e.getCause() instanceof InterruptedException) {
+              break;
+            }
+            reportCommandError(e);
+          }
+          catch (Throwable e) {
+            reportCommandError(e);
+          }
         }
-        catch (Throwable e) {
-          LOG.error(e);
-        }
-      }
+      }, threadRequest.myProgressIndicator));
     }
     finally {
       // ensure that all scheduled events are processed
       if (threadRequest == getCurrentRequest()) {
-        for (E event : myEvents.clearQueue()) {
-          try {
-            processEvent(event);
-          }
-          catch (Throwable ignored) {
-          }
-        }
+        processRemaining();
       }
 
-      LOG.debug("Request " + toString() + " exited");
-      DumbService.getInstance(myProject).setAlternativeResolveEnabled(false);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Request " + threadRequest + " exited");
+      }
     }
-
   }
 
-  protected static InvokeThread currentThread() {
-    final WorkerThreadRequest request = getCurrentThreadRequest();
-    return request != null? request.getOwner() : null;
+  public void processRemaining() {
+    for (E event : myEvents.clearQueue()) {
+      try {
+        processEvent(event);
+      }
+      catch (Throwable ignored) {
+      }
+    }
   }
 
-  public boolean schedule(E r) {
-    if(LOG.isDebugEnabled()) {
+  private static void reportCommandError(Throwable e) {
+    try {
+      LOG.error(e);
+    }
+    catch (AssertionError ignored) {
+      //do not destroy commands processing
+    }
+  }
+
+  public static InvokeThread<?> currentThread() {
+    final WorkerThreadRequest<?> request = getCurrentThreadRequest();
+    return request != null ? request.getOwner() : null;
+  }
+
+  public boolean schedule(@NotNull @Async.Schedule E r) {
+    if (LOG.isDebugEnabled()) {
       LOG.debug("schedule " + r + " in " + this);
     }
+    setCommandManagerThread(r);
     return myEvents.put(r, r.getPriority().ordinal());
   }
 
-  public boolean pushBack(E r) {
-    if(LOG.isDebugEnabled()) {
+  public boolean pushBack(@NotNull E r) {
+    if (LOG.isDebugEnabled()) {
       LOG.debug("pushBack " + r + " in " + this);
     }
+    setCommandManagerThread(r);
     return myEvents.pushBack(r, r.getPriority().ordinal());
   }
 
+  @ApiStatus.Internal
+  public void setCommandManagerThread(E event) {
+    if (event instanceof DebuggerCommandImpl command) {
+      command.setCommandManagerThread$intellij_java_debugger_impl((DebuggerManagerThreadImpl)this);
+    }
+  }
+
   protected void switchToRequest(WorkerThreadRequest newRequest) {
-    final WorkerThreadRequest currentThreadRequest = getCurrentThreadRequest();
-    LOG.assertTrue(currentThreadRequest != null);
-    myCurrentRequest = newRequest;
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Closing " + currentThreadRequest + " new request = " + newRequest);
+    WorkerThreadRequest currentThreadRequest;
+    synchronized (this) {
+      currentThreadRequest = getCurrentThreadRequest();
+      LOG.assertTrue(currentThreadRequest != null);
+      myCurrentRequest = newRequest;
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("Switched current request from " + currentThreadRequest + " to " + newRequest);
+      }
     }
 
     currentThreadRequest.requestStop();
   }
 
-  public WorkerThreadRequest getCurrentRequest() {
-    return myCurrentRequest;
+  public WorkerThreadRequest<E> getCurrentRequest() {
+    synchronized (this) {
+      return myCurrentRequest;
+    }
   }
 
-  public static WorkerThreadRequest getCurrentThreadRequest() {
+  public static WorkerThreadRequest<?> getCurrentThreadRequest() {
     return ourWorkerRequest.get();
   }
 

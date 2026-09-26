@@ -1,208 +1,351 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.lexer;
 
 import com.intellij.psi.tree.IElementType;
 
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.DOLLAR_SLASHY_BEGIN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.DOLLAR_SLASHY_CONTENT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.DOLLAR_SLASHY_END;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.DOLLAR_SLASHY_LITERAL;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.GSTRING_BEGIN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.GSTRING_CONTENT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.GSTRING_END;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.IDENTIFIER;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_ABSTRACT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_AS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_ASSERT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_BOOLEAN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_BREAK;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_BYTE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_CASE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_CATCH;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_CHAR;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_CLASS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_CONTINUE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_DEF;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_DEFAULT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_DO;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_DOUBLE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_ELSE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_ENUM;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_EXTENDS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_FALSE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_FINAL;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_FINALLY;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_FLOAT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_FOR;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_IF;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_IMPLEMENTS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_IMPORT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_IN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_INSTANCEOF;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_INT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_INTERFACE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_LONG;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_NATIVE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_NEW;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_NON_SEALED;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_NULL;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_PACKAGE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_PERMITS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_PRIVATE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_PROTECTED;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_PUBLIC;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_RECORD;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_RETURN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_SEALED;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_SHORT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_STATIC;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_STRICTFP;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_SUPER;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_SWITCH;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_SYNCHRONIZED;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_THIS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_THROW;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_THROWS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_TRAIT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_TRANSIENT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_TRUE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_TRY;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_VAL;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_VAR;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_VOID;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_VOLATILE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_WHILE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_YIELD;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.ML_COMMENT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.NL;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.NUM_BIG_DECIMAL;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.NUM_BIG_INT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.NUM_DOUBLE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.NUM_FLOAT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.NUM_INT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.NUM_LONG;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.SH_COMMENT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.SLASHY_BEGIN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.SLASHY_CONTENT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.SLASHY_END;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.SLASHY_LITERAL;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.SL_COMMENT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_ARROW;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_AT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_BAND;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_BAND_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_BNOT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_BOR;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_BOR_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_COLON;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_COMMA;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_COMPARE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_DEC;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_DIV;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_DIV_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_DOLLAR;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_DOT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_ELLIPSIS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_ELVIS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_EQ;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_GE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_GT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_IMPL;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_INC;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_LAND;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_LBRACE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_LBRACK;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_LE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_LOR;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_LPAREN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_LSH_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_LT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_METHOD_CLOSURE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_MINUS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_MINUS_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_NEQ;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_NOT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_NOT_IN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_NOT_INSTANCEOF;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_PLUS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_PLUS_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_POW;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_POW_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_Q;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RANGE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RANGE_BOTH_OPEN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RANGE_LEFT_OPEN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RANGE_RIGHT_OPEN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RBRACE;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RBRACK;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_REGEX_FIND;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_REGEX_MATCH;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_REM;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_REM_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RPAREN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RSHU_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_RSH_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_SAFE_CHAIN_DOT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_SAFE_DOT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_SEMI;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_SPREAD_DOT;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_STAR;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_STAR_ASSIGN;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_WRONG;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_XOR;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_XOR_ASSIGN;
+
 /**
  * Interface that contains all tokens returned by GroovyLexer
- *
- * @author ilyas
  */
 public interface GroovyTokenTypes {
 
   /**
    * Wrong token. Use for debug needs
    */
-  IElementType mWRONG = new GroovyElementType("wrong token");
+  IElementType mWRONG = T_WRONG;
 
   /* **************************************************************************************************
  *  Whitespaces & NewLines
  * ****************************************************************************************************/
 
-  IElementType mNLS = new GroovyElementType("new line");
+  IElementType mNLS = NL;
 
   /* **************************************************************************************************
  *  Comments
  * ****************************************************************************************************/
 
-  IElementType mSH_COMMENT = new GroovyElementType("shell comment");
-  IElementType mSL_COMMENT = new GroovyElementType("line comment");
-  IElementType mML_COMMENT = new GroovyElementType("block comment");
+  IElementType mSH_COMMENT = SH_COMMENT;
+  IElementType mSL_COMMENT = SL_COMMENT;
+  IElementType mML_COMMENT = ML_COMMENT;
 
   /* **************************************************************************************************
  *  Identifiers
  * ****************************************************************************************************/
 
-  IElementType mIDENT = new GroovyElementType("identifier");
+  IElementType mIDENT = IDENTIFIER;
 
   /* **************************************************************************************************
  *  Integers & floats
  * ****************************************************************************************************/
 
-  IElementType mNUM_INT = new GroovyElementType("Integer");
-  IElementType mNUM_LONG = new GroovyElementType("Long");
-  IElementType mNUM_BIG_INT = new GroovyElementType("BigInteger");
-  IElementType mNUM_BIG_DECIMAL = new GroovyElementType("BigDecimal");
-  IElementType mNUM_FLOAT = new GroovyElementType("Float");
-  IElementType mNUM_DOUBLE = new GroovyElementType("Double");
+  IElementType mNUM_INT = NUM_INT;
+  IElementType mNUM_LONG = NUM_LONG;
+  IElementType mNUM_BIG_INT = NUM_BIG_INT;
+  IElementType mNUM_BIG_DECIMAL = NUM_BIG_DECIMAL;
+  IElementType mNUM_FLOAT = NUM_FLOAT;
+  IElementType mNUM_DOUBLE = NUM_DOUBLE;
 
   /* **************************************************************************************************
  *  Strings & regular expressions
  * ****************************************************************************************************/
 
-  IElementType mSTRING_LITERAL = new GroovyElementType("string");
-  IElementType mGSTRING_LITERAL = new GroovyElementType("Gstring");
+  IElementType mGSTRING_BEGIN = GSTRING_BEGIN;
+  IElementType mGSTRING_CONTENT = GSTRING_CONTENT;
+  IElementType mGSTRING_END = GSTRING_END;
 
-  IElementType mGSTRING_BEGIN = new GroovyElementType("Gstring begin");
-  IElementType mGSTRING_CONTENT = new GroovyElementType("Gstring content");
-  IElementType mGSTRING_END = new GroovyElementType("Gstring end");
+  IElementType mREGEX_BEGIN = SLASHY_BEGIN;
+  IElementType mREGEX_CONTENT = SLASHY_CONTENT;
+  IElementType mREGEX_END = SLASHY_END;
+  IElementType mREGEX_LITERAL = SLASHY_LITERAL;
 
-  IElementType mREGEX_BEGIN = new GroovyElementType("regex begin");
-  IElementType mREGEX_CONTENT = new GroovyElementType("regex content");
-  IElementType mREGEX_END = new GroovyElementType("regex end");
-  IElementType mREGEX_LITERAL = new GroovyElementType("regex literal");
-
-  IElementType mDOLLAR_SLASH_REGEX_BEGIN = new GroovyElementType("$/ regex begin");
-  IElementType mDOLLAR_SLASH_REGEX_CONTENT = new GroovyElementType("$/ regex content");
-  IElementType mDOLLAR_SLASH_REGEX_END = new GroovyElementType("$/ regex end");
-  IElementType mDOLLAR_SLASH_REGEX_LITERAL = new GroovyElementType("$/ regex literal");
+  IElementType mDOLLAR_SLASH_REGEX_BEGIN = DOLLAR_SLASHY_BEGIN;
+  IElementType mDOLLAR_SLASH_REGEX_CONTENT = DOLLAR_SLASHY_CONTENT;
+  IElementType mDOLLAR_SLASH_REGEX_END = DOLLAR_SLASHY_END;
+  IElementType mDOLLAR_SLASH_REGEX_LITERAL = DOLLAR_SLASHY_LITERAL;
 
 
   /* **************************************************************************************************
  *  Common tokens: operators, braces etc.
  * ****************************************************************************************************/
 
-  IElementType mQUESTION = new GroovyElementType("?");
-  IElementType mDIV = new GroovyElementType("/");
-  IElementType mDIV_ASSIGN = new GroovyElementType("/=");
-  IElementType mLPAREN = new GroovyElementType("(");
-  IElementType mRPAREN = new GroovyElementType(")");
-  IElementType mLBRACK = new GroovyElementType("[");
-  IElementType mRBRACK = new GroovyElementType("]");
-  IElementType mLCURLY = new GroovyElementType("{");
-  IElementType mRCURLY = new GroovyElementType("}");
-  IElementType mCOLON = new GroovyElementType(":");
-  IElementType mCOMMA = new GroovyElementType(",");
-  IElementType mDOT = new GroovyElementType(".");
-  IElementType mASSIGN = new GroovyElementType("=");
-  IElementType mCOMPARE_TO = new GroovyElementType("<=>");
-  IElementType mEQUAL = new GroovyElementType("==");
-  IElementType mLNOT = new GroovyElementType("!");
-  IElementType mELVIS = new GroovyElementType("?:");
-  IElementType mBNOT = new GroovyElementType("~");
-  IElementType mNOT_EQUAL = new GroovyElementType("!=");
-  IElementType mPLUS = new GroovyElementType("+");
-  IElementType mPLUS_ASSIGN = new GroovyElementType("+=");
-  IElementType mINC = new GroovyElementType("++");
-  IElementType mMINUS = new GroovyElementType("-");
-  IElementType mMINUS_ASSIGN = new GroovyElementType("-=");
-  IElementType mDEC = new GroovyElementType("--");
-  IElementType mSTAR = new GroovyElementType("*");
-  IElementType mSTAR_ASSIGN = new GroovyElementType("*=");
-  IElementType mMOD = new GroovyElementType("%");
-  IElementType mMOD_ASSIGN = new GroovyElementType("%=");
-  IElementType mBSR_ASSIGN = new GroovyElementType(">>>=");
-  IElementType mSR_ASSIGN = new GroovyElementType(">>=");
-  IElementType mGE = new GroovyElementType(">=");
-  IElementType mGT = new GroovyElementType(">");
-  IElementType mSL_ASSIGN = new GroovyElementType("<<=");
-  IElementType mLE = new GroovyElementType("<=");
-  IElementType mLT = new GroovyElementType("<");
-  IElementType mBXOR = new GroovyElementType("^");
-  IElementType mBXOR_ASSIGN = new GroovyElementType("^=");
-  IElementType mBOR = new GroovyElementType("|");
-  IElementType mBOR_ASSIGN = new GroovyElementType("|=");
-  IElementType mLOR = new GroovyElementType("||");
-  IElementType mBAND = new GroovyElementType("&");
-  IElementType mBAND_ASSIGN = new GroovyElementType("&=");
-  IElementType mLAND = new GroovyElementType("&&");
-  IElementType mSEMI = new GroovyElementType(";");
-  IElementType mDOLLAR = new GroovyElementType("$");
-  IElementType mRANGE_INCLUSIVE = new GroovyElementType("..");
-  IElementType mRANGE_EXCLUSIVE = new GroovyElementType("..<");
-  IElementType mTRIPLE_DOT = new GroovyElementType("...");
-  IElementType mSPREAD_DOT = new GroovyElementType("*.");
-  IElementType mOPTIONAL_DOT = new GroovyElementType("?.");
-  IElementType mMEMBER_POINTER = new GroovyElementType(".&");
-  IElementType mREGEX_FIND = new GroovyElementType("=~");
-  IElementType mREGEX_MATCH = new GroovyElementType("==~");
-  IElementType mSTAR_STAR = new GroovyElementType("**");
-  IElementType mSTAR_STAR_ASSIGN = new GroovyElementType("**=");
-  IElementType mCLOSABLE_BLOCK_OP = new GroovyElementType("->");
-  IElementType mAT = new GroovyElementType("@");
+  IElementType mQUESTION = T_Q;
+  IElementType mDIV = T_DIV;
+  IElementType mDIV_ASSIGN = T_DIV_ASSIGN;
+  IElementType mLPAREN = T_LPAREN;
+  IElementType mRPAREN = T_RPAREN;
+  IElementType mLBRACK = T_LBRACK;
+  IElementType mRBRACK = T_RBRACK;
+  IElementType mLCURLY = T_LBRACE;
+  IElementType mRCURLY = T_RBRACE;
+  IElementType mCOLON = T_COLON;
+  IElementType mCOMMA = T_COMMA;
+  IElementType mDOT = T_DOT;
+  IElementType mASSIGN = T_ASSIGN;
+  IElementType mCOMPARE_TO = T_COMPARE;
+  IElementType mEQUAL = T_EQ;
+  IElementType mLNOT = T_NOT;
+  IElementType mELVIS = T_ELVIS;
+  IElementType mBNOT = T_BNOT;
+  IElementType mNOT_EQUAL = T_NEQ;
+  IElementType mPLUS = T_PLUS;
+  IElementType mPLUS_ASSIGN = T_PLUS_ASSIGN;
+  IElementType mINC = T_INC;
+  IElementType mMINUS = T_MINUS;
+  IElementType mMINUS_ASSIGN = T_MINUS_ASSIGN;
+  IElementType mDEC = T_DEC;
+  IElementType mSTAR = T_STAR;
+  IElementType mSTAR_ASSIGN = T_STAR_ASSIGN;
+  IElementType mMOD = T_REM;
+  IElementType mMOD_ASSIGN = T_REM_ASSIGN;
+  IElementType mBSR_ASSIGN = T_RSHU_ASSIGN;
+  IElementType mSR_ASSIGN = T_RSH_ASSIGN;
+  IElementType mGE = T_GE;
+  IElementType mGT = T_GT;
+  IElementType mSL_ASSIGN = T_LSH_ASSIGN;
+  IElementType mLE = T_LE;
+  IElementType mLT = T_LT;
+  IElementType mBXOR = T_XOR;
+  IElementType mBXOR_ASSIGN = T_XOR_ASSIGN;
+  IElementType mBOR = T_BOR;
+  IElementType mBOR_ASSIGN = T_BOR_ASSIGN;
+  IElementType mLOR = T_LOR;
+  IElementType mIMPL = T_IMPL;
+  IElementType mBAND = T_BAND;
+  IElementType mBAND_ASSIGN = T_BAND_ASSIGN;
+  IElementType mLAND = T_LAND;
+  IElementType mSEMI = T_SEMI;
+  IElementType mDOLLAR = T_DOLLAR;
+  IElementType mRANGE_INCLUSIVE = T_RANGE;
+  IElementType mRANGE_EXCLUSIVE_LEFT = T_RANGE_LEFT_OPEN;
+  IElementType mRANGE_EXCLUSIVE_RIGHT = T_RANGE_RIGHT_OPEN;
+  IElementType mRANGE_EXCLUSIVE_BOTH = T_RANGE_BOTH_OPEN;
+  IElementType mTRIPLE_DOT = T_ELLIPSIS;
+  IElementType mSPREAD_DOT = T_SPREAD_DOT;
+  IElementType mOPTIONAL_DOT = T_SAFE_DOT;
+  IElementType mOPTIONAL_CHAIN_DOT = T_SAFE_CHAIN_DOT;
+  IElementType mMEMBER_POINTER = T_METHOD_CLOSURE;
+  IElementType mREGEX_FIND = T_REGEX_FIND;
+  IElementType mREGEX_MATCH = T_REGEX_MATCH;
+  IElementType mSTAR_STAR = T_POW;
+  IElementType mSTAR_STAR_ASSIGN = T_POW_ASSIGN;
+  IElementType mCLOSABLE_BLOCK_OP = T_ARROW;
+  IElementType mAT = T_AT;
 
   /* **************************************************************************************************
  *  Keywords (in alphabetic order)
  * ****************************************************************************************************/
 
-  IElementType kABSTRACT = new GroovyElementType("abstract");
-  IElementType kAS = new GroovyElementType("as");
-  IElementType kASSERT = new GroovyElementType("assert");
-  IElementType kBOOLEAN = new GroovyElementType("boolean");
-  IElementType kBREAK = new GroovyElementType("break");
-  IElementType kBYTE = new GroovyElementType("byte");
-  IElementType kCASE = new GroovyElementType("case");
-  IElementType kCATCH = new GroovyElementType("catch");
-  IElementType kCHAR = new GroovyElementType("char");
-  IElementType kCLASS = new GroovyElementType("class");
-  IElementType kCONTINUE = new GroovyElementType("continue");
-  IElementType kDEF = new GroovyElementType("def");
-  IElementType kDEFAULT = new GroovyElementType("default");
-  IElementType kDO = new GroovyElementType("do");
-  IElementType kDOUBLE = new GroovyElementType("double");
-  IElementType kELSE = new GroovyElementType("else");
-  IElementType kEXTENDS = new GroovyElementType("extends");
-  IElementType kENUM = new GroovyElementType("enum");
-  IElementType kFALSE = new GroovyElementType("false");
-  IElementType kFINAL = new GroovyElementType("final");
-  IElementType kFLOAT = new GroovyElementType("float");
-  IElementType kFOR = new GroovyElementType("for");
-  IElementType kFINALLY = new GroovyElementType("finally");
-  IElementType kIF = new GroovyElementType("if");
-  IElementType kIMPLEMENTS = new GroovyElementType("implements");
-  IElementType kIMPORT = new GroovyElementType("import");
-  IElementType kIN = new GroovyElementType("in");
-  IElementType kINSTANCEOF = new GroovyElementType("instanceof");
-  IElementType kINT = new GroovyElementType("int");
-  IElementType kINTERFACE = new GroovyElementType("interface");
-  IElementType kLONG = new GroovyElementType("long");
-  IElementType kNATIVE = new GroovyElementType("native");
-  IElementType kNEW = new GroovyElementType("new");
-  IElementType kNULL = new GroovyElementType("null");
-  IElementType kPACKAGE = new GroovyElementType("package");
-  IElementType kPRIVATE = new GroovyElementType("private");
-  IElementType kPROTECTED = new GroovyElementType("protected");
-  IElementType kPUBLIC = new GroovyElementType("public");
-  IElementType kRETURN = new GroovyElementType("return");
-  IElementType kSHORT = new GroovyElementType("short");
-  IElementType kSTATIC = new GroovyElementType("static");
-  IElementType kSTRICTFP = new GroovyElementType("strictfp");
-  IElementType kSUPER = new GroovyElementType("super");
-  IElementType kSWITCH = new GroovyElementType("switch");
-  IElementType kSYNCHRONIZED = new GroovyElementType("synchronized");
-  IElementType kTHIS = new GroovyElementType("this");
-  IElementType kTHROW = new GroovyElementType("throw");
-  IElementType kTHROWS = new GroovyElementType("throws");
-  IElementType kTRAIT = new GroovyElementType("trait");
-  IElementType kTRANSIENT = new GroovyElementType("transient");
-  IElementType kTRUE = new GroovyElementType("true");
-  IElementType kTRY = new GroovyElementType("try");
-  IElementType kVOID = new GroovyElementType("void");
-  IElementType kVOLATILE = new GroovyElementType("volatile");
-  IElementType kWHILE = new GroovyElementType("while");
+  IElementType kABSTRACT = KW_ABSTRACT;
+  IElementType kAS = KW_AS;
+  IElementType kASSERT = KW_ASSERT;
+  IElementType kBOOLEAN = KW_BOOLEAN;
+  IElementType kBREAK = KW_BREAK;
+  IElementType kBYTE = KW_BYTE;
+  IElementType kCASE = KW_CASE;
+  IElementType kCATCH = KW_CATCH;
+  IElementType kCHAR = KW_CHAR;
+  IElementType kCLASS = KW_CLASS;
+  IElementType kCONTINUE = KW_CONTINUE;
+  IElementType kDEF = KW_DEF;
+  IElementType kVAR = KW_VAR;
+  IElementType kVAL = KW_VAL;
+  IElementType kDEFAULT = KW_DEFAULT;
+  IElementType kDO = KW_DO;
+  IElementType kDOUBLE = KW_DOUBLE;
+  IElementType kELSE = KW_ELSE;
+  IElementType kEXTENDS = KW_EXTENDS;
+  IElementType kENUM = KW_ENUM;
+  IElementType kFALSE = KW_FALSE;
+  IElementType kFINAL = KW_FINAL;
+  IElementType kFLOAT = KW_FLOAT;
+  IElementType kFOR = KW_FOR;
+  IElementType kFINALLY = KW_FINALLY;
+  IElementType kIF = KW_IF;
+  IElementType kIMPLEMENTS = KW_IMPLEMENTS;
+  IElementType kIMPORT = KW_IMPORT;
+  IElementType kIN = KW_IN;
+  IElementType kINSTANCEOF = KW_INSTANCEOF;
+  IElementType kINT = KW_INT;
+  IElementType kINTERFACE = KW_INTERFACE;
+  IElementType kLONG = KW_LONG;
+  IElementType kNATIVE = KW_NATIVE;
+  IElementType kNEW = KW_NEW;
+  IElementType kNON_SEALED = KW_NON_SEALED;
+  IElementType kNOT_IN = T_NOT_IN;
+  IElementType kNOT_INSTANCEOF = T_NOT_INSTANCEOF;
+  IElementType kNULL = KW_NULL;
+  IElementType kPACKAGE = KW_PACKAGE;
+  IElementType kPERMITS = KW_PERMITS;
+  IElementType kPRIVATE = KW_PRIVATE;
+  IElementType kPROTECTED = KW_PROTECTED;
+  IElementType kPUBLIC = KW_PUBLIC;
+  IElementType kRETURN = KW_RETURN;
+  IElementType kRECORD = KW_RECORD;
+  IElementType kSEALED = KW_SEALED;
+  IElementType kSHORT = KW_SHORT;
+  IElementType kSTATIC = KW_STATIC;
+  IElementType kSTRICTFP = KW_STRICTFP;
+  IElementType kSUPER = KW_SUPER;
+  IElementType kSWITCH = KW_SWITCH;
+  IElementType kSYNCHRONIZED = KW_SYNCHRONIZED;
+  IElementType kTHIS = KW_THIS;
+  IElementType kTHROW = KW_THROW;
+  IElementType kTHROWS = KW_THROWS;
+  IElementType kTRAIT = KW_TRAIT;
+  IElementType kTRANSIENT = KW_TRANSIENT;
+  IElementType kTRUE = KW_TRUE;
+  IElementType kTRY = KW_TRY;
+  IElementType kVOID = KW_VOID;
+  IElementType kVOLATILE = KW_VOLATILE;
+  IElementType kWHILE = KW_WHILE;
+  IElementType kYIELD = KW_YIELD;
 }

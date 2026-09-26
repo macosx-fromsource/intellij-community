@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.plugins.groovy;
 
@@ -21,7 +7,7 @@ import com.intellij.openapi.util.Condition;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
-import com.intellij.testFramework.fixtures.LightCodeInsightFixtureTestCase;
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameter;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 import org.jetbrains.plugins.groovy.util.TestUtils;
@@ -29,7 +15,7 @@ import org.jetbrains.plugins.groovy.util.TestUtils;
 /**
  * @author Maxim.Medvedev
  */
-public class GroovyGotoTest extends LightCodeInsightFixtureTestCase {
+public class GroovyGotoTest extends LightJavaCodeInsightFixtureTestCase {
   @Override
   protected String getBasePath() {
     return TestUtils.getTestDataPath() + "goto/";
@@ -48,27 +34,27 @@ public class GroovyGotoTest extends LightCodeInsightFixtureTestCase {
     assertTrue(verifier.value(target));
   }
 
-  public void testNewExpression() throws Throwable {
+  public void testNewExpression() {
     doTest(element -> element instanceof GrMethod && ((GrMethod)element).isConstructor() && ((GrMethod)element).getParameters().length == 0);
   }
 
-  public void testNewExpressionWithNamedArgs() throws Throwable {
+  public void testNewExpressionWithNamedArgs() {
     doTest(element -> element instanceof PsiClass);
   }
 
-  public void testNewExpressionWithMapParameter() throws Throwable {
+  public void testNewExpressionWithMapParameter() {
     doTest(element -> element instanceof GrMethod && ((GrMethod)element).isConstructor() && ((GrMethod)element).getParameters().length == 1);
   }
 
-  public void testNewExpressionWithAnonymousClass() throws Throwable {
+  public void testNewExpressionWithAnonymousClass() {
     doTest(element -> element instanceof GrMethod && ((GrMethod)element).isConstructor() && ((GrMethod)element).getParameters().length == 2);
   }
 
-  public void testGroovyDocParameter1() throws Throwable {
+  public void testGroovyDocParameter1() {
     doTest(element -> element instanceof GrParameter && ((GrParameter)element).getName().equals("x"));
   }
 
-  public void testGroovyDocParameter2() throws Throwable {
+  public void testGroovyDocParameter2() {
     doTest(element -> element instanceof GrParameter && ((GrParameter)element).getName().equals("x"));
   }
 

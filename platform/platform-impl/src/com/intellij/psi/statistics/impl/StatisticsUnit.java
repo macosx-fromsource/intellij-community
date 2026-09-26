@@ -1,48 +1,52 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.statistics.impl;
 
+import com.intellij.openapi.util.io.DataInputOutputUtilRt;
 import com.intellij.psi.statistics.StatisticsManager;
-import com.intellij.util.ArrayUtil;
-import gnu.trove.THashMap;
+import com.intellij.util.io.IOUtil;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+import org.jetbrains.annotations.NotNull;
 
-import java.io.*;
-import java.util.*;
+import java.io.DataInput;
+import java.io.DataInputStream;
+import java.io.DataOutput;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayDeque;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
 
-class StatisticsUnit {
-  private static final int FORMAT_VERSION_NUMBER = 5;
+final class StatisticsUnit {
+  private static final int FORMAT_VERSION_NUMBER = 6;
 
   private final int myNumber;
 
-  private final THashMap<String, LinkedList<String>> myDataMap = new THashMap<>();
+  private final Map<String, Deque<String>> myDataMap = new HashMap<>();
+  private final Object2IntMap<String> myContextMaxStamps = new Object2IntOpenHashMap<>();
+  private final Map<String, Object2IntMap<String>> myValueStamps = new HashMap<>();
 
-  public StatisticsUnit(int number) {
+  StatisticsUnit(int number) {
     myNumber = number;
   }
 
-  public int getRecency(String key1, String key2) {
-    final List<String> list = myDataMap.get(key1);
-    if (list == null) return Integer.MAX_VALUE;
+  int getRecency(String context, String value) {
+    Object2IntMap<String> perContext = myValueStamps.get(context);
+    int stamp = perContext == null ? - 1 : perContext.getInt(value);
+    if (stamp < 0) return Integer.MAX_VALUE;
 
-    int i = list.indexOf(key2);
-    return i >= 0 ? i : Integer.MAX_VALUE;
+    int diff = myContextMaxStamps.getInt(context) - stamp;
+    return diff >= StatisticsManager.RECENCY_OBLIVION_THRESHOLD ? Integer.MAX_VALUE : diff;
   }
 
-  public int getData(String key1, String key2) {
-    final List<String> list = myDataMap.get(key1);
+  public int getData(@NotNull String key1, @NotNull String key2) {
+    final Deque<String> list = myDataMap.get(key1);
     if (list == null) return 0;
 
     int result = 0;
@@ -53,62 +57,116 @@ class StatisticsUnit {
   }
 
   public void incData(String key1, String key2) {
-    LinkedList<String> list = myDataMap.get(key1);
+    Deque<String> list = myDataMap.get(key1);
     if (list == null) {
-      myDataMap.put(key1, list = new LinkedList<>());
+      myDataMap.put(key1, list = new ArrayDeque<>());
     }
     list.addFirst(key2);
     if (list.size() > StatisticsManager.OBLIVION_THRESHOLD) {
       list.removeLast();
     }
+
+    advanceRecencyStamps(key1, key2);
   }
 
-  public String[] getKeys2(final String key1){
-    final List<String> list = myDataMap.get(key1);
-    if (list == null) return ArrayUtil.EMPTY_STRING_ARRAY;
+  private void advanceRecencyStamps(String context, String value) {
+    int stamp = myContextMaxStamps.getInt(context) + 1;
+    myContextMaxStamps.put(context, stamp);
+    getValueStamps(context).put(value, stamp);
 
-    return ArrayUtil.toStringArray(new LinkedHashSet<>(list));
-  }
-
-  public int getNumber() {
-    return myNumber;
-  }
-
-  public void write(OutputStream out) throws IOException{
-    final DataOutputStream dataOut = new DataOutputStream(out);
-    dataOut.writeInt(FORMAT_VERSION_NUMBER);
-
-    dataOut.writeInt(myDataMap.size());
-    for (final String context : myDataMap.keySet()) {
-      final List<String> list = myDataMap.get(context);
-      if (list != null && !list.isEmpty()) {
-        dataOut.writeUTF(context);
-        dataOut.writeInt(list.size());
-        for (final String data : list) {
-          dataOut.writeUTF(data);
-        }
-      }
+    if (stamp > StatisticsManager.RECENCY_OBLIVION_THRESHOLD * 2) {
+      trimAncientRecencyEntries(context, StatisticsManager.RECENCY_OBLIVION_THRESHOLD);
     }
   }
 
-  public void read(InputStream in) throws IOException, WrongFormatException {
-    DataInputStream dataIn = new DataInputStream(in);
+  private @NotNull Object2IntMap<String> getValueStamps(String context) {
+    return myValueStamps.computeIfAbsent(context, _ -> {
+      Object2IntMap<String> result = new Object2IntOpenHashMap<>();
+      result.defaultReturnValue(-1);
+      return result;
+    });
+  }
+
+  private void trimAncientRecencyEntries(String context, int limit) {
+    Object2IntMap<String> newStamps = new Object2IntOpenHashMap<>();
+    newStamps.defaultReturnValue(-1);
+    for (String o : getValueStamps(context).keySet()) {
+      int recency = getRecency(context, o);
+      if (recency != Integer.MAX_VALUE) {
+        newStamps.put(o, limit - recency);
+      }
+    }
+    myValueStamps.put(context, newStamps);
+    myContextMaxStamps.put(context, limit);
+  }
+
+  @NotNull
+  Collection<String> getKeys2(@NotNull String key1) {
+    Deque<String> list = myDataMap.get(key1);
+    return list == null ? Collections.emptyList() : new LinkedHashSet<>(list);
+  }
+
+  int getNumber() {
+    return myNumber;
+  }
+
+  void write(OutputStream out) throws IOException{
+    DataOutput dataOut = new DataOutputStream(out);
+    dataOut.writeInt(FORMAT_VERSION_NUMBER);
+
+    DataInputOutputUtilRt.writeSeq(dataOut, myDataMap.entrySet(), entry -> {
+      IOUtil.writeUTF(dataOut, entry.getKey());
+      DataInputOutputUtilRt.writeSeq(dataOut, entry.getValue(), data -> IOUtil.writeUTF(dataOut, data));
+    });
+
+    writeStringIntMap(dataOut, myContextMaxStamps);
+
+    DataInputOutputUtilRt.writeSeq(dataOut, myValueStamps.entrySet(), entry -> {
+      IOUtil.writeUTF(dataOut, entry.getKey());
+      writeStringIntMap(dataOut, entry.getValue());
+    });
+  }
+
+  void read(InputStream in) throws IOException, WrongFormatException {
+    myDataMap.clear();
+    myContextMaxStamps.clear();
+    myValueStamps.clear();
+
+    DataInput dataIn = new DataInputStream(in);
     int formatVersion = dataIn.readInt();
     if (formatVersion != FORMAT_VERSION_NUMBER){
       throw new WrongFormatException();
     }
 
-    myDataMap.clear();
-    int size = dataIn.readInt();
-    for(int i = 0; i < size; i++){
-      String context = dataIn.readUTF();
-      int len = dataIn.readInt();
-      LinkedList<String> list = new LinkedList<>();
-      for (int j = 0; j < len; j++) {
-        list.add(dataIn.readUTF());
-      }
-      myDataMap.put(context, list);
+    DataInputOutputUtilRt.readSeq(dataIn, () -> {
+      myDataMap.put(IOUtil.readUTF(dataIn),
+                    new ArrayDeque<>(DataInputOutputUtilRt.readSeq(dataIn, () -> IOUtil.readUTF(dataIn))));
+      return null;
+    });
+
+    readStringIntMap(dataIn, myContextMaxStamps);
+
+    DataInputOutputUtilRt.readSeq(dataIn, () -> {
+      Object2IntMap<String> map = new Object2IntOpenHashMap<>();
+      map.defaultReturnValue(-1);
+      myValueStamps.put(IOUtil.readUTF(dataIn), map);
+      readStringIntMap(dataIn, map);
+      return null;
+    });
+  }
+
+  private static void writeStringIntMap(DataOutput dataOut, Object2IntMap<String> map) throws IOException {
+    DataInputOutputUtilRt.writeINT(dataOut, map.size());
+    for (String context : map.keySet()) {
+      IOUtil.writeUTF(dataOut, context);
+      DataInputOutputUtilRt.writeINT(dataOut, map.getInt(context));
     }
   }
 
+  private static void readStringIntMap(DataInput dataIn, Object2IntMap<String> map) throws IOException {
+    int count = DataInputOutputUtilRt.readINT(dataIn);
+    for (int i = 0; i < count; i++) {
+      map.put(IOUtil.readUTF(dataIn), DataInputOutputUtilRt.readINT(dataIn));
+    }
+  }
 }

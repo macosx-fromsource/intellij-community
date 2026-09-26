@@ -1,39 +1,33 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package org.jetbrains.jps.model.serialization.facet;
 
+import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.util.xmlb.annotations.Attribute;
-import com.intellij.util.xmlb.annotations.Tag;
-import com.intellij.util.xmlb.annotations.AbstractCollection;
 import com.intellij.util.xmlb.annotations.Property;
+import com.intellij.util.xmlb.annotations.Tag;
+import com.intellij.util.xmlb.annotations.XCollection;
 import org.jdom.Element;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.jps.model.serialization.SerializationConstants;
 
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
-/**
- * @author nik
-*/
 @Tag(JpsFacetSerializer.FACET_TAG)
-public class FacetState {
+public final class FacetState {
   private String myFacetType;
   private String myName;
+  private String myExternalSystemId;
+  private String myExternalSystemIdInInternalStorage;
   private Element myConfiguration;
-  private List<FacetState> mySubFacets = new ArrayList<FacetState>();
+
+  @ApiStatus.Internal
+  @Property(surroundWithTag = false)
+  @XCollection
+  public final List<FacetState> subFacets = new ArrayList<>();
 
   @Attribute(JpsFacetSerializer.TYPE_ATTRIBUTE)
   public String getFacetType() {
@@ -46,18 +40,18 @@ public class FacetState {
   }
 
   @Tag(JpsFacetSerializer.CONFIGURATION_TAG)
-  public Element getConfiguration() {
+  public @Nullable Element getConfiguration() {
     return myConfiguration;
   }
 
-  @Property(surroundWithTag = false)
-  @AbstractCollection(surroundWithTag = false)
-  public List<FacetState> getSubFacets() {
-    return mySubFacets;
+  @Attribute(SerializationConstants.EXTERNAL_SYSTEM_ID_ATTRIBUTE)
+  public String getExternalSystemId() {
+    return myExternalSystemId;
   }
 
-  public void setSubFacets(final List<FacetState> subFacets) {
-    mySubFacets = subFacets;
+  @Attribute(SerializationConstants.EXTERNAL_SYSTEM_ID_IN_INTERNAL_STORAGE_ATTRIBUTE)
+  public String getExternalSystemIdInInternalStorage() {
+    return myExternalSystemIdInInternalStorage;
   }
 
   public void setConfiguration(final Element configuration) {
@@ -70,5 +64,30 @@ public class FacetState {
 
   public void setFacetType(final String type) {
     myFacetType = type;
+  }
+
+  public void setExternalSystemId(String externalSystemId) {
+    myExternalSystemId = externalSystemId;
+  }
+
+  public void setExternalSystemIdInInternalStorage(String externalSystemIdInInternalStorage) {
+    myExternalSystemIdInInternalStorage = externalSystemIdInInternalStorage;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    FacetState state = (FacetState)o;
+    return Objects.equals(myFacetType, state.myFacetType) &&
+           Objects.equals(myName, state.myName) &&
+           Objects.equals(myExternalSystemId, state.myExternalSystemId) &&
+           JDOMUtil.areElementsEqual(myConfiguration, state.myConfiguration) &&
+           Objects.equals(subFacets, state.subFacets);
+  }
+
+  @Override
+  public int hashCode() {
+    return (31 * Objects.hash(myFacetType, myName, myExternalSystemId, subFacets)) + JDOMUtil.hashCode(myConfiguration, false);
   }
 }

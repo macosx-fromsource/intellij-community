@@ -1,51 +1,92 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.source;
 
+import com.intellij.codeInsight.daemon.impl.analysis.JavaGenericsUtil;
 import com.intellij.lang.ASTNode;
-import com.intellij.openapi.util.Computable;
-import com.intellij.psi.*;
+import com.intellij.openapi.util.RecursionGuard;
+import com.intellij.openapi.util.RecursionManager;
+import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.JavaTokenType;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiArrayInitializerExpression;
+import com.intellij.psi.PsiArrayType;
+import com.intellij.psi.PsiComment;
+import com.intellij.psi.PsiDiamondTypeImpl;
+import com.intellij.psi.PsiDisjunctionType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiEllipsisType;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiForeachStatement;
+import com.intellij.psi.PsiIdentifier;
+import com.intellij.psi.PsiIntersectionType;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiLambdaExpression;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifierList;
+import com.intellij.psi.PsiModifierListOwner;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiPattern;
+import com.intellij.psi.PsiPatternVariable;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.psi.PsiReferenceParameterList;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeElement;
+import com.intellij.psi.PsiTypeParameterList;
+import com.intellij.psi.PsiTypeParameterListOwner;
+import com.intellij.psi.PsiTypes;
+import com.intellij.psi.PsiUnnamedPattern;
+import com.intellij.psi.PsiVariable;
+import com.intellij.psi.PsiWhiteSpace;
+import com.intellij.psi.PsiWildcardType;
+import com.intellij.psi.ResolveState;
+import com.intellij.psi.SyntaxTraverser;
+import com.intellij.psi.TypeAnnotationProvider;
 import com.intellij.psi.augment.PsiAugmentProvider;
 import com.intellij.psi.impl.PsiImplUtil;
 import com.intellij.psi.impl.PsiJavaParserFacadeImpl;
-import com.intellij.psi.impl.source.tree.*;
+import com.intellij.psi.impl.cache.ExternalTypeAnnotationContainer;
+import com.intellij.psi.impl.source.tree.CompositePsiElement;
+import com.intellij.psi.impl.source.tree.ElementType;
+import com.intellij.psi.impl.source.tree.JavaElementType;
+import com.intellij.psi.impl.source.tree.JavaSharedImplUtil;
+import com.intellij.psi.impl.source.tree.TreeElement;
 import com.intellij.psi.scope.PsiScopeProcessor;
 import com.intellij.psi.tree.IElementType;
-import com.intellij.psi.util.*;
-import com.intellij.util.Function;
+import com.intellij.psi.tree.TokenSet;
+import com.intellij.psi.util.CachedValuesManager;
+import com.intellij.psi.util.JavaPsiPatternUtil;
+import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.PsiUtil;
+import com.intellij.psi.util.PsiUtilCore;
+import com.intellij.util.ArrayUtil;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.JavaTypeNullabilityUtil;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.lang.ref.WeakReference;
+import java.util.Arrays;
 import java.util.List;
 
-import static com.intellij.util.containers.ContainerUtil.copyAndClear;
-
 public class PsiTypeElementImpl extends CompositePsiElement implements PsiTypeElement {
-  @SuppressWarnings({"UnusedDeclaration"})
+
   public PsiTypeElementImpl() {
     this(JavaElementType.TYPE);
   }
 
-  protected PsiTypeElementImpl(IElementType type) {
+  PsiTypeElementImpl(@NotNull IElementType type) {
     super(type);
   }
 
@@ -60,27 +101,27 @@ public class PsiTypeElementImpl extends CompositePsiElement implements PsiTypeEl
   }
 
   @Override
-  @NotNull
-  public PsiType getType() {
-    return CachedValuesManager.getCachedValue(this, new CachedValueProvider<PsiType>() {
-      @Nullable
-      @Override
-      public Result<PsiType> compute() {
-        return Result.create(calculateType(), PsiModificationTracker.MODIFICATION_COUNT);
-      }
-    });
+  public @NotNull PsiType getType() {
+    return CachedValuesManager.getProjectPsiDependentCache(this, __ -> calculateType());
   }
 
-  private PsiType calculateType() {
+  private @NotNull PsiType calculateType() {
     PsiType inferredType = PsiAugmentProvider.getInferredType(this);
     if (inferredType != null) {
       return inferredType;
     }
 
     PsiType type = null;
-    List<PsiAnnotation> annotations = new SmartList<PsiAnnotation>();
+    boolean ellipsis = false;
+    List<PsiAnnotation> annotations = new SmartList<>();
+    List<TypeAnnotationProvider> arrayComponentAnnotations = new SmartList<>();
 
-    for (PsiElement child = getFirstChild(); child != null; child = child.getNextSibling()) {
+    PsiElement parent = getParent();
+    PsiElement firstChild = getFirstChild();
+    if (firstChild == null && parent instanceof PsiUnnamedPattern) {
+      type = JavaPsiPatternUtil.getDeconstructedImplicitPatternType((PsiPattern)parent);
+    }
+    for (PsiElement child = firstChild; child != null; child = child.getNextSibling()) {
       if (child instanceof PsiComment || child instanceof PsiWhiteSpace) continue;
 
       if (child instanceof PsiAnnotation) {
@@ -99,26 +140,31 @@ public class PsiTypeElementImpl extends CompositePsiElement implements PsiTypeEl
       else if (PsiUtil.isJavaToken(child, ElementType.PRIMITIVE_TYPE_BIT_SET)) {
         assert type == null : this;
         String text = child.getText();
-        type = annotations.isEmpty() ? PsiJavaParserFacadeImpl.getPrimitiveType(text) : new PsiPrimitiveType(text, createProvider(annotations));
+        type =
+          annotations.isEmpty() ? PsiJavaParserFacadeImpl.getPrimitiveType(text) : new PsiPrimitiveType(text, createProvider(annotations));
+      }
+      else if (PsiUtil.isJavaToken(child, JavaTokenType.VAR_KEYWORD)) {
+        assert type == null : this;
+        type = inferVarType(parent);
       }
       else if (child instanceof PsiJavaCodeReferenceElement) {
         assert type == null : this;
-        type = new PsiClassReferenceType(getReferenceComputable((PsiJavaCodeReferenceElement)child), null, createProvider(annotations));
+        type = getPsiClassReferenceType((PsiJavaCodeReferenceElement)child, createProvider(annotations));
       }
       else if (PsiUtil.isJavaToken(child, JavaTokenType.LBRACKET)) {
         assert type != null : this;
-        type = new PsiArrayType(type, createProvider(annotations));
+        arrayComponentAnnotations.add(createProvider(annotations));
       }
       else if (PsiUtil.isJavaToken(child, JavaTokenType.ELLIPSIS)) {
         assert type != null : this;
-        type = new PsiEllipsisType(type, createProvider(annotations));
+        arrayComponentAnnotations.add(createProvider(annotations));
+        ellipsis = true;
       }
 
-      if (PsiUtil.isJavaToken(child, JavaTokenType.QUEST) ||
-          child instanceof ASTNode && ((ASTNode)child).getElementType() == JavaElementType.DUMMY_ELEMENT && "any".equals(child.getText())) {
+      if (PsiUtil.isJavaToken(child, JavaTokenType.QUEST)) {
         assert type == null : this;
-        PsiElement boundKind = PsiTreeUtil.skipSiblingsForward(child, PsiComment.class, PsiWhiteSpace.class);
-        PsiElement boundType = PsiTreeUtil.skipSiblingsForward(boundKind, PsiComment.class, PsiWhiteSpace.class);
+        PsiElement boundKind = PsiTreeUtil.skipWhitespacesAndCommentsForward(child);
+        PsiElement boundType = PsiTreeUtil.skipWhitespacesAndCommentsForward(boundKind);
         if (PsiUtil.isJavaToken(boundKind, JavaTokenType.EXTENDS_KEYWORD) && boundType instanceof PsiTypeElement) {
           type = PsiWildcardType.createExtends(getManager(), ((PsiTypeElement)boundType).getType());
         }
@@ -126,10 +172,15 @@ public class PsiTypeElementImpl extends CompositePsiElement implements PsiTypeEl
           type = PsiWildcardType.createSuper(getManager(), ((PsiTypeElement)boundType).getType());
         }
         else {
-          type = PsiWildcardType.createUnbounded(getManager());
+          type = PsiWildcardType.createUnbounded(getManager(), this);
         }
         type = type.annotate(createProvider(annotations));
         break;
+      }
+      else {
+        if (child instanceof ASTNode) {
+          ((ASTNode)child).getElementType();
+        }
       }
 
       if (PsiUtil.isJavaToken(child, JavaTokenType.AND)) {
@@ -147,61 +198,332 @@ public class PsiTypeElementImpl extends CompositePsiElement implements PsiTypeEl
       }
     }
 
-    if (type == null) return PsiType.NULL;
+    if (type == null) return PsiTypes.nullType();
 
-    PsiElement parent = getParent();
-    if (parent instanceof PsiModifierListOwner) {
-      type = JavaSharedImplUtil.applyAnnotations(type, ((PsiModifierListOwner)parent).getModifierList());
+    if (!arrayComponentAnnotations.isEmpty()) {
+      type = createArray(type, arrayComponentAnnotations, ellipsis);
     }
-
+    type = withAddedAnnotationsFromAncestorModifierListIfApplicable(type);
     return type;
   }
 
-  @NotNull
-  private Computable<PsiJavaCodeReferenceElement> getReferenceComputable(PsiJavaCodeReferenceElement ref) {
-    final PsiElement parent = getParent();
-    if (parent instanceof PsiMethod || parent instanceof PsiVariable) {
-      return computeFromTypeOwner(parent, new WeakReference<PsiJavaCodeReferenceElement>(ref));
+  /// Adds annotations from the ancestor modifier list if they apply to this PsiTypeElement.
+  /// For example, in
+  /// ``` @NonNull String[] method(); ```
+  /// `@NonNull` annotation applies to array component type `String` but not to `String[]` type.
+  /// However in
+  /// ``` @NonNull List<String> method(); ```
+  /// `@NonNull` annotation applies to `List<String>` type but not to `String` type.
+  ///
+  /// @param type must be a type representing this PsiTypeElementImpl
+  /// @return type argument with all applicable annotations from the ancestor modifier list added
+  private PsiType withAddedAnnotationsFromAncestorModifierListIfApplicable(PsiType type) {
+    PsiModifierListOwner modifierListOwner = getModifierListOwnerThatAffectsThisTypeElement(type);
+    if (modifierListOwner == null) return type;
+    PsiModifierList modifierList = modifierListOwner.getModifierList();
+    if (modifierList == null) return type;
+    PsiAnnotation[] annotations = modifierList.getAnnotations();
+    TypeAnnotationProvider modifierProvider = TypeAnnotationProvider.Static.create(annotations);
+    TypeAnnotationProvider externalProvider = ExternalTypeAnnotationContainer.create(modifierListOwner).getProvider(modifierListOwner);
+    TypeAnnotationProvider annotationProvider;
+    if (modifierProvider == TypeAnnotationProvider.EMPTY) {
+      if (externalProvider == TypeAnnotationProvider.EMPTY) {
+        return type;
+      }
+      annotationProvider = externalProvider;
     }
-
-    return new Computable.PredefinedValueComputable<PsiJavaCodeReferenceElement>(ref);
+    else if (externalProvider == TypeAnnotationProvider.EMPTY) {
+      annotationProvider = modifierProvider;
+    }
+    else {
+      annotationProvider = new MergedProvider(modifierProvider, externalProvider);
+    }
+    if (type instanceof PsiClassReferenceType) {
+      PsiJavaCodeReferenceElement innermost = getInnermostComponentReferenceElement();
+      if (innermost != null && innermost.isQualified()) {
+        return ((PsiClassReferenceType)type).withAddedQualifierAnnotations(annotationProvider);
+      }
+    }
+    return JavaSharedImplUtil.annotate(type, modifierList, annotationProvider);
   }
 
-  @NotNull
-  private static Computable<PsiJavaCodeReferenceElement> computeFromTypeOwner(final PsiElement parent, final WeakReference<PsiJavaCodeReferenceElement> ref) {
-    return new Computable<PsiJavaCodeReferenceElement>() {
-      volatile WeakReference<PsiJavaCodeReferenceElement> myCache = ref;
+  private @Nullable PsiModifierListOwner getModifierListOwnerThatAffectsThisTypeElement(PsiType type) {
+    PsiElement parent = getNonDummyContext(this);
+    if (parent instanceof PsiModifierListOwner) {
+      if (type instanceof PsiDisjunctionType || type instanceof PsiArrayType) {
+        return null;
+      }
+      else {
+        return (PsiModifierListOwner)parent;
+      }
+    }
+    if (isArrayTypeElement(parent) || isFirstExceptionTypeInsideMultiCatch(parent)) {
+      return ObjectUtils.tryCast(getNonDummyContext(parent), PsiModifierListOwner.class);
+    }
+    return null;
+  }
 
-      @Override
-      public PsiJavaCodeReferenceElement compute() {
-        PsiJavaCodeReferenceElement result = myCache.get();
-        if (result == null) {
-          myCache = new WeakReference<PsiJavaCodeReferenceElement>(result = getParentTypeElement().getReferenceElement());
+  private static @Nullable PsiElement getNonDummyContext(PsiElement element) {
+    if (element == null) return null;
+    PsiElement context = element.getContext();
+    while (context instanceof JavaDummyHolder) {
+      context = context.getContext();
+    }
+    return context;
+  }
+
+  private boolean isFirstExceptionTypeInsideMultiCatch(PsiElement parent) {
+    return parent instanceof PsiTypeElement
+           && PsiTreeUtil.findSiblingBackward(this, JavaTokenType.OR, null) == null
+           && PsiTreeUtil.findSiblingForward(this, JavaTokenType.OR, null) != null;
+  }
+
+  private static boolean isArrayTypeElement(PsiElement parent) {
+    return parent instanceof PsiTypeElement
+           && PsiUtil.isJavaToken(parent.getLastChild(), TokenSet.create(JavaTokenType.RBRACKET, JavaTokenType.ELLIPSIS));
+  }
+
+  private PsiType createArray(PsiType elementType, List<TypeAnnotationProvider> providers, boolean ellipsis) {
+    PsiType result = elementType;
+    for (int i = providers.size() - 1; i >= 0; i--) {
+      TypeAnnotationProvider provider = providers.get(i);
+      result = ellipsis && i == 0 ?
+               new PsiEllipsisType(result, provider).withContainerNullability(findContainerNullabilityContext(this)) :
+               new PsiArrayType(result, provider).withContainerNullability(findContainerNullabilityContext(this));
+    }
+    providers.clear();
+    return result;
+  }
+
+  private PsiType inferVarType(PsiElement parent) {
+    if (parent instanceof PsiParameter) {
+      PsiParameter parameter = (PsiParameter)parent;
+      if (parameter instanceof PsiPatternVariable) {
+        return JavaPsiPatternUtil.getDeconstructedImplicitPatternVariableType((PsiPatternVariable)parameter);
+      }
+      PsiElement declarationScope = parameter.getDeclarationScope();
+      if (declarationScope instanceof PsiForeachStatement) {
+        PsiExpression iteratedValue = ((PsiForeachStatement)declarationScope).getIteratedValue();
+        if (iteratedValue != null) {
+          PsiType type = JavaGenericsUtil.getCollectionItemType(iteratedValue);
+          //Upward projection is applied to the type of the initializer when determining the type of the
+          //variable
+          return type != null ? JavaVarTypeUtil.getUpwardProjection(type) : null;
         }
-        return result;
+        return null;
       }
 
-      @NotNull
-      private PsiTypeElementImpl getParentTypeElement() {
-        PsiTypeElement typeElement = parent instanceof PsiMethod ? ((PsiMethod)parent).getReturnTypeElement()
-                                                                 : ((PsiVariable)parent).getTypeElement();
-        return (PsiTypeElementImpl)ObjectUtils.assertNotNull(typeElement);
+      if (declarationScope instanceof PsiLambdaExpression) {
+        return parameter.getType();
+      }
+    }
+    else {
+      for (PsiElement e = this; e != null; e = e.getNextSibling()) {
+        if (e instanceof PsiExpression) {
+          if (!PsiTreeUtil.processElements(
+            e, PsiReferenceExpression.class, ref -> !ref.isReferenceTo(parent))) {
+            return null;
+          }
+          if (!(e instanceof PsiArrayInitializerExpression)) {
+            PsiExpression expression = (PsiExpression)e;
+            RecursionGuard.StackStamp stamp = RecursionManager.markStack();
+            PsiType type = RecursionManager.doPreventingRecursion(expression, true, () -> expression.getType());
+            if (stamp.mayCacheNow()) {
+              return type == null ? null : JavaVarTypeUtil.getUpwardProjection(type);
+            }
+            return null;
+          }
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
+  @Override
+  public boolean isInferredType() {
+    return PsiUtil.isJavaToken(getFirstChild(), JavaTokenType.VAR_KEYWORD) ||
+           PsiAugmentProvider.isInferredType(this);
+  }
+
+  private static @NotNull PsiType getPsiClassReferenceType(PsiJavaCodeReferenceElement psiJavaCodeReferenceElement,
+                                                           TypeAnnotationProvider provider) {
+    if (psiJavaCodeReferenceElement.isQualified()) {
+      return new PsiClassReferenceType(
+        getReferenceComputable(psiJavaCodeReferenceElement), null, TypeAnnotationProvider.EMPTY, provider);
+    }
+    else {
+      return new PsiClassReferenceType(
+        getReferenceComputable(psiJavaCodeReferenceElement), null, provider, TypeAnnotationProvider.EMPTY);
+    }
+  }
+
+  private static @NotNull ClassReferencePointer getReferenceComputable(@NotNull PsiJavaCodeReferenceElement ref) {
+    PsiElement parent = getAnchorParent(ref);
+    if (parent instanceof PsiMethod || parent instanceof PsiVariable) {
+      PsiModifierListOwner owner = (PsiModifierListOwner)parent;
+      int[] pathFromRoot = getPathFromRoot(ref);
+      return computeFromTypeOwner(owner, pathFromRoot, new WeakReference<>(ref));
+    }
+    return ClassReferencePointer.constant(ref);
+  }
+
+  private static @Nullable PsiElement getAnchorParent(@NotNull PsiElement ref) {
+    PsiElement root = SyntaxTraverser.psiApi()
+      .parents(ref)
+      .takeWhile(it -> it instanceof PsiTypeElement || it instanceof PsiReferenceParameterList || it instanceof PsiJavaCodeReferenceElement)
+      .last();
+    PsiElement parent = root instanceof PsiTypeElement ? root.getParent() : null;
+    return parent;
+  }
+
+  // n = -1 => go to qualifier
+  // n >= 0 => go to type parameter #n
+  private static int[] getPathFromRoot(@NotNull PsiJavaCodeReferenceElement ref) {
+    IntList result = null;
+    while (true) {
+      PsiElement parent = ref.getParent();
+      if (parent instanceof PsiJavaCodeReferenceElement) {
+        PsiJavaCodeReferenceElement parentRef = (PsiJavaCodeReferenceElement)parent;
+        if (parentRef.getQualifier() == ref) {
+          if (result == null) result = new IntArrayList();
+          result.add(0, -1);
+          ref = parentRef;
+        }
+        else {
+          throw new IllegalStateException("Unexpected parent (going not from qualifier): " + parent.getText());
+        }
+      }
+      else if (parent instanceof PsiTypeElement) {
+        PsiElement nextParent = parent.getParent();
+        while (nextParent instanceof PsiTypeElement) {
+          parent = nextParent;
+          nextParent = nextParent.getParent();
+        }
+        if (nextParent instanceof PsiReferenceParameterList) {
+          PsiReferenceParameterList list = (PsiReferenceParameterList)nextParent;
+          int index = ArrayUtil.indexOf(list.getTypeParameterElements(), parent);
+          PsiElement nextRef = nextParent.getParent();
+          if (!(nextRef instanceof PsiJavaCodeReferenceElement)) {
+            throw new IllegalStateException("Must be a reference: " + nextRef.getText());
+          }
+          ref = (PsiJavaCodeReferenceElement)nextRef;
+          if (result == null) result = new IntArrayList();
+          result.add(0, index);
+        }
+        else {
+          return result == null ? ArrayUtil.EMPTY_INT_ARRAY : result.toIntArray();
+        }
+      }
+      else {
+        throw new IllegalStateException("Unexpected parent: " + parent.getText());
+      }
+    }
+  }
+
+  @Contract("_,_,true -> !null")
+  private static @Nullable PsiJavaCodeReferenceElement findReference(@NotNull PsiType type, int[] root, boolean check) {
+    int offset = 0;
+    while (true) {
+      if (type instanceof PsiWildcardType) {
+        PsiType bound = ((PsiWildcardType)type).getBound();
+        if (bound == null) {
+          if (check) {
+            throw new IllegalStateException("Bound expected: " + type.getCanonicalText());
+          }
+          return null;
+        }
+        type = bound;
+      }
+      type = type.getDeepComponentType();
+      if (!(type instanceof PsiClassReferenceType)) {
+        if (check) {
+          throw new IllegalStateException("Reference type expected: " + type.getCanonicalText());
+        }
+        return null;
+      }
+      PsiClassReferenceType classType = (PsiClassReferenceType)type;
+      PsiJavaCodeReferenceElement ref = classType.getReference();
+      if (offset == root.length) return ref;
+      int nextIndex = root[offset++];
+      while (nextIndex == -1) {
+        PsiElement qualifier = ref.getQualifier();
+        if (!(qualifier instanceof PsiJavaCodeReferenceElement)) {
+          if (check) {
+            throw new IllegalStateException("Qualifier expected: " + ref.getCanonicalText());
+          }
+          return null;
+        }
+        ref = (PsiJavaCodeReferenceElement)qualifier;
+        if (offset == root.length) return ref;
+        nextIndex = root[offset++];
+      }
+      PsiReferenceParameterList list = ref.getParameterList();
+      if (list == null) {
+        if (check) {
+          throw new IllegalStateException("Parameter list expected: " + ref.getCanonicalText());
+        }
+        return null;
+      }
+      PsiType[] arguments = list.getTypeArguments();
+      if (nextIndex >= arguments.length) {
+        if (check) {
+          throw new IllegalStateException("Type parameter #" + nextIndex + " expected: " + ref.getCanonicalText());
+        }
+        return null;
+      }
+      type = arguments[nextIndex];
+    }
+  }
+
+  private static @NotNull ClassReferencePointer computeFromTypeOwner(@NotNull PsiModifierListOwner parent, int[] pathFromRoot,
+                                                                     @NotNull WeakReference<PsiJavaCodeReferenceElement> ref) {
+    return new ClassReferencePointer() {
+
+      @Contract("true -> !null")
+      private @Nullable PsiJavaCodeReferenceElement retrieveReference(boolean check) {
+        PsiJavaCodeReferenceElement element = ref.get();
+        if (element != null && element.isValid()) return element;
+        if (check) {
+          PsiUtilCore.ensureValid(parent);
+        }
+        if (!parent.isValid()) return null;
+        PsiType type = PsiUtil.getTypeByPsiElement(parent);
+        if (type == null) {
+          if (check) {
+            throw new IllegalStateException("Type of " + parent.getClass() + " is null");
+          }
+          return null;
+        }
+        return findReference(type, pathFromRoot, check);
+      }
+
+      @Override
+      public @Nullable PsiJavaCodeReferenceElement retrieveReference() {
+        return retrieveReference(false);
+      }
+
+      @Override
+      public @NotNull PsiJavaCodeReferenceElement retrieveNonNullReference() {
+        return retrieveReference(true);
+      }
+
+      @Override
+      public String toString() {
+        String msg = "Type element reference of " + parent.getClass() + " #" + parent.getClass().getSimpleName() + ", path=" +
+                     Arrays.toString(pathFromRoot);
+        return parent.isValid() ? msg + " #" + parent.getLanguage() : msg + ", invalid";
       }
     };
   }
 
-  private static TypeAnnotationProvider createProvider(List<PsiAnnotation> annotations) {
-    return TypeAnnotationProvider.Static.create(copyAndClear(annotations, PsiAnnotation.ARRAY_FACTORY, true));
+  private static @NotNull TypeAnnotationProvider createProvider(@NotNull List<PsiAnnotation> annotations) {
+    return TypeAnnotationProvider.Static.create(ContainerUtil.copyAndClear(annotations, PsiAnnotation.ARRAY_FACTORY, true));
   }
 
-  private List<PsiType> collectTypes() {
+  private @Unmodifiable @NotNull List<PsiType> collectTypes() {
     List<PsiTypeElement> typeElements = PsiTreeUtil.getChildrenOfTypeAsList(this, PsiTypeElement.class);
-    return ContainerUtil.map(typeElements, new Function<PsiTypeElement, PsiType>() {
-      @Override
-      public PsiType fun(PsiTypeElement typeElement) {
-        return typeElement.getType();
-      }
-    });
+    return ContainerUtil.map(typeElements, typeElement -> typeElement.getType());
   }
 
   @Override
@@ -211,13 +533,10 @@ public class PsiTypeElementImpl extends CompositePsiElement implements PsiTypeEl
     if (firstChildNode.getElementType() == JavaElementType.TYPE) {
       return SourceTreeToPsiMap.<PsiTypeElement>treeToPsiNotNull(firstChildNode).getInnermostComponentReferenceElement();
     }
-    else {
-      return getReferenceElement();
-    }
+    return getReferenceElement();
   }
 
-  @Nullable
-  private PsiJavaCodeReferenceElement getReferenceElement() {
+  private @Nullable PsiJavaCodeReferenceElement getReferenceElement() {
     ASTNode ref = findChildByType(JavaElementType.JAVA_CODE_REFERENCE);
     if (ref == null) return null;
     return (PsiJavaCodeReferenceElement)SourceTreeToPsiMap.treeElementToPsi(ref);
@@ -233,16 +552,18 @@ public class PsiTypeElementImpl extends CompositePsiElement implements PsiTypeEl
   }
 
   @Override
-  @NotNull
-  public PsiAnnotation[] getAnnotations() {
-    PsiAnnotation[] annotations = PsiTreeUtil.getChildrenOfType(this, PsiAnnotation.class);
-    return annotations != null ? annotations : PsiAnnotation.EMPTY_ARRAY;
+  public PsiAnnotation @NotNull [] getAnnotations() {
+    return getType().getAnnotations();
   }
 
   @Override
-  @NotNull
-  public PsiAnnotation[] getApplicableAnnotations() {
-    return getType().getAnnotations();
+  public boolean hasAnnotations() {
+    return getType().hasAnnotations();
+  }
+
+  @Override
+  public PsiAnnotation @NotNull [] getApplicableAnnotations() {
+    return getAnnotations();
   }
 
   @Override
@@ -251,22 +572,128 @@ public class PsiTypeElementImpl extends CompositePsiElement implements PsiTypeEl
   }
 
   @Override
-  @NotNull
-  public PsiAnnotation addAnnotation(@NotNull @NonNls String qualifiedName) {
-    throw new UnsupportedOperationException();//todo
+  public @NotNull PsiAnnotation addAnnotation(@NotNull @NonNls String qualifiedName) {
+    PsiAnnotation annotation = JavaPsiFacade.getElementFactory(getProject()).createAnnotationFromText('@' + qualifiedName, this);
+    PsiElement firstChild = getFirstChild();
+    for (PsiElement child = firstChild; child != null; child = child.getNextSibling()) {
+      if (PsiUtil.isJavaToken(child, JavaTokenType.LBRACKET) || PsiUtil.isJavaToken(child, JavaTokenType.ELLIPSIS)) {
+        return (PsiAnnotation)addBefore(annotation, child);
+      }
+    }
+    if (firstChild instanceof PsiJavaCodeReferenceElement) {
+      PsiIdentifier identifier = PsiTreeUtil.getChildOfType(firstChild, PsiIdentifier.class);
+      if (identifier != null && identifier != firstChild.getFirstChild()) {
+        // qualified reference
+        return (PsiAnnotation)firstChild.addBefore(annotation, identifier);
+      }
+    }
+    PsiElement parent = getParent();
+    while (parent instanceof PsiTypeElement && ((PsiTypeElement)parent).getType() instanceof PsiArrayType) {
+      parent = parent.getParent();
+    }
+    if (parent instanceof PsiModifierListOwner) {
+      PsiModifierList modifierList = ((PsiModifierListOwner)parent).getModifierList();
+      if (modifierList != null) {
+        PsiTypeParameterList list =
+          parent instanceof PsiTypeParameterListOwner ? ((PsiTypeParameterListOwner)parent).getTypeParameterList() : null;
+        if (list == null || list.textMatches("")) {
+          return (PsiAnnotation)modifierList.add(annotation);
+        }
+      }
+    }
+    return (PsiAnnotation)addBefore(annotation, firstChild);
   }
 
   @Override
   public PsiElement replace(@NotNull PsiElement newElement) throws IncorrectOperationException {
     // neighbouring type annotations are logical part of this type element and should be dropped
-    PsiImplUtil.markTypeAnnotations(this);
+    //if replacement is `var`, annotations should be left as they are not inferred from the right side of the assignment
+    if (!(newElement instanceof PsiTypeElement) || !((PsiTypeElement)newElement).isInferredType()) {
+      PsiImplUtil.markTypeAnnotations(this);
+    }
     PsiElement result = super.replace(newElement);
-    PsiImplUtil.deleteTypeAnnotations((PsiTypeElement)result);
+    if (result instanceof PsiTypeElement) {
+      PsiImplUtil.deleteTypeAnnotations((PsiTypeElement)result);
+    }
     return result;
+  }
+
+  @Override
+  public boolean acceptsAnnotations() {
+    if (isInferredType()) return false;
+    PsiType type = getType();
+    return !PsiTypes.voidType().equals(type) && !PsiTypes.nullType().equals(type);
+  }
+
+  @Override
+  public PsiElement getOriginalElement() {
+    PsiElement parent = getParent();
+    if (parent instanceof PsiVariable) {
+      PsiElement originalVariable = parent.getOriginalElement();
+      if (originalVariable != parent && originalVariable instanceof PsiVariable) {
+        return ((PsiVariable)originalVariable).getTypeElement();
+      }
+    }
+    if (parent instanceof PsiMethod) {
+      PsiElement originalMethod = parent.getOriginalElement();
+      if (originalMethod != parent && originalMethod instanceof PsiMethod) {
+        return ((PsiMethod)originalMethod).getReturnTypeElement();
+      }
+    }
+    if (parent instanceof PsiTypeElement || parent instanceof PsiJavaCodeReferenceElement ||
+        parent instanceof PsiReferenceParameterList) {
+      return PsiImplUtil.getCorrespondingOriginalElementOfType(this, PsiTypeElement.class);
+    }
+    return this;
   }
 
   @Override
   public String toString() {
     return "PsiTypeElement:" + getText();
+  }
+
+  @ApiStatus.Experimental
+  @Nullable
+  public static PsiModifierListOwner findContainerNullabilityContext(@NotNull PsiTypeElement typeElement) {
+    // A nullness written in a pattern type is ignored, so no container applies to an array written there either.
+    if (JavaTypeNullabilityUtil.isWrittenInPatternType(typeElement)) return null;
+    PsiElement parent = typeElement.getContext();
+    while (parent != null) {
+      if (parent instanceof PsiModifierListOwner) {
+        return JavaTypeNullabilityUtil.shouldIgnoreContainer(parent) ? null : (PsiModifierListOwner)parent;
+      }
+      parent = parent.getContext();
+    }
+    return null;
+  }
+
+  private static class MergedProvider implements TypeAnnotationProvider {
+    private final @NotNull TypeAnnotationProvider myModifierProvider;
+    private final @NotNull TypeAnnotationProvider myExternalProvider;
+
+    private MergedProvider(@NotNull TypeAnnotationProvider modifierProvider, @NotNull TypeAnnotationProvider externalProvider) {
+      myModifierProvider = modifierProvider;
+      myExternalProvider = externalProvider;
+    }
+
+    @Override
+    public @NotNull PsiAnnotation @NotNull [] getAnnotations() {
+      return ArrayUtil.mergeArrays(myModifierProvider.getAnnotations(), myExternalProvider.getAnnotations());
+    }
+
+    @Override
+    public boolean isValid() {
+      return myModifierProvider.isValid();
+    }
+
+    @Override
+    public boolean hasAnnotations() {
+      return myModifierProvider.hasAnnotations() || myExternalProvider.hasAnnotations();
+    }
+
+    @Override
+    public @NotNull TypeAnnotationProvider removeExternalAnnotations() {
+      return myModifierProvider;
+    }
   }
 }

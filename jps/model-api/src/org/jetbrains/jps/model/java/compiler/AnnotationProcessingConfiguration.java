@@ -20,15 +20,13 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * @author Eugene Zhuravlev
- *         Date: 5/27/12
- */
 public interface AnnotationProcessingConfiguration {
   boolean isEnabled();
 
   @NotNull
   String getProcessorPath();
+
+  boolean isUseProcessorModulePath();
 
   @NotNull
   String getGeneratedSourcesDirectoryName(boolean forTests);
@@ -42,4 +40,6 @@ public interface AnnotationProcessingConfiguration {
   Map<String, String> getProcessorOptions();
 
   boolean isObtainProcessorsFromClasspath();
+
+  boolean isProcOnly();
 }

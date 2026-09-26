@@ -16,17 +16,15 @@
 package org.jetbrains.jps.model.serialization.artifact;
 
 import org.jdom.Element;
-import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.model.JpsElement;
 import org.jetbrains.jps.model.JpsElementChildRole;
 
-/**
- * @author nik
- */
+@ApiStatus.Internal
 public abstract class JpsArtifactExtensionSerializer<E extends JpsElement> {
-  private JpsElementChildRole<E> myRole;
-  private String myId;
+  private final JpsElementChildRole<E> myRole;
+  private final String myId;
 
   protected JpsArtifactExtensionSerializer(String id, JpsElementChildRole<E> role) {
     myId = id;
@@ -42,6 +40,4 @@ public abstract class JpsArtifactExtensionSerializer<E extends JpsElement> {
   }
 
   public abstract E loadExtension(@Nullable Element optionsTag);
-
-  public abstract void saveExtension(@NotNull E extension, @NotNull Element optionsTag);
 }

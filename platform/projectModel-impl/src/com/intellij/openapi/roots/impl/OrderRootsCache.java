@@ -1,76 +1,97 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.roots.impl;
 
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.roots.OrderRootType;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.impl.VirtualFilePointerContainerImpl;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerContainer;
 import com.intellij.openapi.vfs.pointers.VirtualFilePointerManager;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ArrayUtilRt;
+import com.intellij.util.ConcurrencyUtil;
+import com.intellij.util.ObjectUtils;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
-import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
-/**
- * @author nik
- */
+@ApiStatus.Internal
 public class OrderRootsCache {
-  private final Map<CacheKey, VirtualFilePointerContainer> myRoots = ContainerUtil.newConcurrentMap();
+  private final AtomicReference<ConcurrentMap<CacheKey, VirtualFilePointerContainer>> myRoots = new AtomicReference<>();
   private final Disposable myParentDisposable;
+  private Disposable myRootsDisposable; // accessed in EDT
 
+  @ApiStatus.Internal
   public OrderRootsCache(@NotNull Disposable parentDisposable) {
     myParentDisposable = parentDisposable;
+    disposePointers();
   }
 
-  public VirtualFilePointerContainer setCachedRoots(OrderRootType rootType, int flags, Collection<String> urls) {
-    final VirtualFilePointerContainer container = VirtualFilePointerManager.getInstance().createContainer(myParentDisposable);
-    for (String url : urls) {
-      container.add(url);
+  private void disposePointers() {
+    if (myRootsDisposable != null) {
+      Disposer.dispose(myRootsDisposable);
     }
-    myRoots.put(new CacheKey(rootType, flags), container);
+    if (!Disposer.isDisposed(myParentDisposable)) {
+      Disposer.register(myParentDisposable, myRootsDisposable = Disposer.newDisposable());
+    }
+  }
+
+  private static final VirtualFilePointerContainer EMPTY = ObjectUtils.sentinel("Empty roots container", VirtualFilePointerContainer.class);
+
+  private VirtualFilePointerContainer createContainer(@NotNull Collection<String> urls) {
+    // optimization: avoid creating heavy container for empty list, use 'EMPTY' stub for that case
+    VirtualFilePointerContainer container;
+    if (urls.isEmpty()) {
+      container = EMPTY;
+    }
+    else {
+      container = VirtualFilePointerManager.getInstance().createContainer(myRootsDisposable);
+      ((VirtualFilePointerContainerImpl)container).addAll(urls);
+    }
     return container;
   }
 
-  @Nullable
-  public VirtualFile[] getCachedRoots(OrderRootType rootType, int flags) {
-    final VirtualFilePointerContainer cached = myRoots.get(new CacheKey(rootType, flags));
-    return cached == null ? null : cached.getFiles();
-  }
-
-  @Nullable
-  public String[] getCachedUrls(OrderRootType rootType, int flags) {
-    final VirtualFilePointerContainer cached = myRoots.get(new CacheKey(rootType, flags));
-    return cached != null ? cached.getUrls() : null;
-  }
-
-  public void clearCache() {
-    for (VirtualFilePointerContainer container : myRoots.values()) {
-      container.killAll();
+  private VirtualFilePointerContainer getOrComputeContainer(@NotNull OrderRootType rootType,
+                                                            int flags,
+                                                            @NotNull Supplier<? extends Collection<String>> rootUrlsComputer) {
+    ConcurrentMap<CacheKey, VirtualFilePointerContainer> map = myRoots.get();
+    CacheKey key = new CacheKey(rootType, flags);
+    VirtualFilePointerContainer cached = map == null ? null : map.get(key);
+    if (cached == null) {
+      map = ConcurrencyUtil.cacheOrGet(myRoots, new ConcurrentHashMap<>());
+      cached = map.computeIfAbsent(key, _ -> createContainer(rootUrlsComputer.get()));
     }
-    myRoots.clear();
+    return cached == EMPTY ? null : cached;
   }
 
-  private static final class CacheKey {
+  public VirtualFile @NotNull [] getOrComputeRoots(@NotNull OrderRootType rootType, int flags, @NotNull Supplier<? extends Collection<String>> computer) {
+    VirtualFilePointerContainer container = getOrComputeContainer(rootType, flags, computer);
+    return container == null ? VirtualFile.EMPTY_ARRAY : container.getFiles();
+  }
+
+  public String @NotNull [] getOrComputeUrls(@NotNull OrderRootType rootType, int flags, @NotNull Supplier<? extends Collection<String>> computer) {
+    VirtualFilePointerContainer container = getOrComputeContainer(rootType, flags, computer);
+    return container == null ? ArrayUtilRt.EMPTY_STRING_ARRAY : container.getUrls();
+  }
+
+  @ApiStatus.Internal
+  public void clearCache() {
+    ApplicationManager.getApplication().assertWriteIntentLockAcquired();
+    disposePointers();
+    myRoots.set(null);
+  }
+
+  protected static final class CacheKey {
     private final OrderRootType myRootType;
     private final int myFlags;
 
-    private CacheKey(OrderRootType rootType, int flags) {
+    public CacheKey(@NotNull OrderRootType rootType, int flags) {
       myRootType = rootType;
       myFlags = flags;
     }

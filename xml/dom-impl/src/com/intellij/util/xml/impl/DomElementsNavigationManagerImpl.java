@@ -22,16 +22,17 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlElement;
-import com.intellij.util.xml.*;
+import com.intellij.util.xml.DomElement;
+import com.intellij.util.xml.DomElementNavigationProvider;
+import com.intellij.util.xml.DomElementsNavigationManager;
+import com.intellij.util.xml.DomFileElement;
+import com.intellij.util.xml.DomUtil;
 
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * User: Sergey.Vasiliev
- */
 public class DomElementsNavigationManagerImpl extends DomElementsNavigationManager {
   private final Map<String, DomElementNavigationProvider> myProviders = new HashMap<>();
   private final Project myProject;

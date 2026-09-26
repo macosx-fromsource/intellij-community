@@ -1,24 +1,16 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.profile.codeInspection.ui;
 
+import com.intellij.codeInspection.InspectionsBundle;
 import com.intellij.codeInspection.ex.Descriptor;
 import com.intellij.codeInspection.ex.InspectionProfileImpl;
+import com.intellij.codeInspection.ex.InspectionToolWrapper;
+import com.intellij.ide.IdeBundle;
+import com.intellij.lang.LangBundle;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.DumbAwareAction;
@@ -28,9 +20,10 @@ import com.intellij.psi.search.scope.packageSet.CustomScopesProviderEx;
 import com.intellij.psi.search.scope.packageSet.NamedScope;
 import com.intellij.psi.search.scope.packageSet.NamedScopesHolder;
 import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.JComponent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -39,29 +32,27 @@ import java.util.Set;
 /**
  * @author Dmitry Batkovich
  */
+@ApiStatus.Internal
 public abstract class ScopesChooser extends ComboBoxAction implements DumbAware {
-  public static final String TITLE = "Select a scope to change its settings";
-
-  private final List<Descriptor> myDefaultDescriptors;
-  private final InspectionProfileImpl myInspectionProfile;
+  private final List<? extends Descriptor> myDefaultDescriptors;
+  private final @NotNull InspectionProfileImpl myInspectionProfile;
   private final Project myProject;
   private final Set<String> myExcludedScopeNames;
 
-  public ScopesChooser(final List<Descriptor> defaultDescriptors,
-                       final InspectionProfileImpl inspectionProfile,
-                       final Project project,
+  public ScopesChooser(final List<? extends Descriptor> defaultDescriptors,
+                       @NotNull InspectionProfileImpl inspectionProfile,
+                       @NotNull Project project,
                        final String[] excludedScopeNames) {
     myDefaultDescriptors = defaultDescriptors;
     myInspectionProfile = inspectionProfile;
     myProject = project;
-    myExcludedScopeNames = excludedScopeNames == null ? Collections.<String>emptySet() : ContainerUtil.newHashSet(excludedScopeNames);
-    setPopupTitle(TITLE);
-    getTemplatePresentation().setText("In All Scopes");
+    myExcludedScopeNames = excludedScopeNames == null ? Collections.emptySet() : ContainerUtil.newHashSet(excludedScopeNames);
+    setPopupTitle(LangBundle.message("scopes.chooser.popup.title.select.scope.to.change.its.settings"));
+    getTemplatePresentation().setText(InspectionsBundle.messagePointer("action.presentation.ScopesChooser.text"));
   }
 
-  @NotNull
   @Override
-  public DefaultActionGroup createPopupActionGroup(final JComponent component) {
+  public @NotNull DefaultActionGroup createPopupActionGroup(@NotNull JComponent component, @NotNull DataContext context) {
     final DefaultActionGroup group = new DefaultActionGroup();
 
     final List<NamedScope> predefinedScopes = new ArrayList<>();
@@ -83,9 +74,9 @@ public abstract class ScopesChooser extends ComboBoxAction implements DumbAware 
     fillActionGroup(group, customScopes, myDefaultDescriptors, myInspectionProfile, myExcludedScopeNames);
 
     group.addSeparator();
-    group.add(new DumbAwareAction("Edit Scopes Order...") {
+    group.add(new DumbAwareAction(IdeBundle.messagePointer("action.Anonymous.text.edit.scopes.order")) {
       @Override
-      public void actionPerformed(final AnActionEvent e) {
+      public void actionPerformed(final @NotNull AnActionEvent e) {
         final ScopesOrderDialog dlg = new ScopesOrderDialog(component, myInspectionProfile, myProject);
         if (dlg.showAndGet()) {
           onScopesOrderChanged();
@@ -98,27 +89,34 @@ public abstract class ScopesChooser extends ComboBoxAction implements DumbAware 
 
   protected abstract void onScopesOrderChanged();
 
-  protected abstract void onScopeAdded();
+  protected abstract void onScopeAdded(@NotNull String scopeName);
 
   private void fillActionGroup(final DefaultActionGroup group,
-                               final List<NamedScope> scopes,
-                               final List<Descriptor> defaultDescriptors,
+                               final List<? extends NamedScope> scopes,
+                               final List<? extends Descriptor> defaultDescriptors,
                                final InspectionProfileImpl inspectionProfile,
                                final Set<String> excludedScopeNames) {
     for (final NamedScope scope : scopes) {
-      final String scopeName = scope.getName();
+      final String scopeName = scope.getScopeId();
       if (excludedScopeNames.contains(scopeName)) {
         continue;
       }
-      group.add(new DumbAwareAction(scopeName) {
+      group.add(new DumbAwareAction(scope.getPresentableName()) {
         @Override
-        public void actionPerformed(final AnActionEvent e) {
+        public void actionPerformed(final @NotNull AnActionEvent e) {
           for (final Descriptor defaultDescriptor : defaultDescriptors) {
-            inspectionProfile.addScope(defaultDescriptor.getToolWrapper().createCopy(), scope, defaultDescriptor.getLevel(), true, getEventProject(e));
+            InspectionToolWrapper wrapper = defaultDescriptor.getToolWrapper().createCopy();
+            wrapper.getTool().readSettings(Descriptor.createConfigElement(defaultDescriptor.getToolWrapper()));
+            inspectionProfile.addScope(wrapper, scope, defaultDescriptor.getLevel(), true, e.getProject());
           }
-          onScopeAdded();
+          onScopeAdded(scopeName);
         }
       });
     }
+  }
+
+  @Override
+  public @NotNull JComponent createCustomComponent(@NotNull Presentation presentation, @NotNull String place) {
+    return createComboBoxButton(presentation);
   }
 }

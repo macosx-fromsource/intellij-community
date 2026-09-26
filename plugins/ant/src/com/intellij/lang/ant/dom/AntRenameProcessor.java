@@ -1,21 +1,8 @@
-/*
- * Copyright 2000-2010 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.ant.dom;
 
-import com.intellij.openapi.util.Trinity;
+import com.intellij.lang.ant.dom.PropertyResolver.PropertyData;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.pom.PomTarget;
 import com.intellij.pom.PomTargetPsiElement;
 import com.intellij.psi.PsiElement;
@@ -25,17 +12,16 @@ import com.intellij.util.xml.DomTarget;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Aug 11, 2010
  */
-public class AntRenameProcessor extends RenamePsiElementProcessor{
+public final class AntRenameProcessor extends RenamePsiElementProcessor{
 
-  public void prepareRenaming(PsiElement element, String newName, Map<PsiElement, String> allRenames) {
+  @Override
+  public void prepareRenaming(@NotNull PsiElement element, @NotNull @NlsSafe String newName, @NotNull Map<PsiElement, String> allRenames) {
     final AntDomElement antElement = convertToAntDomElement(element);
     String propName = null;
     if (antElement instanceof AntDomProperty) {
@@ -51,14 +37,15 @@ public class AntRenameProcessor extends RenamePsiElementProcessor{
         allRenames.put(psiElement, newName);
       }
       if (antElement instanceof AntDomAntCallParam) {
-        final Trinity<PsiElement, Collection<String>, PropertiesProvider> result = PropertyResolver.resolve(contextProject, propName, null);
-        if (result.getFirst() != null) {
-          allRenames.put(result.getFirst(), newName);
+        final @NotNull PropertyData result = PropertyResolver.resolve(contextProject, propName, null);
+        if (result.element() != null) {
+          allRenames.put(result.element(), newName);
         }
       }
     }
   }
 
+  @Override
   public boolean canProcessElement(@NotNull PsiElement element) {
     final AntDomElement antElement = convertToAntDomElement(element);
     if (antElement instanceof AntDomProperty || antElement instanceof AntDomAntCallParam) {
@@ -66,9 +53,8 @@ public class AntRenameProcessor extends RenamePsiElementProcessor{
     }
     return false;
   }
-  
-  @Nullable 
-  private static AntDomElement convertToAntDomElement(PsiElement element) {
+
+  private static @Nullable AntDomElement convertToAntDomElement(PsiElement element) {
     if (element instanceof PomTargetPsiElement) {
       final PomTarget target = ((PomTargetPsiElement)element).getTarget();
       if (target instanceof DomTarget) {

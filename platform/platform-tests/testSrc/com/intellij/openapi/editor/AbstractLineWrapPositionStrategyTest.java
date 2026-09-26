@@ -15,6 +15,7 @@
  */
 package com.intellij.openapi.editor;
 
+import com.intellij.openapi.editor.impl.SoftWrapEngine;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jmock.Expectations;
@@ -30,7 +31,7 @@ public abstract class AbstractLineWrapPositionStrategyTest {
   private Mockery myMockery;
   private Project myProject;
 
-  public void setUp() {
+  public void prepare() {
     myMockery = new JUnit4Mockery() {{
       setImposteriser(ClassImposteriser.INSTANCE);
     }};
@@ -49,6 +50,11 @@ public abstract class AbstractLineWrapPositionStrategyTest {
       allowToBeyondMaxPreferredOffset, true
     );
     assertSame(context.wrapIndex, actual);
+  }
+
+  protected void doTestDefaultWrap(@NotNull LineWrapPositionStrategy strategy, final String text, int expectedResult) {
+    int offset = SoftWrapEngine.findWrapPosition(text, text.length() - 1, 1, strategy);
+    assertSame(expectedResult, offset);
   }
 
   private Document createMockDocument(@NotNull final String text) {
@@ -118,7 +124,7 @@ public abstract class AbstractLineWrapPositionStrategyTest {
     }
 
     private void processWrap() {
-      buffer.append(rawDocument.substring(index, tmpWrapIndex));
+      buffer.append(rawDocument, index, tmpWrapIndex);
       index = tmpWrapIndex + WRAP_MARKER.length();
       wrapIndex = buffer.length();
       if (rawDocument.indexOf(WRAP_MARKER, index) >= 0) {
@@ -127,7 +133,7 @@ public abstract class AbstractLineWrapPositionStrategyTest {
     }
 
     private void processMaxPreferredIndex() {
-      buffer.append(rawDocument.substring(index, tmpEdgeIndex));
+      buffer.append(rawDocument, index, tmpEdgeIndex);
       index = tmpEdgeIndex + EDGE_MARKER.length();
       edgeIndex = buffer.length();
       if (rawDocument.indexOf(EDGE_MARKER, index) >= 0) {

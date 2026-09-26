@@ -1,57 +1,58 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.io.fastCgi
 
-import com.intellij.openapi.diagnostic.Logger
+import com.intellij.concurrency.ConcurrentCollectionFactory
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.util.Consumer
-import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.io.addChannelListener
 import com.intellij.util.io.handler
 import io.netty.bootstrap.Bootstrap
 import io.netty.buffer.ByteBuf
+import io.netty.buffer.Unpooled
 import io.netty.channel.Channel
-import io.netty.handler.codec.http.*
+import io.netty.handler.codec.http.DefaultFullHttpResponse
+import io.netty.handler.codec.http.FullHttpRequest
+import io.netty.handler.codec.http.HttpHeaders
+import io.netty.handler.codec.http.HttpResponse
+import io.netty.handler.codec.http.HttpResponseStatus
+import io.netty.handler.codec.http.HttpUtil
+import io.netty.handler.codec.http.HttpVersion
+import org.jetbrains.builtInWebServer.PathInfo
 import org.jetbrains.builtInWebServer.SingleConnectionNetService
+import org.jetbrains.builtInWebServer.liveReload.WebServerPageConnectionService
 import org.jetbrains.concurrency.Promise
-import org.jetbrains.concurrency.doneRun
 import org.jetbrains.concurrency.errorIfNotMessage
-import org.jetbrains.io.*
+import org.jetbrains.io.ChannelExceptionHandler
+import org.jetbrains.io.MessageDecoder
+import org.jetbrains.io.NettyUtil
+import org.jetbrains.io.addServer
+import org.jetbrains.io.send
 import java.util.concurrent.atomic.AtomicInteger
 
-val LOG = Logger.getInstance(FastCgiService::class.java)
+internal val LOG = logger<FastCgiService>()
 
 // todo send FCGI_ABORT_REQUEST if client channel disconnected
 abstract class FastCgiService(project: Project) : SingleConnectionNetService(project) {
   private val requestIdCounter = AtomicInteger()
-  private val requests = ContainerUtil.createConcurrentIntObjectMap<ClientInfo>()
+  private val requests = ConcurrentCollectionFactory.createConcurrentIntObjectMap<ClientInfo>()
 
   override fun configureBootstrap(bootstrap: Bootstrap, errorOutputConsumer: Consumer<String>) {
     bootstrap.handler {
       it.pipeline().addLast("fastCgiDecoder", FastCgiDecoder(errorOutputConsumer, this@FastCgiService))
       it.pipeline().addLast("exceptionHandler", ChannelExceptionHandler.getInstance())
+    }
+  }
 
-      it.closeFuture().addChannelListener {
-        requestIdCounter.set(0)
-        if (!requests.isEmpty) {
-          val waitingClients = requests.elements().toList()
-          requests.clear()
-          for (client in waitingClients) {
-            sendBadGateway(client.channel, client.extraHeaders)
-          }
+  override fun addCloseListener(it: Channel) {
+    super.addCloseListener(it)
+    it.closeFuture().addChannelListener {
+      requestIdCounter.set(0)
+      if (!requests.isEmpty) {
+        val waitingClients = requests.elements().toList()
+        requests.clear()
+        for (client in waitingClients) {
+          sendBadGateway(client.channel, client.extraHeaders)
         }
       }
     }
@@ -70,7 +71,11 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
 
     try {
       val promise: Promise<*>
-      if (processHandler.has()) {
+      val handler = processHandler.resultIfFullFilled
+      if (handler == null) {
+        promise = processHandler.get()
+      }
+      else {
         val channel = processChannel.get()
         if (channel == null || !channel.isOpen) {
           // channel disconnected for some reason
@@ -81,13 +86,10 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
           return
         }
       }
-      else {
-        promise = processHandler.get()
-      }
 
       promise
-        .doneRun { fastCgiRequest.writeToServerChannel(notEmptyContent, processChannel.get()!!) }
-        .rejected {
+        .onSuccess { fastCgiRequest.writeToServerChannel(notEmptyContent, processChannel.get()!!) }
+        .onError {
           LOG.errorIfNotMessage(it)
           handleError(fastCgiRequest, notEmptyContent)
         }
@@ -111,13 +113,13 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
     }
   }
 
-  fun allocateRequestId(channel: Channel, extraHeaders: HttpHeaders): Int {
+  fun allocateRequestId(channel: Channel, pathInfo: PathInfo, request: FullHttpRequest, extraHeaders: HttpHeaders): Int {
     var requestId = requestIdCounter.getAndIncrement()
     if (requestId >= java.lang.Short.MAX_VALUE) {
       requestIdCounter.set(0)
       requestId = requestIdCounter.getAndDecrement()
     }
-    requests.put(requestId, ClientInfo(channel, extraHeaders))
+    requests.put(requestId, ClientInfo(channel, pathInfo, request, extraHeaders))
     return requestId
   }
 
@@ -134,17 +136,23 @@ abstract class FastCgiService(project: Project) : SingleConnectionNetService(pro
       return
     }
 
-    val httpResponse = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buffer)
+    val extraSuffix = WebServerPageConnectionService.instance.fileRequested(client.request, false, client.pathInfo::getOrResolveVirtualFile)
+    val bufferWithExtraSuffix =
+      if (extraSuffix == null) buffer
+      else {
+        Unpooled.wrappedBuffer(buffer, Unpooled.copiedBuffer(extraSuffix, Charsets.UTF_8))
+      }
+    val httpResponse = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, bufferWithExtraSuffix)
     try {
-      parseHeaders(httpResponse, buffer)
+      parseHeaders(httpResponse, bufferWithExtraSuffix)
       httpResponse.addServer()
       if (!HttpUtil.isContentLengthSet(httpResponse)) {
-        HttpUtil.setContentLength(httpResponse, buffer.readableBytes().toLong())
+        HttpUtil.setContentLength(httpResponse, bufferWithExtraSuffix.readableBytes().toLong())
       }
       httpResponse.headers().add(client.extraHeaders)
     }
     catch (e: Throwable) {
-      buffer.release()
+      bufferWithExtraSuffix.release()
       try {
         LOG.error(e)
       }
@@ -196,13 +204,13 @@ private fun parseHeaders(response: HttpResponse, buffer: ByteBuf) {
       }
     }
 
-    if (builder.length == 0) {
+    if (builder.isEmpty()) {
       // end of headers
       return
     }
 
     // skip standard headers
-    if (key.isNullOrEmpty() || key!!.startsWith("http", ignoreCase = true) || key.startsWith("X-Accel-", ignoreCase = true)) {
+    if (key.isNullOrEmpty() || key.startsWith("http", ignoreCase = true) || key.startsWith("X-Accel-", ignoreCase = true)) {
       continue
     }
 
@@ -210,7 +218,7 @@ private fun parseHeaders(response: HttpResponse, buffer: ByteBuf) {
     if (key.equals("status", ignoreCase = true)) {
       val index = value.indexOf(' ')
       if (index == -1) {
-        LOG.warn("Cannot parse status: " + value)
+        LOG.warn("Cannot parse status: $value")
         response.status = HttpResponseStatus.OK
       }
       else {
@@ -223,4 +231,4 @@ private fun parseHeaders(response: HttpResponse, buffer: ByteBuf) {
   }
 }
 
-private class ClientInfo(val channel: Channel, val extraHeaders: HttpHeaders)
+private class ClientInfo(val channel: Channel, val pathInfo: PathInfo, var request: FullHttpRequest, val extraHeaders: HttpHeaders)

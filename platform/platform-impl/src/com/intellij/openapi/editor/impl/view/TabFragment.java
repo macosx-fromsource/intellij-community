@@ -1,30 +1,17 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.impl.view;
 
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
 import org.jetbrains.annotations.NotNull;
 
-import java.awt.*;
+import java.awt.Graphics2D;
+import java.util.function.Consumer;
 
 /**
  * A single Tab character
  */
-class TabFragment implements LineFragment {
+final class TabFragment implements LineFragment {
   private final EditorView myView;
   private final Editor myEditor;
 
@@ -47,16 +34,16 @@ class TabFragment implements LineFragment {
   @Override
   public int getVisualColumnCount(float startX) {
     float x = getNextTabStop(startX);
-    return EditorUtil.columnsNumber((int)(x - startX), myView.getPlainSpaceWidth());
+    return EditorUtil.columnsNumber(x - startX, myView.getPlainSpaceWidth());
   }
 
   @Override
-  public void draw(Graphics2D g, float x, float y, int startColumn, int endColumn) {
+  public @NotNull Consumer<Graphics2D> draw(float x, float y, int startColumn, int endColumn) {
+    return _ -> {};
   }
 
-  @NotNull
   @Override
-  public LineFragment subFragment(int startOffset, int endOffset) {
+  public @NotNull LineFragment subFragment(int startOffset, int endOffset) {
     return this;
   }
 
@@ -80,21 +67,32 @@ class TabFragment implements LineFragment {
   }
 
   @Override
-  public int[] xToVisualColumn(float startX, float x) {
-    if (x <= startX) return new int[] {0, 0};
+  public int visualColumnToOffset(float startX, int column) {
+    int visualColumnCount = getVisualColumnCount(startX);
+    return column == visualColumnCount ? 1 : 0;
+  }
+
+  @Override
+  public @NotNull VisualColumn xToVisualColumn(float startX, float x) {
+    if (x <= startX) {
+      return new VisualColumn(0, false);
+    }
     float nextTabStop = getNextTabStop(startX);
-    if (x > nextTabStop) return new int[] {getVisualColumnCount(startX), 1};
-    int column, columnWithoutRounding;
+    if (x > nextTabStop) {
+      return new VisualColumn(getVisualColumnCount(startX), true);
+    }
+    int column;
+    boolean leansRight;
     if (myEditor.getSettings().isCaretInsideTabs()) {
-      int plainSpaceWidth = myView.getPlainSpaceWidth();
-      column = ((int)(x - startX) + plainSpaceWidth / 2) / plainSpaceWidth;
-      columnWithoutRounding = ((int)(x - startX - 1)) / plainSpaceWidth;
+      float plainSpaceWidth = myView.getPlainSpaceWidth();
+      column = Math.round((x - startX)/plainSpaceWidth);
+      leansRight = (x - startX) > (column * plainSpaceWidth);
     }
     else {
       column = x > (startX + nextTabStop) / 2 ? getVisualColumnCount(startX) : 0;
-      columnWithoutRounding = 0;
+      leansRight = column == 0;
     }
-    return new int[] {column, column == columnWithoutRounding ? 1 : 0};
+    return new VisualColumn(column, leansRight);
   }
 
   @Override
@@ -109,6 +107,7 @@ class TabFragment implements LineFragment {
   }
   
   private float getNextTabStop(float x) {
-    return EditorUtil.nextTabStop((int)x, myView.getPlainSpaceWidth(), myView.getTabSize());
+    int leftInset = myView.getInsets().left;
+    return EditorUtil.nextTabStop(x - leftInset, myView.getPlainSpaceWidth(), myView.getTabSize()) + leftInset;
   }
 }

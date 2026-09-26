@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.refactoring.rename;
 
 import com.intellij.lang.xml.XMLLanguage;
@@ -29,22 +15,24 @@ import com.intellij.psi.xml.XmlFile;
 import com.intellij.refactoring.listeners.RefactoringElementListener;
 import com.intellij.usageView.UsageInfo;
 import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.containers.Queue;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+
 public class RenameXmlAttributeProcessor extends RenamePsiElementProcessor {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.refactoring.rename.RenameXmlAttributeProcessor");
+  private static final Logger LOG = Logger.getInstance(RenameXmlAttributeProcessor.class);
 
   @Override
-  public boolean canProcessElement(@NotNull final PsiElement element) {
+  public boolean canProcessElement(final @NotNull PsiElement element) {
     return element instanceof XmlAttribute || element instanceof XmlAttributeValue;
   }
 
   @Override
-  public void renameElement(final PsiElement element,
-                            final String newName,
-                            final UsageInfo[] usages,
+  public void renameElement(final @NotNull PsiElement element,
+                            final @NotNull String newName,
+                            final UsageInfo @NotNull [] usages,
                             @Nullable RefactoringElementListener listener) throws IncorrectOperationException {
     if (element instanceof XmlAttribute) {
       doRenameXmlAttribute((XmlAttribute)element, newName, listener);
@@ -90,7 +78,7 @@ public class RenameXmlAttributeProcessor extends RenamePsiElementProcessor {
   private static void renameAll(PsiElement originalElement, UsageInfo[] infos, String newName,
                                 String originalName) throws IncorrectOperationException {
     if (newName.equals(originalName)) return;
-    Queue<PsiReference> queue = new Queue<>(infos.length);
+    Deque<PsiReference> queue = new ArrayDeque<>(infos.length);
     for (UsageInfo info : infos) {
       if (info.getElement() == null) continue;
       PsiReference ref = info.getReference();
@@ -99,16 +87,15 @@ public class RenameXmlAttributeProcessor extends RenamePsiElementProcessor {
     }
 
     while(!queue.isEmpty()) {
-      final PsiReference reference = queue.pullFirst();
+      final PsiReference reference = queue.removeFirst();
       final PsiElement oldElement = reference.getElement();
       if (!oldElement.isValid() || oldElement == originalElement) continue;
       final PsiElement newElement = reference.handleElementRename(newName);
       if (!oldElement.isValid()) {
-        for (PsiReference psiReference : ReferencesSearch.search(originalElement, new LocalSearchScope(newElement), false)) {
+        for (PsiReference psiReference : ReferencesSearch.search(originalElement, new LocalSearchScope(newElement), false).asIterable()) {
           queue.addLast(psiReference);
         }
       }
     }
   }
-
 }

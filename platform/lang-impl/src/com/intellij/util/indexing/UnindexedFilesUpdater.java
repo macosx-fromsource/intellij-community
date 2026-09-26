@@ -1,122 +1,85 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.indexing;
 
-import com.intellij.ProjectTopics;
-import com.intellij.diagnostic.PerformanceWatcher;
-import com.intellij.ide.IdeBundle;
-import com.intellij.ide.startup.impl.StartupManagerImpl;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.progress.ProcessCanceledException;
-import com.intellij.openapi.progress.ProgressIndicator;
-import com.intellij.openapi.project.CacheUpdateRunner;
-import com.intellij.openapi.project.DumbModeTask;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.CollectingContentIterator;
-import com.intellij.openapi.roots.ModuleRootEvent;
-import com.intellij.openapi.roots.ModuleRootListener;
-import com.intellij.openapi.roots.impl.PushedFilePropertiesUpdater;
-import com.intellij.openapi.startup.StartupManager;
-import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.project.UnindexedFilesScannerExecutor;
+import com.intellij.openapi.util.registry.Registry;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Range;
 
-import java.util.List;
+import static com.intellij.util.SystemProperties.getBooleanProperty;
+import static com.intellij.util.SystemProperties.getIntProperty;
 
-/**
- * @author Eugene Zhuravlev
- * @since Jan 29, 2008
- */
-public class UnindexedFilesUpdater extends DumbModeTask {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.util.indexing.UnindexedFilesUpdater");
+public final class UnindexedFilesUpdater {
+  private static final boolean useConservativeThreadCountPolicy = getBooleanProperty("idea.indexing.use.conservative.thread.count.policy", false);
 
-  private final FileBasedIndexImpl myIndex = (FileBasedIndexImpl)FileBasedIndex.getInstance();
-  private final Project myProject;
+  private static final int DEFAULT_MAX_INDEXER_THREADS = 4;
+  /** Defines number of indexing threads. -1 means autoconfigured value (see getNumberOfIndexingThreads/getMaxNumberOfIndexingThreads for algo). */
+  private static final int INDEXER_THREAD_COUNT = getIntProperty("caches.indexerThreadsCount", -1);
+  /**
+   * Count CPU# with or without hyper-threading:
+   * if true:  assume # cores reported is # physical cores x2, so /2 to get physical cores count
+   * If false (default): use # cores reported as-is, don't try to outsmart CPU developers
+   */
+  private static final boolean IS_HT_SMT_ENABLED = getBooleanProperty("intellij.system.ht.smt.enabled", false);
 
-  public UnindexedFilesUpdater(final Project project) {
-    myProject = project;
-    project.getMessageBus().connect(this).subscribe(ProjectTopics.PROJECT_ROOTS, new ModuleRootListener() {
-      @Override
-      public void rootsChanged(ModuleRootEvent event) {
-        DumbService.getInstance(project).cancelTask(UnindexedFilesUpdater.this);
-      }
-    });
+  private UnindexedFilesUpdater() {
   }
 
-  private void updateUnindexedFiles(ProgressIndicator indicator) {
-    PerformanceWatcher.Snapshot snapshot = PerformanceWatcher.takeSnapshot();
-    PushedFilePropertiesUpdater.getInstance(myProject).pushAllPropertiesNow();
-    boolean trackResponsiveness = !ApplicationManager.getApplication().isUnitTestMode();
-
-    if (trackResponsiveness) snapshot.logResponsivenessSinceCreation("Pushing properties");
-
-    indicator.setIndeterminate(true);
-    indicator.setText(IdeBundle.message("progress.indexing.scanning"));
-
-    myIndex.clearIndicesIfNecessary();
-
-    CollectingContentIterator finder = myIndex.createContentIterator(indicator);
-    snapshot = PerformanceWatcher.takeSnapshot();
-
-    myIndex.iterateIndexableFilesConcurrently(finder, myProject, indicator);
-
-    myIndex.filesUpdateEnumerationFinished();
-
-    if (trackResponsiveness) snapshot.logResponsivenessSinceCreation("Indexable file iteration");
-
-    List<VirtualFile> files = finder.getFiles();
-
-    if (!ApplicationManager.getApplication().isUnitTestMode()) {
-      // full VFS refresh makes sense only after it's loaded, i.e. after scanning files to index is finished
-      ((StartupManagerImpl)StartupManager.getInstance(myProject)).scheduleInitialVfsRefresh();
+  /**
+   * Returns the best number of threads to be used for indexing at this moment.
+   * It may change during execution of the IDE depending on other activities' load.
+   */
+  public static int getNumberOfIndexingThreads() {
+    int threadCount = INDEXER_THREAD_COUNT;
+    if (threadCount <= 0) {
+      threadCount =
+        Math.max(1, Math.min(useConservativeThreadCountPolicy
+                             ? DEFAULT_MAX_INDEXER_THREADS : getMaxNumberOfIndexingThreads(), getMaxNumberOfIndexingThreads()));
     }
-
-    if (files.isEmpty()) {
-      return;
-    }
-
-    snapshot = PerformanceWatcher.takeSnapshot();
-
-    if (trackResponsiveness) LOG.info("Unindexed files update started: " + files.size() + " files to update");
-
-    indicator.setIndeterminate(false);
-    indicator.setText(IdeBundle.message("progress.indexing.updating"));
-
-    indexFiles(indicator, files);
-
-    if (trackResponsiveness) snapshot.logResponsivenessSinceCreation("Unindexed files update");
+    return threadCount;
   }
 
-  private void indexFiles(ProgressIndicator indicator, List<VirtualFile> files) {
-    CacheUpdateRunner.processFiles(indicator, true, files, myProject, content -> myIndex.indexFileContent(myProject, content));
+  /**
+   * Returns the maximum number of threads to be used for indexing during this execution of the IDE.
+   */
+  public static int getMaxNumberOfIndexingThreads() {
+    // Change of the registry option requires IDE restart.
+    int threadCount = INDEXER_THREAD_COUNT;
+    if (threadCount > 0) {
+      return threadCount;
+    }
+
+    return Math.max(1, getAvailablePhysicalCoresNumber() - getCoresToLeaveForOtherActivitiesCount());
   }
 
-  @Override
-  public void performInDumbMode(@NotNull ProgressIndicator indicator) {
-    myIndex.filesUpdateStarted(myProject);
-    try {
-      updateUnindexedFiles(indicator);
-    }
-    catch (ProcessCanceledException e) {
-      LOG.info("Unindexed files update canceled");
-      throw e;
-    }
-    finally {
-      myIndex.filesUpdateFinished(myProject);
-    }
+  public static int getAvailablePhysicalCoresNumber() {
+    var availableCores = Runtime.getRuntime().availableProcessors();
+    return IS_HT_SMT_ENABLED ? availableCores / 2 : availableCores;
+  }
+
+  /**
+   * Scanning activity can be scaled well across number of threads, so we're trying to use all available resources to do it faster.
+   */
+  public static @Range(from = 1, to = Integer.MAX_VALUE) int getNumberOfScanningThreads() {
+    int scanningThreadCount = Registry.intValue("caches.scanningThreadsCount");
+    if (scanningThreadCount > 0) return scanningThreadCount;
+    int maxBackgroundThreadCount = getMaxBackgroundThreadCount();
+    return Math.max(maxBackgroundThreadCount, getNumberOfIndexingThreads());
+  }
+
+  private static int getMaxBackgroundThreadCount() {
+    // note that getMaxBackgroundThreadCount is used to calculate threads count is FilesScanExecutor, which is also used for "FindInFiles"
+    return Runtime.getRuntime().availableProcessors() - getCoresToLeaveForOtherActivitiesCount();
+  }
+
+  private static int getCoresToLeaveForOtherActivitiesCount() {
+    return ApplicationManager.getApplication().isCommandLine() ? 0 : 1;
+  }
+
+  public static boolean isScanningInProgress(@NotNull Project project) {
+    UnindexedFilesScannerExecutor executor = UnindexedFilesScannerExecutor.getInstance(project);
+    return executor.getHasQueuedTasks() || executor.isRunning().getValue();
   }
 }

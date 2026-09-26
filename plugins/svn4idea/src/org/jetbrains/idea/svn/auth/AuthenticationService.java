@@ -1,36 +1,20 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.auth;
 
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.popup.util.PopupUtil;
-import com.intellij.openapi.util.Getter;
 import com.intellij.openapi.util.Ref;
-import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.ArrayUtil;
+import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.WaitForProgressToShow;
-import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.net.HttpConfigurable;
 import com.intellij.util.net.IdeHttpClientHelpers;
+import com.intellij.util.net.JdkProxyProvider;
+import com.intellij.util.net.ProxyConfiguration;
+import com.intellij.util.net.ProxySettings;
+import com.intellij.util.net.ProxyUtils;
 import com.intellij.util.net.ssl.CertificateManager;
-import com.intellij.util.proxy.CommonProxy;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpGet;
@@ -38,80 +22,75 @@ import org.apache.http.config.SocketConfig;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClients;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.idea.svn.SvnBundle;
 import org.jetbrains.idea.svn.SvnConfiguration;
 import org.jetbrains.idea.svn.SvnVcs;
+import org.jetbrains.idea.svn.api.Url;
 import org.jetbrains.idea.svn.commandLine.SvnBindException;
 import org.jetbrains.idea.svn.dialogs.SimpleCredentialsDialog;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.auth.ISVNAuthenticationManager;
-import org.tmatesoft.svn.core.auth.SVNAuthentication;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.TrustManager;
-import java.io.File;
 import java.io.IOException;
-import java.net.*;
+import java.net.Authenticator;
+import java.net.InetSocketAddress;
+import java.net.MalformedURLException;
+import java.net.PasswordAuthentication;
+import java.net.Proxy;
+import java.net.URI;
+import java.net.URL;
+import java.nio.file.Path;
 import java.security.KeyManagementException;
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 
-/**
- * Created with IntelliJ IDEA.
- * User: Irina.Chernushina
- * Date: 2/26/13
- * Time: 1:27 PM
- */
-public class AuthenticationService {
+import static org.jetbrains.idea.svn.SvnBundle.message;
 
-  @NotNull private final SvnVcs myVcs;
-  private final boolean myIsActive;
+public final class AuthenticationService {
   private static final Logger LOG = Logger.getInstance(AuthenticationService.class);
-  private File myTempDirectory;
+
+  private static final @NonNls String FATAL_HANDSHAKE_FAILURE_ERROR = "received fatal alert: handshake_failure";
+  private static final @NonNls String SSL_V3_PROTOCOL = "SSLv3";
+  private static final @NonNls String TLS_V1_PROTOCOL = "TLSv1";
+
+  private static final @NonNls String TERMINAL_SSL_SERVER_AUTH_KIND = "terminal.ssl.server";
+
+  private final @NotNull SvnVcs myVcs;
+  private final boolean myIsActive;
   private boolean myProxyCredentialsWereReturned;
-  private SvnConfiguration myConfiguration;
+  private final @NotNull SvnConfiguration myConfiguration;
   private final Set<String> myRequestedCredentials;
 
   public AuthenticationService(@NotNull SvnVcs vcs, boolean isActive) {
     myVcs = vcs;
     myIsActive = isActive;
-    myConfiguration = SvnConfiguration.getInstance(myVcs.getProject());
-    myRequestedCredentials = ContainerUtil.newHashSet();
+    myConfiguration = myVcs.getSvnConfiguration();
+    myRequestedCredentials = new HashSet<>();
   }
 
-  @NotNull
-  public SvnVcs getVcs() {
+  public @NotNull SvnVcs getVcs() {
     return myVcs;
-  }
-
-  @Nullable
-  public File getTempDirectory() {
-    return myTempDirectory;
   }
 
   public boolean isActive() {
     return myIsActive;
   }
 
-  @Nullable
-  public SVNAuthentication requestCredentials(final SVNURL repositoryUrl, final String type) {
-    SVNAuthentication authentication = null;
+  public @Nullable AuthenticationData requestCredentials(final Url repositoryUrl, final String type) {
+    AuthenticationData authentication = null;
 
     if (repositoryUrl != null) {
       final String realm = repositoryUrl.toDecodedString();
 
-      authentication = requestCredentials(realm, type, new Getter<SVNAuthentication>() {
-        @Override
-        public SVNAuthentication get() {
-          return myVcs.getSvnConfiguration().getInteractiveManager(myVcs).getInnerProvider()
-            .requestClientAuthentication(type, repositoryUrl, realm, null, null, true);
-        }
-      });
+      authentication = requestCredentials(realm, type, () -> myConfiguration.getInteractiveManager(myVcs).getProvider()
+        .requestClientAuthentication(type, repositoryUrl, realm, true));
     }
 
     if (authentication == null) {
@@ -121,8 +100,7 @@ public class AuthenticationService {
     return authentication;
   }
 
-  @Nullable
-  private <T> T requestCredentials(@NotNull String realm, @NotNull String type, @NotNull Getter<T> fromUserProvider) {
+  private @Nullable <T> T requestCredentials(@NotNull String realm, @NotNull String type, @NotNull Supplier<T> fromUserProvider) {
     T result = null;
     // Search for stored credentials not only by key but also by "parent" keys. This is useful when we work just with URLs
     // (not working copy) and can't detect repository url beforehand because authentication is required. If found credentials of "parent"
@@ -142,7 +120,7 @@ public class AuthenticationService {
       result = fromUserProvider.get();
       if (result != null) {
         // save user credentials to memory cache
-        myVcs.getSvnConfiguration().acknowledge(type, realm, result);
+        myConfiguration.acknowledge(type, realm, result);
         myRequestedCredentials.add(key);
       }
     }
@@ -150,92 +128,72 @@ public class AuthenticationService {
     return result;
   }
 
-  @Nullable
-  public String requestSshCredentials(@NotNull final String realm,
-                                      @NotNull final SimpleCredentialsDialog.Mode mode,
-                                      @NotNull final String key) {
-    return requestCredentials(realm, StringUtil.toLowerCase(mode.toString()), new Getter<String>() {
-      @Override
-      public String get() {
-        final Ref<String> answer = new Ref<>();
+  public @Nullable String requestSshCredentials(final @NotNull String realm,
+                                                final @NotNull SimpleCredentialsDialog.Mode mode,
+                                                final @NotNull String key) {
+    return requestCredentials(realm, StringUtil.toLowerCase(mode.toString()), () -> {
+      final Ref<String> answer = new Ref<>();
 
-        Runnable command = new Runnable() {
-          public void run() {
-            SimpleCredentialsDialog dialog = new SimpleCredentialsDialog(myVcs.getProject());
+      Runnable command = () -> {
+        SimpleCredentialsDialog dialog = new SimpleCredentialsDialog(myVcs.getProject());
 
-            dialog.setup(mode, realm, key, true);
-            dialog.setTitle(SvnBundle.message("dialog.title.authentication.required"));
-            dialog.setSaveEnabled(false);
-            if (dialog.showAndGet()) {
-              answer.set(dialog.getPassword());
-            }
-          }
-        };
+        dialog.setup(mode, realm, key, true);
+        dialog.setTitle(message("dialog.title.authentication.required"));
+        dialog.setSaveEnabled(false);
+        if (dialog.showAndGet()) {
+          answer.set(dialog.getPassword());
+        }
+      };
 
-        // Use ModalityState.any() as currently ssh credentials in terminal mode are requested in the thread that reads output and not in
-        // the thread that started progress
-        WaitForProgressToShow.runOrInvokeAndWaitAboveProgress(command, ModalityState.any());
+      // Use ModalityState.any() as currently ssh credentials in terminal mode are requested in the thread that reads output and not in
+      // the thread that started progress
+      WaitForProgressToShow.runOrInvokeAndWaitAboveProgress(command, ModalityState.any());
 
-        return answer.get();
-      }
+      return answer.get();
     });
   }
 
-  @NotNull
-  public AcceptResult acceptCertificate(@NotNull final SVNURL url, @NotNull final String certificateInfo) {
+  public @NotNull AcceptResult acceptCertificate(final @NotNull Url url, final @NotNull String certificateInfo) {
     // TODO: Probably explicitly construct server url for realm here - like in CertificateTrustManager.
-    String kind = "terminal.ssl.server";
     String realm = url.toDecodedString();
-    Object data = SvnConfiguration.RUNTIME_AUTH_CACHE.getDataWithLowerCheck(kind, realm);
+    Object data = SvnConfiguration.RUNTIME_AUTH_CACHE.getDataWithLowerCheck(TERMINAL_SSL_SERVER_AUTH_KIND, realm);
     AcceptResult result;
 
     if (data != null) {
       result = (AcceptResult)data;
     }
     else {
-      result =
-        AcceptResult.from(getAuthenticationManager().getInnerProvider().acceptServerAuthentication(url, realm, certificateInfo, true));
+      result = getAuthenticationManager().getProvider().acceptServerAuthentication(url, realm, certificateInfo, true);
 
       if (!AcceptResult.REJECTED.equals(result)) {
-        myVcs.getSvnConfiguration().acknowledge(kind, realm, result);
+        myConfiguration.acknowledge(TERMINAL_SSL_SERVER_AUTH_KIND, realm, result);
       }
     }
 
     return result;
   }
 
-  public boolean acceptSSLServerCertificate(@Nullable SVNURL repositoryUrl, final String realm) throws SvnBindException {
+  public boolean acceptSSLServerCertificate(@Nullable Url repositoryUrl) throws SvnBindException {
     if (repositoryUrl == null) {
       return false;
     }
 
-    boolean result;
-
-    if (Registry.is("svn.use.svnkit.for.https.server.certificate.check")) {
-      result = new SSLServerCertificateAuthenticator(this, repositoryUrl, realm).tryAuthenticate();
+    HttpClient client = getClient(repositoryUrl);
+    try {
+      client.execute(new HttpGet(repositoryUrl.toDecodedString()));
+      return true;
     }
-    else {
-      HttpClient client = getClient(repositoryUrl);
-
-      try {
-        client.execute(new HttpGet(repositoryUrl.toDecodedString()));
-        result = true;
-      }
-      catch (IOException e) {
-        throw new SvnBindException(fixMessage(e), e);
-      }
+    catch (IOException e) {
+      throw new SvnBindException(fixMessage(e), e);
     }
-
-    return result;
   }
 
-  @Nullable
-  private static String fixMessage(@NotNull IOException e) {
+  private static @Nls @Nullable String fixMessage(@NotNull IOException e) {
     String message = null;
 
     if (e instanceof SSLHandshakeException) {
-      if (StringUtil.containsIgnoreCase(e.getMessage(), "received fatal alert: handshake_failure")) {
-        message = e.getMessage() + ". Please try to specify SSL protocol manually - SSLv3 or TLSv1";
+      if (StringUtil.containsIgnoreCase(e.getMessage(), FATAL_HANDSHAKE_FAILURE_ERROR)) {
+        message = e.getMessage() + ". " + message("label.specify.ssl.protocol.manually");
       }
       else if (e.getCause() != null) {
         // SSLHandshakeException.getMessage() could contain full type name of cause exception - for instance when cause is
@@ -247,12 +205,11 @@ public class AuthenticationService {
     return message;
   }
 
-  @NotNull
-  private HttpClient getClient(@NotNull SVNURL repositoryUrl) {
+  private @NotNull HttpClient getClient(@NotNull Url repositoryUrl) {
     // TODO: Implement algorithm of resolving necessary enabled protocols (TLSv1 vs SSLv3) instead of just using values from Settings.
     SSLContext sslContext = createSslContext(repositoryUrl);
     List<String> supportedProtocols = getSupportedSslProtocols();
-    SSLConnectionSocketFactory socketFactory = new SSLConnectionSocketFactory(sslContext, ArrayUtil.toStringArray(supportedProtocols), null,
+    SSLConnectionSocketFactory socketFactory = new SSLConnectionSocketFactory(sslContext, ArrayUtilRt.toStringArray(supportedProtocols), null,
                                                                               SSLConnectionSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER);
     // TODO: Seems more suitable here to read timeout values directly from config file - without utilizing SvnAuthenticationManager.
     final RequestConfig.Builder requestConfigBuilder = RequestConfig.custom();
@@ -274,26 +231,19 @@ public class AuthenticationService {
       .build();
   }
 
-  @NotNull
-  private List<String> getSupportedSslProtocols() {
-    List<String> result = ContainerUtil.newArrayList();
+  private @NotNull List<String> getSupportedSslProtocols() {
+    List<String> result = new ArrayList<>();
 
     switch (myConfiguration.getSslProtocols()) {
-      case sslv3:
-        result.add("SSLv3");
-        break;
-      case tlsv1:
-        result.add("TLSv1");
-        break;
-      case all:
-        break;
+      case sslv3 -> result.add(SSL_V3_PROTOCOL);
+      case tlsv1 -> result.add(TLS_V1_PROTOCOL);
+      case all -> {}
     }
 
     return result;
   }
 
-  @NotNull
-  private SSLContext createSslContext(@NotNull SVNURL url) {
+  private @NotNull SSLContext createSslContext(@NotNull Url url) {
     SSLContext result = CertificateManager.getSystemSslContext();
     TrustManager trustManager = new CertificateTrustManager(this, url);
 
@@ -307,33 +257,20 @@ public class AuthenticationService {
     return result;
   }
 
-  @NotNull
-  public SvnAuthenticationManager getAuthenticationManager() {
-    return isActive() ? myConfiguration.getInteractiveManager(myVcs) : myConfiguration.getPassiveAuthenticationManager(myVcs.getProject());
-  }
-
-  public void clearPassiveCredentials(String realm, SVNURL repositoryUrl, boolean password) {
-    if (repositoryUrl == null) {
-      return;
-    }
-
-    final SvnConfiguration configuration = SvnConfiguration.getInstance(myVcs.getProject());
-    final List<String> kinds = getKinds(repositoryUrl, password);
-
-    for (String kind : kinds) {
-      configuration.clearCredentials(kind, realm);
-    }
+  public @NotNull SvnAuthenticationManager getAuthenticationManager() {
+    return isActive() ? myConfiguration.getInteractiveManager(myVcs) : myConfiguration.getPassiveAuthenticationManager(myVcs);
   }
 
   // TODO: rename
   public boolean haveDataForTmpConfig() {
-    final HttpConfigurable instance = HttpConfigurable.getInstance();
-    return SvnConfiguration.getInstance(myVcs.getProject()).isIsUseDefaultProxy() &&
-           (instance.USE_HTTP_PROXY || instance.USE_PROXY_PAC);
+    var proxyConfig = ProxySettings.getInstance().getProxyConfiguration();
+    return myConfiguration.isUseDefaultProxy() && (
+      proxyConfig instanceof ProxyConfiguration.StaticProxyConfiguration || proxyConfig instanceof ProxyConfiguration.ProxyAutoConfiguration
+    );
   }
 
-  @Nullable
-  public static Proxy getIdeaDefinedProxy(@NotNull final SVNURL url) {
+  public static @Nullable Proxy getIdeaDefinedProxy(final @NotNull Url url) {
+    // TODO: Check if removeNoProxy() is still needed
     // SVNKit authentication implementation sets repositories as noProxy() to provide custom proxy authentication logic - see for instance,
     // SvnAuthenticationManager.getProxyManager(). But noProxy() setting is not cleared correctly in all cases - so if svn command
     // (for command line) is executed on thread where repository url was added as noProxy() => proxies are not retrieved for such commands
@@ -342,12 +279,12 @@ public class AuthenticationService {
     // To prevent such behavior repositoryUrl is manually removed from noProxy() list (for current thread).
     // NOTE, that current method is only called from code flows for executing commands through command line client and should not be called
     // from SVNKit code flows.
-    CommonProxy.getInstance().removeNoProxy(url.getProtocol(), url.getHost(), url.getPort());
+    // no-op CommonProxy.getInstance().removeNoProxy(url.getProtocol(), url.getHost(), url.getPort());
 
-    final List<Proxy> proxies = CommonProxy.getInstance().select(URI.create(url.toString()));
-    if (proxies != null && !proxies.isEmpty()) {
+    final List<Proxy> proxies = JdkProxyProvider.getInstance().getProxySelector().select(URI.create(url.toString()));
+    if (!proxies.isEmpty()) {
       for (Proxy proxy : proxies) {
-        if (HttpConfigurable.isRealProxy(proxy) && Proxy.Type.HTTP.equals(proxy.type())) {
+        if (ProxyUtils.isRealProxy(proxy) && Proxy.Type.HTTP.equals(proxy.type())) {
           return proxy;
         }
       }
@@ -355,8 +292,7 @@ public class AuthenticationService {
     return null;
   }
 
-  @Nullable
-  public PasswordAuthentication getProxyAuthentication(@NotNull SVNURL repositoryUrl) {
+  public @Nullable PasswordAuthentication getProxyAuthentication(@NotNull Url repositoryUrl) {
     Proxy proxy = getIdeaDefinedProxy(repositoryUrl);
     PasswordAuthentication result = null;
 
@@ -374,16 +310,14 @@ public class AuthenticationService {
   }
 
   private static void showFailedAuthenticateProxy() {
-    HttpConfigurable instance = HttpConfigurable.getInstance();
-    String message = instance.USE_HTTP_PROXY || instance.USE_PROXY_PAC
-                     ? "Failed to authenticate to proxy. You can change proxy credentials in HTTP proxy settings."
-                     : "Failed to authenticate to proxy.";
-
+    var proxyConfig = ProxySettings.getInstance().getProxyConfiguration();
+    var message = proxyConfig instanceof ProxyConfiguration.StaticProxyConfiguration || proxyConfig instanceof ProxyConfiguration.ProxyAutoConfiguration
+      ? message("popup.content.failed.to.authenticate.to.proxy.change.credentials")
+      : message("popup.content.failed.to.authenticate.to.proxy");
     PopupUtil.showBalloonForActiveComponent(message, MessageType.ERROR);
   }
 
-  @Nullable
-  private static PasswordAuthentication getProxyAuthentication(@NotNull Proxy proxy, @NotNull SVNURL repositoryUrl) {
+  private static @Nullable PasswordAuthentication getProxyAuthentication(@NotNull Proxy proxy, @NotNull Url repositoryUrl) {
     PasswordAuthentication result = null;
 
     try {
@@ -400,37 +334,9 @@ public class AuthenticationService {
   }
 
   public void reset() {
-    if (myTempDirectory != null) {
-      FileUtil.delete(myTempDirectory);
-    }
   }
 
-  @NotNull
-  public static List<String> getKinds(final SVNURL url, boolean passwordRequest) {
-    if (passwordRequest || "http".equals(url.getProtocol())) {
-      return Collections.singletonList(ISVNAuthenticationManager.PASSWORD);
-    }
-    else if ("https".equals(url.getProtocol())) {
-      return Collections.singletonList(ISVNAuthenticationManager.SSL);
-    }
-    else if ("svn".equals(url.getProtocol())) {
-      return Collections.singletonList(ISVNAuthenticationManager.PASSWORD);
-    }
-    else if (url.getProtocol().contains("svn+")) {  // todo +-
-      return Arrays.asList(ISVNAuthenticationManager.SSH, ISVNAuthenticationManager.USERNAME);
-    }
-    return Collections.singletonList(ISVNAuthenticationManager.USERNAME);
-  }
-
-  @Nullable
-  public File getSpecialConfigDir() {
-    return myTempDirectory != null ? myTempDirectory : new File(myConfiguration.getConfigurationDirectory());
-  }
-
-  public void initTmpDir(SvnConfiguration configuration) throws IOException {
-    if (myTempDirectory == null) {
-      myTempDirectory = FileUtil.createTempDirectory("tmp", "Subversion");
-      FileUtil.copyDir(new File(configuration.getConfigurationDirectory()), myTempDirectory);
-    }
+  public @NotNull Path getSpecialConfigDir() {
+    return myConfiguration.getConfigurationPath();
   }
 }

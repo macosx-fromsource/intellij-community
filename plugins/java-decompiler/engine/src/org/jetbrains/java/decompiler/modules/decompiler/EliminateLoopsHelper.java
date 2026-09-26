@@ -1,48 +1,62 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
 import org.jetbrains.java.decompiler.modules.decompiler.stats.DoStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.SwitchStatement;
+import org.jetbrains.java.decompiler.struct.StructClass;
+import org.jetbrains.java.decompiler.struct.StructMethod;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+public final class EliminateLoopsHelper {
 
-public class EliminateLoopsHelper {
+  /**
+   * Remove loops from the given root statement. <p>
+   * Simple synthetic example:<p>
+   * before: <pre>
+   * {@code
+   * LABEL:
+   * while(true){
+   *   while(true){
+   *     doSomething();
+   *     break LABEL;
+   *   }
+   * }
+   * }
+   * </pre>
+   * after:
+   * <pre>
+   * {@code
+   * while(true){
+   *   doSomething();
+   *   break;
+   * }
+   * }
+   * </pre>
+   */
+  public static boolean eliminateLoops(RootStatement root, StructMethod mt, StructClass cl) {
 
+    boolean ret = eliminateLoopsRec(root);
 
-  //	public static boolean eliminateLoops(Statement root) {
-  //
-  //		boolean ret = eliminateLoopsRec(root);
-  //
-  //		if(ret) {
-  //			SequenceHelper.condenseSequences(root);
-  //
-  //			HashSet<Integer> setReorderedIfs = new HashSet<Integer>();
-  //
-  //			SimplifyExprentsHelper sehelper = new SimplifyExprentsHelper(false);
-  //			while(sehelper.simplifyStackVarsStatement(root, setReorderedIfs, null)) {
-  //				SequenceHelper.condenseSequences(root);
-  //			}
-  //		}
-  //
-  //		return ret;
-  //	}
+    if(ret) {
+      SequenceHelper.condenseSequences(root);
+
+      Set<Integer> setReorderedIfs = new HashSet<>();
+
+      SimplifyExprentsHelper sehelper = new SimplifyExprentsHelper(false);
+      while(sehelper.simplifyStackVarsStatement(root, setReorderedIfs, null, cl)) {
+        SequenceHelper.condenseSequences(root);
+      }
+    }
+
+    return ret;
+  }
 
   private static boolean eliminateLoopsRec(Statement stat) {
 
@@ -52,22 +66,22 @@ public class EliminateLoopsHelper {
       }
     }
 
-    if (stat.type == Statement.TYPE_DO && isLoopRedundant((DoStatement)stat)) {
+    if (stat.type == Statement.StatementType.DO && findAndReduceRedundantLoop((DoStatement)stat)) {
       return true;
     }
 
     return false;
   }
 
-  private static boolean isLoopRedundant(DoStatement loop) {
+  private static boolean findAndReduceRedundantLoop(DoStatement loop) {
 
-    if (loop.getLooptype() != DoStatement.LOOP_DO) {
+    if (loop.getLoopType() != DoStatement.LoopType.DO) {
       return false;
     }
 
     // get parent loop if exists
     Statement parentloop = loop.getParent();
-    while (parentloop != null && parentloop.type != Statement.TYPE_DO) {
+    while (parentloop != null && parentloop.type != Statement.StatementType.DO) {
       parentloop = parentloop.getParent();
     }
 
@@ -78,7 +92,7 @@ public class EliminateLoopsHelper {
     // collect relevant break edges
     List<StatEdge> lstBreakEdges = new ArrayList<>();
     for (StatEdge edge : loop.getLabelEdges()) {
-      if (edge.getType() == StatEdge.TYPE_BREAK) { // all break edges are explicit because of LOOP_DO type
+      if (edge.getType() == StatEdge.EdgeType.BREAK) { // all break edges are explicit because of LOOP_DO type
         lstBreakEdges.add(edge);
       }
     }
@@ -87,9 +101,23 @@ public class EliminateLoopsHelper {
     Statement loopcontent = loop.getFirst();
 
     boolean firstok = loopcontent.getAllSuccessorEdges().isEmpty();
+    if (loopcontent.type == Statement.StatementType.SWITCH &&
+        loopcontent instanceof SwitchStatement switchStatement &&
+        switchStatement.getHeadExprent() != null &&
+        SwitchPatternHelper.isBootstrapSwitch(switchStatement.getHeadExprent())) {
+      Set<StatEdge> allEdges = new HashSet<>();
+      for (Statement statement : switchStatement.getCaseStatements()) {
+        allEdges.addAll(statement.getAllSuccessorEdges());
+      }
+      //not a good workaround, but there is not another key, because edges are broken at this moment
+      if (allEdges.stream()
+            .anyMatch(edge -> edge.closure.type == Statement.StatementType.DO)) {
+        return false;
+      }
+    }
     if (!firstok) {
       StatEdge edge = loopcontent.getAllSuccessorEdges().get(0);
-      firstok = (edge.closure == loop && edge.getType() == StatEdge.TYPE_BREAK);
+      firstok = (edge.closure == loop && edge.getType() == StatEdge.EdgeType.BREAK);
       if (firstok) {
         lstBreakEdges.remove(edge);
       }
@@ -189,20 +217,20 @@ public class EliminateLoopsHelper {
 
   private static void eliminateLoop(Statement loop, Statement parentloop) {
 
+    // remove the last break edge, if exists
+    Statement loopcontent = loop.getFirst();
+    if (!loopcontent.getSuccessorEdges(StatEdge.EdgeType.BREAK).isEmpty()) {
+      loopcontent.removeSuccessor(loopcontent.getSuccessorEdges(StatEdge.EdgeType.BREAK).get(0));
+    }
+
     // move continue edges to the parent loop
     List<StatEdge> lst = new ArrayList<>(loop.getLabelEdges());
     for (StatEdge edge : lst) {
       loop.removePredecessor(edge);
-      edge.getSource().changeEdgeNode(Statement.DIRECTION_FORWARD, edge, parentloop);
+      edge.getSource().changeEdgeNode(StatEdge.EdgeDirection.FORWARD, edge, parentloop);
       parentloop.addPredecessor(edge);
 
       parentloop.addLabeledEdge(edge);
-    }
-
-    // remove the last break edge, if exists
-    Statement loopcontent = loop.getFirst();
-    if (!loopcontent.getAllSuccessorEdges().isEmpty()) {
-      loopcontent.removeSuccessor(loopcontent.getAllSuccessorEdges().get(0));
     }
 
     // replace loop with its content

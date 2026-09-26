@@ -1,57 +1,114 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.usages;
 
+import com.intellij.codeInsight.highlighting.ReadWriteAccessDetector.Access;
 import com.intellij.usageView.UsageInfo;
+import com.intellij.usages.rules.MergeableUsage;
 import com.intellij.util.PlatformIcons;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-/**
- * @author Eugene Zhuravlev
- *         Date: Jan 17, 2005
- */
-public class ReadWriteAccessUsageInfo2UsageAdapter extends UsageInfo2UsageAdapter implements ReadWriteAccessUsage{
-  private final boolean myAccessedForReading;
-  private final boolean myAccessedForWriting;
+import javax.swing.Icon;
+import java.util.Objects;
 
-  public ReadWriteAccessUsageInfo2UsageAdapter(@NotNull UsageInfo usageInfo, final boolean accessedForReading, final boolean accessedForWriting) {
+public class ReadWriteAccessUsageInfo2UsageAdapter extends UsageInfo2UsageAdapter implements ReadWriteAccessUsage {
+
+  /**
+   * Ordinal of {@link Access}
+   */
+  private final byte myInitialRwAccess;
+  private volatile byte myRwAccess;
+
+  public ReadWriteAccessUsageInfo2UsageAdapter(@NotNull UsageInfo usageInfo, @NotNull Access rwAccess) {
     super(usageInfo);
-    myAccessedForReading = accessedForReading;
-    myAccessedForWriting = accessedForWriting;
-    if (myAccessedForReading && myAccessedForWriting) {
-      myIcon = PlatformIcons.VARIABLE_RW_ACCESS;
+    myRwAccess = myInitialRwAccess = (byte)rwAccess.ordinal();
+  }
+
+  /**
+   * @deprecated use {@link #ReadWriteAccessUsageInfo2UsageAdapter(UsageInfo, Access)}
+   */
+  @Deprecated(forRemoval = true)
+  public ReadWriteAccessUsageInfo2UsageAdapter(@NotNull UsageInfo usageInfo, boolean accessedForReading, boolean accessedForWriting) {
+    this(usageInfo, getRwAccess(accessedForReading, accessedForWriting));
+  }
+
+  private static class RW {
+    /**
+     * Mapping from ordinal of {@link Access} to Icon.
+     */
+    private static final Icon[] ICONS = {
+      PlatformIcons.VARIABLE_READ_ACCESS,
+      PlatformIcons.VARIABLE_WRITE_ACCESS,
+      PlatformIcons.VARIABLE_RW_ACCESS
+    };
+  }
+
+  @Override
+  protected @Nullable Icon computeIcon() {
+    return RW.ICONS[myRwAccess];
+  }
+
+  @Override
+  public boolean merge(@NotNull MergeableUsage other) {
+    boolean merged = super.merge(other);
+    if (merged && other instanceof ReadWriteAccessUsageInfo2UsageAdapter) {
+      Access newRwAccess = mergeRwAccess(rwAccess(), ((ReadWriteAccessUsageInfo2UsageAdapter)other).rwAccess());
+      myRwAccess = (byte)newRwAccess.ordinal();
     }
-    else if (myAccessedForWriting) {
-      myIcon = PlatformIcons.VARIABLE_WRITE_ACCESS;           // If icon is changed, don't forget to change UTCompositeUsageNode.getIcon();
-    }
-    else if (myAccessedForReading){
-      myIcon = PlatformIcons.VARIABLE_READ_ACCESS;            // If icon is changed, don't forget to change UTCompositeUsageNode.getIcon();
-    }
+    return merged;
+  }
+
+  @Override
+  public void reset() {
+    super.reset();
+    myRwAccess = myInitialRwAccess;
+  }
+
+  private @NotNull Access rwAccess() {
+    return Access.values()[myRwAccess];
   }
 
   @Override
   public boolean isAccessedForWriting() {
-    return myAccessedForWriting;
+    return rwAccess() != Access.Read;
   }
 
   @Override
   public boolean isAccessedForReading() {
-    return myAccessedForReading;
+    return rwAccess() != Access.Write;
   }
 
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    ReadWriteAccessUsageInfo2UsageAdapter adapter = (ReadWriteAccessUsageInfo2UsageAdapter)o;
+    return myInitialRwAccess == adapter.myInitialRwAccess &&
+           myRwAccess == adapter.myRwAccess
+           && this.getUsageInfo().equals(((ReadWriteAccessUsageInfo2UsageAdapter)o).getUsageInfo());
+  }
 
+  @Override
+  public int hashCode() {
+    return Objects.hash(myInitialRwAccess, myRwAccess, getUsageInfo());
+  }
 
+  private static @NotNull Access mergeRwAccess(@NotNull Access left, @NotNull Access right) {
+    return left == right ? left : Access.ReadWrite;
+  }
+
+  private static @NotNull Access getRwAccess(boolean accessedForReading, boolean accessedForWriting) {
+    if (accessedForReading && accessedForWriting) {
+      return Access.ReadWrite;
+    }
+    else if (accessedForReading) {
+      return Access.Read;
+    }
+    else if (accessedForWriting) {
+      return Access.Write;
+    }
+    else {
+      throw new IllegalArgumentException("At least one of 'accessedForReading' or 'accessedForWriting' must be 'true'");
+    }
+  }
 }

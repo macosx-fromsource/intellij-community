@@ -1,74 +1,103 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.usageView;
 
 import com.intellij.injected.editor.VirtualFileWindow;
-import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.ProperTextRange;
+import com.intellij.openapi.util.Segment;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiPolyVariantReference;
+import com.intellij.psi.PsiQualifiedReferenceElement;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
+import com.intellij.psi.SmartPsiFileRange;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import javax.swing.Icon;
+
 public class UsageInfo {
   public static final UsageInfo[] EMPTY_ARRAY = new UsageInfo[0];
-  private static final Logger LOG = Logger.getInstance("#com.intellij.usageView.UsageInfo");
+  private static final Logger LOG = Logger.getInstance(UsageInfo.class);
   private final SmartPsiElementPointer<?> mySmartPointer;
   private final SmartPsiFileRange myPsiFileRange;
+  private @Nullable Class<? extends PsiReference> myReferenceClass;
 
   public final boolean isNonCodeUsage;
+  /**
+   * An ordering hint for usage views. Usages with lower values have higher display priority and are shown first;
+   * the default value is {@code 0}. This allows valid but less relevant usages, such as dynamically resolved
+   * secondary usages, to remain visible without competing with ordinary usages.
+   *
+   * <p>{@link Integer#MAX_VALUE} is the largest possible value and therefore places a usage last among usages
+   * with lower priority values. Usages with equal priorities retain the usual file and offset ordering.
+   */
+  private int myPriority;
   protected boolean myDynamicUsage;
 
-  public UsageInfo(@NotNull PsiElement element, int startOffset, int endOffset, boolean isNonCodeUsage) {
-    element = element.getNavigationElement();
+  public UsageInfo(@NotNull PsiElement originalElement, final int startOffset, final int endOffset, boolean isNonCodeUsage) {
+    PsiElement element = originalElement.getNavigationElement();
     PsiFile file = element.getContainingFile();
     PsiElement topElement = file == null ? element : file;
     LOG.assertTrue(topElement.isValid(), element);
+    boolean isNullOrBinary = file == null || file.getFileType().isBinary();
 
-    TextRange elementRange = element.getTextRange();
+    TextRange elementRange = isNullOrBinary ? TextRange.EMPTY_RANGE : element.getTextRange();
     if (elementRange == null) {
       throw new IllegalArgumentException("text range null for " + element + "; " + element.getClass());
     }
+    int effectiveStart;
+    int effectiveEnd;
     if (startOffset == -1 && endOffset == -1) {
-      // calculate natural element range
-      startOffset = element.getTextOffset() - elementRange.getStartOffset();
-      endOffset = elementRange.getEndOffset() - elementRange.getStartOffset();
+      if (isNullOrBinary) {
+        effectiveStart = effectiveEnd = 0;
+      }
+      else {
+        // calculate natural element range
+        // Cls element.getTextOffset() returns -1
+        effectiveStart = Math.max(0, element.getTextOffset() - elementRange.getStartOffset());
+        effectiveEnd = Math.max(effectiveStart, elementRange.getLength());
+      }
+    }
+    else {
+      effectiveStart = startOffset;
+      effectiveEnd = endOffset;
+      if (element != originalElement) {
+        PsiFile originalFile = originalElement.getContainingFile();
+        if (originalFile == file) {
+          int delta = originalElement.getTextRange().getStartOffset() - elementRange.getStartOffset();
+          effectiveStart += delta;
+          effectiveEnd += delta;
+        }
+        else {
+          throw new IllegalArgumentException("element.getNavigationElement() for element "+originalElement+"("+startOffset+", "+endOffset+
+               ") from " + originalFile + " led to different file "+file+
+               ", thus making passed offsets invalid. Specify -1 for start/end offsets to calculate correct offsets for navigation.");
+        }
+      }
     }
 
-    if (startOffset < 0) {
-      throw new IllegalArgumentException("element " + element + "; startOffset " +startOffset);
-    }
-    if (startOffset > endOffset) {
-      throw new IllegalArgumentException("element " + element + "; diff " + (endOffset-startOffset));
+    if (effectiveStart < 0 || effectiveStart > effectiveEnd) {
+      throw new IllegalArgumentException("element " + element + "; startOffset " +startOffset+"; endOffset="+endOffset+
+                                         "; effectiveStart="+effectiveStart+"; effectiveEnd="+effectiveEnd+
+                                         "; elementRange="+elementRange+"; element.getTextOffset()="+element.getTextOffset());
     }
 
     Project project = topElement.getProject();
     SmartPointerManager smartPointerManager = SmartPointerManager.getInstance(project);
     mySmartPointer = smartPointerManager.createSmartPsiElementPointer(element, file);
-    if (startOffset != element.getTextOffset() - elementRange.getStartOffset() || endOffset != elementRange.getLength()) {
-      TextRange rangeToStore;
-      if (file != null && InjectedLanguageManager.getInstance(project).isInjectedFragment(file)) {
-        rangeToStore = elementRange;
-      }
-      else {
-        rangeToStore = TextRange.create(startOffset, endOffset).shiftRight(elementRange.getStartOffset());
-      }
+    if (file != null &&
+        !isNullOrBinary &&
+        (effectiveStart != element.getTextOffset() - elementRange.getStartOffset() || effectiveEnd != elementRange.getLength())) {
+      TextRange rangeToStore = TextRange.create(effectiveStart, effectiveEnd).shiftRight(elementRange.getStartOffset());
       myPsiFileRange = smartPointerManager.createSmartPsiFileRangePointer(file, rangeToStore);
     }
     else {
@@ -81,10 +110,19 @@ public class UsageInfo {
                    @Nullable SmartPsiFileRange psiFileRange,
                    boolean dynamicUsage,
                    boolean nonCodeUsage) {
+    this(smartPointer, psiFileRange, dynamicUsage, nonCodeUsage, null);
+  }
+
+  public UsageInfo(@NotNull SmartPsiElementPointer<?> smartPointer,
+                   @Nullable SmartPsiFileRange psiFileRange,
+                   boolean dynamicUsage,
+                   boolean nonCodeUsage,
+                   @Nullable Class<? extends PsiReference> referenceClass) {
     myDynamicUsage = dynamicUsage;
     isNonCodeUsage = nonCodeUsage;
     myPsiFileRange = psiFileRange;
     mySmartPointer = smartPointer;
+    myReferenceClass = referenceClass;
   }
 
   // in case of find file by name, not by text inside. Since it can be a binary file, do not query for text offsets.
@@ -104,8 +142,13 @@ public class UsageInfo {
     this(element, startOffset, endOffset, false);
   }
 
+  public UsageInfo(@NotNull PsiElement element, @NotNull TextRange rangeInElement, boolean isNonCodeUsage) {
+    this(element, rangeInElement.getStartOffset(), rangeInElement.getEndOffset(), isNonCodeUsage);
+  }
+
   public UsageInfo(@NotNull PsiReference reference) {
     this(reference.getElement(), reference.getRangeInElement().getStartOffset(), reference.getRangeInElement().getEndOffset());
+    myReferenceClass = reference.getClass();
     if (reference instanceof PsiPolyVariantReference) {
       myDynamicUsage = ((PsiPolyVariantReference)reference).multiResolve(false).length == 0;
     }
@@ -116,14 +159,14 @@ public class UsageInfo {
 
   public UsageInfo(@NotNull PsiQualifiedReferenceElement reference) {
     this((PsiElement)reference);
+    myReferenceClass = reference.getClass();
   }
 
   public UsageInfo(@NotNull PsiElement element) {
     this(element, false);
   }
 
-  @NotNull
-  public SmartPsiElementPointer<?> getSmartPointer() {
+  public @NotNull SmartPsiElementPointer<?> getSmartPointer() {
     return mySmartPointer;
   }
 
@@ -135,36 +178,40 @@ public class UsageInfo {
     return isNonCodeUsage;
   }
 
+  public int getPriority() {
+    return myPriority;
+  }
+
+  public void setPriority(int priority) {
+    myPriority = priority;
+  }
+
   public void setDynamicUsage(boolean dynamicUsage) {
     myDynamicUsage = dynamicUsage;
   }
 
-  @Nullable
-  public PsiElement getElement() { // SmartPointer is used to fix SCR #4572, hotya eto krivo i nado vse perepisat'
+  public @Nullable Class<? extends PsiReference> getReferenceClass() {
+    return myReferenceClass;
+  }
+
+  public @Nullable PsiElement getElement() { // SmartPointer is used to fix SCR #4572, hotya eto krivo i nado vse perepisat'
     return mySmartPointer.getElement();
   }
 
-  @Nullable
-  public PsiReference getReference() {
+  public @Nullable PsiReference getReference() {
     PsiElement element = getElement();
     return element == null ? null : element.getReference();
   }
 
   /**
-   * @deprecated for the range in element use {@link #getRangeInElement} instead,
-   *             for the whole text range in the file covered by this usage info, use {@link #getSegment()}
-   */
-  public TextRange getRange() {
-    return getRangeInElement();
-  }
-
-  /**
    * @return range in element
    */
-  @Nullable("null means range is invalid")
-  public ProperTextRange getRangeInElement() {
+  public @Nullable("null means range is invalid") ProperTextRange getRangeInElement() {
     PsiElement element = getElement();
     if (element == null) return null;
+    PsiFile psiFile = getFile();
+    boolean isNullOrBinary = psiFile == null || psiFile.getFileType().isBinary();
+    if (isNullOrBinary) return new ProperTextRange(0,0);
     TextRange elementRange = element.getTextRange();
     ProperTextRange result;
     if (myPsiFileRange == null) {
@@ -180,15 +227,19 @@ public class UsageInfo {
     return result.getStartOffset() < delta ? null : result.shiftRight(-delta);
   }
 
+  public @Nullable Icon getIcon() {
+    return null;
+  }
+
   /**
    * Override this method if you want a tooltip to be displayed for this usage
    */
-  public String getTooltipText() {
+  public @NlsContexts.Tooltip String getTooltipText() {
     return null;
   }
 
   public int getNavigationOffset() {
-    if (myPsiFileRange  != null) {
+    if (myPsiFileRange != null) {
       final Segment range = myPsiFileRange.getRange();
       if (range != null) {
         return range.getStartOffset();
@@ -197,6 +248,9 @@ public class UsageInfo {
 
     PsiElement element = getElement();
     if (element == null) return -1;
+    PsiFile psiFile = getFile();
+    boolean isNullOrBinary = psiFile == null || psiFile.getFileType().isBinary();
+    if (isNullOrBinary) return 0;
     TextRange range = element.getTextRange();
 
     TextRange rangeInElement = getRangeInElement();
@@ -222,19 +276,29 @@ public class UsageInfo {
   }
 
   public boolean isValid() {
-    if (myPsiFileRange == null && getElement() instanceof PsiFile) {
+    if (isFileOrBinary()) {
       return true; // in case of binary file
     }
     return getSegment() != null;
   }
 
-  @Nullable
-  public Segment getSegment() {
+  protected boolean isFileOrBinary() {
     PsiElement element = getElement();
-    if (element == null
-        // in case of binary file
-        || myPsiFileRange == null && element instanceof PsiFile) return null;
-    TextRange range = element.getTextRange();
+    if (myPsiFileRange == null && element instanceof PsiFile) return true;
+    PsiFile psiFile = getFile();
+    return psiFile != null && psiFile.getFileType().isBinary();
+  }
+
+  public @Nullable Segment getSegment() {
+    PsiElement element = getElement();
+    if (element instanceof PsiFile && ((PsiFile)element).getFileType().isBinary()) {
+      return null;
+    }
+    TextRange range = element != null ? element.getTextRange() : null;
+    if (range == null) {
+      return null;
+    }
+
     TextRange.assertProperRange(range, element);
     if (element instanceof PsiFile) {
       // hack: it's actually a range inside file, use document for range checking since during the "find|replace all" operation, file range might have been changed
@@ -249,29 +313,46 @@ public class UsageInfo {
                                Math.min(range.getEndOffset(), range.getStartOffset() + rangeInElement.getEndOffset()));
   }
 
-  private Pair<VirtualFile, Integer> offset() {
+  private static class FileWithOffset {
+    private final VirtualFile myFile;
+    private final int myOffset;
+
+    private FileWithOffset(VirtualFile file, int offset) {
+      myFile = file;
+      myOffset = offset;
+    }
+  }
+
+  private FileWithOffset offset() {
     VirtualFile containingFile0 = getVirtualFile();
     int shift0 = 0;
     if (containingFile0 instanceof VirtualFileWindow) {
       shift0 = ((VirtualFileWindow)containingFile0).getDocumentWindow().injectedToHost(0);
       containingFile0 = ((VirtualFileWindow)containingFile0).getDelegate();
     }
-    Segment range0 = mySmartPointer.getPsiRange();
-    if (range0 == null) return null;
-    return Pair.create(containingFile0, range0.getStartOffset() + shift0);
+    Segment range = myPsiFileRange == null ? mySmartPointer.getPsiRange() : myPsiFileRange.getPsiRange();
+    if (range == null) return null;
+    return new FileWithOffset(containingFile0, range.getStartOffset() + shift0);
   }
 
   public int compareToByStartOffset(@NotNull UsageInfo info) {
-    Pair<VirtualFile, Integer> offset0 = offset();
-    Pair<VirtualFile, Integer> offset1 = info.offset();
-    if (offset0 == null || offset0.first == null || offset1 == null || offset1.first == null || !Comparing.equal(offset0.first, offset1.first)) {
-      return 0;
+    FileWithOffset offset0 = offset();
+    FileWithOffset offset1 = info.offset();
+    if (offset0 == null || offset1 == null) {
+      return (offset0 == null ? 0 : 1) - (offset1 == null ? 0 : 1);
     }
-    return offset0.second - offset1.second;
+    VirtualFile file0 = offset0.myFile;
+    VirtualFile file1 = offset1.myFile;
+    if (file0 == null || file1 == null) {
+      return (file0 == null ? 0 : 1) - (file1 == null ? 0 : 1);
+    }
+    if (file0.equals(file1)) {
+      return Integer.compare(offset0.myOffset, offset1.myOffset);
+    }
+    return file0.getPath().compareTo(file1.getPath());
   }
 
-  @NotNull
-  public Project getProject() {
+  public @NotNull Project getProject() {
     return mySmartPointer.getProject();
   }
 
@@ -283,7 +364,7 @@ public class UsageInfo {
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
-    if (!getClass().equals(o.getClass())) return false;
+    if (o == null || !getClass().equals(o.getClass())) return false;
 
     final UsageInfo usageInfo = (UsageInfo)o;
 
@@ -311,30 +392,15 @@ public class UsageInfo {
     return reference.getCanonicalText() + " (" + reference.getClass() + ")";
   }
 
-  @Nullable
-  public PsiFile getFile() {
+  public @Nullable PsiFile getFile() {
     return mySmartPointer.getContainingFile();
   }
 
-  @Nullable
-  public VirtualFile getVirtualFile() {
+  public @Nullable VirtualFile getVirtualFile() {
     return mySmartPointer.getVirtualFile();
   }
 
   public boolean isDynamicUsage() {
     return myDynamicUsage;
-  }
-
-  // creates new smart pointers
-  @Nullable("null means could not copy because info is no longer valid")
-  public UsageInfo copy() {
-    PsiElement element = mySmartPointer.getElement();
-    SmartPointerManager smartPointerManager = SmartPointerManager.getInstance(getProject());
-    PsiFile containingFile = myPsiFileRange == null ? null : myPsiFileRange.getContainingFile();
-    Segment segment = containingFile == null ? null : myPsiFileRange.getRange();
-    TextRange range = segment == null ? null : TextRange.create(segment);
-    SmartPsiFileRange psiFileRange = range == null ? null : smartPointerManager.createSmartPsiFileRangePointer(containingFile, range);
-    SmartPsiElementPointer<PsiElement> pointer = element == null || !isValid() ? null : smartPointerManager.createSmartPsiElementPointer(element);
-    return pointer == null ? null : new UsageInfo(pointer, psiFileRange, isDynamicUsage(), isNonCodeUsage());
   }
 }

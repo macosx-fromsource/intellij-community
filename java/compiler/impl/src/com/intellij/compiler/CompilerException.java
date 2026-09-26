@@ -15,9 +15,7 @@
  */
 
 /*
- * @author: Eugene Zhuravlev
- * Date: Oct 15, 2002
- * Time: 1:55:22 PM
+ * @author Eugene Zhuravlev
  */
 package com.intellij.compiler;
 

@@ -1,53 +1,71 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.engine.evaluation;
 
+import com.intellij.debugger.EvaluatingComputable;
 import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.DebuggerManagerThreadImpl;
+import com.intellij.debugger.engine.DebuggerUtils;
 import com.intellij.debugger.engine.SuspendContextImpl;
 import com.intellij.debugger.jdi.StackFrameProxyImpl;
+import com.intellij.debugger.jdi.ThreadReferenceProxyImpl;
+import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.ThrowableComputable;
+import com.intellij.openapi.util.UserDataHolderBase;
 import com.sun.jdi.ClassLoaderReference;
+import com.sun.jdi.ObjectReference;
 import com.sun.jdi.Value;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public final class EvaluationContextImpl implements EvaluationContext{
-  private final Value myThisObject;
-  private final SuspendContextImpl mySuspendContext;
+public final class EvaluationContextImpl extends UserDataHolderBase implements EvaluationContext {
+  private final DebuggerComputableValue myThisObject;
+  private final @NotNull SuspendContextImpl mySuspendContext;
   private final StackFrameProxyImpl myFrameProxy;
   private boolean myAutoLoadClasses = true;
   private ClassLoaderReference myClassLoader;
-  
-  public EvaluationContextImpl(@NotNull SuspendContextImpl suspendContext, StackFrameProxyImpl frameProxy, @Nullable Value thisObject) {
-    myThisObject = thisObject;
+  private @Nullable ThreadReferenceProxyImpl myThreadForEvaluation = null;
+
+  private @Nullable ThreadReferenceProxyImpl myPreferableThread = null;
+
+  private boolean myMayRetryEvaluation = false;
+
+  private EvaluationContextImpl(@NotNull SuspendContextImpl suspendContext,
+                                @Nullable StackFrameProxyImpl frameProxy,
+                                @NotNull DebuggerComputableValue thisObjectComputableValue) {
+    myThisObject = thisObjectComputableValue;
     myFrameProxy = frameProxy;
     mySuspendContext = suspendContext;
   }
 
-  @Nullable
-  @Override
-  public Value getThisObject() {
-    return myThisObject;
+  public EvaluationContextImpl(@NotNull SuspendContextImpl suspendContext,
+                               @Nullable StackFrameProxyImpl frameProxy,
+                               @NotNull EvaluatingComputable<? extends Value> thisObjectFactory) {
+    this(suspendContext, frameProxy, new DebuggerComputableValue(thisObjectFactory));
   }
 
-  @NotNull
+  public EvaluationContextImpl(@NotNull SuspendContextImpl suspendContext, @Nullable StackFrameProxyImpl frameProxy, @Nullable Value thisObject) {
+    this(suspendContext, frameProxy, new DebuggerComputableValue(thisObject));
+  }
+
+  public EvaluationContextImpl(@NotNull SuspendContextImpl suspendContext, @Nullable StackFrameProxyImpl frameProxy) {
+    this(suspendContext, frameProxy, () -> frameProxy != null ? frameProxy.thisObject() : null);
+  }
+
   @Override
-  public SuspendContextImpl getSuspendContext() {
+  public @Nullable Value computeThisObject() throws EvaluateException {
+    return myThisObject.getValue();
+  }
+
+  @Override
+  public @NotNull SuspendContextImpl getSuspendContext() {
     return mySuspendContext;
+  }
+
+  public @NotNull VirtualMachineProxyImpl getVirtualMachineProxy() {
+    return mySuspendContext.getVirtualMachineProxy();
   }
 
   @Override
@@ -55,14 +73,13 @@ public final class EvaluationContextImpl implements EvaluationContext{
     return myFrameProxy;
   }
 
-  @NotNull
   @Override
-  public DebugProcessImpl getDebugProcess() {
+  public @NotNull DebugProcessImpl getDebugProcess() {
     return getSuspendContext().getDebugProcess();
   }
 
-  public DebuggerManagerThreadImpl getManagerThread() {
-    return getDebugProcess().getManagerThread();
+  public @NotNull DebuggerManagerThreadImpl getManagerThread() {
+    return getSuspendContext().getManagerThread();
   }
 
   @Override
@@ -75,12 +92,12 @@ public final class EvaluationContextImpl implements EvaluationContext{
   public EvaluationContextImpl createEvaluationContext(Value value) {
     final EvaluationContextImpl copy = new EvaluationContextImpl(getSuspendContext(), getFrameProxy(), value);
     copy.setAutoLoadClasses(myAutoLoadClasses);
+    copyUserDataTo(copy);
     return copy;
   }
 
-  @Nullable
   @Override
-  public ClassLoaderReference getClassLoader() throws EvaluateException {
+  public @Nullable ClassLoaderReference getClassLoader() throws EvaluateException {
     DebuggerManagerThreadImpl.assertIsManagerThread();
     if (myClassLoader != null) {
       return myClassLoader;
@@ -98,5 +115,82 @@ public final class EvaluationContextImpl implements EvaluationContext{
 
   public void setAutoLoadClasses(final boolean autoLoadClasses) {
     myAutoLoadClasses = autoLoadClasses;
+  }
+
+  @ApiStatus.Internal
+  public @Nullable ThreadReferenceProxyImpl getThreadForEvaluation() {
+    return myThreadForEvaluation;
+  }
+
+  @ApiStatus.Internal
+  public void setThreadForEvaluation(@Nullable ThreadReferenceProxyImpl threadForEvaluation) {
+    if (threadForEvaluation != null) {
+      assert myThreadForEvaluation == null;
+      assert !mySuspendContext.isEvaluating();
+      assert !threadForEvaluation.isEvaluating();
+      threadForEvaluation.setEvaluating(true);
+      mySuspendContext.setIsEvaluating(this);
+    }
+    else {
+      assert myThreadForEvaluation != null;
+      assert myThreadForEvaluation.isEvaluating();
+      assert mySuspendContext.getEvaluationContext() == this;
+      mySuspendContext.setIsEvaluating(null);
+      myThreadForEvaluation.setEvaluating(false);
+    }
+    myThreadForEvaluation = threadForEvaluation;
+    if (threadForEvaluation != null && myFrameProxy != null) {
+      myPreferableThread = myFrameProxy.threadProxy();
+    }
+  }
+
+  public EvaluationContextImpl withAutoLoadClasses(boolean autoLoadClasses) {
+    if (myAutoLoadClasses == autoLoadClasses) {
+      return this;
+    }
+    EvaluationContextImpl copy = new EvaluationContextImpl(mySuspendContext, myFrameProxy, myThisObject);
+    copy.setAutoLoadClasses(autoLoadClasses);
+    copyUserDataTo(copy);
+    return copy;
+  }
+
+  @Override
+  public void keep(Value value) {
+    if (value instanceof ObjectReference reference) {
+      getSuspendContext().keep(reference);
+    }
+  }
+
+  @Override
+  public <T extends Value> T computeAndKeep(@NotNull ThrowableComputable<T, EvaluateException> computable) throws EvaluateException {
+    return DebuggerUtils.getInstance().processCollectibleValue(computable, value -> {
+      keep(value);
+      return value;
+    }, this);
+  }
+
+  public boolean isEvaluationPossible() {
+    return getSuspendContext().getDebugProcess().isEvaluationPossible(getSuspendContext());
+  }
+
+  @Contract(pure = true)
+  @Override
+  public @NotNull String toString() {
+    if (myPreferableThread == myThreadForEvaluation) {
+      return "Evaluating on " + myPreferableThread + " for " + mySuspendContext;
+    }
+    else {
+      return "Evaluating requested on " + myPreferableThread + ", started on " + myThreadForEvaluation + " for " + mySuspendContext;
+    }
+  }
+
+  @ApiStatus.Internal
+  public boolean isMayRetryEvaluation() {
+    return myMayRetryEvaluation;
+  }
+
+  @ApiStatus.Internal
+  public void setMayRetryEvaluation(boolean mayRetryEvaluation) {
+    myMayRetryEvaluation = mayRetryEvaluation;
   }
 }

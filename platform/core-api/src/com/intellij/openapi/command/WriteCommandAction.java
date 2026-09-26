@@ -1,304 +1,225 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.command;
 
 import com.intellij.codeInsight.FileModificationService;
-import com.intellij.openapi.application.*;
-import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.core.CoreBundle;
+import com.intellij.openapi.application.Application;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
-import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.ThrowableComputable;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.util.ArrayUtil;
+import com.intellij.util.ObjectUtils;
 import com.intellij.util.ThrowableRunnable;
+import kotlin.coroutines.Continuation;
+import kotlin.jvm.functions.Function0;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.concurrent.atomic.AtomicReference;
 
-public abstract class WriteCommandAction<T> extends BaseActionRunnable<T> {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.command.WriteCommandAction");
+import static com.intellij.openapi.util.NlsContexts.Command;
 
-  private static final String DEFAULT_COMMAND_NAME = "Undefined";
+/**
+ * @see CoroutinesKt#writeCommandAction(Project, String, Function0, Continuation)
+ */
+public final class WriteCommandAction {
+
+  private WriteCommandAction() {
+  }
+
   private static final String DEFAULT_GROUP_ID = null;
 
   public interface Builder {
-    @NotNull Builder withName(@Nullable String name);
-    @NotNull Builder withGroupId(@Nullable String groupId);
+    @Contract(pure = true)
+    @NotNull
+    Builder withName(@Nullable @Command String name);
+
+    @Contract(pure = true)
+    @NotNull
+    Builder withGroupId(@Nullable String groupId);
+
+    @Contract(pure = true)
+    @NotNull
+    Builder withUndoConfirmationPolicy(@NotNull UndoConfirmationPolicy policy);
+
+    @Contract(pure = true)
+    @NotNull
+    Builder withGlobalUndo();
+
+    @Contract(pure = true)
+    @NotNull
+    Builder shouldRecordActionForActiveDocument(boolean value);
 
     <E extends Throwable> void run(@NotNull ThrowableRunnable<E> action) throws E;
+
     <R, E extends Throwable> R compute(@NotNull ThrowableComputable<R, E> action) throws E;
   }
 
-  private static class BuilderImpl implements Builder {
+  private static final class BuilderImpl implements Builder {
     private final Project myProject;
-    private final PsiFile[] myFiles;
-    private String myCommandName = DEFAULT_COMMAND_NAME;
+    private final Collection<? extends PsiElement> myPsiElements;
+    private @Command String myCommandName = getDefaultCommandName();
     private String myGroupId = DEFAULT_GROUP_ID;
+    private UndoConfirmationPolicy myUndoConfirmationPolicy;
+    private boolean myGlobalUndoAction;
+    private boolean myShouldRecordActionForActiveDocument = true;
 
-    private BuilderImpl(Project project, PsiFile... files) {
+    private BuilderImpl(Project project, @NotNull Collection<? extends PsiElement> elements) {
       myProject = project;
-      myFiles = files;
+      myPsiElements = elements;
     }
 
-    @NotNull
+    private BuilderImpl(Project project, PsiElement @NotNull ... elements) {
+      myProject = project;
+      myPsiElements = Arrays.asList(elements);
+    }
+
     @Override
-    public Builder withName(String name) {
+    public @NotNull Builder withName(@Command String name) {
       myCommandName = name;
       return this;
     }
 
-    @NotNull
     @Override
-    public Builder withGroupId(String groupId) {
+    public @NotNull Builder withGlobalUndo() {
+      myGlobalUndoAction = true;
+      return this;
+    }
+
+    @Override
+    public @NotNull Builder shouldRecordActionForActiveDocument(boolean value) {
+      myShouldRecordActionForActiveDocument = value;
+      return this;
+    }
+
+    @Override
+    public @NotNull Builder withUndoConfirmationPolicy(@NotNull UndoConfirmationPolicy policy) {
+      if (myUndoConfirmationPolicy != null) throw new IllegalStateException("do not call withUndoConfirmationPolicy() several times");
+      myUndoConfirmationPolicy = policy;
+      return this;
+    }
+
+    @Override
+    public @NotNull Builder withGroupId(String groupId) {
       myGroupId = groupId;
       return this;
     }
 
     @Override
-    public <E extends Throwable> void run(@NotNull final ThrowableRunnable<E> action) throws E {
-      new WriteCommandAction(myProject, myCommandName, myGroupId, myFiles) {
-        @Override
-        protected void run(@NotNull Result result) throws Throwable {
-          action.run();
+    public <E extends Throwable> void run(final @NotNull ThrowableRunnable<E> action) throws E {
+      Application application = ApplicationManager.getApplication();
+      boolean dispatchThread = application.isDispatchThread();
+
+      if (!dispatchThread && application.holdsReadLock()) {
+        throw new IllegalStateException("Must not start write action from within read action in the other thread - deadlock is coming");
+      }
+
+      AtomicReference<E> thrown = new AtomicReference<>();
+      if (dispatchThread) {
+        thrown.set(doRunWriteCommandAction(action));
+      }
+      else {
+        try {
+          ApplicationManager.getApplication().invokeAndWait(() -> thrown.set(doRunWriteCommandAction(action)));
         }
-      }.execute();
+        catch (@SuppressWarnings("IncorrectCancellationExceptionHandling") ProcessCanceledException ignored) {
+        }
+      }
+      if (thrown.get() != null) {
+        throw thrown.get();
+      }
+    }
+
+    private <E extends Throwable> E doRunWriteCommandAction(@NotNull ThrowableRunnable<E> action) {
+      if (!myPsiElements.isEmpty() && !FileModificationService.getInstance().preparePsiElementsForWrite(myPsiElements)) {
+        return null;
+      }
+
+      AtomicReference<Throwable> thrown = new AtomicReference<>();
+      Runnable wrappedRunnable = () -> {
+        if (myGlobalUndoAction) {
+          CommandProcessor.getInstance().markCurrentCommandAsGlobal(myProject);
+        }
+        ApplicationManager.getApplication().runWriteAction(() -> {
+          try {
+            action.run();
+          }
+          catch (Throwable e) {
+            thrown.set(e);
+          }
+        });
+      };
+      CommandProcessor.getInstance().executeCommand(myProject, wrappedRunnable, myCommandName, myGroupId,
+                                                    ObjectUtils.notNull(myUndoConfirmationPolicy, UndoConfirmationPolicy.DO_NOT_REQUEST_CONFIRMATION),
+                                                    myShouldRecordActionForActiveDocument);
+      //noinspection unchecked
+      return (E)thrown.get();
     }
 
     @Override
-    public <R, E extends Throwable> R compute(@NotNull final ThrowableComputable<R, E> action) throws E {
-      return new WriteCommandAction<R>(myProject, myCommandName, myGroupId, myFiles) {
-        @Override
-        protected void run(@NotNull Result<R> result) throws Throwable {
-          result.setResult(action.compute());
-        }
-      }.execute().getResultObject();
+    public <R, E extends Throwable> R compute(final @NotNull ThrowableComputable<R, E> action) throws E {
+      AtomicReference<R> result = new AtomicReference<>();
+      run(() -> result.set(action.compute()));
+      return result.get();
     }
   }
 
-  @NotNull
-  public static Builder writeCommandAction(Project project) {
+  @Contract(pure = true)
+  public static @NotNull Builder writeCommandAction(Project project) {
     return new BuilderImpl(project);
   }
 
-  @NotNull
-  public static Builder writeCommandAction(@NotNull PsiFile first, @NotNull PsiFile... others) {
+  @Contract(pure = true)
+  public static @NotNull Builder writeCommandAction(@NotNull PsiFile first, PsiFile @NotNull ... others) {
     return new BuilderImpl(first.getProject(), ArrayUtil.prepend(first, others));
   }
 
-  private final String myCommandName;
-  private final String myGroupID;
-  private final Project myProject;
-  private final PsiFile[] myPsiFiles;
-
-  protected WriteCommandAction(@Nullable Project project, /*@NotNull*/ PsiFile... files) {
-    this(project, DEFAULT_COMMAND_NAME, files);
+  @Contract(pure = true)
+  public static @NotNull Builder writeCommandAction(Project project, PsiFile @NotNull ... files) {
+    return new BuilderImpl(project, files);
   }
 
-  protected WriteCommandAction(@Nullable Project project, @Nullable String commandName, /*@NotNull*/ PsiFile... files) {
-    this(project, commandName, DEFAULT_GROUP_ID, files);
-  }
-
-  protected WriteCommandAction(@Nullable Project project, @Nullable String commandName, @Nullable String groupID, /*@NotNull*/ PsiFile... files) {
-    myCommandName = commandName;
-    myGroupID = groupID;
-    myProject = project;
-    if (files == null) LOG.warn("'files' parameter must not be null", new Throwable());
-    myPsiFiles = files == null || files.length == 0 ? PsiFile.EMPTY_ARRAY : files;
-  }
-
-  public final Project getProject() {
-    return myProject;
-  }
-
-  public final String getCommandName() {
-    return myCommandName;
-  }
-
-  public String getGroupID() {
-    return myGroupID;
-  }
-
-  @NotNull
-  @Override
-  public RunResult<T> execute() {
-    Application application = ApplicationManager.getApplication();
-    boolean dispatchThread = application.isDispatchThread();
-
-    if (!dispatchThread && application.isReadAccessAllowed()) {
-      LOG.error("Must not start write action from within read action in the other thread - deadlock is coming");
-      throw new IllegalStateException();
-    }
-
-    final RunResult<T> result = new RunResult<T>(this);
-    if (dispatchThread) {
-      performWriteCommandAction(result);
-    }
-    else {
-      try {
-        TransactionGuard.getInstance().submitTransactionAndWait(new Runnable() {
-          @Override
-          public void run() {
-            performWriteCommandAction(result);
-          }
-        });
-      }
-      catch (ProcessCanceledException ignored) { }
-    }
-    return result;
-  }
-
-  private void performWriteCommandAction(@NotNull RunResult<T> result) {
-    if (!FileModificationService.getInstance().preparePsiElementsForWrite(Arrays.asList(myPsiFiles))) return;
-
-    // this is needed to prevent memory leak, since the command is put into undo queue
-    final RunResult[] results = {result};
-
-    doExecuteCommand(new Runnable() {
-      @Override
-      public void run() {
-        //noinspection deprecation
-        ApplicationManager.getApplication().runWriteAction(new Runnable() {
-          @Override
-          public void run() {
-            results[0].run();
-            results[0] = null;
-          }
-        });
-      }
-    });
-  }
-
-  protected boolean isGlobalUndoAction() {
-    return false;
-  }
-
-  protected UndoConfirmationPolicy getUndoConfirmationPolicy() {
-    return UndoConfirmationPolicy.DO_NOT_REQUEST_CONFIRMATION;
+  @Contract(pure = true)
+  public static @NotNull Builder writeCommandAction(Project project, Collection<? extends PsiElement> elementsToMakeWritable) {
+    return new BuilderImpl(project, elementsToMakeWritable);
   }
 
   /**
-   * See {@link CommandProcessor#executeCommand(Project, Runnable, String, Object, UndoConfirmationPolicy, boolean)} for details.
+   * If run a write command using this method, then the "Undo" action always shows "Undefined" text.
+   * <p>
+   * Please use {@link #runWriteCommandAction(Project, String, String, Runnable, PsiFile...)} instead.
    */
-  protected boolean shouldRecordActionForActiveDocument() {
-    return true;
-  }
-
-  public void performCommand() throws Throwable {
-    //this is needed to prevent memory leak, since command
-    // is put into undo queue
-    final RunResult[] results = {new RunResult<T>(this)};
-    final Ref<Throwable> exception = new Ref<Throwable>();
-
-    doExecuteCommand(new Runnable() {
-      @Override
-      public void run() {
-        exception.set(results[0].run().getThrowable());
-        results[0] = null;
-      }
-    });
-
-    Throwable throwable = exception.get();
-    if (throwable != null) throw throwable;
-  }
-
-  private void doExecuteCommand(final Runnable runnable) {
-    Runnable wrappedRunnable = new Runnable() {
-      @Override
-      public void run() {
-        if (isGlobalUndoAction()) CommandProcessor.getInstance().markCurrentCommandAsGlobal(getProject());
-        runnable.run();
-      }
-    };
-    CommandProcessor.getInstance().executeCommand(getProject(), wrappedRunnable, getCommandName(), getGroupID(),
-                                                  getUndoConfirmationPolicy(), shouldRecordActionForActiveDocument());
-  }
-
-  /**
-   * WriteCommandAction without result
-   */
-  public abstract static class Simple<T> extends WriteCommandAction<T> {
-    protected Simple(Project project, /*@NotNull*/ PsiFile... files) {
-      super(project, files);
-    }
-
-    protected Simple(Project project, String commandName, /*@NotNull*/ PsiFile... files) {
-      super(project, commandName, files);
-    }
-
-    protected Simple(Project project, String name, String groupID, /*@NotNull*/ PsiFile... files) {
-      super(project, name, groupID, files);
-    }
-
-    @Override
-    protected void run(@NotNull Result<T> result) throws Throwable {
-      run();
-    }
-
-    protected abstract void run() throws Throwable;
-  }
-
+  @TestOnly
   public static void runWriteCommandAction(Project project, @NotNull Runnable runnable) {
-    runWriteCommandAction(project, DEFAULT_COMMAND_NAME, DEFAULT_GROUP_ID, runnable);
+    runWriteCommandAction(project, getDefaultCommandName(), DEFAULT_GROUP_ID, runnable);
+  }
+
+  private static @Command String getDefaultCommandName() {
+    return CoreBundle.message("command.name.undefined");
   }
 
   public static void runWriteCommandAction(Project project,
-                                           @Nullable final String commandName,
-                                           @Nullable final String groupID,
-                                           @NotNull final Runnable runnable,
-                                           @NotNull PsiFile... files) {
-    new Simple(project, commandName, groupID, files) {
-      @Override
-      protected void run() throws Throwable {
-        runnable.run();
-      }
-    }.execute();
+                                           @Nullable @Command String commandName,
+                                           @Nullable String groupID,
+                                           @NotNull Runnable runnable,
+                                           PsiFile @NotNull ... files) {
+    writeCommandAction(project, files).withName(commandName).withGroupId(groupID).run(() -> runnable.run());
   }
 
-  @SuppressWarnings("LambdaUnfriendlyMethodOverload")
-  public static <T> T runWriteCommandAction(Project project, @NotNull final Computable<T> computable) {
-    return new WriteCommandAction<T>(project) {
-      @Override
-      protected void run(@NotNull Result<T> result) throws Throwable {
-        result.setResult(computable.compute());
-      }
-    }.execute().getResultObject();
+  public static <T> T runWriteCommandAction(Project project, @NotNull Computable<T> computable) {
+    return writeCommandAction(project).compute(() -> computable.compute());
   }
 
-  @SuppressWarnings("LambdaUnfriendlyMethodOverload")
-  public static <T, E extends Throwable> T runWriteCommandAction(Project project, @NotNull final ThrowableComputable<T, E> computable) throws E {
-    RunResult<T> result = new WriteCommandAction<T>(project, "") {
-      @Override
-      protected void run(@NotNull Result<T> result) throws Throwable {
-        result.setResult(computable.compute());
-      }
-    }.execute();
-    Throwable t = result.getThrowable();
-    if (t != null) { @SuppressWarnings("unchecked") E e = (E)t; throw e; }
-    return result.throwException().getResultObject();
+  public static <T, E extends Throwable> T runWriteCommandAction(Project project, @NotNull ThrowableComputable<T, E> computable)
+    throws E {
+    return writeCommandAction(project).compute(computable);
   }
-
-  //<editor-fold desc="Deprecated stuff.">
-  /** @deprecated use {@link FileModificationService#preparePsiElementsForWrite(Collection)} (to be removed in IDEA 2018) */
-  @SuppressWarnings("unused")
-  public static boolean ensureFilesWritable(@NotNull Project project, @NotNull Collection<PsiFile> psiFiles) {
-    return FileModificationService.getInstance().preparePsiElementsForWrite(psiFiles);
-  }
-  //</editor-fold>
 }

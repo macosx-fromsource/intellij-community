@@ -1,35 +1,34 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.structuralsearch.plugin.replace.impl;
 
+import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.NotNull;
 
-public final class ParameterInfo {
-  private String name;
-  private int startIndex;
+public final class ParameterInfo extends UserDataHolderBase {
+  private final @NotNull String name;
+  private final int startIndex;
+  private final boolean replacementVariable;
   private boolean argumentContext;
-  private boolean methodParameterContext;
   private boolean statementContext;
-  private boolean variableInitializerContext;
   private int afterDelimiterPos;
   private boolean hasCommaBefore;
   private int beforeDelimiterPos;
   private boolean hasCommaAfter;
-  private boolean replacementVariable;
   private PsiElement myElement;
 
-  public String getName() {
-    return name;
+  public ParameterInfo(@NotNull String name, int startIndex, boolean replacementVariable) {
+    this.name = name;
+    this.startIndex = startIndex;
+    this.replacementVariable = replacementVariable;
   }
 
-  public void setName(String name) {
-    this.name = name;
+  public @NotNull String getName() {
+    return name;
   }
 
   public int getStartIndex() {
     return startIndex;
-  }
-
-  public void setStartIndex(int startIndex) {
-    this.startIndex = startIndex;
   }
 
   public boolean isArgumentContext() {
@@ -40,28 +39,12 @@ public final class ParameterInfo {
     this.argumentContext = argumentContext;
   }
 
-  public boolean isMethodParameterContext() {
-    return methodParameterContext;
-  }
-
-  public void setMethodParameterContext(boolean methodParameterContext) {
-    this.methodParameterContext = methodParameterContext;
-  }
-
   public boolean isStatementContext() {
     return statementContext;
   }
 
   public void setStatementContext(boolean statementContext) {
     this.statementContext = statementContext;
-  }
-
-  public boolean isVariableInitializerContext() {
-    return variableInitializerContext;
-  }
-
-  public void setVariableInitializerContext(boolean variableInitializerContext) {
-    this.variableInitializerContext = variableInitializerContext;
   }
 
   public int getAfterDelimiterPos() {
@@ -100,15 +83,11 @@ public final class ParameterInfo {
     return replacementVariable;
   }
 
-  public void setReplacementVariable(boolean replacementVariable) {
-    this.replacementVariable = replacementVariable;
-  }
-
   public PsiElement getElement() {
     return myElement;
   }
 
-  public void setElement(PsiElement element) {
+  public void setElement(@NotNull PsiElement element) {
     myElement = element;
   }
 }

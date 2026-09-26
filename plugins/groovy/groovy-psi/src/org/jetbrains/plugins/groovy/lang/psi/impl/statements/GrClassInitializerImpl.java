@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.plugins.groovy.lang.psi.impl.statements;
 
@@ -21,8 +7,12 @@ import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiCodeBlock;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiModifier;
+import com.intellij.psi.impl.ElementPresentationUtil;
+import com.intellij.ui.IconManager;
+import icons.JetgroovyIcons;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyElementVisitor;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifier;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList;
@@ -33,9 +23,8 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMe
 import org.jetbrains.plugins.groovy.lang.psi.impl.GroovyPsiElementImpl;
 import org.jetbrains.plugins.groovy.lang.psi.impl.PsiImplUtil;
 
-/**
- * @author ilyas
- */
+import javax.swing.Icon;
+
 public class GrClassInitializerImpl extends GroovyPsiElementImpl implements GrClassInitializer {
 
   public GrClassInitializerImpl(@NotNull ASTNode node) {
@@ -43,17 +32,17 @@ public class GrClassInitializerImpl extends GroovyPsiElementImpl implements GrCl
   }
 
   @Override
-  public void accept(GroovyElementVisitor visitor) {
+  public void accept(@NotNull GroovyElementVisitor visitor) {
     visitor.visitClassInitializer(this);
   }
 
+  @Override
   public String toString() {
     return "Class initializer";
   }
 
   @Override
-  @NotNull
-  public GrOpenBlock getBlock() {
+  public @NotNull GrOpenBlock getBlock() {
     return findNotNullChildByClass(GrOpenBlock.class);
   }
 
@@ -81,8 +70,7 @@ public class GrClassInitializerImpl extends GroovyPsiElementImpl implements GrCl
   }
 
   @Override
-  @NotNull
-  public GrModifierList getModifierList() {
+  public @NotNull GrModifierList getModifierList() {
     return findNotNullChildByClass(GrModifierList.class);
   }
 
@@ -91,9 +79,14 @@ public class GrClassInitializerImpl extends GroovyPsiElementImpl implements GrCl
     return getModifierList().hasModifierProperty(name);
   }
 
-  @NotNull
   @Override
-  public PsiCodeBlock getBody() {
+  public @NotNull PsiCodeBlock getBody() {
     return PsiImplUtil.getOrCreatePsiCodeBlock(getBlock());
+  }
+
+  @Override
+  protected @Nullable Icon getElementIcon(int flags) {
+    return IconManager
+      .getInstance().createLayeredIcon(this, JetgroovyIcons.Groovy.ClassInitializer, ElementPresentationUtil.getFlags(this, false));
   }
 }

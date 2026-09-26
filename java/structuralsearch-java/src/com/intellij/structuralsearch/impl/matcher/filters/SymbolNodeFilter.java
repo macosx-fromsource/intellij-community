@@ -1,72 +1,34 @@
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.impl.matcher.filters;
 
 import com.intellij.dupLocator.util.NodeFilter;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiLabeledStatement;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiNameValuePair;
+import com.intellij.psi.PsiVariable;
 
 /**
  * Tree filter for searching symbols ('T)
  */
-public class SymbolNodeFilter extends JavaElementVisitor implements NodeFilter {
-  private boolean result;
+public final class SymbolNodeFilter implements NodeFilter {
 
-  @Override public void visitExpression(PsiExpression expr) {
-    result = true;
-  }
+  private static final NodeFilter INSTANCE = new SymbolNodeFilter();
 
-  @Override public void visitLiteralExpression(PsiLiteralExpression psiLiteralExpression) {
-    result = true;
-  }
+  private SymbolNodeFilter() {}
 
-  @Override public void visitReferenceExpression(PsiReferenceExpression psiReferenceExpression) {
-    result = true;
-  }
-
-  @Override public void visitAnnotation(final PsiAnnotation annotation) {
-    result = true;
-  }
-
-  @Override public void visitAnnotationMethod(final PsiAnnotationMethod method) {
-    result = true;
-  }
-
-  @Override public void visitNameValuePair(final PsiNameValuePair pair) {
-    result = true;
-  }
-
-  @Override public void visitMethod(PsiMethod psiMethod) {
-    result = true;
-  }
-
-  @Override public void visitClass(PsiClass psiClass) {
-    result = true;
-  }
-
-  @Override public void visitReferenceElement(PsiJavaCodeReferenceElement psiJavaCodeReferenceElement) {
-    result = true;
-  }
-
-  @Override public void visitVariable(PsiVariable psiVar) {
-    result = true;
-  }
-
-  @Override public void visitTypeParameter(PsiTypeParameter psiTypeParameter) {
-    result = true;
-  }
-
-  private static class NodeFilterHolder {
-    private static final NodeFilter instance = new SymbolNodeFilter();
+  @Override
+  public boolean accepts(PsiElement element) {
+    return element instanceof PsiExpression || element instanceof PsiAnnotation || element instanceof PsiClass ||
+           element instanceof PsiMethod || element instanceof PsiVariable || element instanceof PsiJavaCodeReferenceElement ||
+           element instanceof PsiNameValuePair || element instanceof PsiLabeledStatement;
   }
 
   public static NodeFilter getInstance() {
-    return NodeFilterHolder.instance;
-  }
-
-  private SymbolNodeFilter() {
-  }
-
-  public boolean accepts(PsiElement element) {
-    result = false;
-    if (element!=null) element.accept(this);
-    return result;
+    return INSTANCE;
   }
 }

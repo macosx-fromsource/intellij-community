@@ -17,9 +17,6 @@ package com.intellij.util.xmlb;
 
 import junit.framework.TestCase;
 
-/**
- * @author nik
- */
 public class XmlSerializerUtilTest extends TestCase {
   public void testCreateCopy() {
     BaseBean copy = XmlSerializerUtil.createCopy(new BaseBean("x", 1));
@@ -29,14 +26,14 @@ public class XmlSerializerUtilTest extends TestCase {
     assertEquals("x", copy.s);
   }
 
-  public void testCopyBeanOfSameClass() throws Exception {
+  public void testCopyBeanOfSameClass() {
     BaseBean to = new BaseBean();
     XmlSerializerUtil.copyBean(new BaseBean("a", 1), to);
     assertEquals(1, to.i);
     assertEquals("a", to.s);
   }
 
-  public void testCopyBeanToInheritor() throws Exception {
+  public void testCopyBeanToInheritor() {
     InheritedBean to = new InheritedBean();
     to.b = true;
     XmlSerializerUtil.copyBean(new BaseBean("a", 1), to);

@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.structuralsearch.impl.matcher;
 
 import com.intellij.dupLocator.iterators.ArrayBackedNodeIterator;
@@ -27,47 +13,42 @@ import com.intellij.structuralsearch.impl.matcher.handlers.MatchingHandler;
 import com.intellij.structuralsearch.impl.matcher.handlers.SimpleHandler;
 import com.intellij.structuralsearch.impl.matcher.handlers.SubstitutionHandler;
 import com.intellij.structuralsearch.impl.matcher.strategies.MatchingStrategy;
+import com.intellij.util.SmartList;
+import com.intellij.util.containers.MultiMap;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Class to hold compiled pattern information
+ * Class to hold compiled pattern information. Contains the PSI pattern tree, and maps PsiElements to matching handlers.
+ * @see MatchingHandler
  */
 public abstract class CompiledPattern {
+  public static final Key<MatchingHandler> HANDLER_KEY = Key.create("ss.handler");
+  private final Map<Object, MatchingHandler> handlers = new HashMap<>();
+  private final MultiMap<String, PsiElement> variableNodes = new MultiMap<>();
   private SearchScope scope;
   private NodeIterator nodes;
   private MatchingStrategy strategy;
   private PsiElement targetNode;
-  private int optionsHashStamp;
   private int nodeCount;
+  private PsiElement last;
+  private MatchingHandler lastHandler;
 
-  // @todo support this property during matching (how many nodes should be advanced)
-  // when match is not successful (or successful partially)
-  //private int advancement = 1;
+  public abstract String @NotNull [] getTypedVarPrefixes();
+  public abstract boolean isTypedVar(@NotNull String str);
 
-  public abstract String[] getTypedVarPrefixes();
-  public abstract boolean isTypedVar(String str);
-
-  public void setTargetNode(final PsiElement element) {
+  public void setTargetNode(@NotNull PsiElement element) {
     targetNode = element;
   }
 
   public PsiElement getTargetNode() {
     return targetNode;
   }
-
-  public int getOptionsHashStamp() {
-    return optionsHashStamp;
-  }
-
-  public void setOptionsHashStamp(final int optionsHashStamp) {
-    this.optionsHashStamp = optionsHashStamp;
-  }
-
-  public static final Key<Object> HANDLER_KEY = Key.create("ss.handler");
 
   public MatchingStrategy getStrategy() {
     return strategy;
@@ -85,54 +66,43 @@ public abstract class CompiledPattern {
     return nodes;
   }
 
-  public void setNodes(List<PsiElement> elements) {
-    this.nodes = new ArrayBackedNodeIterator(PsiUtilCore.toPsiElementArray(elements));
-    this.nodeCount = elements.size();
+  public void setNodes(@NotNull List<? extends PsiElement> elements) {
+    nodes = new ArrayBackedNodeIterator(PsiUtilCore.toPsiElementArray(elements));
+    nodeCount = elements.size();
   }
 
+  @Contract("null -> false")
   public boolean isTypedVar(final PsiElement element) {
-    return element!=null && isTypedVar( element.getText() );
+    return element != null && isTypedVar(element.getText());
   }
 
   public boolean isRealTypedVar(PsiElement element) {
-    if (element!=null && element.getTextLength()>0) {
-      String str = getTypedVarString(element);
-      if (str.length() == 0) {
-        return false;
-      }
-      return isTypedVar( str );
-    } else {
+    if (element == null || element.getTextLength() <= 0) {
       return false;
     }
+    final String str = getTypedVarString(element);
+    return !str.isEmpty() && isTypedVar(str);
   }
 
-  @NotNull
-  public String getTypedVarString(PsiElement element) {
+  public @NotNull String getTypedVarString(@NotNull PsiElement element) {
     final StructuralSearchProfile profile = StructuralSearchUtil.getProfileByPsiElement(element);
-    if (profile == null) {
-      return element.getText();
-    }
-    return profile.getTypedVarString(element);
+    final String typedVarString = profile == null ? element.getText() : profile.getTypedVarString(element);
+    return typedVarString.trim();
   }
 
-  private final HashMap<Object,MatchingHandler> handlers = new HashMap<>();
-
-  public MatchingHandler getHandlerSimple(PsiElement node) {
+  public MatchingHandler getHandlerSimple(@NotNull PsiElement node) {
     return handlers.get(node);
   }
 
-  private PsiElement last;
-  private MatchingHandler lastHandler;
-
-  public MatchingHandler getHandler(PsiElement node) {
-    if (node==last) {
+  public @NotNull MatchingHandler getHandler(@NotNull PsiElement node) {
+    if (node == last) {
       return lastHandler;
     }
     MatchingHandler handler = handlers.get(node);
 
-    if (handler==null) {
+    if (handler == null) {
       handler = new SimpleHandler();
-      setHandler(node,handler);
+      setHandler(node, handler);
     }
 
     last = node;
@@ -141,29 +111,26 @@ public abstract class CompiledPattern {
     return handler;
   }
 
-  public MatchingHandler getHandler(String name) {
+  public MatchingHandler getHandler(@NotNull String name) {
     return handlers.get(name);
   }
 
-  public void setHandler(PsiElement node, MatchingHandler handler) {
+  public void setHandler(@NotNull PsiElement node, @NotNull MatchingHandler handler) {
     last = null;
-    handlers.put(node,handler);
+    handlers.put(node, handler);
   }
 
-  public SubstitutionHandler createSubstitutionHandler(
-    String name, String compiledName, boolean target,int minOccurs, int maxOccurs, boolean greedy) {
-
-    SubstitutionHandler handler = (SubstitutionHandler) handlers.get(compiledName);
+  public @NotNull SubstitutionHandler createSubstitutionHandler(@NotNull String name, @NotNull String compiledName, boolean target, int minOccurs, int maxOccurs,
+                                                                boolean greedy) {
+    SubstitutionHandler handler = (SubstitutionHandler)handlers.get(compiledName);
     if (handler != null) return handler;
 
     handler = doCreateSubstitutionHandler(name, target, minOccurs, maxOccurs, greedy);
-
-    handlers.put(compiledName,handler);
-
+    handlers.put(compiledName, handler);
     return handler;
   }
 
-  protected SubstitutionHandler doCreateSubstitutionHandler(String name, boolean target, int minOccurs, int maxOccurs, boolean greedy) {
+  protected @NotNull SubstitutionHandler doCreateSubstitutionHandler(@NotNull String name, boolean target, int minOccurs, int maxOccurs, boolean greedy) {
     return new SubstitutionHandler(name, target, minOccurs, maxOccurs, greedy);
   }
 
@@ -187,12 +154,16 @@ public abstract class CompiledPattern {
     }
   }
 
-  public boolean isToResetHandler(PsiElement element) {
+  public boolean isToResetHandler(@NotNull PsiElement element) {
     return true;
   }
 
-  @Nullable
-  public String getAlternativeTextToMatch(PsiElement node, String previousText) {
-    return null;
+  public @NotNull List<PsiElement> getVariableNodes(@NotNull String name) {
+    final Collection<PsiElement> elements = variableNodes.get(name);
+    return elements instanceof List ? (List<PsiElement>)elements : new SmartList<>(elements);
+  }
+
+  public void putVariableNode(@NotNull String name, @NotNull PsiElement node) {
+    variableNodes.putValue(name, node);
   }
 }

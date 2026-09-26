@@ -1,36 +1,25 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.intention.impl.config;
 
 import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.openapi.options.BaseConfigurable;
 import com.intellij.openapi.options.MasterDetails;
 import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.ui.DetailsComponent;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.util.ui.JBUI;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.BorderFactory;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
 
-public class IntentionSettingsConfigurable extends BaseConfigurable implements SearchableConfigurable, MasterDetails {
+@ApiStatus.Internal
+public final class IntentionSettingsConfigurable implements SearchableConfigurable, MasterDetails, IntentionsConfigurable {
   private IntentionSettingsPanel myPanel;
-  @NonNls public static final String HELP_ID = "preferences.intentionPowerPack";
-  public static final String DISPLAY_NAME = CodeInsightBundle.message("intention.settings");
+  public static final @NonNls String HELP_ID = "preferences.intentionPowerPack";
 
   @Override
   public JComponent createComponent() {
@@ -67,7 +56,7 @@ public class IntentionSettingsConfigurable extends BaseConfigurable implements S
   }
 
   @Override
-  public JComponent getPreferredFocusedComponent() {
+  public @Nullable JComponent getPreferredFocusedComponent() {
     return myPanel == null ? null : myPanel.getIntentionTree();
   }
 
@@ -78,7 +67,7 @@ public class IntentionSettingsConfigurable extends BaseConfigurable implements S
 
   @Override
   public String getDisplayName() {
-    return DISPLAY_NAME;
+    return getDisplayNameText();
   }
 
   @Override
@@ -110,12 +99,18 @@ public class IntentionSettingsConfigurable extends BaseConfigurable implements S
   }
 
   @Override
-  @NotNull
-  public String getId() {
+  public @NotNull String getId() {
     return HELP_ID;
   }
 
-  public void selectIntention(String familyName) {
-    myPanel.selectIntention(familyName);
+  @Override
+  public void selectIntention(@NotNull String familyName) {
+    if (myPanel != null) {
+      myPanel.selectIntention(familyName);
+    }
+  }
+
+  public static @NlsContexts.ConfigurableName String getDisplayNameText() {
+    return CodeInsightBundle.message("intention.settings");
   }
 }

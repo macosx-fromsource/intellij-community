@@ -1,44 +1,37 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.idea.svn.dialogs;
 
+import com.intellij.idea.ActionsBundle;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionPopupMenu;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.containers.hash.HashSet;
+import com.intellij.ui.components.JBCheckBox;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
-import org.tmatesoft.svn.core.internal.util.SVNPathUtil;
+import org.jetbrains.idea.svn.api.Url;
 
-import javax.swing.*;
-import javax.swing.event.TreeSelectionEvent;
-import javax.swing.event.TreeSelectionListener;
-import java.awt.*;
-import java.awt.event.*;
+import javax.swing.Action;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
+import javax.swing.JTextField;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.event.InputMethodEvent;
+import java.awt.event.InputMethodListener;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.util.HashSet;
 import java.util.Set;
 
-/**
- * Created with IntelliJ IDEA.
- * User: Irina.Chernushina
- * Date: 7/6/12
- * Time: 7:53 PM
- */
+import static org.jetbrains.idea.svn.SvnBundle.message;
+
 public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
   private String mySelectedURL;
   private boolean myCheckout;
@@ -48,7 +41,7 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
   private final Set<String> myUsedNames;
 
   public SelectCreateExternalTargetDialog(Project project, final VirtualFile below) {
-    super(project, true, "Point to repository location");
+    super(project, true, message("label.point.to.repository.location"));
     final VirtualFile[] children = below.getChildren();
     myUsedNames = new HashSet<>();
     int maxCnt = 1000;  // maybe not take it too seriously ?
@@ -63,18 +56,14 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
   protected void init() {
     super.init();
     myFollowRemoteTarget = true;
-    setTitle("Select Target For External");
-    setOKButtonText("Select");
-    getRepositoryBrowser().addChangeListener(new TreeSelectionListener() {
-      public void valueChanged(TreeSelectionEvent e) {
-        if (getOKAction() != null) {
-          final String selectedURL = getRepositoryBrowser().getSelectedURL();
-          if (myFollowRemoteTarget && selectedURL != null) {
-            myFolderName.setText(SVNPathUtil.tail(selectedURL));
-          }
-          checkEnabled();
-        }
+    setTitle(message("dialog.title.select.target.for.external"));
+    setOKButtonText(message("button.select"));
+    getRepositoryBrowser().addChangeListener(e -> {
+      final String selectedURL = getRepositoryBrowser().getSelectedURL();
+      if (myFollowRemoteTarget && selectedURL != null) {
+        myFolderName.setText(Url.tail(selectedURL));
       }
+      checkEnabled();
     });
     getOKAction().setEnabled(getRepositoryBrowser().getSelectedURL() != null);
   }
@@ -85,15 +74,15 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
     final boolean contains = myUsedNames.contains(text);
     final boolean enabled = selectedURL != null && !StringUtil.isEmptyOrSpaces(text) && !contains;
     if (contains) {
-      setErrorText("Target File Already Exists");
+      setErrorText(message("dialog.message.target.file.already.exists"), myFolderName);
     } else {
       setErrorText(null);
     }
     getOKAction().setEnabled(enabled);
   }
 
-  @NotNull
-  protected Action[] createActions() {
+  @Override
+  protected Action @NotNull [] createActions() {
     return new Action[] {getOKAction(), getCancelAction()};
   }
   @Override
@@ -102,13 +91,15 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
     super.doOKAction();
   }
 
+  @Override
   public String getSelectedURL() {
     return mySelectedURL;
   }
 
+  @Override
   protected JPopupMenu createPopup(boolean toolWindow) {
     DefaultActionGroup group = new DefaultActionGroup();
-    DefaultActionGroup newGroup = new DefaultActionGroup("_New", true);
+    DefaultActionGroup newGroup = DefaultActionGroup.createPopupGroup(ActionsBundle.messagePointer("group.NewGroup.text"));
     final RepositoryBrowserComponent browser = getRepositoryBrowser();
     newGroup.add(new AddLocationAction(browser));
     newGroup.add(new MkDirAction(browser));
@@ -116,7 +107,7 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
     group.addSeparator();
     group.add(new RefreshAction(browser));
     group.add(new DiscardLocationAction(browser));
-    ActionPopupMenu menu = ActionManager.getInstance().createActionPopupMenu("", group);
+    ActionPopupMenu menu = ActionManager.getInstance().createActionPopupMenu("SelectCreateExternalTargetDialog", group);
     return menu.getComponent();
   }
 
@@ -130,7 +121,7 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
     gb.weighty = 1;
     gb.gridwidth = 2;
     wrapper.add(repositoryPanel, gb);
-    ++ gb.gridy;
+    ++gb.gridy;
     gb.fill = GridBagConstraints.NONE;
     gb.weightx = 0;
     gb.weighty = 0;
@@ -139,8 +130,8 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
     myFolderName = new JTextField();
     gb.insets.top = 5;
     gb.anchor = GridBagConstraints.WEST;
-    wrapper.add(new JLabel("Local Target:"), gb);
-    ++ gb.gridx;
+    wrapper.add(new JBLabel(message("label.local.target")), gb);
+    ++gb.gridx;
     gb.weightx = 1;
     gb.fill = GridBagConstraints.HORIZONTAL;
     wrapper.add(myFolderName, gb);
@@ -148,7 +139,7 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
     gb.weightx = 0;
     gb.fill = GridBagConstraints.NONE;
     gb.gridx = 0;
-    ++ gb.gridy;
+    ++gb.gridy;
 
     myFolderName.addFocusListener(new FocusAdapter() {
       @Override
@@ -158,9 +149,6 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
       }
     });
     myFolderName.addKeyListener(new KeyAdapter() {
-      @Override
-      public void keyTyped(KeyEvent e) {
-      }
 
       @Override
       public void keyReleased(KeyEvent e) {
@@ -177,13 +165,8 @@ public class SelectCreateExternalTargetDialog extends RepositoryBrowserDialog {
       }
     });
 
-    final JCheckBox checkout = new JCheckBox("Checkout");
-    checkout.addActionListener(new ActionListener() {
-      @Override
-      public void actionPerformed(ActionEvent e) {
-        myCheckout = checkout.isSelected();
-      }
-    });
+    final JBCheckBox checkout = new JBCheckBox(message("checkbox.checkout"));
+    checkout.addActionListener(e -> myCheckout = checkout.isSelected());
     wrapper.add(checkout, gb);
     return wrapper;
   }

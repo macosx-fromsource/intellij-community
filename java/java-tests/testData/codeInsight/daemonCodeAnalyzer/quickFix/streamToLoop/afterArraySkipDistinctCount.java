@@ -1,4 +1,4 @@
-// "Replace Stream API chain with loop" "true"
+// "Replace Stream API chain with loop" "true-preview"
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -6,15 +6,15 @@ import java.util.Set;
 
 public class Main {
   private static long test() {
-      long count = 0;
+      long count = 0L;
       Set<Integer> uniqueValues = new HashSet<>();
-      long toSkip = 1;
-      for (Integer integer : new Integer[]{1, 2, 3, 2, 3}) {
-          if (toSkip > 0) {
-              toSkip--;
+      boolean first = true;
+      for (Integer i : new Integer[]{1, 2, 3, 2, 3}) {
+          if (first) {
+              first = false;
               continue;
           }
-          if (uniqueValues.add(integer)) {
+          if (uniqueValues.add(i)) {
               count++;
           }
       }

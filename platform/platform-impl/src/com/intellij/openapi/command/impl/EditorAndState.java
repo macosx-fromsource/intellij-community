@@ -1,42 +1,50 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.command.impl;
 
-import com.intellij.openapi.fileEditor.FileEditorState;
 import com.intellij.openapi.fileEditor.FileEditor;
+import com.intellij.openapi.fileEditor.FileEditorState;
+import com.intellij.openapi.fileEditor.FileEditorStateLevel;
+import com.intellij.openapi.fileEditor.impl.CurrentEditorProvider;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.lang.ref.WeakReference;
+import java.util.Objects;
 
-class EditorAndState {
-  private final FileEditorState myState;
-  private final WeakReference<FileEditor> myEditor;
+final class EditorAndState {
 
-  public EditorAndState(FileEditor editor, FileEditorState state) {
-    myEditor = new WeakReference<>(editor);
-    myState = state;
+  static @Nullable EditorAndState getStateFor(@Nullable Project project, @NotNull CurrentEditorProvider editorProvider) {
+    FileEditor editor = editorProvider.getCurrentEditor(project);
+    if (editor != null && editor.isValid()) {
+      FileEditorState state = editor.getState(FileEditorStateLevel.UNDO);
+      return new EditorAndState(editor, state);
+    }
+    return null;
   }
 
-  /**
-   * @return may be null
-   */ 
-  public FileEditor getEditor() {
-    return myEditor.get();
+  private final @NotNull FileEditorState editorState;
+  private final VirtualFile virtualFile;
+
+  EditorAndState(@NotNull FileEditor editor, @NotNull FileEditorState state) {
+    virtualFile = editor.getFile();
+    editorState = state;
   }
 
-  public FileEditorState getState() {
-    return myState;
+  boolean canBeAppliedTo(@Nullable FileEditor editor) {
+    if (editor == null || !Objects.equals(virtualFile, editor.getFile())) {
+      return false;
+    }
+    FileEditorState currentState = editor.getState(FileEditorStateLevel.UNDO);
+    return editorState.getClass() == currentState.getClass();
+  }
+
+  @NotNull FileEditorState getState() {
+    return editorState;
+  }
+
+  @Override
+  public String toString() {
+    return editorState.toString();
   }
 }

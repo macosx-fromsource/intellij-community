@@ -1,64 +1,108 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection;
 
 import com.intellij.lang.annotation.ProblemGroup;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * See {@link InspectionManager#createProblemDescriptor(com.intellij.psi.PsiElement, String, LocalQuickFix, ProblemHighlightType,boolean) } for method descriptions.
+ * See {@link InspectionManager#createProblemDescriptor(PsiElement, String, LocalQuickFix, ProblemHighlightType, boolean)} for method descriptions.
  */
-public interface ProblemDescriptor extends CommonProblemDescriptor{
+public interface ProblemDescriptor extends CommonProblemDescriptor {
   ProblemDescriptor[] EMPTY_ARRAY = new ProblemDescriptor[0];
 
   PsiElement getPsiElement();
+
   PsiElement getStartElement();
+
   PsiElement getEndElement();
+
   TextRange getTextRangeInElement();
+
+  /**
+   * Returns the template (text or HTML) from which the editor tooltip text is built.
+   * By default, {@link #getDescriptionTemplate()} result is used.
+   */
+  default @NlsContexts.Tooltip @NotNull String getTooltipTemplate() {
+    return getDescriptionTemplate();
+  }
+
+  /**
+   * Returns 0-based line number of the problem.
+   */
   int getLineNumber();
+
   @NotNull
   ProblemHighlightType getHighlightType();
+
   boolean isAfterEndOfLine();
 
   /**
    * Sets custom attributes for highlighting the inspection result. Can be used only when the severity of the problem is INFORMATION.
    *
    * @param key the text attributes key for highlighting the result.
-   * @since 9.0
    */
   void setTextAttributes(TextAttributesKey key);
 
   /**
-   * Gets the unique object, which has the same {@link com.intellij.lang.annotation.ProblemGroup#getProblemName()} for all of the problems of this group
-   *
-   * @return the problem group
+   * @see ProblemGroup
    */
   @Nullable
   ProblemGroup getProblemGroup();
 
   /**
-   * Sets the unique object, which has the same {@link com.intellij.lang.annotation.ProblemGroup#getProblemName()} for all of the problems of this group
-   *
-   * @param problemGroup the problemGroup
+   * @see ProblemGroup
    */
   void setProblemGroup(@Nullable ProblemGroup problemGroup);
 
   boolean showTooltip();
+
+  /**
+   * Returns the equivalent ProblemDescriptor that could be applied to the
+   * non-physical copy of the file used to preview the modification.
+   *
+   * @param target target non-physical file
+   * @return the problem descriptor that could be applied to the non-physical copy of the file.
+   */
+  default @NotNull ProblemDescriptor getDescriptorForPreview(@NotNull PsiFile target) {
+    PsiElement start;
+    PsiElement end;
+    PsiElement psi;
+    try {
+      start = PsiTreeUtil.findSameElementInCopy(getStartElement(), target);
+      end = PsiTreeUtil.findSameElementInCopy(getEndElement(), target);
+      psi = PsiTreeUtil.findSameElementInCopy(getPsiElement(), target);
+    }
+    catch (ProcessCanceledException e) {
+      throw e;
+    }
+    catch (RuntimeException e) {
+      throw new RuntimeException("Failed to obtain element copy for preview; descriptor: " + getDescriptionTemplate(), e);
+    }
+    ProblemDescriptor pd = this;
+    return new ProblemDescriptor() {
+      //@formatter:off
+      @Override public PsiElement getPsiElement() { return psi;}
+      @Override public PsiElement getStartElement() { return start;}
+      @Override public PsiElement getEndElement() { return end;}
+      @Override public TextRange getTextRangeInElement() { return pd.getTextRangeInElement();}
+      @Override public int getLineNumber() { return pd.getLineNumber();}
+      @Override public @NotNull ProblemHighlightType getHighlightType() { return pd.getHighlightType();}
+      @Override public boolean isAfterEndOfLine() { return pd.isAfterEndOfLine();}
+      @Override public void setTextAttributes(TextAttributesKey key) {}
+      @Override public @Nullable ProblemGroup getProblemGroup() { return pd.getProblemGroup(); }
+      @Override public void setProblemGroup(@Nullable ProblemGroup problemGroup) {}
+      @Override public boolean showTooltip() { return pd.showTooltip();}
+      @Override public @NotNull String getDescriptionTemplate() { return pd.getDescriptionTemplate();}
+      @Override public @NotNull QuickFix @Nullable [] getFixes() { return QuickFix.EMPTY_ARRAY;}
+      //@formatter:on
+    };
+  }
 }

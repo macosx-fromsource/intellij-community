@@ -1,45 +1,47 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.ether;
 
+import org.jetbrains.jps.builders.java.JavaBuilderUtil;
 import org.jetbrains.jps.model.JpsModuleRootModificationUtil;
+import org.jetbrains.jps.model.java.JpsJavaExtensionService;
+import org.jetbrains.jps.model.java.compiler.JavaCompilers;
+import org.jetbrains.jps.model.java.compiler.JpsJavaCompilerConfiguration;
 import org.jetbrains.jps.model.module.JpsModule;
 
-/**
- * @author: db
- * Date: 23.09.11
- */
+import java.util.Set;
+
 public class FieldPropertyTest extends IncrementalTestCase {
-  public FieldPropertyTest() throws Exception {
+  private static final Set<String> GRAPH_ONLY_TESTS = Set.of("constantChain3");
+
+  public FieldPropertyTest() {
     super("fieldProperties");
   }
 
-  public void testConstantChain() throws Exception {
+  @Override
+  protected boolean shouldRunTest() {
+    if (JavaBuilderUtil.isDepGraphEnabled()) {
+      return super.shouldRunTest();
+    }
+    return !GRAPH_ONLY_TESTS.contains(getTestName(true));
+  }
+
+  public void testConstantChain() {
     doTest();
   }
 
-  public void testConstantChain1() throws Exception {
+  public void testConstantChain1() {
     doTest();
   }
 
-  public void testConstantChain2() throws Exception {
+  public void testConstantChain2() {
     doTest();
   }
 
-  public void testConstantChainMultiModule() throws Exception {
+  public void testConstantChain3() {
+    doTest();
+  }
+
+  public void testConstantChainMultiModule() {
     JpsModule moduleA = addModule("moduleA", "moduleA/src");
     JpsModule moduleB = addModule("moduleB", "moduleB/src");
     JpsModule moduleC = addModule("moduleC", "moduleC/src");
@@ -48,78 +50,87 @@ public class FieldPropertyTest extends IncrementalTestCase {
     doTestBuild(1).assertSuccessful();
   }
 
-  public void testConstantRemove() throws Exception {
+  public void testConstantRemove() {
     doTest();
   }
 
-  public void testConstantRemove1() throws Exception {
+  public void testConstantRemove1() {
     doTest();
   }
 
-  public void testDoubleConstantChange() throws Exception {
+  public void testDoubleConstantChange() {
     doTest();
   }
 
-  public void testFloatConstantChange() throws Exception {
+  public void testFloatConstantChange() {
     doTest();
   }
 
-  public void testInnerConstantChange() throws Exception {
+  public void testInnerConstantChange() {
     doTest();
   }
 
-  public void testIntConstantChange() throws Exception {
+  public void testIntConstantChange() {
     doTest();
   }
 
-  public void testIntNonStaticConstantChange() throws Exception {
+  public void testIntNonStaticConstantChange() {
     doTest();
   }
 
-  public void testLongConstantChange() throws Exception {
+  public void testLongConstantChange() {
     doTest();
   }
 
-  public void testNonCompileTimeConstant() throws Exception {
+  public void testNonCompileTimeConstant() {
     doTest();
   }
 
-  public void testStringConstantChange() throws Exception {
+  public void testStringConstantChange() {
     doTest();
   }
 
-  public void testStringConstantLessAccessible() throws Exception {
+  public void testStringConstantChangeWithECJ() {
+    setupInitialProject();
+    final JpsJavaCompilerConfiguration config = JpsJavaExtensionService.getInstance().getCompilerConfiguration(myProject);
+    config.setJavaCompilerId(JavaCompilers.ECLIPSE_ID);
+
+    doTestBuild(1);
+  }
+
+  public void testStringConstantLessAccessible() {
     doTest();
   }
 
-  public void testTypeChange() throws Exception {
+  public void testTypeChange() {
     doTest();
   }
 
-  public void testTypeChange1() throws Exception {
+  public void testTypeChange1() {
     doTest();
   }
 
-  public void testTypeChange2() throws Exception {
+  public void testTypeChange2() {
     doTest();
   }
 
-  public void testNonIncremental1() throws Exception {
+  public void testNonIncremental1() {
     doTest();
   }
 
-  public void testNonIncremental2() throws Exception {
-    doTest();
-  }
-  //public void testNonIncremental3() throws Exception {
-  //    doTest();
-  //  }
-
-  public void testNonIncremental4() throws Exception {
+  public void testNonIncremental2() {
     doTest();
   }
 
-  public void testMutualConstants() throws Exception {
+  public void testNonIncremental3() {
+    doTest();
+  }
+
+  public void testNonIncremental4() {
+    doTest();
+  }
+
+  public void testMutualConstants() {
     doTest();
   }
 }

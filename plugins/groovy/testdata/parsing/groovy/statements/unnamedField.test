@@ -13,13 +13,15 @@ Groovy script
       <empty list>
     Implements clause
       <empty list>
+    Permits clause
+      <empty list>
     PsiWhiteSpace(' ')
     Type definition body
       PsiElement({)('{')
       PsiWhiteSpace('\n   ')
       Modifiers
         PsiElement(def)('def')
-      PsiElement(new line)('\n')
-      PsiErrorElement:Identifier, string literal or '(' expected
+      PsiErrorElement:identifier expected
         <empty list>
+      PsiElement(new line)('\n')
       PsiElement(})('}')

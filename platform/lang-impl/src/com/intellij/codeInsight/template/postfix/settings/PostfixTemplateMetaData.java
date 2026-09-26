@@ -1,56 +1,45 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.template.postfix.settings;
 
 import com.intellij.codeInsight.intention.impl.config.BeforeAfterActionMetaData;
+import com.intellij.codeInsight.intention.impl.config.BeforeAfterMetaData;
 import com.intellij.codeInsight.intention.impl.config.TextDescriptor;
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplate;
-import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.codeInsight.template.postfix.templates.editable.EditablePostfixTemplate;
+import com.intellij.codeInsight.template.postfix.templates.editable.PostfixTemplateWrapper;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.lang.UrlClassLoader;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
 
+@ApiStatus.Internal
 public final class PostfixTemplateMetaData extends BeforeAfterActionMetaData {
 
   public static final String KEY = "$key";
 
   public static final PostfixTemplateMetaData EMPTY_METADATA = new PostfixTemplateMetaData();
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.template.postfix.settings.PostfixTemplateMetaData");
   private static final String DESCRIPTION_FOLDER = "postfixTemplates";
 
-  @NotNull
-  static PostfixTemplateMetaData createMetaData(@Nullable PostfixTemplate template) {
+  public static @NotNull BeforeAfterMetaData createMetaData(@Nullable PostfixTemplate template) {
     if (template == null) return EMPTY_METADATA;
-
+    if (template instanceof PostfixTemplateWrapper) {
+      return new PostfixTemplateWrapperMetaData((PostfixTemplateWrapper)template);
+    }
+    if (template instanceof EditablePostfixTemplate && !template.isBuiltin()) {
+      return new EditablePostfixTemplateMetaData((EditablePostfixTemplate)template);
+    }
     return new PostfixTemplateMetaData(template);
   }
 
-  private URL urlDir = null;
   private PostfixTemplate myTemplate;
 
-  public PostfixTemplateMetaData(PostfixTemplate template) {
-    super(template.getClass().getClassLoader(), template.getClass().getSimpleName());
+  public PostfixTemplateMetaData(@NotNull PostfixTemplate template) {
+    super(template.getClass().getClassLoader(), template.getClass().getSimpleName(), false);
     myTemplate = template;
   }
 
@@ -58,60 +47,49 @@ public final class PostfixTemplateMetaData extends BeforeAfterActionMetaData {
     super(EMPTY_DESCRIPTION, EMPTY_EXAMPLE, EMPTY_EXAMPLE);
   }
 
-  @NotNull
   @Override
-  public TextDescriptor[] getExampleUsagesBefore() {
-
-    return decorateTextDescriptor(super.getExampleUsagesBefore());
+  public TextDescriptor @NotNull [] getExampleUsagesBefore() {
+    return decorateTextDescriptor(getRawExampleUsagesBefore());
   }
 
-  @NotNull
-  private TextDescriptor[] decorateTextDescriptor(TextDescriptor[] before) {
-    List<TextDescriptor> list = ContainerUtil.newArrayList();
+  TextDescriptor @NotNull [] getRawExampleUsagesBefore() {
+    return super.getExampleUsagesBefore();
+  }
+
+  private TextDescriptor @NotNull [] decorateTextDescriptor(TextDescriptor[] before) {
+    String key = myTemplate.getKey();
+    return decorateTextDescriptorWithKey(before, key);
+  }
+
+  static TextDescriptor @NotNull [] decorateTextDescriptorWithKey(TextDescriptor[] before, @NotNull @NlsSafe String key) {
+    List<TextDescriptor> list = new ArrayList<>(before.length);
     for (final TextDescriptor descriptor : before) {
       list.add(new TextDescriptor() {
         @Override
-        public String getText() throws IOException {
-          return StringUtil.replace(descriptor.getText(), KEY, myTemplate.getKey());
+        public @NotNull String getText() throws IOException {
+          return StringUtil.replace(descriptor.getText(), KEY, key);
         }
 
         @Override
-        public String getFileName() {
+        public @NotNull String getFileName() {
           return descriptor.getFileName();
         }
       });
     }
-    return list.toArray(new TextDescriptor[list.size()]);
+    return list.toArray(new TextDescriptor[0]);
   }
 
-  @NotNull
   @Override
-  public TextDescriptor[] getExampleUsagesAfter() {
-    return decorateTextDescriptor(super.getExampleUsagesAfter());
+  public TextDescriptor @NotNull [] getExampleUsagesAfter() {
+    return decorateTextDescriptor(getRawExampleUsagesAfter());
   }
 
-  @NotNull
-  @Override
-  protected URL getDirURL() {
-    if (urlDir != null) {
-      return urlDir;
-    }
+  TextDescriptor @NotNull [] getRawExampleUsagesAfter() {
+    return super.getExampleUsagesAfter();
+  }
 
-    final URL pageURL = myLoader.getResource(DESCRIPTION_FOLDER + "/" + myDescriptionDirectoryName + "/" + DESCRIPTION_FILE_NAME);
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Path:" + DESCRIPTION_FOLDER + "/" + myDescriptionDirectoryName);
-      LOG.debug("URL:" + pageURL);
-    }
-    if (pageURL != null) {
-      try {
-        final String url = pageURL.toExternalForm();
-        urlDir = UrlClassLoader.internProtocol(new URL(url.substring(0, url.lastIndexOf('/'))));
-        return urlDir;
-      }
-      catch (MalformedURLException e) {
-        LOG.error(e);
-      }
-    }
-    return null;
+  @Override
+  protected String getResourceLocation(String resourceName) {
+    return DESCRIPTION_FOLDER + "/" + myDescriptionDirectoryName + "/" + resourceName;
   }
 }

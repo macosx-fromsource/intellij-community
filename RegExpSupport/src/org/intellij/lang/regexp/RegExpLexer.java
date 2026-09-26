@@ -28,31 +28,33 @@ public class RegExpLexer extends FlexAdapter {
     private final EnumSet<RegExpCapability> myCapabilities;
 
     public RegExpLexer(EnumSet<RegExpCapability> capabilities) {
-        super(new _RegExLexer(capabilities));
-        myCapabilities = capabilities;
+      super(new _RegExLexer(capabilities));
+      myCapabilities = capabilities;
     }
 
+    @Override
     public void start(@NotNull CharSequence buffer, int startOffset, int endOffset, int initialState) {
-        getFlex().commentMode = (initialState & COMMENT_MODE) != 0 || myCapabilities.contains(RegExpCapability.COMMENT_MODE);
-        super.start(buffer, startOffset, endOffset, initialState & ~COMMENT_MODE);
+      getRegExLexer().commentMode = (initialState & COMMENT_MODE) != 0 || myCapabilities.contains(RegExpCapability.COMMENT_MODE);
+      super.start(buffer, startOffset, endOffset, initialState & ~COMMENT_MODE);
     }
 
-    public _RegExLexer getFlex() {
-        return (_RegExLexer)super.getFlex();
+    private _RegExLexer getRegExLexer() {
+      return (_RegExLexer)super.getFlex();
     }
 
+    @Override
     public int getState() {
-        final _RegExLexer flex = getFlex();
-        int state = super.getState();
-        if (flex.commentMode) {
-            state |= COMMENT_MODE;
-        }
-        if (!flex.states.isEmpty()) {
-            state |= NESTED_STATES;
-        }
-        if (flex.capturingGroupCount != 0) {
-            state |= CAPTURING_GROUPS;
-        }
-        return state;
+      final _RegExLexer flex = getRegExLexer();
+      int state = super.getState();
+      if (flex.commentMode) {
+        state |= COMMENT_MODE;
+      }
+      if (!flex.states.isEmpty()) {
+        state |= NESTED_STATES;
+      }
+      if (flex.capturingGroupCount != 0) {
+        state |= CAPTURING_GROUPS;
+      }
+      return state;
     }
 }

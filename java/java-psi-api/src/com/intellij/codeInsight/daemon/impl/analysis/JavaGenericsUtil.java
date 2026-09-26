@@ -1,23 +1,36 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon.impl.analysis;
 
 import com.intellij.codeInsight.AnnotationUtil;
 import com.intellij.pom.java.LanguageLevel;
-import com.intellij.psi.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.JavaResolveResult;
+import com.intellij.psi.PsiAnonymousClass;
+import com.intellij.psi.PsiArrayType;
+import com.intellij.psi.PsiCall;
+import com.intellij.psi.PsiCapturedWildcardType;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementFactory;
+import com.intellij.psi.PsiEllipsisType;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiExpressionList;
+import com.intellij.psi.PsiForeachStatement;
+import com.intellij.psi.PsiIntersectionType;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodReferenceExpression;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiModifierListOwner;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeParameter;
+import com.intellij.psi.PsiWildcardType;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -26,9 +39,13 @@ import com.intellij.psi.util.TypeConversionUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Set;
 
-public class JavaGenericsUtil {
+import static com.intellij.codeInsight.AnnotationUtil.CHECK_EXTERNAL;
+
+public final class JavaGenericsUtil {
   public static boolean isReifiableType(PsiType type) {
     if (type instanceof PsiArrayType) {
       return isReifiableType(((PsiArrayType)type).getComponentType());
@@ -58,17 +75,25 @@ public class JavaGenericsUtil {
         return true;
       }
 
-      assert parameters.length == 0;
-      final PsiClassType.ClassResolveResult resolved = ((PsiClassType)PsiUtil.convertAnonymousToBaseType(classType)).resolveGenerics();
+      final PsiClassType.ClassResolveResult resolved = classType.resolveGenerics();
       final PsiClass aClass = resolved.getElement();
       if (aClass instanceof PsiTypeParameter) {
         return false;
       }
 
       if (aClass != null && !aClass.hasModifierProperty(PsiModifier.STATIC)) {
-        PsiModifierListOwner enclosingStaticElement = PsiUtil.getEnclosingStaticElement(aClass, aClass.getContainingClass());
+        //local class (inner inside inside anonymous) should skip anonymous as it can't be static itself
+        final PsiClass stopClassLevel = PsiUtil.isLocalClass(aClass) ? null : aClass.getContainingClass();
+        PsiModifierListOwner enclosingStaticElement = PsiUtil.getEnclosingStaticElement(aClass, stopClassLevel);
         PsiClass containingClass = PsiTreeUtil.getParentOfType(aClass, PsiClass.class, true);
         if (containingClass != null && (enclosingStaticElement == null || PsiTreeUtil.isAncestor(enclosingStaticElement, containingClass, false))) {
+          //anonymous classes are not generic
+          while (containingClass instanceof PsiAnonymousClass) {
+            containingClass = PsiTreeUtil.getParentOfType(containingClass, PsiClass.class, true);
+          }
+          if (containingClass == null || enclosingStaticElement != null && !PsiTreeUtil.isAncestor(enclosingStaticElement, containingClass, false)) {
+            return true;
+          }
           return isReifiableType(JavaPsiFacade.getElementFactory(aClass.getProject()).createType(containingClass, resolved.getSubstitutor()));
         }
       }
@@ -91,14 +116,21 @@ public class JavaGenericsUtil {
     }
     PsiMethod psiMethod = (PsiMethod)resolve;
 
-    if (!psiMethod.isVarArgs()) {
+    PsiParameter[] parameters = psiMethod.getParameterList().getParameters();
+
+    int parametersCount = parameters.length;
+    if (parametersCount == 0) {
       return false;
     }
-    if (AnnotationUtil.isAnnotated(psiMethod, "java.lang.SafeVarargs", false, false)) {
+    PsiParameter varargParameter = parameters[parametersCount - 1];
+    if (!varargParameter.isVarArgs()) {
       return false;
     }
-    int parametersCount = psiMethod.getParameterList().getParametersCount();
-    PsiParameter varargParameter = psiMethod.getParameterList().getParameters()[parametersCount - 1];
+
+    if (AnnotationUtil.isAnnotated(psiMethod, CommonClassNames.JAVA_LANG_SAFE_VARARGS, CHECK_EXTERNAL)) {
+      return false;
+    }
+
     PsiType componentType = ((PsiEllipsisType)varargParameter.getType()).getComponentType();
     if (isReifiableType(resolveResult.getSubstitutor().substitute(componentType))) {
       return false;
@@ -128,7 +160,7 @@ public class JavaGenericsUtil {
     return false;
   }
 
-  public static boolean isUncheckedCast(PsiType castType, PsiType operandType) {
+  public static boolean isUncheckedCast(@NotNull PsiType castType, @NotNull PsiType operandType) {
     if (TypeConversionUtil.isAssignable(castType, operandType, false)) return false;
 
     castType = castType.getDeepComponentType();
@@ -153,23 +185,82 @@ public class JavaGenericsUtil {
         if (operandClassType.isRaw()) return true;
         if (castClass.isInheritor(operandClass, true)) {
           PsiSubstitutor castSubstitutor = castResult.getSubstitutor();
-          PsiElementFactory factory = JavaPsiFacade.getInstance(castClass.getProject()).getElementFactory();
+          PsiElementFactory factory = JavaPsiFacade.getElementFactory(castClass.getProject());
           for (PsiTypeParameter typeParameter : PsiUtil.typeParametersIterable(castClass)) {
+            //only parameters declared in containing classes
+            if (typeParameter.getOwner() instanceof PsiMethod) {
+              continue;
+            }
             PsiSubstitutor modifiedSubstitutor = castSubstitutor.put(typeParameter, null);
             PsiClassType otherType = factory.createType(castClass, modifiedSubstitutor);
             if (TypeConversionUtil.isAssignable(operandType, otherType, false)) return true;
           }
-          for (PsiTypeParameter typeParameter : PsiUtil.typeParametersIterable(operandClass)) {
-            final PsiType operand = operandResult.getSubstitutor().substitute(typeParameter);
-            if (operand instanceof PsiCapturedWildcardType) return true;
+          //from Java7. Java 6 now is unsupported
+          //according to `Checked and Unchecked Narrowing Reference Conversions`
+          PsiSubstitutor superSubstitutor =
+            TypeConversionUtil.getSuperClassSubstitutor(operandClass, castClass, castResult.getSubstitutor());
+          PsiSubstitutor operandSubstitutor = operandResult.getSubstitutor();
+          PsiClass superClass = operandResult.getElement();
+          if (superClass == null) {
+            return true;
           }
-          return false;
+          Set<PsiTypeParameter> capturedWildcardType = new HashSet<>();
+          for (PsiTypeParameter parameter : PsiUtil.typeParametersIterable(operandClass)) {
+            //only parameters declared in containing classes
+            if (parameter.getOwner() instanceof PsiMethod) {
+              continue;
+            }
+            PsiType operandParameterType = operandSubstitutor.substitute(parameter);
+            if (operandParameterType instanceof PsiCapturedWildcardType) {
+              capturedWildcardType.add(parameter);
+            }
+            PsiType superParameterType = superSubstitutor.substitute(parameter);
+            if (operandParameterType != null &&
+                superParameterType != null &&
+                !TypeConversionUtil.typesAgree(superParameterType, operandParameterType, false)) {
+              return true;
+            }
+          }
+          return !capturedWildcardTypesAreNotMerged(capturedWildcardType, operandClass, castClass);
         }
         return true;
       }
     }
 
     return false;
+  }
+
+  //according to com.sun.tools.javac.code.Types.Adapter#visitTypeVar, it is impossible to merge 2 captured types.
+  private static boolean capturedWildcardTypesAreNotMerged(Set<PsiTypeParameter> capturedSuperClassTypes,
+                                                           PsiClass superClass,
+                                                           PsiClass derivedClass) {
+    if (capturedSuperClassTypes.isEmpty()) {
+      return true;
+    }
+    PsiSubstitutor substitutor = TypeConversionUtil.getSuperClassSubstitutor(superClass, derivedClass, PsiSubstitutor.EMPTY);
+    if (substitutor == PsiSubstitutor.EMPTY) {
+      return true;
+    }
+    Set<String> capturedSourceTypeParameters = new HashSet<>();
+    for (PsiTypeParameter parameter : PsiUtil.typeParametersIterable(superClass)) {
+      if (!capturedSuperClassTypes.contains(parameter)) {
+        continue;
+      }
+      PsiType substituted = substitutor.substitute(parameter);
+      if (!(substituted instanceof PsiClassType)) {
+        continue;
+      }
+      PsiClass resolved = ((PsiClassType)substituted).resolve();
+      if (!(resolved instanceof PsiTypeParameter)) {
+        continue;
+      }
+      PsiTypeParameter typeParameter = (PsiTypeParameter)resolved;
+      if (capturedSourceTypeParameters.contains(typeParameter.getName())) {
+        return false;
+      }
+      capturedSourceTypeParameters.add(typeParameter.getName());
+    }
+    return true;
   }
 
   public static boolean isRawToGeneric(PsiType lType, PsiType rType) {
@@ -191,6 +282,10 @@ public class JavaGenericsUtil {
         if (isRawToGeneric(type, rType)) return true;
       }
       return false;
+    }
+
+    if (rType instanceof PsiCapturedWildcardType) {
+      return isRawToGeneric(lType, ((PsiCapturedWildcardType)rType).getUpperBound());
     }
 
     if (!(lType instanceof PsiClassType) || !(rType instanceof PsiClassType)) return false;
@@ -243,20 +338,21 @@ public class JavaGenericsUtil {
           return true;
         }
       }
-      if (!TypeConversionUtil.typesAgree(lTypeArg, rTypeArg, true)) return true;
+      if (!TypeConversionUtil.typesAgree(lTypeArg, rTypeArg, true, rParameter, rSubstitutor)) return true;
     }
     return false;
   }
 
-  @Nullable
-  public static PsiType getCollectionItemType(@NotNull PsiExpression expression) {
-    final PsiType type = expression.getType();
-    if (type == null) return null;
-    return getCollectionItemType(type, expression.getResolveScope());
+  /**
+   * @param expression expression used as for-each loop {@linkplain PsiForeachStatement#getIteratedValue() iterated value}.
+   * @return type of elements; the for-each loop {@linkplain PsiForeachStatement#getIterationParameter() iteration parameter} 
+   * must be assignable from this type. Returns null if the supplied expression type cannot be used as for-each loop iterated value.  
+   */
+  public static @Nullable PsiType getCollectionItemType(@NotNull PsiExpression expression) {
+    return getCollectionItemType(expression.getType(), expression.getResolveScope());
   }
 
-  @Nullable
-  public static PsiType getCollectionItemType(final PsiType type, final GlobalSearchScope scope) {
+  public static @Nullable PsiType getCollectionItemType(@Nullable PsiType type, @NotNull GlobalSearchScope scope) {
     if (type instanceof PsiArrayType) {
       return ((PsiArrayType)type).getComponentType();
     }
@@ -304,8 +400,7 @@ public class JavaGenericsUtil {
     return null;
   }
 
-  @Nullable
-  private static PsiTypeParameter getIterableTypeParameter(final JavaPsiFacade facade, final PsiClass context) {
+  private static @Nullable PsiTypeParameter getIterableTypeParameter(final JavaPsiFacade facade, final PsiClass context) {
     PsiClass iterable = facade.findClass("java.lang.Iterable", context.getResolveScope());
     if (iterable == null) return null;
     PsiTypeParameter[] typeParameters = iterable.getTypeParameters();

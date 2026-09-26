@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,15 +15,16 @@
  */
 package com.intellij.debugger.ui.tree;
 
-import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.UserDataHolder;
+import org.jetbrains.annotations.Nls;
 
-public interface NodeDescriptor {
+public interface NodeDescriptor extends UserDataHolder {
 
+  @Nls
   String getName();
-  String getLabel();
 
-  <T> T getUserData(Key<T> key);
-  <T> void putUserData(Key<T> key, T value);
+  @Nls
+  String getLabel();
 
   void displayAs(NodeDescriptor descriptor);
 

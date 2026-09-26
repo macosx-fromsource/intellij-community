@@ -1,42 +1,30 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package hg4idea.test;
 
 import com.intellij.openapi.application.PluginPathManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.vcs.changes.ChangeListManager;
-import com.intellij.openapi.vcs.changes.ChangeListManagerImpl;
+import com.intellij.openapi.vcs.VcsDirectoryMapping;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.vcs.test.VcsPlatformTest;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.zmlx.hg4idea.HgGlobalSettings;
 import org.zmlx.hg4idea.HgVcs;
 import org.zmlx.hg4idea.repo.HgRepository;
 import org.zmlx.hg4idea.util.HgUtil;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Collections;
 
 import static com.intellij.openapi.vcs.Executor.cd;
+import static com.intellij.openapi.vcs.Executor.debug;
 import static com.intellij.openapi.vcs.Executor.touch;
 import static hg4idea.test.HgExecutor.hg;
 
 /**
- * The base class for tests of hg4idea plugin.<br/>
+ * The base class for tests of intellij.vcs.hg plugin.<br/>
  * Extend this test to write a test on Mercurial which has the following features/limitations:
  * <ul>
  * <li>This is a "platform test case", which means that IDEA [almost] production platform is set up before the test starts.</li>
@@ -47,7 +35,6 @@ import static hg4idea.test.HgExecutor.hg;
  * </ul>
  */
 public abstract class HgPlatformTest extends VcsPlatformTest {
-
   protected VirtualFile myRepository;
   protected VirtualFile myChildRepo;
   protected HgVcs myVcs;
@@ -58,30 +45,31 @@ public abstract class HgPlatformTest extends VcsPlatformTest {
   public void setUp() throws Exception {
     super.setUp();
 
-    cd(myProjectRoot);
+    cd(getProjectRoot());
     myVcs = HgVcs.getInstance(myProject);
     assertNotNull(myVcs);
-    myVcs.getGlobalSettings().setHgExecutable(HgExecutor.getHgExecutable());
+    HgGlobalSettings.getInstance().setHgExecutable(HgExecutor.getHgExecutable());
+    debug(HgExecutor.getHgExecutable());
     myVcs.getProjectSettings().setCheckIncomingOutgoing(false);
     myVcs.checkVersion();
-    hg("version");
-    createRepository(myProjectRoot);
-    myRepository = myProjectRoot;
+    debug(hg("version"));
+    createRepository(getProjectRoot());
+    myRepository = getProjectRoot();
     setUpHgrc(myRepository);
+
+    vcsManager.setDirectoryMappings(Collections.singletonList(new VcsDirectoryMapping(myRepository.getPath(), HgVcs.VCS_NAME)));
   }
 
   @Override
-  protected void tearDown() throws Exception {
+  protected void tearDown() {
     try {
-      ((ChangeListManagerImpl)ChangeListManager.getInstance(myProject)).waitEverythingDoneInTestMode();
+      HgGlobalSettings.getInstance().setHgExecutable(null);
+    }
+    catch (Throwable e) {
+      addSuppressedException(e);
     }
     finally {
-      try {
-        clearFields(this);
-      }
-      finally {
-        super.tearDown();
-      }
+      super.tearDown();
     }
   }
 
@@ -124,7 +112,7 @@ public abstract class HgPlatformTest extends VcsPlatformTest {
     hg("commit -m initial -u asd");
   }
 
-  public void prepareSecondRepository() throws IOException {
+  protected void prepareSecondRepository() throws IOException {
     cd(myRepository);
     hg("clone " + myRepository.getCanonicalPath() + " childRepo");
     myRepository.refresh(false, true);

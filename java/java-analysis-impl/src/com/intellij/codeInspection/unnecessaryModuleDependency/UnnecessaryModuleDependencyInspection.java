@@ -1,177 +1,244 @@
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.unnecessaryModuleDependency;
 
 import com.intellij.analysis.AnalysisScope;
-import com.intellij.codeInsight.daemon.GroupNames;
-import com.intellij.codeInspection.*;
+import com.intellij.codeInspection.CommonProblemDescriptor;
+import com.intellij.codeInspection.GlobalInspectionContext;
+import com.intellij.codeInspection.GlobalInspectionTool;
+import com.intellij.codeInspection.GlobalJavaInspectionContext;
+import com.intellij.codeInspection.InspectionManager;
+import com.intellij.codeInspection.InspectionsBundle;
+import com.intellij.codeInspection.ModuleProblemDescriptor;
+import com.intellij.codeInspection.ProblemDescriptionsProcessor;
+import com.intellij.codeInspection.QuickFix;
+import com.intellij.codeInspection.ex.JobDescriptor;
+import com.intellij.codeInspection.reference.RefClass;
+import com.intellij.codeInspection.reference.RefElement;
 import com.intellij.codeInspection.reference.RefEntity;
 import com.intellij.codeInspection.reference.RefGraphAnnotator;
+import com.intellij.codeInspection.reference.RefJavaVisitor;
 import com.intellij.codeInspection.reference.RefManager;
 import com.intellij.codeInspection.reference.RefModule;
+import com.intellij.java.analysis.JavaAnalysisBundle;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.roots.ContentEntry;
+import com.intellij.openapi.roots.DependencyScope;
+import com.intellij.openapi.roots.JavaProjectRootsUtil;
 import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.openapi.roots.ModuleOrderEntry;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.OrderEntry;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.reference.SoftReference;
-import com.intellij.util.ArrayUtil;
-import com.intellij.util.graph.Graph;
+import com.intellij.openapi.roots.OrderEnumerator;
+import com.intellij.openapi.roots.SourceFolder;
+import com.intellij.psi.PsiClassOwner;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiModifier;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
-/**
- * User: anna
- * Date: 09-Jan-2006
- */
-public class UnnecessaryModuleDependencyInspection extends GlobalInspectionTool {
-
-  private SoftReference<Graph<Module>> myGraph = new SoftReference<>(null);
-
+public final class UnnecessaryModuleDependencyInspection extends GlobalInspectionTool {
   @Override
-  public RefGraphAnnotator getAnnotator(@NotNull final RefManager refManager) {
+  public RefGraphAnnotator getAnnotator(@NotNull RefManager refManager) {
     return new UnnecessaryModuleDependencyAnnotator(refManager);
   }
 
   @Override
-  public CommonProblemDescriptor[] checkElement(@NotNull RefEntity refEntity, @NotNull AnalysisScope scope, @NotNull InspectionManager manager, @NotNull final GlobalInspectionContext globalContext) {
-    if (refEntity instanceof RefModule){
-      final RefModule refModule = (RefModule)refEntity;
-      final Module module = refModule.getModule();
-      if (module.isDisposed() || !scope.containsModule(module)) return CommonProblemDescriptor.EMPTY_ARRAY;
-      final ModuleRootManager moduleRootManager = ModuleRootManager.getInstance(module);
-      final OrderEntry[] declaredDependencies = moduleRootManager.getOrderEntries();
-      final Module[] declaredModuleDependencies = moduleRootManager.getDependencies();
+  public JobDescriptor @Nullable [] getAdditionalJobs(@NotNull GlobalInspectionContext context) {
+    return JobDescriptor.EMPTY_ARRAY;
+  }
 
-      List<CommonProblemDescriptor> descriptors = new ArrayList<>();
-      final Set<Module> modules = refModule.getUserData(UnnecessaryModuleDependencyAnnotator.DEPENDENCIES);
-      Graph<Module> graph = myGraph.get();
-      if (graph == null) {
-        graph = ModuleManager.getInstance(globalContext.getProject()).moduleGraph();
-        myGraph = new SoftReference<>(graph);
-      }
-
+  @Override
+  public boolean queryExternalUsagesRequests(@NotNull InspectionManager manager,
+                                             @NotNull GlobalInspectionContext globalContext,
+                                             @NotNull ProblemDescriptionsProcessor problemDescriptionsProcessor) {
+    GlobalJavaInspectionContext javaInspectionContext = globalContext.getExtension(GlobalJavaInspectionContext.CONTEXT);
+    if (javaInspectionContext != null) {
       final RefManager refManager = globalContext.getRefManager();
-      for (final OrderEntry entry : declaredDependencies) {
-        if (entry instanceof ModuleOrderEntry) {
-          final Module dependency = ((ModuleOrderEntry)entry).getModule();
-          if (dependency != null) {
-            if (modules == null || !modules.contains(dependency)) {
-              List<String> dependenciesThroughExported = null;
-              if (((ModuleOrderEntry)entry).isExported()) {
-                final Iterator<Module> iterator = graph.getOut(module);
-                while (iterator.hasNext()) {
-                  final Module dep = iterator.next();
-                  final RefModule depRefModule = refManager.getRefModule(dep);
-                  if (depRefModule != null) {
-                    final Set<Module> neededModules = depRefModule.getUserData(UnnecessaryModuleDependencyAnnotator.DEPENDENCIES);
-                    if (neededModules != null && neededModules.contains(dependency)) {
-                      if (dependenciesThroughExported == null) {
-                        dependenciesThroughExported = new ArrayList<>();
-                      }
-                      dependenciesThroughExported.add(dep.getName());
-                    }
-                  }
-                }
-              }
-              if (modules != null) {
-                List<String> transitiveDependencies = new ArrayList<>();
-                final OrderEntry[] dependenciesOfDependencies = ModuleRootManager.getInstance(dependency).getOrderEntries();
-                for (OrderEntry secondDependency : dependenciesOfDependencies) {
-                  if (secondDependency instanceof ModuleOrderEntry && ((ModuleOrderEntry)secondDependency).isExported()) {
-                    final Module mod = ((ModuleOrderEntry)secondDependency).getModule();
-                    if (mod != null && modules.contains(mod) && ArrayUtil.find(declaredModuleDependencies, mod) < 0) {
-                      transitiveDependencies.add(mod.getName());
-                    }
-                  }
-                }
-                if (!transitiveDependencies.isEmpty()) {
-                  final String exported = StringUtil.join(transitiveDependencies, ", ");
-                  descriptors.add(manager.createProblemDescriptor(InspectionsBundle.message("unnecessary.module.dependency.exported.problem.descriptor1", module.getName(), dependency.getName(), exported)));
-                  continue;
-                }
-              }
-
-              descriptors.add(createDescriptor(scope, manager, module, dependency, dependenciesThroughExported));
+      Map<String, Set<String>> to2FromCandidatePairsToRemove = new HashMap<>();
+      for (Module module : ModuleManager.getInstance(refManager.getProject()).getModules()) {
+        RefModule refModule = refManager.getRefModule(module);
+        CommonProblemDescriptor[] descriptions = problemDescriptionsProcessor.getDescriptions(Objects.requireNonNull(refModule));
+        if (descriptions != null) {
+          String sourceModuleName = module.getName();
+          for (CommonProblemDescriptor description : descriptions) {
+            QuickFix<?>[] fixes = description.getFixes();
+            if (fixes != null) {
+              Arrays.stream(fixes)
+                .map(fix -> fix instanceof RemoveModuleDependencyFix f ? f.myDependency : null)
+                .filter(Objects::nonNull)
+                .forEach(targetName -> to2FromCandidatePairsToRemove.computeIfAbsent(targetName, k -> new HashSet<>()).add(sourceModuleName));
             }
           }
         }
       }
-      return descriptors.isEmpty() ? null : descriptors.toArray(new CommonProblemDescriptor[descriptors.size()]);
+
+      refManager.iterate(new RefJavaVisitor() {
+        @Override
+        public void visitClass(@NotNull RefClass aClass) {
+          if (aClass.isAnonymous() || aClass.isLocalClass()) return;
+          RefModule toModule = aClass.getModule();
+          if (toModule == null) return;
+          String toModuleName = toModule.getName();
+          if (!to2FromCandidatePairsToRemove.containsKey(toModuleName)) return;
+          if (PsiModifier.PRIVATE.equals(aClass.getAccessModifier())) return;
+          javaInspectionContext.enqueueClassUsagesProcessor(aClass, reference -> {
+            PsiFile containingFile = reference.getElement().getContainingFile();
+            if (!(containingFile instanceof PsiClassOwner)) {
+              RefElement refFrom = refManager.getReference(containingFile);
+              if (refFrom != null) {
+                RefModule fromModule = refFrom.getModule();
+                if (fromModule != null) {
+                  CommonProblemDescriptor[] descriptions = problemDescriptionsProcessor.getDescriptions(fromModule);
+                  if (descriptions != null) {
+                    LinkedHashSet<CommonProblemDescriptor> problemDescriptors = new LinkedHashSet<>(Arrays.asList(descriptions));
+                    boolean removed = problemDescriptors.removeIf(descriptor -> {
+                      QuickFix<?>[] fixes = descriptor.getFixes();
+                      return fixes != null && ContainerUtil.exists(fixes, fix -> fix instanceof RemoveModuleDependencyFix f &&
+                                                                                 toModuleName.equals(f.myDependency));
+                    });
+                    if (removed) {
+                      problemDescriptionsProcessor.ignoreElement(fromModule);
+                      if (!problemDescriptors.isEmpty()) {
+                        problemDescriptionsProcessor.addProblemElement(fromModule, problemDescriptors.toArray(CommonProblemDescriptor[]::new));
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            return true;
+          });
+        }
+      });
+    }
+    return false;
+  }
+
+  @Override
+  public CommonProblemDescriptor[] checkElement(@NotNull RefEntity refEntity,
+                                                @NotNull AnalysisScope scope,
+                                                @NotNull InspectionManager manager,
+                                                @NotNull GlobalInspectionContext globalContext) {
+    if (refEntity instanceof RefModule refModule){
+      final Module module = refModule.getModule();
+      final ModuleRootManager moduleRootManager = ModuleRootManager.getInstance(module);
+      boolean onlyGeneratedSources = true;
+      for (ContentEntry entry : moduleRootManager.getContentEntries()) {
+        for (SourceFolder folder : entry.getSourceFolders()) {
+          if (!JavaProjectRootsUtil.isForGeneratedSources(folder)) {
+            onlyGeneratedSources = false;
+            break;
+          }
+        }
+      }
+      if (onlyGeneratedSources) return null;
+
+      final OrderEntry[] declaredDependencies = moduleRootManager.getOrderEntries();
+
+      final List<CommonProblemDescriptor> descriptors = new ArrayList<>();
+      final Set<Module> modules = refModule.getUserData(UnnecessaryModuleDependencyAnnotator.DEPENDENCIES);
+      final List<Module> candidates = new ArrayList<>();
+      for (OrderEntry entry : declaredDependencies) {
+        if (entry instanceof ModuleOrderEntry e && e.getScope() != DependencyScope.RUNTIME && !e.isExported()) {
+          final Module dependency = e.getModule();
+          if (dependency == null || modules != null && modules.remove(dependency)) {
+            continue;
+          }
+
+          candidates.add(dependency);
+        }
+      }
+
+      for (Module dependency : candidates) {
+        if (modules != null) {
+          HashSet<Module> outs = new HashSet<>();
+          OrderEnumerator.orderEntries(dependency)
+            .withoutSdk()
+            .exportedOnly()
+            .recursively()
+            .forEachModule(outs::add);
+
+          if (ContainerUtil.intersects(modules, outs)) continue;
+        }
+
+        descriptors.add(createDescriptor(scope, manager, module, dependency));
+      }
+
+      return descriptors.isEmpty() ? null : descriptors.toArray(CommonProblemDescriptor.EMPTY_ARRAY);
     }
     return null;
   }
 
-  private static CommonProblemDescriptor createDescriptor(AnalysisScope scope,
-                                                          InspectionManager manager,
-                                                          Module module,
-                                                          Module dependency, 
-                                                          List<String> exportedDependencies) {
-    if (exportedDependencies != null) {
-      final String exported = StringUtil.join(exportedDependencies, ", ");
-      return manager.createProblemDescriptor(InspectionsBundle.message("unnecessary.module.dependency.exported.problem.descriptor", module.getName(), dependency.getName(), exported));
-    }
-
-    if (scope.containsModule(dependency)) { //external references are rejected -> annotator doesn't provide any information on them -> false positives
-      final String allContainsMessage = InspectionsBundle.message("unnecessary.module.dependency.problem.descriptor", module.getName(), dependency.getName());
-      return manager.createProblemDescriptor(allContainsMessage, new RemoveModuleDependencyFix(module, dependency));
-    } else {
-      String message = InspectionsBundle.message("suspected.module.dependency.problem.descriptor", module.getName(), dependency.getName(), scope.getDisplayName());
-      return manager.createProblemDescriptor(message);
-    }
+  @Override
+  public @NotNull RemoveModuleDependencyFix getQuickFix(String hint) {
+    return new RemoveModuleDependencyFix(hint);
   }
 
   @Override
-  @NotNull
-  public String getGroupDisplayName() {
-    return GroupNames.DECLARATION_REDUNDANCY;
+  public @NotNull String getGroupDisplayName() {
+    return InspectionsBundle.message("group.names.declaration.redundancy");
   }
 
   @Override
-  @NotNull
-  public String getDisplayName() {
-    return InspectionsBundle.message("unnecessary.module.dependency.display.name");
-  }
-
-  @Override
-  @NotNull
-  @NonNls
-  public String getShortName() {
+  public @NotNull @NonNls String getShortName() {
     return "UnnecessaryModuleDependencyInspection";
   }
 
-  public static class RemoveModuleDependencyFix implements QuickFix {
-    private final Module myModule;
-    private final Module myDependency;
+  @Override
+  public @Nullable String getHint(@NotNull QuickFix fix) {
+    return fix instanceof RemoveModuleDependencyFix f ? f.myDependency : null;
+  }
 
-    public RemoveModuleDependencyFix(Module module, Module dependency) {
-      myModule = module;
+  private static CommonProblemDescriptor createDescriptor(AnalysisScope scope,
+                                                          InspectionManager manager,
+                                                          @NotNull Module module,
+                                                          @NotNull Module dependency) {
+    String dependencyName = dependency.getName();
+    String moduleName = module.getName();
+    if (scope.containsModule(dependency)) { //external references are rejected -> annotator doesn't provide any information on them -> false positives
+      final String allContainsMessage = JavaAnalysisBundle.message("unnecessary.module.dependency.problem.descriptor", moduleName, dependencyName);
+      return manager.createProblemDescriptor(allContainsMessage, module, new RemoveModuleDependencyFix(dependencyName));
+    }
+    else {
+      String message = JavaAnalysisBundle.message("suspected.module.dependency.problem.descriptor", moduleName, dependencyName, scope.getDisplayName());
+      return manager.createProblemDescriptor(message, module);
+    }
+  }
+
+  public static class RemoveModuleDependencyFix implements QuickFix<ModuleProblemDescriptor> {
+
+    private final String myDependency;
+
+    public RemoveModuleDependencyFix(String dependency) {
       myDependency = dependency;
     }
 
     @Override
-    @NotNull
-    public String getFamilyName() {
-      return "Remove dependency";
+    public @NotNull String getFamilyName() {
+      return JavaAnalysisBundle.message("remove.dependency");
     }
 
     @Override
-    public void applyFix(@NotNull Project project, @NotNull CommonProblemDescriptor descriptor) {
-      final ModifiableRootModel model = ModuleRootManager.getInstance(myModule).getModifiableModel();
+    public void applyFix(@NotNull Project project, @NotNull ModuleProblemDescriptor descriptor) {
+      final ModifiableRootModel model = ModuleRootManager.getInstance(descriptor.getModule()).getModifiableModel();
       for (OrderEntry entry : model.getOrderEntries()) {
-        if (entry instanceof ModuleOrderEntry) {
-          final Module mDependency = ((ModuleOrderEntry)entry).getModule();
-          if (Comparing.equal(mDependency, myDependency)) {
-            model.removeOrderEntry(entry);
-            break;
-          }
+        if (entry instanceof ModuleOrderEntry e && Objects.equals(e.getModuleName(), myDependency)) {
+          model.removeOrderEntry(entry);
+          break;
         }
       }
       model.commit();

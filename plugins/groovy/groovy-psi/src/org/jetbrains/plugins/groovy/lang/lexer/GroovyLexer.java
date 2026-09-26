@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,6 @@ import com.intellij.lexer.MergingLexerAdapter;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.tree.TokenSet;
 
-import java.io.Reader;
-
-/**
- * @author ilyas
- */
 public class GroovyLexer extends LookAheadLexer {
   private static final TokenSet tokensToMerge = TokenSet.create(
     GroovyTokenTypes.mSL_COMMENT,
@@ -38,6 +33,6 @@ public class GroovyLexer extends LookAheadLexer {
   );
 
   public GroovyLexer() {
-    super(new MergingLexerAdapter(new FlexAdapter(new _GroovyLexer((Reader) null)), tokensToMerge));
+    super(new MergingLexerAdapter(new FlexAdapter(new _GroovyLexer(null)), tokensToMerge));
   }
 }

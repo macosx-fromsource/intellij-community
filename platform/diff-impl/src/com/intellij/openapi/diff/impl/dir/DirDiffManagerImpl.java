@@ -1,37 +1,28 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.diff.impl.dir;
 
-import com.intellij.ide.diff.*;
+import com.intellij.ide.diff.DiffElement;
+import com.intellij.ide.diff.DirDiffModel;
+import com.intellij.ide.diff.DirDiffSettings;
+import com.intellij.ide.diff.VirtualFileDiffElement;
 import com.intellij.openapi.diff.DirDiffManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
-import com.intellij.openapi.vfs.JarFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.IdeFocusManager;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Window;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
 /**
  * @author Konstantin Bulenkov
  */
+@ApiStatus.Internal
 public class DirDiffManagerImpl extends DirDiffManager {
   private final Project myProject;
 
@@ -40,21 +31,24 @@ public class DirDiffManagerImpl extends DirDiffManager {
   }
 
   @Override
-  public void showDiff(@NotNull final DiffElement dir1,
-                       @NotNull final DiffElement dir2,
+  public void showDiff(final @NotNull DiffElement dir1,
+                       final @NotNull DiffElement dir2,
                        final DirDiffSettings settings,
-                       @Nullable final Runnable onWindowClose) {
-    final DirDiffTableModel model = new DirDiffTableModel(myProject, dir1, dir2, settings);
+                       final @Nullable Runnable onWindowClosing) {
+    showDiff(settings, new DirDiffTableModel(myProject, dir1, dir2, settings), onWindowClosing);
+  }
+  
+  public void showDiff(final DirDiffSettings settings, DirDiffTableModel model, final @Nullable Runnable onWindowClosing) {
     if (settings.showInFrame) {
       DirDiffFrame frame = new DirDiffFrame(myProject, model);
-      setWindowListener(onWindowClose, frame.getFrame());
+      setWindowListener(onWindowClosing, frame.getFrame());
       frame.show();
     } else {
       DirDiffDialog dirDiffDialog = new DirDiffDialog(myProject, model);
       if (myProject == null || myProject.isDefault()/* || isFromModalDialog(myProject)*/) {
         dirDiffDialog.setModal(true);
       }
-      setWindowListener(onWindowClose, dirDiffDialog.getOwner());
+      setWindowListener(onWindowClosing, dirDiffDialog.getOwner());
       dirDiffDialog.show();
     }
   }
@@ -68,12 +62,12 @@ public class DirDiffManagerImpl extends DirDiffManager {
     return false;
   }
 
-  private void setWindowListener(final Runnable onWindowClose, final Window window) {
-    if (onWindowClose != null) {
+  private void setWindowListener(final Runnable onWindowClosing, final Window window) {
+    if (onWindowClosing != null) {
       window.addWindowListener(new WindowAdapter() {
         @Override
-        public void windowClosed(WindowEvent e) {
-          onWindowClose.run();
+        public void windowClosing(WindowEvent e) {
+          onWindowClosing.run();
           window.removeWindowListener(this);
         }
       });
@@ -99,9 +93,7 @@ public class DirDiffManagerImpl extends DirDiffManager {
   public DiffElement createDiffElement(Object obj) {
     //TODO make EP
     if (obj instanceof VirtualFile) {
-      final VirtualFile file = (VirtualFile)obj;
-      return JarFileSystem.PROTOCOL.equalsIgnoreCase(file.getExtension())
-             ? new JarFileDiffElement(file) : new VirtualFileDiffElement(file);
+      return VirtualFileDiffElement.createElement((VirtualFile)obj, (VirtualFile)obj);
     }
     return null;
   }

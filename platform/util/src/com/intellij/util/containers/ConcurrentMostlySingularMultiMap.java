@@ -1,34 +1,17 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.containers;
 
-import com.intellij.util.ArrayUtil;
 import com.intellij.util.ConcurrencyUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public class ConcurrentMostlySingularMultiMap<K, V> extends MostlySingularMultiMap<K, V> {
-  @NotNull
-  @Override
-  protected Map<K, Object> createMap() {
-    return ContainerUtil.newConcurrentMap();
+public final class ConcurrentMostlySingularMultiMap<K, V> extends MostlySingularMultiMap<K, V> {
+  public ConcurrentMostlySingularMultiMap() {
+    super(new ConcurrentHashMap<>());
   }
 
   @Override
@@ -37,16 +20,22 @@ public class ConcurrentMostlySingularMultiMap<K, V> extends MostlySingularMultiM
     while (true) {
       Object current = map.get(key);
       if (current == null) {
-        if (ConcurrencyUtil.cacheOrGet(map, key, value) == value) break;
+        if (ConcurrencyUtil.cacheOrGet(map, key, value) == value) {
+          break;
+        }
       }
-      else if (current instanceof Object[]) {
-        Object[] curArr = (Object[])current;
-        Object[] newArr = ArrayUtil.append(curArr, value, ArrayUtil.OBJECT_ARRAY_FACTORY);
-        if (map.replace(key, curArr, newArr)) break;
+      else if (current instanceof MostlySingularMultiMap.ValueList) {
+        List<?> curList = (ValueList<?>)current;
+        List<Object> newList = new ValueList<>(curList.size() + 1);
+        newList.addAll(curList);
+        newList.add(value);
+        if (map.replace(key, curList, newList)) break;
       }
       else {
-        Object[] newArr = {current, value};
-        if (map.replace(key, current, newArr)) break;
+        List<Object> newList = new ValueList<>(2);
+        newList.add(current);
+        newList.add(value);
+        if (map.replace(key, current, newList)) break;
       }
     }
   }
@@ -56,10 +45,9 @@ public class ConcurrentMostlySingularMultiMap<K, V> extends MostlySingularMultiM
     // not implemented
   }
 
-  public boolean replace(@NotNull K key, @NotNull Collection<V> expectedValue, @NotNull Collection<V> newValue) {
+  public boolean replace(@NotNull K key, @NotNull Collection<? extends V> expectedValue, @NotNull Collection<? extends V> newValue) {
     ConcurrentMap<K, Object> map = (ConcurrentMap<K, Object>)myMap;
-    Object[] newArray = ArrayUtil.toObjectArray(newValue);
-    Object newValueToPut = newArray.length == 0 ? null : newArray.length == 1 ? newArray[0] : newArray;
+    Object newValueToPut = newValue.isEmpty() ? null : newValue.size() == 1 ? newValue.iterator().next() : new ValueList<Object>(newValue);
 
     Object oldValue = map.get(key);
     List<V> oldCollection = rawValueToCollection(oldValue);
@@ -72,5 +60,15 @@ public class ConcurrentMostlySingularMultiMap<K, V> extends MostlySingularMultiM
       return map.remove(key, oldValue);
     }
     return map.replace(key, oldValue, newValueToPut);
+  }
+
+  @Override
+  public void addAll(@NotNull MostlySingularMultiMap<K, V> other) {
+    throw new AbstractMethodError("Not yet re-implemented for concurrency");
+  }
+
+  @Override
+  public boolean remove(@NotNull K key, @NotNull V value) {
+    throw new AbstractMethodError("Not yet re-implemented for concurrency");
   }
 }

@@ -1,77 +1,62 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.changes;
 
 import com.intellij.openapi.ui.ValidationInfo;
-import org.jetbrains.annotations.CalledInAwt;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
+import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
 import java.util.Collection;
 
-/**
- * @author max
- */
 public interface CommitSession {
+  /**
+   * Marker object for 'default' commit session via {@link com.intellij.openapi.vcs.checkin.CheckinEnvironment}.
+   */
   CommitSession VCS_COMMIT = new CommitSession() {
-    public JComponent getAdditionalConfigurationUI() {
-      return null;
-    }
-
-    public JComponent getAdditionalConfigurationUI(Collection<Change> changes, String commitMessage) {
-      return null;
-    }
-
-    public boolean canExecute(Collection<Change> changes, String commitMessage) {
-      return true;
-    }
-
-    public void execute(Collection<Change> changes, String commitMessage) {
-    }
-
-    public void executionCanceled() {
-    }
-
     @Override
-    public String getHelpId() {
-      return null;
+    public void execute(@NotNull Collection<? extends Change> changes, @Nullable @NlsSafe String commitMessage) {
     }
   };
 
   /**
-   * @deprecated Since version 7.0, {@link #getAdditionalConfigurationUI(java.util.Collection, String)} is called instead
+   * Show dialog with additional options before running pre-commit checks.
+   *
+   * @see com.intellij.openapi.vcs.changes.ui.SessionDialog
+   * @see com.intellij.openapi.ui.DialogPanel
    */
-  @Nullable
-  JComponent getAdditionalConfigurationUI();
-
-  @Nullable
-  JComponent getAdditionalConfigurationUI(Collection<Change> changes, String commitMessage);
-
-  boolean canExecute(Collection<Change> changes, String commitMessage);
-  void execute(Collection<Change> changes, String commitMessage);
-  void executionCanceled();
+  default @Nullable JComponent getAdditionalConfigurationUI(@NotNull Collection<? extends Change> changes, @Nullable @NlsSafe String commitMessage) {
+    return null;
+  }
 
   /**
-   * @return the ID of the help topic to show for the dialog
-   * @since 10.5
+   * Whether OK action is enabled for the {@link #getAdditionalConfigurationUI} dialog.
    */
-  String getHelpId();
+  default boolean canExecute(Collection<? extends Change> changes, @NlsSafe String commitMessage) {
+    return true;
+  }
 
-  @CalledInAwt
+  void execute(@NotNull Collection<? extends Change> changes, @Nullable @NlsSafe String commitMessage);
+
+  /**
+   * Called if commit operation was cancelled.
+   */
+  default void executionCanceled() {
+  }
+
+  /**
+   * @return the ID of the help topic to show for the {@link #getAdditionalConfigurationUI} dialog.
+   */
+  default @Nullable @NonNls String getHelpId() {
+    return null;
+  }
+
+  /**
+   * @return fields validation for the {@link #getAdditionalConfigurationUI} dialog.
+   */
+  @RequiresEdt
   default ValidationInfo validateFields() {
     return null;
   }

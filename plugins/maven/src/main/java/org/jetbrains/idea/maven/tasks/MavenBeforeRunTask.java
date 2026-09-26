@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 package org.jetbrains.idea.maven.tasks;
 
 import com.intellij.execution.BeforeRunTask;
-import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import org.jdom.Element;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.idea.maven.project.MavenProject;
 
 public class MavenBeforeRunTask extends BeforeRunTask<MavenBeforeRunTask> {
@@ -46,23 +47,24 @@ public class MavenBeforeRunTask extends BeforeRunTask<MavenBeforeRunTask> {
 
   public boolean isFor(MavenProject project, String goal) {
     if (myProjectPath == null || myGoal == null) return false;
-    return FileUtil.pathsEqual(project.getPath(), myProjectPath) && goal.equals(myGoal);
+    return VfsUtilCore.pathEqualsTo(project.getFile(), myProjectPath) && goal.equals(myGoal);
   }
 
   @Override
-  public void writeExternal(Element element) {
+  public void writeExternal(@NotNull Element element) {
     super.writeExternal(element);
     if (myProjectPath != null) element.setAttribute("file", myProjectPath);
     if (myGoal != null) element.setAttribute("goal", myGoal);
   }
 
   @Override
-  public void readExternal(Element element) {
+  public void readExternal(@NotNull Element element) {
     super.readExternal(element);
     myProjectPath = element.getAttributeValue("file");
     myGoal = element.getAttributeValue("goal");
   }
 
+  @Override
   public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
@@ -76,6 +78,7 @@ public class MavenBeforeRunTask extends BeforeRunTask<MavenBeforeRunTask> {
     return true;
   }
 
+  @Override
   public int hashCode() {
     int result = super.hashCode();
     result = 31 * result + (myProjectPath != null ? myProjectPath.hashCode() : 0);

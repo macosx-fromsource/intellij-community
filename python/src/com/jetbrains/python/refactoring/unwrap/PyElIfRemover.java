@@ -22,6 +22,7 @@ import com.jetbrains.python.psi.PyPassStatement;
 import com.jetbrains.python.psi.PyStatement;
 import com.jetbrains.python.psi.PyStatementList;
 import com.jetbrains.python.psi.impl.PyIfPartElifImpl;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * User : ktisha
@@ -32,13 +33,11 @@ public class PyElIfRemover extends PyUnwrapper {
   }
 
   @Override
-  public boolean isApplicableTo(PsiElement e) {
-    if (e instanceof PyIfPartElifImpl) {
-      final PyStatementList statementList = ((PyIfPartElifImpl)e).getStatementList();
-      if (statementList != null) {
-        final PyStatement[] statements = statementList.getStatements();
-        return statements.length == 1 && !(statements[0] instanceof PyPassStatement) || statements.length > 1;
-      }
+  public boolean isApplicableTo(@NotNull PsiElement e) {
+    if (e instanceof PyIfPartElifImpl ifPartElif) {
+      final PyStatementList statementList = ifPartElif.getStatementList();
+      final PyStatement[] statements = statementList.getStatements();
+      return statements.length == 1 && !(statements[0] instanceof PyPassStatement) || statements.length > 1;
     }
     return false;
   }

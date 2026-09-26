@@ -17,9 +17,10 @@
 package com.intellij.lang.parameterInfo;
 
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.Nullable;
 
 public interface CreateParameterInfoContext extends ParameterInfoContext {
-  Object[] getItemsToShow();
+  Object @Nullable [] getItemsToShow();
   void setItemsToShow(Object[] items);
 
   void showHint(PsiElement element, int offset, ParameterInfoHandler handler);

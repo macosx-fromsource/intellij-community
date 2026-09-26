@@ -1,88 +1,83 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ui.debugger.extensions;
 
 import com.intellij.icons.AllIcons;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.ide.IdeBundle;
+import com.intellij.lang.LangBundle;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.AnActionResult;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.Shortcut;
 import com.intellij.openapi.actionSystem.ex.AnActionListener;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.keymap.KeymapManager;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsContexts.TabTitle;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.debugger.UiDebuggerExtension;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JTextArea;
+import javax.swing.SwingUtilities;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.Rectangle;
 
-/**
- * Created by IntelliJ IDEA.
- * User: kirillk
- * Date: 8/4/11
- * Time: 7:52 PM
- * To change this template use File | Settings | File Templates.
- */
-public class ActionTracer implements UiDebuggerExtension, AnActionListener {
+import static com.intellij.openapi.keymap.KeymapUtil.getActiveKeymapShortcuts;
 
-  private final Logger LOG = Logger.getInstance("ActionTracer");
-  
+public final class ActionTracer implements UiDebuggerExtension, AnActionListener {
+  private static final Logger LOG = Logger.getInstance("ActionTracer");
+
   private JTextArea myText;
   private JPanel myComponent;
+  private Disposable myListenerDisposable;
 
   @Override
   public JComponent getComponent() {
     if (myComponent == null) {
       myText = new JTextArea();
       final JBScrollPane log = new JBScrollPane(myText);
-      final AnAction clear = new AnAction("Clear", "Clear log", AllIcons.General.Reset) {
+      final AnAction clear = new AnAction(IdeBundle.messagePointer("action.ActionTracer.Anonymous.text.Clear"),
+                                          IdeBundle.messagePointer("action.ActionTracer.Anonymous.description.clear.log"),
+                                          AllIcons.General.Reset) {
         @Override
-        public void actionPerformed(AnActionEvent e) {
+        public void actionPerformed(@NotNull AnActionEvent e) {
           myText.setText(null);
         }
       };
       myComponent = new JPanel(new BorderLayout());
       final DefaultActionGroup group = new DefaultActionGroup();
       group.add(clear);
-      myComponent.add(ActionManager.getInstance().createActionToolbar(ActionPlaces.UNKNOWN, group, true).getComponent(), BorderLayout.NORTH);
+      myComponent.add(ActionManager.getInstance().createActionToolbar("ActionTracer", group, true).getComponent(), BorderLayout.NORTH);
       myComponent.add(log);
 
-      ActionManager.getInstance().addAnActionListener(this);
+      myListenerDisposable = Disposer.newDisposable();
+      ApplicationManager.getApplication().getMessageBus().connect(myListenerDisposable).subscribe(AnActionListener.TOPIC, this);
     }
 
     return myComponent;
   }
 
   @Override
-  public String getName() {
-    return "Actions";
+  public @TabTitle String getName() {
+    return LangBundle.message("tab.title.actions");
   }
 
   @Override
-  public void beforeActionPerformed(AnAction action, DataContext dataContext, AnActionEvent event) {
-  }
-
-  @Override
-  public void afterActionPerformed(AnAction action, DataContext dataContext, AnActionEvent event) {
-    StringBuilder out = new StringBuilder();
+  public void afterActionPerformed(@NotNull AnAction action, @NotNull AnActionEvent event, @NotNull AnActionResult result) {
+    StringBuilder out = new StringBuilder(String.format("%1$tF %1$tT,%1$tL ", System.currentTimeMillis()));
     final ActionManager actionManager = ActionManager.getInstance();
     final String id = actionManager.getId(action);
     out.append("id=").append(id);
     if (id != null) {
       out.append("; shortcuts:");
-      final Shortcut[] shortcuts = KeymapManager.getInstance().getActiveKeymap().getShortcuts(id);
+      final Shortcut[] shortcuts = getActiveKeymapShortcuts(id).getShortcuts();
       for (int i = 0; i < shortcuts.length; i++) {
         Shortcut shortcut = shortcuts[i];
         out.append(shortcut);
@@ -107,14 +102,13 @@ public class ActionTracer implements UiDebuggerExtension, AnActionListener {
   }
 
   @Override
-  public void beforeEditorTyping(char c, DataContext dataContext) {
-  }
-
-  @Override
   public void disposeUiResources() {
-    ActionManager.getInstance().removeAnActionListener(this);
+    Disposable disposable = myListenerDisposable;
+    if (disposable != null) {
+      myListenerDisposable = null;
+      Disposer.dispose(disposable);
+    }
     myComponent = null;
     myText = null;
-    
   }
 }

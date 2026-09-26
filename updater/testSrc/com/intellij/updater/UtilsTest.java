@@ -1,72 +1,104 @@
-/*
- * Copyright (C) 2013 The Android Open Source Project
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.updater;
 
-import junit.framework.TestCase;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
-public class UtilsTest extends TestCase {
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-  public static boolean mIsWindows = System.getProperty("os.name").startsWith("Windows");
+@UpdaterTest
+class UtilsTest {
+  @TempDir Path tempDir;
 
-  @Override
-  public void setUp() throws Exception {
-    super.setUp();
+  @Test void delete() throws Exception {
+    var file = Files.createFile(tempDir.resolve("temp_file"));
+    Utils.delete(file);
+    assertThat(file).doesNotExist();
   }
 
-  public void testDelete() throws Exception {
-    File f = File.createTempFile("test", "tmp");
-    assertTrue(f.exists());
+  @Test void deleteReadonlyFile() throws Exception {
+    var dir = Files.createDirectory(tempDir.resolve("temp_dir"));
+    var file = Files.createFile(dir.resolve("temp_file"));
+    UpdaterTestCase.setReadOnly(file);
 
-    try {
-      Utils.delete(f);
-      assertFalse(f.exists());
-    } finally {
-      f.delete();
+    Utils.delete(dir);
+    assertThat(dir).doesNotExist();
+  }
+
+  @Test @EnabledOnOs(OS.WINDOWS) void deleteLockedFileOnWindows() throws Exception {
+    var file = Files.createFile(tempDir.resolve("temp_file"));
+    var timing = new AtomicLong(0L);
+    assertThatThrownBy(() -> {
+      try (var raf = new RandomAccessFile(file.toFile(), "rw")) {
+        // This locks the file on Windows, preventing it from being deleted. Utils.delete() will retry for about 100 ms.
+        raf.write("test".getBytes(StandardCharsets.UTF_8));
+        var t = System.nanoTime();
+        try {
+          Utils.delete(file);
+        }
+        finally {
+          timing.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t));
+        }
+      }
+    }).isInstanceOf(IOException.class).hasMessage("Cannot delete: " + file.toAbsolutePath());
+    assertThat(timing.get()).as("Utils.delete took " + timing + " ms, which is less than expected").isGreaterThanOrEqualTo(95);
+  }
+
+  @Test @DisabledOnOs(OS.WINDOWS) void deleteLockedFileOnUnix() throws Exception {
+    var file = Files.createFile(tempDir.resolve("temp_file"));
+    try (var raf = new RandomAccessFile(file.toFile(), "rw")) {
+      raf.write("test".getBytes(StandardCharsets.UTF_8));
+      Utils.delete(file);
     }
   }
 
-  public void testDelete_LockedFile() throws Exception {
-    File f = File.createTempFile("test", "tmp");
-    assertTrue(f.exists());
-
-    long millis = 0;
-    FileWriter fw = new FileWriter(f);
-    try {
-      // This locks the file on Windows, preventing it from being deleted.
-      // Utils.delete() will retry for about 100 ms.
-      fw.write("test");
-      millis = System.currentTimeMillis();
-
-      Utils.delete(f);
-
-    } catch (IOException e) {
-      millis = System.currentTimeMillis() - millis;
-      assertEquals("Cannot delete file " + f.getAbsolutePath(), e.getMessage());
-      assertTrue("Utils.delete took " + millis + " ms, which is less than the expected 100 ms.", millis >= 100);
-      return;
-
-    } finally {
-      fw.close();
-      f.delete();
+  @Test void recursiveDelete() throws Exception {
+    var topDir = Files.createDirectory(tempDir.resolve("temp_dir"));
+    for (var i = 0; i < 3; i++) {
+      var subDir = Files.createDirectory(topDir.resolve("dir" + i));
+      for (var j = 0; j < 3; j++) {
+        Files.writeString(subDir.resolve("file" + j), "test");
+      }
     }
 
-    assertFalse("Utils.delete did not fail with the expected IOException on Windows.", mIsWindows);
+    Utils.delete(topDir);
+    assertThat(topDir).doesNotExist();
+  }
+
+  @Test void nonRecursiveSymlinkDelete() throws Exception {
+    var dir = Files.createDirectory(tempDir.resolve("temp_dir"));
+    var file = Files.createFile(dir.resolve("file"));
+    var link = Files.createSymbolicLink(tempDir.resolve("link"), dir.getFileName());
+    Utils.delete(link);
+    assertThat(link).doesNotExist();
+    assertThat(file).exists();
+  }
+
+  @Test void deleteDanglingSymlink() throws Exception {
+    var dir = Files.createDirectory(tempDir.resolve("temp_dir"));
+    var link = Files.createSymbolicLink(dir.resolve("link"), Path.of("dangling"));
+    Utils.delete(link);
+    assertThat(dir).isEmptyDirectory();
+  }
+
+  @Test void splitVersionString() {
+    assertThat(Utils.splitVersionString("IntellIJ IDEA (build 123.456.78)")).containsExactly("IntellIJ IDEA (build 123.456.78)");
+    assertThat(Utils.splitVersionString("IntellIJ IDEA 1234.56 #123.456.78")).containsExactly("IntellIJ IDEA 1234.56", "123.456.78");
+  }
+
+  @Test void majorVersion() {
+    assertThat(Utils.majorVersion("123.456.78")).isEqualTo(123);
   }
 }

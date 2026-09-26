@@ -1,57 +1,41 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.history.integration.ui.models;
 
 import com.intellij.history.core.LocalHistoryFacade;
-import com.intellij.history.core.RevisionsCollector;
 import com.intellij.history.core.revisions.Difference;
 import com.intellij.history.core.revisions.Revision;
 import com.intellij.history.core.tree.Entry;
 import com.intellij.history.core.tree.RootEntry;
 import com.intellij.history.integration.IdeaGateway;
-import com.intellij.history.integration.patches.PatchCreator;
 import com.intellij.history.integration.revertion.Reverter;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.platform.lvcs.impl.statistics.LocalHistoryCounter;
+import com.intellij.util.PairProcessor;
 import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 
 public abstract class HistoryDialogModel {
   protected final Project myProject;
-  protected LocalHistoryFacade myVcs;
-  protected VirtualFile myFile;
-  protected IdeaGateway myGateway;
+  protected final LocalHistoryFacade myVcs;
+  protected final VirtualFile myFile;
+  protected final IdeaGateway myGateway;
   private String myFilter;
-  private List<RevisionItem> myRevisionsCache;
-  private Revision myCurrentRevisionCache;
+  protected boolean myBefore = true;
+
+  private RevisionData myRevisionData;
+
   private int myRightRevisionIndex;
   private int myLeftRevisionIndex;
   private Entry[] myLeftEntryCache;
@@ -64,51 +48,41 @@ public abstract class HistoryDialogModel {
     myGateway = gw;
   }
 
-  public String getTitle() {
+  public @NlsContexts.DialogTitle String getTitle() {
     return FileUtil.toSystemDependentName(myFile.getPath());
   }
 
-
-  public List<RevisionItem> getRevisions() {
-    if (myRevisionsCache == null) {
-      Pair<Revision, List<RevisionItem>> revs = calcRevisionsCache();
-      myCurrentRevisionCache = revs.first;
-      myRevisionsCache = revs.second;
+  @ApiStatus.Internal
+  protected @NotNull RevisionData getRevisionData() {
+    if (myRevisionData == null) {
+      myRevisionData = collectRevisionData();
     }
-    return myRevisionsCache;
+    return myRevisionData;
   }
 
-  public Revision getCurrentRevision() {
-    getRevisions();
-    return myCurrentRevisionCache;
+  public @NotNull List<RevisionItem> getRevisions() {
+    return getRevisionData().getRevisions();
   }
 
-  protected Pair<Revision, List<RevisionItem>> calcRevisionsCache() {
-    return ApplicationManager.getApplication().runReadAction(new Computable<Pair<Revision, List<RevisionItem>>>() {
-      public Pair<Revision, List<RevisionItem>> compute() {
-        myGateway.registerUnsavedDocuments(myVcs);
-        String path = myFile.getPath();
-        RootEntry root = myGateway.createTransientRootEntry();
-        RevisionsCollector collector = new RevisionsCollector(myVcs, root, path, myProject.getLocationHash(), myFilter);
-
-        List<Revision> all = collector.getResult();
-        return Pair.create(all.get(0), groupRevisions(all.subList(1, all.size())));
-      }
-    });
+  public @NotNull Revision getCurrentRevision() {
+    return getRevisionData().getCurrentRevision();
   }
 
-  private List<RevisionItem> groupRevisions(List<Revision> revs) {
-    LinkedList<RevisionItem> result = new LinkedList<>();
+  @ApiStatus.Internal
+  protected @NotNull RevisionData collectRevisionData() {
+    return RevisionDataKt.collectRevisionData(myProject, myGateway, myVcs, createRootEntry(), myFile, myFilter, myBefore);
+  }
 
-    for (Revision each : ContainerUtil.iterateBackward(revs)) {
-      if (each.isLabel() && !result.isEmpty()) {
-        result.getFirst().labels.addFirst(each);
-      } else {
-        result.addFirst(new RevisionItem(each));
-      }
-    }
+  protected @NotNull RootEntry createRootEntry() {
+    return ReadAction.computeBlocking(() -> myGateway.createTransientRootEntry());
+  }
 
-    return result;
+  public void processContents(@NotNull PairProcessor<? super Revision, ? super String> processor) {
+    RevisionDataKt.processContents(myVcs, myGateway, myFile, ContainerUtil.map(getRevisions(), item -> item.revision), myBefore, processor);
+  }
+
+  public @Nullable String myFilter() {
+    return myFilter;
   }
 
   public void setFilter(@Nullable String filter) {
@@ -117,7 +91,7 @@ public abstract class HistoryDialogModel {
   }
 
   public void clearRevisions() {
-    myRevisionsCache = null;
+    myRevisionData = null;
     resetEntriesCache();
   }
 
@@ -138,7 +112,7 @@ public abstract class HistoryDialogModel {
     return getRevisions().get(myRightRevisionIndex).revision;
   }
 
-  protected Entry getLeftEntry() {
+  protected @Nullable Entry getLeftEntry() {
     if (myLeftEntryCache == null) {
       // array is used because entry itself can be null
       myLeftEntryCache = new Entry[]{getLeftRevision().findEntry()};
@@ -146,7 +120,7 @@ public abstract class HistoryDialogModel {
     return myLeftEntryCache[0];
   }
 
-  protected Entry getRightEntry() {
+  protected @Nullable Entry getRightEntry() {
     if (myRightEntryCache == null) {
       // array is used because entry itself can be null
       myRightEntryCache = new Entry[]{getRightRevision().findEntry()};
@@ -154,20 +128,27 @@ public abstract class HistoryDialogModel {
     return myRightEntryCache[0];
   }
 
-  public void selectRevisions(int first, int second) {
+  public boolean selectRevisions(int first, int second) {
+    int l, r;
     if (first == second) {
-      myRightRevisionIndex = -1;
-      myLeftRevisionIndex = first == -1 ? 0 : first;
+      r = -1;
+      l = first == -1 ? 0 : first;
     }
     else {
-      myRightRevisionIndex = first;
-      myLeftRevisionIndex = second;
+      r = first;
+      l = second;
     }
+    if (myRightRevisionIndex == r && myLeftRevisionIndex == l) {
+      return false;
+    }
+    myRightRevisionIndex = r;
+    myLeftRevisionIndex = l;
     resetEntriesCache();
+    return true;
   }
 
-  public void resetSelection() {
-    selectRevisions(0, 0);
+  public boolean resetSelection() {
+    return selectRevisions(0, 0);
   }
 
   public boolean isCurrentRevisionSelected() {
@@ -186,15 +167,11 @@ public abstract class HistoryDialogModel {
   }
 
   protected List<Difference> getDifferences() {
-    return getLeftRevision().getDifferencesWith(getRightRevision());
+    return Revision.getDifferencesBetween(getLeftRevision(), getRightRevision());
   }
 
-  protected Change createChange(Difference d) {
+  protected Change createChange(@NotNull Difference d) {
     return new Change(d.getLeftContentRevision(myGateway), d.getRightContentRevision(myGateway));
-  }
-
-  public void createPatch(String path, String basePath, boolean isReverse, @NotNull Charset charset) throws VcsException, IOException {
-    PatchCreator.create(myProject, basePath, getChanges(), path, isReverse, null, charset);
   }
 
   public abstract Reverter createReverter();
@@ -214,4 +191,7 @@ public abstract class HistoryDialogModel {
   public boolean canPerformCreatePatch() {
     return !getLeftEntry().hasUnavailableContent() && !getRightEntry().hasUnavailableContent();
   }
+
+  @ApiStatus.Internal
+  public abstract @NotNull LocalHistoryCounter.Kind getKind();
 }

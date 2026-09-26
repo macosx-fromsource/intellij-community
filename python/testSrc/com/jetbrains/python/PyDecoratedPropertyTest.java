@@ -15,23 +15,30 @@
  */
 package com.jetbrains.python;
 
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
 import com.jetbrains.python.fixtures.PyTestCase;
-import com.jetbrains.python.psi.*;
-import com.jetbrains.python.psi.impl.PythonLanguageLevelPusher;
+import com.jetbrains.python.psi.Property;
+import com.jetbrains.python.psi.PyCallable;
+import com.jetbrains.python.psi.PyClass;
+import com.jetbrains.python.psi.PyFile;
+import com.jetbrains.python.psi.PyFunction;
 import com.jetbrains.python.toolbox.Maybe;
 
+@Subsystems.CodeInsight
+@Layers.Functional
 public class PyDecoratedPropertyTest extends PyTestCase {
   protected PyClass myClass;
 
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    PythonLanguageLevelPusher.setForcedLanguageLevel(myFixture.getProject(), LanguageLevel.PYTHON26);
     final PyFile file = (PyFile)myFixture.configureByFile("property/Decorated.py");
     myClass = file.getTopLevelClasses().get(0);
   }
 
-  public void testW1() throws Exception {
+  public void testW1() {
     Property p;
     Maybe<PyCallable> accessor;
     final String name = "w1";
@@ -56,7 +63,7 @@ public class PyDecoratedPropertyTest extends PyTestCase {
     assertEquals(name, accessor.value().getName());
   }
 
-  public void testW2() throws Exception {
+  public void testW2() {
     Property p;
     Maybe<PyCallable> accessor;
     final String name = "w2";

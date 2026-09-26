@@ -1,66 +1,65 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.jps.builders.impl;
 
+import com.intellij.tracing.Tracer;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.graph.DFSTBuilder;
 import com.intellij.util.graph.Graph;
 import com.intellij.util.graph.GraphGenerator;
 import com.intellij.util.graph.InboundSemiGraph;
-import gnu.trove.THashMap;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.jps.builders.*;
+import org.jetbrains.jps.builders.BuildTarget;
+import org.jetbrains.jps.builders.BuildTargetIndex;
+import org.jetbrains.jps.builders.BuildTargetRegistry;
+import org.jetbrains.jps.builders.BuildTargetType;
+import org.jetbrains.jps.builders.ModuleBasedTarget;
+import org.jetbrains.jps.builders.TargetOutputIndex;
 import org.jetbrains.jps.incremental.CompileContext;
-import org.jetbrains.jps.incremental.ModuleBuildTarget;
-import org.jetbrains.jps.incremental.ResourcesTarget;
 import org.jetbrains.jps.model.module.JpsModule;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
 
-/**
- * @author nik
- */
-public class BuildTargetIndexImpl implements BuildTargetIndex {
+@ApiStatus.Internal
+public final class BuildTargetIndexImpl implements BuildTargetIndex {
   private final BuildTargetRegistry myRegistry;
   private final BuildRootIndexImpl myBuildRootIndex;
-  private Map<BuildTarget<?>, Collection<BuildTarget<?>>> myDependencies;
+  private final Map<BuildTarget<?>, Collection<BuildTarget<?>>> myDependencies;
   private List<BuildTargetChunk> myTargetChunks;
 
-  public BuildTargetIndexImpl(BuildTargetRegistry targetRegistry, BuildRootIndexImpl buildRootIndex) {
+  public BuildTargetIndexImpl(@NotNull BuildTargetRegistry targetRegistry, @NotNull BuildRootIndexImpl buildRootIndex) {
     myRegistry = targetRegistry;
     myBuildRootIndex = buildRootIndex;
-    myDependencies = new THashMap<BuildTarget<?>, Collection<BuildTarget<?>>>();
+    myDependencies = new HashMap<>();
   }
 
   @Override
-  public List<BuildTargetChunk> getSortedTargetChunks(@NotNull CompileContext context) {
+  public @NotNull List<BuildTargetChunk> getSortedTargetChunks(@NotNull CompileContext context) {
     initializeChunks(context);
     return myTargetChunks;
   }
-
 
   private synchronized void initializeChunks(@NotNull CompileContext context) {
     if (myTargetChunks != null) {
       return;
     }
 
+    Tracer.Span chunksInitSpan = Tracer.start("BuildTargetIndexImpl.initializeChunks");
     List<BuildTarget<?>> allTargets = getAllTargets();
     TargetOutputIndex outputIndex = new TargetOutputIndexImpl(allTargets, context);
-    Map<BuildTarget<?>, Collection<BuildTarget<?>>> dummyTargetDependencies = new HashMap<BuildTarget<?>, Collection<BuildTarget<?>>>();
-    final List<BuildTarget<?>> realTargets = new ArrayList<BuildTarget<?>>(allTargets.size());
+    Map<BuildTarget<?>, Collection<BuildTarget<?>>> dummyTargetDependencies = new HashMap<>();
+    final List<BuildTarget<?>> realTargets = new ArrayList<>(allTargets.size());
     for (BuildTarget<?> target : allTargets) {
       if (isDummy(target)) {
         dummyTargetDependencies.put(target, target.computeDependencies(myRegistry, outputIndex));
@@ -84,29 +83,31 @@ public class BuildTargetIndexImpl implements BuildTargetIndex {
 
     Graph<BuildTarget<?>> graph = GraphGenerator.generate(new InboundSemiGraph<BuildTarget<?>>() {
       @Override
-      public Collection<BuildTarget<?>> getNodes() {
-        return realTargets;
+      public @NotNull Collection<BuildTarget<?>> getNodes() {
+        return allTargets;
       }
 
       @Override
-      public Iterator<BuildTarget<?>> getIn(BuildTarget<?> n) {
-        return myDependencies.get(n).iterator();
+      public @NotNull Iterator<BuildTarget<?>> getIn(BuildTarget<?> n) {
+        Collection<BuildTarget<?>> deps = myDependencies.get(n);
+        return deps != null ? deps.iterator() : Collections.emptyIterator();
       }
     });
 
-    DFSTBuilder<BuildTarget<?>> builder = new DFSTBuilder<BuildTarget<?>>(graph);
+    DFSTBuilder<BuildTarget<?>> builder = new DFSTBuilder<>(graph);
     Collection<Collection<BuildTarget<?>>> components = builder.getComponents();
-    myTargetChunks = new ArrayList<BuildTargetChunk>(components.size());
+    myTargetChunks = new ArrayList<>(components.size());
     for (Collection<BuildTarget<?>> component : components) {
-      myTargetChunks.add(new BuildTargetChunk(ContainerUtil.newLinkedHashSet(component)));
+      myTargetChunks.add(new BuildTargetChunk(new LinkedHashSet<>(component)));
     }
+    chunksInitSpan.complete();
   }
 
-  private static Collection<BuildTarget<?>> includeTransitiveDependenciesOfDummyTargets(Collection<BuildTarget<?>> dependencies,
+  private static Collection<BuildTarget<?>> includeTransitiveDependenciesOfDummyTargets(Collection<? extends BuildTarget<?>> dependencies,
                                                                                         Map<BuildTarget<?>, Collection<BuildTarget<?>>> dummyTargetDependencies) {
-    ArrayList<BuildTarget<?>> realDependencies = new ArrayList<BuildTarget<?>>(dependencies.size());
-    Set<BuildTarget<?>> processed = new HashSet<BuildTarget<?>>(dependencies);
-    Queue<BuildTarget<?>> toProcess = new ArrayDeque<BuildTarget<?>>(dependencies);
+    ArrayList<BuildTarget<?>> realDependencies = new ArrayList<>(dependencies.size());
+    Set<BuildTarget<?>> processed = new HashSet<>(dependencies);
+    Queue<BuildTarget<?>> toProcess = new ArrayDeque<>(dependencies);
     while (!toProcess.isEmpty()) {
       BuildTarget<?> dep = toProcess.poll();
       Collection<BuildTarget<?>> toInclude = dummyTargetDependencies.get(dep);
@@ -117,9 +118,7 @@ public class BuildTargetIndexImpl implements BuildTargetIndex {
           }
         }
       }
-      else {
-        realDependencies.add(dep);
-      }
+      realDependencies.add(dep);
     }
     realDependencies.trimToSize();
     return realDependencies;
@@ -127,47 +126,46 @@ public class BuildTargetIndexImpl implements BuildTargetIndex {
 
   @Override
   public boolean isDummy(@NotNull BuildTarget<?> target) {
-    return (target instanceof ModuleBuildTarget || target instanceof ResourcesTarget) //todo[nik] introduce method in BuildTarget instead
-         && myBuildRootIndex.getTargetRoots(target, null).isEmpty();
+    return target.getTargetType().isFileBased() && myBuildRootIndex.getTargetRoots(target, null).isEmpty();
   }
 
   @Override
   public Set<BuildTarget<?>> getDependenciesRecursively(@NotNull BuildTarget<?> target, @NotNull CompileContext context) {
     initializeChunks(context);
-    LinkedHashSet<BuildTarget<?>> result = new LinkedHashSet<BuildTarget<?>>();
-    for (BuildTarget<?> dep : myDependencies.get(target)) {
-      collectDependenciesRecursively(dep, result);
+    LinkedHashSet<BuildTarget<?>> result = new LinkedHashSet<>();
+    for (BuildTarget<?> dep : getDependencies(target, context)) {
+      collectDependenciesRecursively(dep, result, context);
     }
     return result;
   }
 
-  private void collectDependenciesRecursively(BuildTarget<?> target, LinkedHashSet<BuildTarget<?>> result) {
+  private void collectDependenciesRecursively(BuildTarget<?> target, LinkedHashSet<? super BuildTarget<?>> result, CompileContext context) {
     if (result.add(target)) {
-      for (BuildTarget<?> dep : myDependencies.get(target)) {
-        collectDependenciesRecursively(dep, result);
+      for (BuildTarget<?> dep : getDependencies(target,context)) {
+        collectDependenciesRecursively(dep, result, context);
       }
     }
   }
 
-  @NotNull
   @Override
-  public Collection<BuildTarget<?>> getDependencies(@NotNull BuildTarget<?> target, @NotNull CompileContext context) {
+  public @NotNull Collection<BuildTarget<?>> getDependencies(@NotNull BuildTarget<?> target, @NotNull CompileContext context) {
     initializeChunks(context);
-    return myDependencies.get(target);
+    Collection<BuildTarget<?>> deps = myDependencies.get(target);
+    return deps != null ? deps : Collections.emptyList();
   }
 
-  @NotNull
-  public Collection<ModuleBasedTarget<?>> getModuleBasedTargets(@NotNull JpsModule module, @NotNull ModuleTargetSelector selector) {
+  @Override
+  public @NotNull Collection<ModuleBasedTarget<?>> getModuleBasedTargets(@NotNull JpsModule module, @NotNull ModuleTargetSelector selector) {
     return myRegistry.getModuleBasedTargets(module, selector);
   }
 
-  @NotNull
-  public <T extends BuildTarget<?>> List<T> getAllTargets(@NotNull BuildTargetType<T> type) {
+  @Override
+  public @NotNull <T extends BuildTarget<?>> List<T> getAllTargets(@NotNull BuildTargetType<T> type) {
     return myRegistry.getAllTargets(type);
   }
 
-  @NotNull
-  public List<BuildTarget<?>> getAllTargets() {
+  @Override
+  public @NotNull List<BuildTarget<?>> getAllTargets() {
     return myRegistry.getAllTargets();
   }
 }

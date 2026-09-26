@@ -22,11 +22,9 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * @author Dmitry Avdeev
- *         Date: 17.10.13
  */
 public interface XmlNSColorProvider {
-
-  ExtensionPointName<XmlNSColorProvider> EXTENSION_POINT_NAME = ExtensionPointName.create("com.intellij.xml.nsColorProvider");
+  ExtensionPointName<XmlNSColorProvider> EP_NAME = ExtensionPointName.create("com.intellij.xml.nsColorProvider");
 
   @Nullable
   TextAttributesKey getKeyForNamespace(String namespace, XmlElement context);

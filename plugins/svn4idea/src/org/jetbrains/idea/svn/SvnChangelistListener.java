@@ -1,132 +1,104 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.vcs.AbstractVcs;
 import com.intellij.openapi.vcs.FilePath;
 import com.intellij.openapi.vcs.ProjectLevelVcsManager;
 import com.intellij.openapi.vcs.VcsException;
-import com.intellij.openapi.vcs.changes.*;
+import com.intellij.openapi.vcs.changes.Change;
+import com.intellij.openapi.vcs.changes.ChangeList;
+import com.intellij.openapi.vcs.changes.ChangeListListener;
+import com.intellij.openapi.vcs.changes.ChangesUtil;
+import com.intellij.openapi.vcs.changes.LocalChangeList;
 import com.intellij.util.ThrowableConsumer;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
+import org.jetbrains.idea.svn.api.ErrorCode;
 import org.jetbrains.idea.svn.change.ChangeListClient;
 import org.jetbrains.idea.svn.commandLine.SvnBindException;
 import org.jetbrains.idea.svn.status.Status;
-import org.tmatesoft.svn.core.SVNErrorCode;
 
 import java.io.File;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 
 public class SvnChangelistListener implements ChangeListListener {
-  private final static Logger LOG = Logger.getInstance("#org.jetbrains.idea.svn.SvnChangelistListener");
+  private static final Logger LOG = Logger.getInstance(SvnChangelistListener.class);
 
-  @NotNull private final SvnVcs myVcs;
-  @NotNull private final Condition<FilePath> myUnderSvnCondition;
+  private final @NotNull SvnVcs myVcs;
+  private final @NotNull Condition<FilePath> myUnderSvnCondition;
 
   public SvnChangelistListener(@NotNull SvnVcs vcs) {
     myVcs = vcs;
-    myUnderSvnCondition = new Condition<FilePath>() {
-      @Override
-      public boolean value(@NotNull FilePath path) {
-        final AbstractVcs vcs = ProjectLevelVcsManager.getInstance(myVcs.getProject()).getVcsFor(path);
-        return vcs != null && SvnVcs.VCS_NAME.equals(vcs.getName());
-      }
+    myUnderSvnCondition = path -> {
+      final AbstractVcs vcs1 = ProjectLevelVcsManager.getInstance(myVcs.getProject()).getVcsFor(path);
+      return vcs1 != null && SvnVcs.VCS_NAME.equals(vcs1.getName());
     };
   }
 
-  public void changeListAdded(final ChangeList list) {
-    // SVN change list exists only when there are any files in it
-  }
-
-  public void changesRemoved(final Collection<Change> changes, final ChangeList fromList) {
-    if (LocalChangeList.DEFAULT_NAME.equals(fromList.getName())) {
+  @Override
+  public void changesRemoved(final Collection<? extends Change> changes, final ChangeList fromList) {
+    if (LocalChangeList.getDefaultName().equals(fromList.getName())) {
       return;
     }
     removeFromChangeList(changes);
   }
 
-  public void changesAdded(Collection<Change> changes, ChangeList toList) {
-    if (toList == null || LocalChangeList.DEFAULT_NAME.equals(toList.getName())) {
+  @Override
+  public void changesAdded(Collection<? extends Change> changes, ChangeList toList) {
+    if (toList == null || LocalChangeList.getDefaultName().equals(toList.getName())) {
       return;
     }
     addToChangeList(toList.getName(), changes);
   }
 
+  @Override
   public void changeListRemoved(final ChangeList list) {
     removeFromChangeList(list.getChanges());
   }
 
-  @NotNull
-  private List<FilePath> getPathsFromChanges(@NotNull Collection<Change> changes) {
+  private @NotNull @Unmodifiable List<FilePath> getPathsFromChanges(@NotNull Collection<? extends Change> changes) {
     return ContainerUtil.findAll(ChangesUtil.getPaths(changes), myUnderSvnCondition);
   }
 
-  public void changeListChanged(final ChangeList list) {
-  }
-
+  @Override
   public void changeListRenamed(final ChangeList list, final String oldName) {
-    if (Comparing.equal(list.getName(), oldName)) {
+    if (Objects.equals(list.getName(), oldName)) {
       return;
     }
-    if (LocalChangeList.DEFAULT_NAME.equals(list.getName())) {
+    if (LocalChangeList.getDefaultName().equals(list.getName())) {
       changeListRemoved(list);
       return;
     }
     addToChangeList(list.getName(), list.getChanges());
   }
 
-  public void changeListCommentChanged(final ChangeList list, final String oldComment) {
-  }
-
-  public void changesMoved(final Collection<Change> changes, final ChangeList fromList, final ChangeList toList) {
+  @Override
+  public void changesMoved(final Collection<? extends Change> changes, final ChangeList fromList, final ChangeList toList) {
     if (fromList.getName().equals(toList.getName())) {
       return;
     }
-    if (LocalChangeList.DEFAULT_NAME.equals(toList.getName())) {
+    if (LocalChangeList.getDefaultName().equals(toList.getName())) {
       changeListRemoved(toList);
       return;
     }
 
-    final String[] fromLists = LocalChangeList.DEFAULT_NAME.equals(fromList.getName()) ? null : new String[] {fromList.getName()};
+    final String[] fromLists = LocalChangeList.getDefaultName().equals(fromList.getName()) ? null : new String[] {fromList.getName()};
     addToChangeList(toList.getName(), changes, fromLists);
   }
 
-  public void defaultListChanged(final ChangeList oldDefaultList, final ChangeList newDefaultList) {
-  }
-
-  public void unchangedFileStatusChanged() {
-  }
-
-  public void changeListUpdateDone() {
-  }
-
-  @Nullable
-  public static String getCurrentMapping(@NotNull SvnVcs vcs, @NotNull File file) {
+  public static @Nullable String getCurrentMapping(@NotNull SvnVcs vcs, @NotNull File file) {
     try {
       final Status status = vcs.getFactory(file).createStatusClient().doStatus(file, false);
-      return status == null ? null : status.getChangelistName();
+      return status == null ? null : status.getChangeListName();
     }
     catch (SvnBindException e) {
-      if (e.contains(SVNErrorCode.WC_NOT_DIRECTORY) || e.contains(SVNErrorCode.WC_NOT_FILE)) {
+      if (e.contains(ErrorCode.WC_NOT_WORKING_COPY) || e.contains(ErrorCode.WC_NOT_FILE)) {
         LOG.debug("Logging only, exception is valid (caught) here", e);
       } else {
         LOG.info("Logging only, exception is valid (caught) here", e);
@@ -145,13 +117,13 @@ public class SvnChangelistListener implements ChangeListListener {
 
   private static void doChangeListOperation(@NotNull SvnVcs vcs,
                                             @NotNull File file,
-                                            @NotNull ThrowableConsumer<ChangeListClient, VcsException> operation) throws VcsException {
+                                            @NotNull ThrowableConsumer<? super ChangeListClient, VcsException> operation) throws VcsException {
     try {
       operation.consume(vcs.getFactory(file).createChangeListClient());
     }
     catch (SvnBindException e) {
       LOG.info(e);
-      if (!e.contains(SVNErrorCode.WC_NOT_DIRECTORY) && !e.contains(SVNErrorCode.WC_NOT_FILE)) {
+      if (!e.contains(ErrorCode.WC_NOT_WORKING_COPY) && !e.contains(ErrorCode.WC_NOT_FILE)) {
         throw e;
       }
     }
@@ -161,7 +133,7 @@ public class SvnChangelistListener implements ChangeListListener {
     }
   }
 
-  private void removeFromChangeList(@NotNull Collection<Change> changes) {
+  private void removeFromChangeList(@NotNull Collection<? extends Change> changes) {
     for (FilePath path : getPathsFromChanges(changes)) {
       try {
         File file = path.getIOFile();
@@ -173,11 +145,11 @@ public class SvnChangelistListener implements ChangeListListener {
     }
   }
 
-  private void addToChangeList(@NotNull String changeList, @NotNull Collection<Change> changes) {
+  private void addToChangeList(@NotNull String changeList, @NotNull Collection<? extends Change> changes) {
     addToChangeList(changeList, changes, null);
   }
 
-  private void addToChangeList(@NotNull String changeList, @NotNull Collection<Change> changes, @Nullable String[] changeListsToOperate) {
+  private void addToChangeList(@NotNull String changeList, @NotNull Collection<? extends Change> changes, String @Nullable [] changeListsToOperate) {
     for (FilePath path : getPathsFromChanges(changes)) {
       try {
         File file = path.getIOFile();

@@ -1,35 +1,18 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ui.stripe;
 
-import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.project.DumbAwareAction;
+import com.intellij.util.ui.tree.TreeUtil;
 
-import java.beans.EventHandler;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
 import javax.swing.JScrollPane;
 import javax.swing.JTree;
 import javax.swing.event.TreeModelListener;
 import javax.swing.tree.TreeModel;
 import javax.swing.tree.TreePath;
+import java.beans.EventHandler;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 
-/**
- * @author Sergey.Malenkov
- */
 public class TreeUpdater<Painter extends ErrorStripePainter> extends Updater<Painter> {
   private final JTree myTree;
 
@@ -50,18 +33,10 @@ public class TreeUpdater<Painter extends ErrorStripePainter> extends Updater<Pai
     myTree.addPropertyChangeListener(JTree.TREE_MODEL_PROPERTY, myPropertyChangeListener);
     TreeModel model = myTree.getModel();
     if (model != null) model.addTreeModelListener(myTreeModelListener);
-    new DumbAwareAction() {
-      @Override
-      public void actionPerformed(AnActionEvent event) {
-        selectNext(myTree.getMaxSelectionRow());
-      }
-    }.registerCustomShortcutSet(getNextErrorShortcut(), myTree, this);
-    new DumbAwareAction() {
-      @Override
-      public void actionPerformed(AnActionEvent event) {
-        selectPrevious(myTree.getMinSelectionRow());
-      }
-    }.registerCustomShortcutSet(getPreviousErrorShortcut(), myTree, this);
+    DumbAwareAction.create(e -> selectNext(myTree.getMaxSelectionRow()))
+      .registerCustomShortcutSet(getNextErrorShortcut(), myTree, this);
+    DumbAwareAction.create(e -> selectPrevious(myTree.getMinSelectionRow()))
+      .registerCustomShortcutSet(getPreviousErrorShortcut(), myTree, this);
   }
 
   @Override
@@ -74,12 +49,10 @@ public class TreeUpdater<Painter extends ErrorStripePainter> extends Updater<Pai
 
   @Override
   protected void onSelect(Painter painter, int index) {
-    if (0 <= index) {
-      myTree.setSelectionRow(index);
-      myTree.scrollRowToVisible(index);
-    }
+    TreeUtil.selectRow(myTree, index);
   }
 
+  @Override
   protected void update(Painter painter) {
     update(painter, myTree);
   }

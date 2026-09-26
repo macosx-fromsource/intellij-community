@@ -1,14 +1,14 @@
-class <warning descr="'async' and 'await' are not recommended to be used as variable, class, function or module names. They will become proper keywords in Python 3.7.">async</warning>(object):
+class <warning descr="Python versions 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15 do not allow 'async' and 'await' as names">async</warning>(object):
     pass
 
-class <warning descr="'async' and 'await' are not recommended to be used as variable, class, function or module names. They will become proper keywords in Python 3.7.">await</warning>(object):
+class <warning descr="Python versions 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15 do not allow 'async' and 'await' as names">await</warning>(object):
     pass
 
-def <warning descr="'async' and 'await' are not recommended to be used as variable, class, function or module names. They will become proper keywords in Python 3.7.">async</warning>():
+def <warning descr="Python versions 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15 do not allow 'async' and 'await' as names">async</warning>():
     pass
 
-def <warning descr="'async' and 'await' are not recommended to be used as variable, class, function or module names. They will become proper keywords in Python 3.7.">await</warning>():
+def <warning descr="Python versions 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15 do not allow 'async' and 'await' as names">await</warning>():
     pass
 
-<warning descr="'async' and 'await' are not recommended to be used as variable, class, function or module names. They will become proper keywords in Python 3.7.">async</warning> = 1
-<warning descr="'async' and 'await' are not recommended to be used as variable, class, function or module names. They will become proper keywords in Python 3.7.">await</warning> = 2
+<warning descr="Python versions 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15 do not allow 'async' and 'await' as names">async</warning> = 1
+<warning descr="Python versions 3.7, 3.8, 3.9, 3.10, 3.11, 3.12, 3.13, 3.14, 3.15 do not allow 'async' and 'await' as names">await</warning> = 2

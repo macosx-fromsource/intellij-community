@@ -1,23 +1,31 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.gradle.ui;
 
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.ui.MultiRowFlowPanel;
-import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
-import java.util.*;
+import javax.swing.Box;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import java.awt.Color;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.StringTokenizer;
 
 /**
  * Allows to build controls that show target user text with 'reach info' (e.g. inline icon button).
  * <p/>
  * Not thread-safe.
- * 
- * @author Denis Zhdanov
- * @since 1/16/12 5:06 PM
  */
 public class RichTextControlBuilder {
   
@@ -72,7 +80,7 @@ public class RichTextControlBuilder {
         final int i = s.indexOf(RICH_TEXT_TOKEN_END);
         if (i >= 0) {
           // Meta-token ends within the current string.
-          metaTokenData.append(s.substring(0, i));
+          metaTokenData.append(s, 0, i);
           final JComponent component = metaDataProcessor.process(metaTokenData.toString());
           if (component != null) {
             rowComponents.add(component);
@@ -126,13 +134,8 @@ public class RichTextControlBuilder {
             rowComponents.add(component);
           }
           metaDataProcessor = null;
-          if (end < s.length()) {
-            // Handle situation like '{@key}text', i.e. there is no white space between the meta-data and the text that follows it.
-            s = s.substring(end);
-          }
-          else {
-            continue;
-          }
+          // Handle situation like '{@key}text', i.e. there is no white space between the meta-data and the text that follows it.
+          s = s.substring(end);
         }
         else {
           ignoreNext = true;
@@ -144,7 +147,7 @@ public class RichTextControlBuilder {
         rowComponents.clear();
       }
       else {
-        final JLabel label = new JLabel(s);
+        final JLabel label = new JLabel(s); // NON-NLS
         label.setForeground(myForegroundColor);
         label.setBackground(myBackgroundColor);
         label.setFont(myFont);
@@ -182,8 +185,7 @@ public class RichTextControlBuilder {
   /**
    * @return    component built within the provided information
    */
-  @NotNull
-  public JComponent build() {
+  public @NotNull JComponent build() {
     for (JComponent component : myComponents) {
       component.setForeground(myForegroundColor);
       component.setBackground(myBackgroundColor);
@@ -201,7 +203,7 @@ public class RichTextControlBuilder {
   }
   
   private void addRow(@NotNull Collection<JComponent> rowComponents) {
-    JPanel row = new MultiRowFlowPanel(FlowLayout.CENTER, getGapToUse(0), getGapToUse(3));
+    JPanel row = new MultiRowFlowPanel(FlowLayout.CENTER, 0, 3);
     row.setBackground(myBackgroundColor);
     myComponents.add(row);
     if (rowComponents.isEmpty()) {
@@ -218,12 +220,6 @@ public class RichTextControlBuilder {
     constraints.fill = GridBagConstraints.HORIZONTAL;
     constraints.insets.top = 3;
     myResult.add(row, constraints);
-  }
-
-  private static int getGapToUse(int gap) {
-    // There is a problem with flow layout controls paint under Alloy LAF - it looks like it doesn't take given gaps into consideration.
-    // Alloy LAF sources are closed, so we use this dirty hack here.
-    return UIUtil.isUnderAlloyLookAndFeel() ? gap - 4 : gap;
   }
 
   /**

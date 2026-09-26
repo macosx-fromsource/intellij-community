@@ -1,25 +1,19 @@
 package com.intellij.structuralsearch.impl.matcher.compiler;
 
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-/**
- * Created by IntelliJ IDEA.
- * User: maxim
- * Date: 17.11.2004
- * Time: 19:24:40
- * To change this template use File | Settings | File Templates.
- */
 class DeleteNodesAction implements Runnable {
 
-  private final List<PsiElement> elements;
+  private final List<? extends PsiElement> elements;
 
-  DeleteNodesAction(List<PsiElement> _elements) {
+  DeleteNodesAction(@NotNull List<? extends PsiElement> _elements) {
     elements = _elements;
   }
 
-  private static void delete(PsiElement first, PsiElement last) {
+  private static void delete(@NotNull PsiElement first, PsiElement last) {
     if (last == first) {
       first.delete();
     }

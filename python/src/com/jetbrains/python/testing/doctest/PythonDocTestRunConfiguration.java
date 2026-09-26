@@ -1,62 +1,78 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.testing.doctest;
 
-import com.intellij.execution.ExecutionException;
 import com.intellij.execution.Executor;
-import com.intellij.execution.configurations.*;
+import com.intellij.execution.configurations.ConfigurationFactory;
+import com.intellij.execution.configurations.RunProfileState;
 import com.intellij.execution.runners.ExecutionEnvironment;
+import com.intellij.execution.target.TargetEnvironment;
+import com.intellij.execution.target.value.TargetEnvironmentFunctions;
+import com.intellij.execution.util.ProgramParametersConfigurator;
 import com.intellij.openapi.options.SettingsEditor;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.InvalidDataException;
-import com.intellij.openapi.util.WriteExternalException;
-import com.jetbrains.python.testing.AbstractPythonTestRunConfiguration;
-import org.jdom.Element;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.jetbrains.python.psi.resolve.PackageAvailabilitySpec;
+import com.jetbrains.python.testing.AbstractPythonLegacyTestRunConfiguration;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-/**
- * User: catherine
- */
-public class PythonDocTestRunConfiguration extends AbstractPythonTestRunConfiguration
-                                          implements PythonDocTestRunConfigurationParams {
-  protected String myPluralTitle = "Doctests";
-  protected String myTitle = "Doctest";
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Stream;
+
+import static com.intellij.execution.target.value.TargetEnvironmentFunctions.joinToStringFunction;
+import static com.intellij.execution.target.value.TargetEnvironmentFunctions.targetPath;
+
+public class PythonDocTestRunConfiguration extends AbstractPythonLegacyTestRunConfiguration<PythonDocTestRunConfiguration>
+  implements PythonDocTestRunConfigurationParams {
+  private static final PackageAvailabilitySpec PACKAGE_SPEC = new PackageAvailabilitySpec("doctest", "doctest.DocTestRunner");
+
+  protected @NlsSafe String myPluralTitle = "Doctests";
+  protected @NlsSafe String myTitle = "Doctest";
+
+  private String myParameters = "";
+
+  private boolean isParametersEnabled = true;
+
+  public final @NotNull List<String> getParametersList() {
+    return isParametersEnabled ? ProgramParametersConfigurator.expandMacrosAndParseParameters(myParameters) : new ArrayList<>();
+  }
+
+  public final @NotNull String getParametersString() {
+    return isParametersEnabled ? myParameters : "";
+  }
+
+  public void addParameters(@NotNull String parameters) {
+    myParameters = parameters;
+  }
+
+  public void setParametersEnabled(boolean isEnabled) {
+    isParametersEnabled = isEnabled;
+  }
+
+  public boolean isParametersEnabled() {
+    return isParametersEnabled;
+  }
+
   public PythonDocTestRunConfiguration(Project project,
                                        ConfigurationFactory configurationFactory) {
-    super(project, configurationFactory);
+    super(project, configurationFactory, PACKAGE_SPEC);
   }
 
   @Override
-  protected SettingsEditor<? extends RunConfiguration> createConfigurationEditor() {
+  protected SettingsEditor<PythonDocTestRunConfiguration> createConfigurationEditor() {
     return new PythonDocTestRunConfigurationEditor(getProject(), this);
   }
 
   @Override
-  public RunProfileState getState(@NotNull final Executor executor, @NotNull final ExecutionEnvironment env) throws ExecutionException {
+  public RunProfileState getState(final @NotNull Executor executor, final @NotNull ExecutionEnvironment env) {
     return new PythonDocTestCommandLineState(this, env);
-  }
-
-  @Override
-  public void readExternal(Element element) throws InvalidDataException {
-    super.readExternal(element);
-  }
-
-  @Override
-  public void writeExternal(Element element) throws WriteExternalException {
-    super.writeExternal(element);
   }
 
   @Override
@@ -71,5 +87,19 @@ public class PythonDocTestRunConfiguration extends AbstractPythonTestRunConfigur
 
   public static void copyParams(PythonDocTestRunConfigurationParams source, PythonDocTestRunConfigurationParams target) {
     copyParams(source.getTestRunConfigurationParams(), target.getTestRunConfigurationParams());
+  }
+
+  @Override
+  @ApiStatus.Internal
+  protected @Nullable Function<@NotNull TargetEnvironment, @NotNull @Nls String> createTargetEnvFunction(@NotNull VirtualFile virtualFile,
+                                                                                                         @Nullable String className,
+                                                                                                         @Nullable String funName) {
+    String localPath = virtualFile.getCanonicalPath();
+    if (localPath == null) return null;
+
+    return joinToStringFunction(Stream.concat(
+      Stream.of(targetPath(Path.of(localPath))),
+      Stream.of(className, funName).filter(Objects::nonNull).map(TargetEnvironmentFunctions::constant)
+    ).toList(), TEST_NAME_PARTS_SPLITTER);
   }
 }

@@ -12,42 +12,28 @@
 // limitations under the License.
 package org.zmlx.hg4idea;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.RoamingType;
+import com.intellij.openapi.components.SettingsCategory;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.containers.HashMap;
-import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
+import java.util.HashMap;
 import java.util.Map;
 
-@State(
-  name = "HgGlobalSettings",
-  storages = {
-    @Storage(value = "hg.xml", roamingType = RoamingType.PER_OS),
-    @Storage(value = "vcs.xml", deprecated = true)
-  }
-)
+@State(name = "HgGlobalSettings", storages = @Storage(value = "hg.xml", roamingType = RoamingType.PER_OS), category = SettingsCategory.TOOLS)
 public class HgGlobalSettings implements PersistentStateComponent<HgGlobalSettings.State> {
-  @NonNls private static final String[] DEFAULT_WINDOWS_PATHS = {"C:\\Program Files\\Mercurial",
-    "C:\\Program Files (x86)\\Mercurial",
-    "C:\\cygwin\\bin"};
-  @NonNls private static final String[] DEFAULT_UNIX_PATHS = {"/usr/local/bin",
-    "/usr/bin",
-    "/opt/local/bin",
-    "/opt/bin",
-    "/usr/local/mercurial"};
-  @NonNls private static final String DEFAULT_WINDOWS_HG = "hg.exe";
-  @NonNls private static final String DEFAULT_UNIX_HG = "hg";
-
   private static final int FIVE_MINUTES = 300;
 
   private State myState = new State();
+
+  public static HgGlobalSettings getInstance() {
+    return ApplicationManager.getApplication().getService(HgGlobalSettings.class);
+  }
 
   public static class State {
     public String myHgExecutable = null;
@@ -61,39 +47,8 @@ public class HgGlobalSettings implements PersistentStateComponent<HgGlobalSettin
   }
 
   @Override
-  public void loadState(State state) {
+  public void loadState(@NotNull State state) {
     myState = state;
-  }
-
-  /**
-   * @return the default executable name depending on the platform
-   */
-  @NotNull
-  public String defaultHgExecutable() {
-    if (myState.myHgExecutable == null) {
-      String[] paths;
-      String programName;
-      if (SystemInfo.isWindows) {
-        programName = DEFAULT_WINDOWS_HG;
-        paths = DEFAULT_WINDOWS_PATHS;
-      }
-      else {
-        programName = DEFAULT_UNIX_HG;
-        paths = DEFAULT_UNIX_PATHS;
-      }
-
-      for (String p : paths) {
-        File f = new File(p, programName);
-        if (f.exists()) {
-          myState.myHgExecutable = f.getAbsolutePath();
-          break;
-        }
-      }
-      if (myState.myHgExecutable == null) { // otherwise, take the first variant and hope it's in $PATH
-        myState.myHgExecutable = programName;
-      }
-    }
-    return myState.myHgExecutable;
   }
 
   /**
@@ -102,8 +57,7 @@ public class HgGlobalSettings implements PersistentStateComponent<HgGlobalSettin
    * @param stringUrl the url for which to retrieve the last used username;
    * @return the (probably empty) login remembered for this URL.
    */
-  @Nullable
-  public String getRememberedUserName(@NotNull String stringUrl) {
+  public @Nullable String getRememberedUserName(@NotNull String stringUrl) {
     return myState.myRememberedUserNames.get(stringUrl);
   }
 
@@ -123,12 +77,11 @@ public class HgGlobalSettings implements PersistentStateComponent<HgGlobalSettin
     myState.myRememberedUserNames.put(stringUrl, username);
   }
 
-  @NotNull
-  public String getHgExecutable() {
-    return myState.myHgExecutable == null ? defaultHgExecutable() : myState.myHgExecutable;
+  public @Nullable String getHgExecutable() {
+    return myState.myHgExecutable;
   }
 
-  public void setHgExecutable(String hgExecutable) {
+  public void setHgExecutable(@Nullable String hgExecutable) {
     myState.myHgExecutable = hgExecutable;
   }
 

@@ -1,38 +1,21 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.coverage;
 
-import com.intellij.openapi.components.*;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.components.StoragePathMacros;
 import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 
-/**
- * User: anna
- * Date: 4/28/11
- */
-@State(
-  name = "CoverageOptionsProvider",
-  storages = {
-    @Storage(StoragePathMacros.WORKSPACE_FILE)
-  }
-)
+@State(name = "CoverageOptionsProvider", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
+@ApiStatus.Internal
 public class CoverageOptionsProvider implements PersistentStateComponent<CoverageOptionsProvider.State> {
-  private State myState = new State();
+  private final State myState = new State();
 
   public static CoverageOptionsProvider getInstance(Project project) {
-    return ServiceManager.getService(project, CoverageOptionsProvider.class);
+    return project.getService(CoverageOptionsProvider.class);
   }
 
   public int getOptionToReplace() {
@@ -46,9 +29,17 @@ public class CoverageOptionsProvider implements PersistentStateComponent<Coverag
   public boolean activateViewOnRun() {
     return myState.myActivateViewOnRun;
   }
-  
+
   public void setActivateViewOnRun(boolean state) {
     myState.myActivateViewOnRun = state;
+  }
+
+  public boolean showInProjectView() {
+    return myState.myShowInProjectView;
+  }
+
+  public void setShowInProjectView(boolean state) {
+    myState.myShowInProjectView = state;
   }
 
   @Override
@@ -57,13 +48,20 @@ public class CoverageOptionsProvider implements PersistentStateComponent<Coverag
   }
 
   @Override
-  public void loadState(State state) {
+  public void loadState(@NotNull State state) {
     myState.myAddOrReplace = state.myAddOrReplace;
     myState.myActivateViewOnRun = state.myActivateViewOnRun;
+    myState.myShowInProjectView = state.myShowInProjectView;
   }
 
+  public static final int REPLACE_SUITE = 0;
+  public static final int ADD_SUITE = 1;
+  public static final int IGNORE_SUITE = 2;
+  public static final int ASK_ON_NEW_SUITE = 3;
+
   public static class State {
-    public int myAddOrReplace = 3;
+    public int myAddOrReplace = ASK_ON_NEW_SUITE;
     public boolean myActivateViewOnRun = true;
+    public boolean myShowInProjectView = true;
   }
 }

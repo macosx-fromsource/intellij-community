@@ -1,64 +1,39 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
-/*
- * Created by IntelliJ IDEA.
- * User: cdr
- * Date: Jul 20, 2007
- * Time: 2:57:59 PM
- */
 package com.intellij.codeInsight.intention.impl;
 
 import com.intellij.codeInsight.AnnotationUtil;
 import com.intellij.codeInsight.intention.AddAnnotationPsiFix;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiModifierListOwner;
 import org.jetbrains.annotations.NotNull;
 
+import static com.intellij.codeInsight.AnnotationUtil.CHECK_EXTERNAL;
+import static com.intellij.codeInsight.AnnotationUtil.CHECK_TYPE;
+
+/**
+ * @deprecated use {@link com.intellij.codeInsight.intention.AddAnnotationModCommandAction#createAddNullableFix(PsiModifierListOwner)} or
+ * {@link com.intellij.codeInsight.intention.AddAnnotationModCommandAction#createAddNotNullFix(PsiModifierListOwner)}.
+ */
+@Deprecated(forRemoval = true)
 public class AddNullableNotNullAnnotationFix extends AddAnnotationPsiFix {
-  public AddNullableNotNullAnnotationFix(@NotNull String fqn, @NotNull PsiModifierListOwner owner, @NotNull String... annotationToRemove) {
-    super(fqn, owner, PsiNameValuePair.EMPTY_ARRAY, annotationToRemove);
+  public AddNullableNotNullAnnotationFix(@NotNull String fqn, @NotNull PsiModifierListOwner owner, String @NotNull ... annotationToRemove) {
+    super(fqn, owner, annotationToRemove);
   }
 
   @Override
   public boolean isAvailable(@NotNull Project project,
-                             @NotNull PsiFile file,
+                             @NotNull PsiFile psiFile,
                              @NotNull PsiElement startElement,
                              @NotNull PsiElement endElement) {
-    if (!super.isAvailable(project, file, startElement, endElement)) {
+    if (!super.isAvailable(project, psiFile, startElement, endElement)) {
       return false;
     }
-    PsiModifierListOwner owner = getContainer(file, startElement.getTextRange().getStartOffset());
-    if (owner == null || AnnotationUtil.isAnnotated(owner, getAnnotationsToRemove()[0], false, false)) {
-      return false;
-    }
-    return canAnnotate(owner);
+    PsiModifierListOwner owner = getContainer(psiFile, startElement.getTextRange().getStartOffset());
+    return owner != null &&
+           !AnnotationUtil.isAnnotated(owner, getAnnotationsToRemove()[0], CHECK_EXTERNAL | CHECK_TYPE) &&
+           isNullabilityAnnotationApplicable(owner);
   }
-
-  static boolean canAnnotate(@NotNull PsiModifierListOwner owner) {
-    if (owner instanceof PsiMethod) {
-      PsiType returnType = ((PsiMethod)owner).getReturnType();
-      return returnType != null && !(returnType instanceof PsiPrimitiveType);
-    }
-
-    if (owner instanceof PsiClass) {
-      return false;
-    }
-
-    return true;
-  }
-
 }

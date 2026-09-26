@@ -1,81 +1,136 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.execution.impl;
 
 import com.intellij.execution.filters.Filter;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.RangeMarker;
+import com.intellij.openapi.editor.event.DocumentEvent;
+import com.intellij.openapi.editor.event.DocumentListener;
+import com.intellij.openapi.editor.impl.DocumentImpl;
 import com.intellij.openapi.progress.ProgressManager;
-import com.intellij.openapi.progress.util.ProgressIndicatorUtils;
+import com.intellij.openapi.project.DumbService;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Expirable;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.util.TimeoutUtil;
-import com.intellij.util.concurrency.AppExecutorUtil;
+import com.intellij.util.concurrency.SequentialTaskExecutor;
+import com.intellij.util.concurrency.ThreadingAssertions;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.concurrency.Promise;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
-import java.util.concurrent.*;
+import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * @author peter
- */
-class AsyncFilterRunner {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.execution.impl.FilterRunner");
-  private static final ExecutorService ourExecutor = AppExecutorUtil.createBoundedApplicationPoolExecutor("console filters", 1);
+final class AsyncFilterRunner {
+  private static final Logger LOG = Logger.getInstance(AsyncFilterRunner.class);
+  private static final ExecutorService ourExecutor = SequentialTaskExecutor.createSequentialApplicationPoolExecutor("Console Filters");
   private final EditorHyperlinkSupport myHyperlinks;
   private final Editor myEditor;
-  private final Queue<LineHighlighter> myQueue = new ConcurrentLinkedQueue<>();
-  private final List<FilterResult> myResults = new ArrayList<>();
+  private final Queue<HighlighterJob> myQueue = new ConcurrentLinkedQueue<>();
+  private @NotNull List<FilterResult> myResults = new ArrayList<>();
 
-  AsyncFilterRunner(EditorHyperlinkSupport hyperlinks, Editor editor) {
+  /**
+   * If true, deletions from the document top are tracked manually, not via `RangeMarker`.
+   */
+  private final boolean myTrackDocumentChangesManually;
+
+  AsyncFilterRunner(@NotNull EditorHyperlinkSupport hyperlinks, @NotNull Editor editor, boolean trackDocumentChangesManually) {
     myHyperlinks = hyperlinks;
     myEditor = editor;
+    myTrackDocumentChangesManually = trackDocumentChangesManually;
+    if (trackDocumentChangesManually) {
+      trackDocumentChanges(editor.getDocument());
+    }
   }
 
-  void highlightHyperlinks(final Filter customFilter, final int startLine, final int endLine) {
+  private void trackDocumentChanges(@NotNull Document document) {
+    document.addDocumentListener(new DocumentListener() {
+      @Override
+      public void documentChanged(@NotNull DocumentEvent event) {
+        if (event.getOffset() == 0 && event.getNewLength() == 0) {
+          if (event.getOldLength() > 0) {
+            for (DeltaTracker deltaTracker : collectActiveDeltaTrackers()) {
+              deltaTracker.onDeletedFromDocumentTop(event.getOldLength());
+            }
+          }
+        }
+        else {
+          for (DeltaTracker deltaTracker : collectActiveDeltaTrackers()) {
+            deltaTracker.stopAt(event.getOffset());
+          }
+        }
+      }
+    });
+  }
+
+  private @NotNull Set<DeltaTracker> collectActiveDeltaTrackers() {
+    List<DeltaTracker> pendingResultTrackers;
+    synchronized (myQueue) {
+      pendingResultTrackers = ContainerUtil.map(myResults, result -> result.myDelta);
+    }
+    Set<DeltaTracker> trackers = new HashSet<>(pendingResultTrackers);
+    for (HighlighterJob runningJob : myQueue) {
+      trackers.add(runningJob.delta);
+    }
+    return trackers;
+  }
+
+  void highlightHyperlinks(@NotNull Project project,
+                           @NotNull Filter customFilter,
+                           int startLine,
+                           int endLine,
+                           @NotNull Expirable token) {
     if (endLine < 0) return;
 
-    queueTasks(customFilter, startLine, endLine);
+    Document document = myEditor.getDocument();
+    long startStamp = document.getModificationStamp();
+    if (myTrackDocumentChangesManually) {
+      for (DeltaTracker deltaTracker : collectActiveDeltaTrackers()) {
+        deltaTracker.stopAt(document.getLineStartOffset(startLine));
+      }
+    }
+
+    myQueue.offer(new HighlighterJob(project, customFilter, startLine, endLine, document, token));
     if (ApplicationManager.getApplication().isWriteAccessAllowed()) {
       runTasks();
       highlightAvailableResults();
-    } else if (isQuick(ourExecutor.submit(this::runFiltersInBackground))) {
+      return;
+    }
+
+    Promise<?> promise = ReadAction.nonBlocking(this::runTasks).expireWhen(() -> document.getModificationStamp() != startStamp).submit(ourExecutor);
+
+    if (isQuick(promise)) {
       highlightAvailableResults();
     }
-  }
-
-  private void runFiltersInBackground() {
-    while (true) {
-      boolean finished = ProgressIndicatorUtils.runInReadActionWithWriteActionPriority(this::runTasks);
-      if (hasResults()) {
-        ApplicationManager.getApplication().invokeLater(this::highlightAvailableResults, ModalityState.any());
-      }
-      if (finished) return;
-      ProgressIndicatorUtils.yieldToPendingWriteActions();
+    else {
+      promise.onSuccess(_ -> {
+        if (hasResults()) {
+          ApplicationManager.getApplication().invokeLater(this::highlightAvailableResults, ModalityState.any());
+        }
+      });
     }
   }
 
-  private static boolean isQuick(Future<?> future) {
+  private static boolean isQuick(Promise<?> future) {
     try {
-      future.get(5, TimeUnit.MILLISECONDS);
+      future.blockingGet(5, TimeUnit.MILLISECONDS);
       return true;
     }
     catch (TimeoutException ignored) {
@@ -93,16 +148,15 @@ class AsyncFilterRunner {
   }
 
   private boolean hasResults() {
-    synchronized (myResults) {
+    synchronized (myQueue) {
       return !myResults.isEmpty();
     }
   }
 
-  @NotNull
-  private List<FilterResult> takeAvailableResults() {
-    synchronized (myResults) {
-      List<FilterResult> results = new ArrayList<>(myResults);
-      myResults.clear();
+  private @NotNull List<FilterResult> takeAvailableResults() {
+    synchronized (myQueue) {
+      List<FilterResult> results = myResults;
+      myResults = new ArrayList<>();
       return results;
     }
   }
@@ -110,71 +164,54 @@ class AsyncFilterRunner {
   private void addLineResult(@Nullable FilterResult result) {
     if (result == null) return;
 
-    synchronized (myResults) {
+    synchronized (myQueue) {
       myResults.add(result);
     }
   }
 
-  @SuppressWarnings("UnusedReturnValue")
-  public boolean waitForPendingFilters(long timeoutMs) {
-    ApplicationManager.getApplication().assertIsDispatchThread();
-    
+  @TestOnly
+  void waitForPendingFilters(long timeoutMs) {
+    ThreadingAssertions.assertEventDispatchThread();
+
     long started = System.currentTimeMillis();
-    while (!myQueue.isEmpty()) {
+    while (true) {
+      if (myQueue.isEmpty()) {
+        // results are available before queue is emptied, so process the last results, if any, and exit
+        highlightAvailableResults();
+        return;
+      }
+
       if (hasResults()) {
         highlightAvailableResults();
-      } else {
-        TimeoutUtil.sleep(1);
+        continue;
       }
 
-      timeoutMs -= System.currentTimeMillis() - started;
-      if (timeoutMs < 1) return false;
-    }
-    
-    return true;
-  }
-
-  private void queueTasks(Filter filter, int startLine, int endLine) {
-    Document document = myEditor.getDocument();
-    int markerOffset = document.getLineEndOffset(endLine);
-    RangeMarker marker = document.createRangeMarker(markerOffset, markerOffset);
-    for (int line = startLine; line <= endLine; line++) {
-      myQueue.offer(processLine(document, filter, line, markerOffset, marker));
-    }
-  }
-
-  @NotNull
-  private LineHighlighter processLine(Document document, Filter filter, int line, int initialMarkerOffset, RangeMarker marker) {
-    int lineEnd = document.getLineEndOffset(line);
-    int endOffset = lineEnd + (lineEnd < document.getTextLength() ? 1 /* for \n */ : 0);
-    CharSequence text = EditorHyperlinkSupport.getLineSequence(document, line, true);
-    return () -> runFilterForLine(initialMarkerOffset, marker, filter, endOffset, text);
-  }
-
-  @Nullable
-  private FilterResult runFilterForLine(int initialMarkerOffset, RangeMarker marker, Filter filter, int endOffset, CharSequence lineText) {
-    if (!marker.isValid() || marker.getEndOffset() == 0) return null;
-
-    Filter.Result result = checkRange(filter, endOffset, filter.applyFilter(lineText.toString(), endOffset));
-    return result == null ? null : () -> {
-      if (marker.isValid()) {
-        myHyperlinks.highlightHyperlinks(result, marker.getStartOffset() - initialMarkerOffset);
+      if (System.currentTimeMillis() - started > timeoutMs) {
+        return;
       }
-    };
+      if (ApplicationManager.getApplication().isUnitTestMode()) {
+        UIUtil.dispatchAllInvocationEvents();
+      }
+      TimeoutUtil.sleep(1);
+    }
   }
 
   private void runTasks() {
+    ApplicationManager.getApplication().assertReadAccessAllowed();
     if (myEditor.isDisposed()) return;
 
     while (!myQueue.isEmpty()) {
-      ProgressManager.checkCanceled();
-      LineHighlighter highlighter = myQueue.peek();
-      addLineResult(highlighter.runFilterForLine());
+      HighlighterJob highlighter = myQueue.peek();
+      if (!DumbService.getInstance(highlighter.myProject).isUsableInCurrentContext(highlighter.filter)) return;
+      while (highlighter.hasUnprocessedLines()) {
+        ProgressManager.checkCanceled();
+        addLineResult(highlighter.analyzeNextLine());
+      }
       LOG.assertTrue(highlighter == myQueue.remove());
     }
   }
 
-  private static Filter.Result checkRange(Filter filter, int endOffset, Filter.Result result) {
+  static Filter.Result checkRange(Filter filter, int endOffset, Filter.Result result) {
     if (result != null) {
       for (Filter.ResultItem resultItem : result.getResultItems()) {
         int start = resultItem.getHighlightStartOffset();
@@ -187,12 +224,132 @@ class AsyncFilterRunner {
     return result;
   }
 
-  private interface LineHighlighter {
-    @Nullable FilterResult runFilterForLine();
+  /**
+   * It's important that FilterResult doesn't reference frozen document from {@link HighlighterJob#snapshot},
+   * as the lifetime of FilterResult is longer (until EDT is free to apply events), and there can be many jobs
+   * holding many document snapshots all together consuming a lot of memory.
+   */
+  private final class FilterResult {
+    private final DeltaTracker myDelta;
+    private final Filter.Result myResult;
+
+    FilterResult(DeltaTracker delta, Filter.Result result) {
+      myDelta = delta;
+      myResult = result;
+    }
+
+    void applyHighlights() {
+      if (!myDelta.isOutdated()) {
+        myHyperlinks.highlightHyperlinks(myResult, item -> {
+          int startOffset = item.getHighlightStartOffset();
+          int endOffset = item.getHighlightEndOffset();
+          if (myDelta.isSnapshotRangeValid(startOffset, endOffset)) {
+            int offsetDelta = myDelta.getOffsetDelta();
+            return new TextRange(startOffset + offsetDelta, endOffset + offsetDelta);
+          }
+          return null;
+        });
+      }
+    }
   }
 
-  private interface FilterResult {
-    void applyHighlights();
+  private final class HighlighterJob {
+    private final @NotNull Project myProject;
+    private final AtomicInteger startLine;
+    private final int endLine;
+    private final DeltaTracker delta;
+    private final @NotNull Filter filter;
+    private final @NotNull Document snapshot;
+
+    HighlighterJob(@NotNull Project project,
+                   @NotNull Filter filter,
+                   int startLine,
+                   int endLine,
+                   @NotNull Document document,
+                   @NotNull Expirable expirableToken) {
+      myProject = project;
+      this.startLine = new AtomicInteger(startLine);
+      this.endLine = endLine;
+      this.filter = filter;
+
+      delta = new DeltaTracker(AsyncFilterRunner.this, document, document.getLineEndOffset(endLine), expirableToken);
+
+      snapshot = ((DocumentImpl)document).freeze();
+    }
+
+    boolean hasUnprocessedLines() {
+      return !delta.isOutdated() && startLine.get() <= endLine;
+    }
+
+    private @Nullable AsyncFilterRunner.FilterResult analyzeNextLine() {
+      int line = startLine.get();
+      Filter.Result result = analyzeLine(line);
+      LOG.assertTrue(line == startLine.getAndIncrement());
+      return result == null ? null : new FilterResult(delta, result);
+    }
+
+    private @Nullable Filter.Result analyzeLine(int line) {
+      int lineStartOffset = snapshot.getLineStartOffset(line);
+      int lineEndOffset = snapshot.getLineEndOffset(line);
+      if (!delta.isSnapshotRangeValid(lineStartOffset, lineEndOffset)) {
+        return null;
+      }
+
+      String lineText = EditorHyperlinkSupport.getLineText(snapshot, line, true);
+      int endOffset = lineStartOffset + lineText.length();
+      return checkRange(filter, endOffset, filter.applyFilter(lineText, endOffset));
+    }
+
+  }
+
+  private static final class DeltaTracker {
+    private final AsyncFilterRunner myRunner;
+    private final int initialMarkerOffset;
+    private final RangeMarker endMarker;
+    private final @NotNull Expirable myExpirableToken;
+
+    /** These fields can be accessed only if {@link #myTrackDocumentChangesManually} is true */
+    private final AtomicInteger myDeletedLengthFromDocumentTop = new AtomicInteger(0);
+    private final AtomicInteger myStopOffset;
+
+    DeltaTracker(@NotNull AsyncFilterRunner runner, @NotNull Document document, int offset, @NotNull Expirable token) {
+      myRunner = runner;
+      myExpirableToken = token;
+      initialMarkerOffset = offset;
+      endMarker = document.createRangeMarker(initialMarkerOffset, initialMarkerOffset);
+      myStopOffset = new AtomicInteger(offset);
+    }
+
+    boolean isOutdated() {
+      return !endMarker.isValid() || endMarker.getEndOffset() == 0 || myExpirableToken.isExpired();
+    }
+
+    int getOffsetDelta() {
+      if (myRunner.myTrackDocumentChangesManually) {
+        return -myDeletedLengthFromDocumentTop.get();
+      }
+      return endMarker.getStartOffset() - initialMarkerOffset;
+    }
+
+    void onDeletedFromDocumentTop(int deletedLengthFromDocumentTop) {
+      myDeletedLengthFromDocumentTop.addAndGet(deletedLengthFromDocumentTop);
+    }
+
+    void stopAt(int offset) {
+      int snapshotOffset = offset + myDeletedLengthFromDocumentTop.get();
+      myStopOffset.set(Math.min(myStopOffset.get(), snapshotOffset));
+    }
+
+    boolean isSnapshotRangeValid(int startOffset, int endOffset) {
+      if (startOffset + getOffsetDelta() < 0) {
+        // the top of the document has been deleted, including this line
+        return false;
+      }
+      if (myRunner.myTrackDocumentChangesManually && endOffset > myStopOffset.get()) {
+        return false;
+      }
+      return true;
+    }
   }
 
 }

@@ -15,31 +15,23 @@
  */
 package com.intellij.xml;
 
-import com.intellij.javaee.ExternalResourceManagerExImpl;
+import com.intellij.javaee.ExternalResourceManagerExBase;
 import com.intellij.testFramework.PlatformTestUtil;
-import com.intellij.testFramework.fixtures.LightPlatformCodeInsightFixtureTestCase;
+import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import com.intellij.xml.util.CheckXmlFileWithXercesValidatorInspection;
 
 import java.io.File;
 
-/**
- * @author ibessonov
- */
-public class XmlEntityManagerCachingTest extends LightPlatformCodeInsightFixtureTestCase {
-
-  @Override
-  protected void setUp() throws Exception {
-    super.setUp();
-
-    ExternalResourceManagerExImpl.registerResourceTemporarily("http://dl.google.com/gwt/DTD/xhtml.ent",
-                                                              getTestDataPath() + "xhtml.ent", getTestRootDisposable());
-    ExternalResourceManagerExImpl.registerResourceTemporarily("urn:ui:com.google.gwt.uibinder",
-                                                              getTestDataPath() + "UiBinder.xsd", getTestRootDisposable());
-
-    myFixture.enableInspections(CheckXmlFileWithXercesValidatorInspection.class);
-  }
+public class XmlEntityManagerCachingTest extends BasePlatformTestCase {
 
   public void testXmlEntityManagerCaching() {
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://dl.google.com/gwt/DTD/xhtml.ent",
+                                                              getTestDataPath() + "xhtml.ent", myFixture.getTestRootDisposable());
+    ExternalResourceManagerExBase.registerResourceTemporarily("urn:ui:com.google.gwt.uibinder",
+                                                              getTestDataPath() + "UiBinder.xsd", myFixture.getTestRootDisposable());
+
+    myFixture.enableInspections(CheckXmlFileWithXercesValidatorInspection.class);
+
     myFixture.configureByFile(getTestName(false) + ".ui.xml");
     myFixture.checkHighlighting();
     myFixture.type('\b'); // edit content, document has to be valid after that

@@ -1,22 +1,10 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.completion;
 
 import com.intellij.application.options.editor.WebEditorOptions;
 import com.intellij.codeInsight.AutoPopupController;
+import com.intellij.codeInsight.editorActions.TabOutScopesTracker;
+import com.intellij.codeInsight.editorActions.XmlEditUtil;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -27,7 +15,6 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.codeStyle.CodeStyleSchemes;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlFile;
@@ -35,17 +22,13 @@ import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.IncorrectOperationException;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.xml.XmlNamespaceHelper;
-import com.intellij.xml.util.HtmlUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 
-/**
-* @author peter
-*/
 public class XmlAttributeInsertHandler implements InsertHandler<LookupElement> {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.completion.XmlAttributeInsertHandler");
+  private static final Logger LOG = Logger.getInstance(XmlAttributeInsertHandler.class);
 
   public static final XmlAttributeInsertHandler INSTANCE = new XmlAttributeInsertHandler();
 
@@ -60,7 +43,7 @@ public class XmlAttributeInsertHandler implements InsertHandler<LookupElement> {
   }
 
   @Override
-  public void handleInsert(final InsertionContext context, final LookupElement item) {
+  public void handleInsert(final @NotNull InsertionContext context, final @NotNull LookupElement item) {
     final Editor editor = context.getEditor();
 
     final Document document = editor.getDocument();
@@ -68,17 +51,21 @@ public class XmlAttributeInsertHandler implements InsertHandler<LookupElement> {
     final PsiFile file = context.getFile();
 
     final CharSequence chars = document.getCharsSequence();
-    final String quote = getAttributeQuote(HtmlUtil.hasHtml(file) || HtmlUtil.supportsXmlTypedHandlers(file));
+    final String quote = XmlEditUtil.getAttributeQuote(file);
     final boolean insertQuotes = WebEditorOptions.getInstance().isInsertQuotesForAttributeValue() && StringUtil.isNotEmpty(quote);
     final boolean hasQuotes = CharArrayUtil.regionMatches(chars, caretOffset, "=\"") ||
                               CharArrayUtil.regionMatches(chars, caretOffset, "='");
     if (!hasQuotes) {
+      if (CharArrayUtil.regionMatches(chars, caretOffset, "=")) {
+        document.deleteString(caretOffset, caretOffset + 1);
+      }
+
       PsiElement fileContext = file.getContext();
       String toInsert = null;
 
       if(fileContext != null) {
         if (fileContext.getText().startsWith("\"")) toInsert = "=''";
-        if (fileContext.getText().startsWith("\'")) toInsert = "=\"\"";
+        if (fileContext.getText().startsWith("'")) toInsert = "=\"\"";
       }
       if (toInsert == null) {
         toInsert = "=" + quote + quote;
@@ -86,7 +73,7 @@ public class XmlAttributeInsertHandler implements InsertHandler<LookupElement> {
 
       if (!insertQuotes) toInsert = "=";
 
-      if (caretOffset >= document.getTextLength() || "/> \n\t\r".indexOf(document.getCharsSequence().charAt(caretOffset)) < 0) {
+      if (caretOffset < document.getTextLength() && "/> \n\t\r".indexOf(document.getCharsSequence().charAt(caretOffset)) < 0) {
         document.insertString(caretOffset, toInsert + " ");
       }
       else {
@@ -99,6 +86,7 @@ public class XmlAttributeInsertHandler implements InsertHandler<LookupElement> {
     }
 
     editor.getCaretModel().moveToOffset(caretOffset + (insertQuotes || hasQuotes ? 2 : 1));
+    TabOutScopesTracker.getInstance().registerEmptyScopeAtCaret(context.getEditor());
     editor.getScrollingModel().scrollToCaret(ScrollType.RELATIVE);
     editor.getSelectionModel().removeSelection();
     AutoPopupController.getInstance(editor.getProject()).scheduleAutoPopup(editor);
@@ -126,15 +114,10 @@ public class XmlAttributeInsertHandler implements InsertHandler<LookupElement> {
     }
   }
 
-  public static String getAttributeQuote(boolean html) {
-    return html ? CodeStyleSchemes.getInstance().getCurrentScheme().getCodeStyleSettings().HTML_QUOTE_STYLE.quote : "\"";
-  }
-
   private static void qualifyWithPrefix(@NotNull String namespacePrefix, @NotNull PsiElement context) {
     final PsiElement parent = context.getParent();
 
-    if (parent instanceof XmlAttribute) {
-      final XmlAttribute attribute = (XmlAttribute)parent;
+    if (parent instanceof XmlAttribute attribute) {
       final String prefix = attribute.getNamespacePrefix();
 
       if (!prefix.equals(namespacePrefix) && StringUtil.isNotEmpty(namespacePrefix)) {
@@ -149,8 +132,7 @@ public class XmlAttributeInsertHandler implements InsertHandler<LookupElement> {
     }
   }
 
-  @NotNull
-  private static String makePrefixUnique(@NotNull String basePrefix, @NotNull XmlTag context) {
+  private static @NotNull String makePrefixUnique(@NotNull String basePrefix, @NotNull XmlTag context) {
     if (context.getNamespaceByPrefix(basePrefix).isEmpty()) {
       return basePrefix;
     }

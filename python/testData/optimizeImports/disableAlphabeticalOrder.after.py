@@ -9,10 +9,11 @@ import b
 import a
 from a import C1
 from alphabet import D
+from alphabet import A
 from b import func
 from
-import foo # broken
-import # broken
+import foo  # broken
+import  # broken
 from alphabet import *
 from alphabet import C
 from alphabet import B, A

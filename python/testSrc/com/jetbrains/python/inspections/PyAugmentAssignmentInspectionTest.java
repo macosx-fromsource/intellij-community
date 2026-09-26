@@ -15,13 +15,16 @@
  */
 package com.jetbrains.python.inspections;
 
-import com.jetbrains.python.fixtures.PyTestCase;
-import com.jetbrains.python.psi.LanguageLevel;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
 
-/**
- * User: ktisha
- */
-public class PyAugmentAssignmentInspectionTest extends PyTestCase {
+import com.jetbrains.python.fixtures.PyInspectionTestCase;
+import com.jetbrains.python.psi.LanguageLevel;
+import org.jetbrains.annotations.NotNull;
+
+@Subsystems.Inspections
+@Layers.Functional
+public class PyAugmentAssignmentInspectionTest extends PyInspectionTestCase {
 
   public void testMult() {
     doTest();
@@ -77,9 +80,12 @@ public class PyAugmentAssignmentInspectionTest extends PyTestCase {
     runWithLanguageLevel(LanguageLevel.PYTHON35, this::doTest);
   }
 
-  private void doTest() {
-    myFixture.configureByFile("inspections/PyAugmentAssignmentInspection/" + getTestName(true) + ".py");
-    myFixture.enableInspections(PyAugmentAssignmentInspection.class);
-    myFixture.checkHighlighting(true, false, true);
+  // PY-15985
+  public void testNotSuggestedForChainedTarget() { doTest(); }
+
+  @NotNull
+  @Override
+  protected Class<? extends PyInspection> getInspectionClass() {
+    return PyAugmentAssignmentInspection.class;
   }
 }

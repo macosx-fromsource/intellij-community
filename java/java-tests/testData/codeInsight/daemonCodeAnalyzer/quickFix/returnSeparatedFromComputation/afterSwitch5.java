@@ -1,7 +1,6 @@
-// "Move 'return' closer to computation of the value of 'n'" "true"
+// "Move 'return' closer to computation of the value of 'n'" "true-preview"
 class T {
     int f(int a) {
-        int n = -1;
         switch (a) {
             case 1:
                 return 2;

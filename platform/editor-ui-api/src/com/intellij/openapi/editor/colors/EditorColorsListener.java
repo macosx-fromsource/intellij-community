@@ -15,20 +15,32 @@
  */
 package com.intellij.openapi.editor.colors;
 
+import com.intellij.util.messages.MessageBus;
+import com.intellij.util.messages.Topic;
+import org.jetbrains.annotations.Nullable;
+
 import java.util.EventListener;
 
 /**
  * A listener for global color scheme change event.
  * <p/>
- * <em>NOTE: </em>The <code>EditorColorsManager</code> pushes the events down
- * the UI components hierarchy so there's no need to add a <code>JComponent</code> as a listener.
+ * <em>NOTE: </em>The {@code EditorColorsManager} pushes the events down
+ * the UI components hierarchy so there's no need to add a {@code JComponent} as a listener.
  * UI components also get this event triggered when global scheme itself is modified
  * so they can adjust their appearance accordingly.
  *
  * @see com.intellij.util.ComponentTreeEventDispatcher
  */
 public interface EditorColorsListener extends EventListener {
-
-  void globalSchemeChange(EditorColorsScheme scheme);
-
+  /**
+   * Notifies the subscribers that the global editor colors scheme has changed.
+   * <p>
+   *   <em>A note to the callers: </em> if you're thinking of invoking it
+   *   directly through {@link MessageBus#syncPublisher(Topic)} after you've changed the global scheme,
+   *   consider calling {@code EditorColorsManagerImpl.fireGlobalSchemeChange} instead, which does a bit
+   *   more than that and also catches and logs exceptions.
+   * </p>
+   * @param scheme the new scheme if it was switched or {@code null} if the scheme is the same, but was modified
+   */
+  void globalSchemeChange(@Nullable EditorColorsScheme scheme);
 }

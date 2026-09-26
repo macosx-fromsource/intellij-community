@@ -1,4 +1,4 @@
-// "Remove 'java.io.IOException' from 'f' throws list" "true"
+// "Remove 'IOException' from 'f()' throws list" "true-preview"
 import java.io.*;
 
 class a {

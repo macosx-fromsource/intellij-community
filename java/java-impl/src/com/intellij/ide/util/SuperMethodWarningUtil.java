@@ -1,188 +1,285 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.util;
 
-import com.intellij.codeInspection.InspectionsBundle;
-import com.intellij.lang.findUsages.DescriptiveNameUtil;
+import com.intellij.java.JavaBundle;
+import com.intellij.java.refactoring.JavaRefactoringBundle;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.ThrowableComputable;
+import com.intellij.openapi.util.text.HtmlBuilder;
+import com.intellij.openapi.util.text.HtmlChunk;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.ElementDescriptionUtil;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiModifier;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.impl.FindSuperElementsHelper;
 import com.intellij.psi.presentation.java.SymbolPresentationUtil;
 import com.intellij.psi.search.PsiElementProcessor;
 import com.intellij.psi.search.searches.DeepestSuperMethodsSearch;
 import com.intellij.psi.util.PsiUtilCore;
-import com.intellij.ui.components.JBList;
-import com.intellij.util.ArrayUtil;
+import com.intellij.refactoring.RefactoringBundle;
+import com.intellij.refactoring.util.RefactoringDescriptionLocation;
+import com.intellij.util.ObjectUtils;
+import com.intellij.util.concurrency.ThreadingAssertions;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.EDT;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
+import org.jetbrains.annotations.VisibleForTesting;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.List;
 
-public class SuperMethodWarningUtil {
+public final class SuperMethodWarningUtil {
+  private static final Key<List<SmartPsiElementPointer<PsiMethod>>> SIBLINGS = Key.create("MULTIPLE_INHERITANCE");
   private SuperMethodWarningUtil() {}
 
-  @NotNull
-  public static PsiMethod[] checkSuperMethods(@NotNull PsiMethod method, @NotNull String actionString) {
-    return checkSuperMethods(method, actionString, Collections.<PsiElement>emptyList());
-  }
-
-  @NotNull
-  public static PsiMethod[] checkSuperMethods(@NotNull PsiMethod method, @NotNull String actionString, @NotNull Collection<PsiElement> ignore) {
+  public static PsiMethod @NotNull [] getTargetMethodCandidates(@NotNull PsiMethod method, @NotNull Collection<? extends PsiElement> ignore) {
     PsiClass aClass = method.getContainingClass();
     if (aClass == null) return new PsiMethod[]{method};
 
     final Collection<PsiMethod> superMethods = getSuperMethods(method, aClass, ignore);
     if (superMethods.isEmpty()) return new PsiMethod[]{method};
-
-
-    Set<String> superClasses = new HashSet<>();
-    boolean superAbstract = false;
-    boolean parentInterface = false;
-    for (final PsiMethod superMethod : superMethods) {
-      final PsiClass containingClass = superMethod.getContainingClass();
-      superClasses.add(containingClass.getQualifiedName());
-      final boolean isInterface = containingClass.isInterface();
-      superAbstract |= isInterface || superMethod.hasModifierProperty(PsiModifier.ABSTRACT);
-      parentInterface |= isInterface;
-    }
-
-    SuperMethodWarningDialog dialog =
-        new SuperMethodWarningDialog(method.getProject(), DescriptiveNameUtil.getDescriptiveName(method), actionString, superAbstract,
-                                     parentInterface, aClass.isInterface(), ArrayUtil.toStringArray(superClasses));
-    dialog.show();
-
-    if (dialog.getExitCode() == DialogWrapper.OK_EXIT_CODE) {
-      return superMethods.toArray(new PsiMethod[superMethods.size()]);
-    }
-    if (dialog.getExitCode() == SuperMethodWarningDialog.NO_EXIT_CODE) {
-      return new PsiMethod[]{method};
-    }
-
-    return PsiMethod.EMPTY_ARRAY;
+    return superMethods.toArray(PsiMethod.EMPTY_ARRAY);
   }
 
-  @NotNull
-  static Collection<PsiMethod> getSuperMethods(@NotNull PsiMethod method, PsiClass aClass, @NotNull Collection<PsiElement> ignore) {
-    final Collection<PsiMethod> superMethods = DeepestSuperMethodsSearch.search(method).findAll();
+  public static PsiMethod @NotNull [] checkSuperMethods(@NotNull PsiMethod method, @NotNull @Nls String actionString) {
+    return checkSuperMethods(method, actionString, Collections.emptyList());
+  }
+
+  public static PsiMethod @NotNull [] checkSuperMethods(@NotNull PsiMethod method, @NotNull Collection<? extends PsiElement> ignore) {
+    return checkSuperMethods(method, null, ignore);
+  }
+
+  public static PsiMethod @NotNull [] checkSuperMethods(@NotNull PsiMethod method,
+                                                        @Nullable @Nls String actionString,
+                                                        @NotNull Collection<? extends PsiElement> ignore) {
+    ThreadingAssertions.assertEventDispatchThread();
+    PsiMethod[] methodTargetCandidates = getTargetMethodCandidates(method, ignore);
+    if (methodTargetCandidates.length == 1 && methodTargetCandidates[0] == method) return methodTargetCandidates;
+    if (ApplicationManager.getApplication().isUnitTestMode()) return methodTargetCandidates;
+
+    List<PsiClass> superClasses = new ArrayList<>();
+    boolean superAbstract = true;
+    for (PsiMethod superMethod : methodTargetCandidates) {
+      superClasses.add(superMethod.getContainingClass());
+      superAbstract &= superMethod.hasModifierProperty(PsiModifier.ABSTRACT);
+    }
+
+    int shouldIncludeBase = showDialog(
+      method.getProject(),
+      ElementDescriptionUtil.getElementDescription(method, RefactoringDescriptionLocation.WITH_PARENT),
+      actionString,
+      superAbstract,
+      method.getContainingClass().isInterface(),
+      superClasses.toArray(PsiClass.EMPTY_ARRAY));
+    return switch (shouldIncludeBase) {
+      case Messages.YES -> methodTargetCandidates;
+      case Messages.NO -> new PsiMethod[]{method};
+      default -> PsiMethod.EMPTY_ARRAY;
+    };
+  }
+
+  /**
+   * Retrieves a collection of super methods for the specified method in the given class, considering
+   * a collection of elements to ignore during the search.
+   *
+   * It runs on EDT for a rename with a user, and on a background thread inside a read action for a
+   * rename with no user. The search for a sibling below goes under a modal progress only on EDT. A
+   * modal progress on a background thread stops the interface of a person who asked for nothing, and
+   * it needs the write thread to enter the modality.
+   *
+   * @param method the method for which super methods are to be retrieved; must not be null
+   * @param aClass the class containing the method; used to determine certain aspects of the search
+   * @param ignore a collection of elements to exclude from the resulting set of super methods; must not be null
+   * @return a collection of super methods for the specified method, excluding those present in the ignore list; never null
+   */
+  @VisibleForTesting
+  @ApiStatus.Internal
+  public static @NotNull Collection<PsiMethod> getSuperMethods(@NotNull PsiMethod method, PsiClass aClass, @NotNull Collection<? extends PsiElement> ignore) {
+    ThreadingAssertions.assertReadAccess();
+    assert !ApplicationManager.getApplication().isWriteAccessAllowed();
+    Collection<PsiMethod> superMethods = new ArrayList<>(DeepestSuperMethodsSearch.search(method).findAll());
     superMethods.removeAll(ignore);
 
     if (superMethods.isEmpty()) {
       VirtualFile virtualFile = PsiUtilCore.getVirtualFile(aClass);
       if (virtualFile != null && ProjectRootManager.getInstance(aClass.getProject()).getFileIndex().isInSourceContent(virtualFile)) {
-        PsiMethod siblingSuperMethod = FindSuperElementsHelper.getSiblingInheritedViaSubClass(method);
-        if (siblingSuperMethod != null) {
-          superMethods.add(siblingSuperMethod);
+        PsiMethod[] siblingSuperMethod = new PsiMethod[1];
+        ThrowableComputable<PsiMethod, RuntimeException> searchSibling = () -> FindSuperElementsHelper.getSiblingInheritedViaSubClass(method);
+        if (!EDT.isCurrentThreadEdt()) {
+          ReadAction.nonBlocking(
+            () -> siblingSuperMethod[0] = searchSibling.compute()
+          ).executeSynchronously();
+        }
+        else if (!ProgressManager.getInstance().runProcessWithProgressSynchronously(
+          () -> {
+            siblingSuperMethod[0] = ReadAction.compute(searchSibling);
+          },
+          JavaBundle.message("progress.title.searching.for.sub.classes"), true, aClass.getProject())) {
+          throw new ProcessCanceledException();
+        }
+        if (siblingSuperMethod[0] != null) {
+          superMethods.add(siblingSuperMethod[0]);
+          superMethods.add(method); // add original method too because sometimes FindUsages can't find usages of this method by sibling super method
         }
       }
     }
     return superMethods;
   }
 
-
-  public static PsiMethod checkSuperMethod(@NotNull PsiMethod method, @NotNull String actionString) {
-    PsiClass aClass = method.getContainingClass();
-    if (aClass == null) return method;
+  public static PsiMethod checkSuperMethod(@NotNull PsiMethod method) {
+    ThreadingAssertions.assertEventDispatchThread();
+    if (method.getContainingClass() == null) return method;
 
     PsiMethod superMethod = method.findDeepestSuperMethod();
     if (superMethod == null) return method;
-
     if (ApplicationManager.getApplication().isUnitTestMode()) return superMethod;
 
     PsiClass containingClass = superMethod.getContainingClass();
-
-    SuperMethodWarningDialog dialog =
-        new SuperMethodWarningDialog(
-            method.getProject(),
-            DescriptiveNameUtil.getDescriptiveName(method), actionString, containingClass.isInterface() || superMethod.hasModifierProperty(PsiModifier.ABSTRACT),
-            containingClass.isInterface(), aClass.isInterface(), containingClass.getQualifiedName()
-        );
-    dialog.show();
-
-    if (dialog.getExitCode() == DialogWrapper.OK_EXIT_CODE) return superMethod;
-    if (dialog.getExitCode() == SuperMethodWarningDialog.NO_EXIT_CODE) return method;
-
-    return null;
+    int useSuperMethod = showDialog(
+      method.getProject(),
+      ElementDescriptionUtil.getElementDescription(method, RefactoringDescriptionLocation.WITH_PARENT),
+      RefactoringBundle.message("to.refactor"),
+      superMethod.hasModifierProperty(PsiModifier.ABSTRACT),
+      containingClass.isInterface(),
+      containingClass
+    );
+    return switch (useSuperMethod) {
+      case Messages.YES -> superMethod;
+      case Messages.NO -> method;
+      default -> null;
+    };
   }
 
   public static void checkSuperMethod(@NotNull PsiMethod method,
-                                      @NotNull String actionString,
-                                      @NotNull final PsiElementProcessor<PsiMethod> processor,
+                                      @NotNull PsiElementProcessor<? super PsiMethod> processor,
                                       @NotNull Editor editor) {
+    ThreadingAssertions.assertEventDispatchThread();
     PsiClass aClass = method.getContainingClass();
     if (aClass == null) {
       processor.execute(method);
       return;
     }
 
-    PsiMethod superMethod = method.findDeepestSuperMethod();
-    if (superMethod == null) {
+    PsiMethod[] superMethods = method.findDeepestSuperMethods();
+    if (superMethods.length == 0) {
       processor.execute(method);
       return;
     }
 
-    final PsiClass containingClass = superMethod.getContainingClass();
+    final PsiClass containingClass = superMethods[0].getContainingClass();
     if (containingClass == null) {
       processor.execute(method);
       return;
     }
 
     if (ApplicationManager.getApplication().isUnitTestMode()) {
-      processor.execute(superMethod);
+      putSiblings(superMethods, superMethods[0]);
+      processor.execute(superMethods[0]);
       return;
     }
 
-    final PsiMethod[] methods = {superMethod, method};
-    final String renameBase = actionString + " base method";
-    final String renameCurrent = actionString + " only current method";
-    final JBList list = new JBList(renameBase, renameCurrent);
-    JBPopupFactory.getInstance().createListPopupBuilder(list)
-      .setTitle(method.getName() + (containingClass.isInterface() && !aClass.isInterface() ? " implements" : " overrides") + " method of " +
-                SymbolPresentationUtil.getSymbolPresentableText(containingClass))
+    final String renameBase = JavaRefactoringBundle.message("refactor.base.method.choice", superMethods.length > 1 ? 0 : 1);
+    final String renameCurrent = JavaRefactoringBundle.message("refactor.only.current.method.choice");
+    String title;
+    if (superMethods.length > 1) {
+      title = JavaBundle.message("rename.super.methods.chooser.popup.title", method.getName(), superMethods.length);
+    }
+    else {
+      title = JavaBundle.message("rename.super.base.chooser.popup.title",
+                                 method.getName(), 
+                                 containingClass.isInterface() && !aClass.isInterface() ? 0 : 1, 
+                                 SymbolPresentationUtil.getSymbolPresentableText(containingClass));
+    }
+    JBPopupFactory.getInstance().createPopupChooserBuilder(List.of(renameBase, renameCurrent))
+      .setTitle(title)
       .setMovable(false)
       .setResizable(false)
       .setRequestFocus(true)
-      .setItemChoosenCallback(() -> {
-        final Object value = list.getSelectedValue();
-        if (value instanceof String) {
-          processor.execute(methods[value.equals(renameBase) ? 0 : 1]);
+      .setItemChosenCallback(value -> {
+        if (value.equals(renameBase)) {
+          putSiblings(superMethods, superMethods[0]);
+          processor.execute(superMethods[0]);
         }
-      }).createPopup().showInBestPositionFor(editor);
+        else {
+          processor.execute(method);
+        }
+      })
+      .createPopup().showInBestPositionFor(editor);
+  }
+  
+  public static void putSiblings(PsiMethod[] siblings, PsiMethod method) {
+    SmartPointerManager pointerManager = SmartPointerManager.getInstance(method.getProject());
+    List<SmartPsiElementPointer<PsiMethod>> pointers =
+      ContainerUtil.map(siblings, m -> pointerManager.createSmartPsiElementPointer(m));
+    method.putUserData(SIBLINGS, pointers);
+  }
+  
+  public static @Unmodifiable List<PsiMethod> getSiblings(PsiMethod method) {
+    List<SmartPsiElementPointer<PsiMethod>> siblings = method.getUserData(SIBLINGS);
+    if (siblings == null) return List.of(method);
+    return ContainerUtil.map(siblings, p -> p.getElement());
   }
 
   @Messages.YesNoCancelResult
-  public static int askWhetherShouldAnnotateBaseMethod(@NotNull PsiMethod method, @NotNull PsiMethod superMethod) {
-    String implement = !method.hasModifierProperty(PsiModifier.ABSTRACT) && superMethod.hasModifierProperty(PsiModifier.ABSTRACT)
-                  ? InspectionsBundle.message("inspection.annotate.quickfix.implements")
-                  : InspectionsBundle.message("inspection.annotate.quickfix.overrides");
-    String message = InspectionsBundle.message("inspection.annotate.quickfix.overridden.method.messages",
-                                               DescriptiveNameUtil.getDescriptiveName(method), implement,
-                                               DescriptiveNameUtil.getDescriptiveName(superMethod));
-    String title = InspectionsBundle.message("inspection.annotate.quickfix.overridden.method.warning");
-    return Messages.showYesNoCancelDialog(method.getProject(), message, title, Messages.getQuestionIcon());
+  private static int showDialog(@NotNull Project project,
+                                @NotNull String name,
+                                @Nls @Nullable String actionString,
+                                boolean isSuperAbstract,
+                                boolean isContainedInInterface,
+                                PsiClass @NotNull ... classes) {
+    String message = getDialogMessage(name, actionString, isSuperAbstract, isContainedInInterface, classes);
+    return Messages.showYesNoCancelDialog(project,
+                                          message, JavaBundle.message("dialog.title.super.method.found"), 
+                                          JavaBundle.message("button.base.method", classes.length),
+                                          JavaBundle.message("button.current.method"),
+                                          Messages.getCancelButton(), Messages.getQuestionIcon());
+  }
 
+  private static @Nls @NotNull String getDialogMessage(@NlsSafe @NotNull String name,
+                                                       @Nls @Nullable String actionString,
+                                                       boolean isSuperAbstract,
+                                                       boolean isContainedInInterface,
+                                                       PsiClass @NotNull ... classes) {
+    HtmlBuilder labelText = new HtmlBuilder();
+    labelText.appendRaw(StringUtil.capitalize(name)).br();
+    if (classes.length == 1) {
+      final String className = ElementDescriptionUtil.getElementDescription(classes[0], RefactoringDescriptionLocation.WITH_PARENT);
+      labelText.appendRaw(isContainedInInterface || !isSuperAbstract
+                          ? JavaBundle.message("label.overrides.method.of_class_or_interface.name", className)
+                          : JavaBundle.message("label.implements.method.of_class_or_interface.name", className));
+    }
+    else {
+      labelText.append(JavaBundle.message("label.implements.method.of_interfaces", isSuperAbstract ? 1 : 2)).br();
+      for (@NlsSafe PsiClass aClass : classes) {
+        labelText.br().nbsp(2).appendRaw(ElementDescriptionUtil.getElementDescription(aClass, RefactoringDescriptionLocation.WITH_PARENT));
+      }
+    }
+
+    labelText.br().br();
+    labelText.append(HtmlChunk.text(JavaBundle.message("prompt.do.you.want.to.action_verb.the.method.from_class",
+                                                       classes.length,
+                                                       ObjectUtils.notNull(actionString, RefactoringBundle.message("to.refactor")))));
+    return labelText.wrapWithHtmlBody().toString();
   }
 }

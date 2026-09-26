@@ -15,13 +15,16 @@
  */
 package com.intellij.lang.ant.dom;
 
-import com.intellij.util.xml.*;
+import com.intellij.util.xml.Attribute;
+import com.intellij.util.xml.GenericAttributeValue;
+import com.intellij.util.xml.Required;
+import com.intellij.util.xml.SubTag;
+import com.intellij.util.xml.SubTagList;
 
 import java.util.List;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Jul 8, 2010
  */
 public abstract class AntDomMacroDef extends AntDomNamedElement{
   @Attribute("uri")

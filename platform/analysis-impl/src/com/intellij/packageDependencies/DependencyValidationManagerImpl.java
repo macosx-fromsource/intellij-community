@@ -1,99 +1,83 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.packageDependencies;
 
+import com.intellij.analysis.AnalysisBundle;
 import com.intellij.icons.AllIcons;
-import com.intellij.ide.IdeBundle;
 import com.intellij.openapi.components.MainConfigurationStateSplitter;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.Pair;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.search.scope.packageSet.*;
-import com.intellij.ui.LayeredIcon;
+import com.intellij.psi.search.scope.impl.CustomScopesAggregator;
+import com.intellij.psi.search.scope.packageSet.CustomScopesProvider;
+import com.intellij.psi.search.scope.packageSet.CustomScopesProviderEx;
+import com.intellij.psi.search.scope.packageSet.NamedScope;
+import com.intellij.psi.search.scope.packageSet.NamedScopeManager;
+import com.intellij.psi.search.scope.packageSet.NamedScopesHolder;
+import com.intellij.psi.search.scope.packageSet.PackageSet;
+import com.intellij.psi.search.scope.packageSet.PackageSetFactory;
+import com.intellij.psi.search.scope.packageSet.ParsingException;
+import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
-import gnu.trove.THashMap;
 import org.jdom.Element;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.util.*;
+import javax.swing.Icon;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
+@ApiStatus.Internal
 @State(
   name = "DependencyValidationManager",
   storages = @Storage(value = "scopes", stateSplitter = DependencyValidationManagerImpl.ScopesStateSplitter.class)
 )
-public class DependencyValidationManagerImpl extends DependencyValidationManager {
-  private static final NotNullLazyValue<Icon> ourSharedScopeIcon = new NotNullLazyValue<Icon>() {
-    @NotNull
-    @Override
-    protected Icon compute() {
-      return new LayeredIcon(AllIcons.Ide.LocalScope, AllIcons.Nodes.Shared);
-    }
-  };
+public final class DependencyValidationManagerImpl extends DependencyValidationManager {
 
-  private final List<DependencyRule> myRules = new ArrayList<>();
+  private static final class State {
+    private final List<DependencyRule> rules = new ArrayList<>();
+    private final Map<String, PackageSet> unnamedScopes = new HashMap<>();
+  }
+
+  private State myState = new State();
   private final NamedScopeManager myNamedScopeManager;
 
   private boolean mySkipImportStatements;
   private boolean mySkipImportStatementsWasSpecified;
 
-  @NonNls private static final String DENY_RULE_KEY = "deny_rule";
-  @NonNls private static final String FROM_SCOPE_KEY = "from_scope";
-  @NonNls private static final String TO_SCOPE_KEY = "to_scope";
-  @NonNls private static final String IS_DENY_KEY = "is_deny";
-  @NonNls private static final String UNNAMED_SCOPE = "unnamed_scope";
-  @NonNls private static final String VALUE = "value";
+  private static final @NonNls String DENY_RULE_KEY = "deny_rule";
+  private static final @NonNls String FROM_SCOPE_KEY = "from_scope";
+  private static final @NonNls String TO_SCOPE_KEY = "to_scope";
+  private static final @NonNls String IS_DENY_KEY = "is_deny";
+  private static final @NonNls String UNNAMED_SCOPE = "unnamed_scope";
+  private static final @NonNls String VALUE = "value";
 
-  private final Map<String, PackageSet> myUnnamedScopes = new THashMap<>();
-
-  public DependencyValidationManagerImpl(final Project project, NamedScopeManager namedScopeManager) {
+  public DependencyValidationManagerImpl(@NotNull Project project) {
     super(project);
-    myNamedScopeManager = namedScopeManager;
-    namedScopeManager.addScopeListener(new ScopeListener() {
-      @Override
-      public void scopesChanged() {
-        reloadScopes();
-      }
-    });
+
+    myNamedScopeManager = NamedScopeManager.getInstance(project);
+    myNamedScopeManager.addScopeListener(() -> reloadScopes(), project);
   }
 
   @Override
-  @NotNull
-  public List<NamedScope> getPredefinedScopes() {
-    final List<NamedScope> predefinedScopes = new ArrayList<>();
-    final CustomScopesProvider[] scopesProviders = CustomScopesProvider.CUSTOM_SCOPES_PROVIDER.getExtensions(myProject);
-    for (CustomScopesProvider scopesProvider : scopesProviders) {
-      predefinedScopes.addAll(scopesProvider.getFilteredScopes());
-    }
-    return predefinedScopes;
+  public @NotNull List<NamedScope> getPredefinedScopes() {
+    return CustomScopesAggregator.getAllCustomScopes(myProject);
   }
 
   @Override
   public NamedScope getPredefinedScope(@NotNull String name) {
-    final CustomScopesProvider[] scopesProviders = CustomScopesProvider.CUSTOM_SCOPES_PROVIDER.getExtensions(myProject);
-    for (CustomScopesProvider scopesProvider : scopesProviders) {
-      final NamedScope scope = scopesProvider instanceof CustomScopesProviderEx
-                               ? ((CustomScopesProviderEx)scopesProvider).getCustomScope(name)
+    for (CustomScopesProvider scopesProvider : CustomScopesProvider.CUSTOM_SCOPES_PROVIDER.getExtensions(myProject)) {
+      final NamedScope scope = scopesProvider instanceof CustomScopesProviderEx providerEx
+                               ? providerEx.getCustomScope(name)
                                : CustomScopesProviderEx.findPredefinedScope(name, scopesProvider.getFilteredScopes());
       if (scope != null) {
         return scope;
@@ -104,13 +88,12 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
 
   @Override
   public boolean hasRules() {
-    return !myRules.isEmpty();
+    return !myState.rules.isEmpty();
   }
 
   @Override
-  @Nullable
-  public DependencyRule getViolatorDependencyRule(@NotNull PsiFile from, @NotNull PsiFile to) {
-    for (DependencyRule dependencyRule : myRules) {
+  public @Nullable DependencyRule getViolatorDependencyRule(@NotNull PsiFile from, @NotNull PsiFile to) {
+    for (DependencyRule dependencyRule : myState.rules) {
       if (dependencyRule.isForbiddenToUse(from, to)) return dependencyRule;
     }
 
@@ -118,27 +101,25 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
   }
 
   @Override
-  @NotNull
-  public DependencyRule[] getViolatorDependencyRules(@NotNull PsiFile from, @NotNull PsiFile to) {
+  public DependencyRule @NotNull [] getViolatorDependencyRules(@NotNull PsiFile from, @NotNull PsiFile to) {
     ArrayList<DependencyRule> result = new ArrayList<>();
-    for (DependencyRule dependencyRule : myRules) {
+    for (DependencyRule dependencyRule : myState.rules) {
       if (dependencyRule.isForbiddenToUse(from, to)) {
         result.add(dependencyRule);
       }
     }
-    return result.toArray(new DependencyRule[result.size()]);
+    return result.toArray(new DependencyRule[0]);
   }
 
-  @NotNull
   @Override
-  public DependencyRule[] getApplicableRules(@NotNull PsiFile file) {
+  public DependencyRule @NotNull [] getApplicableRules(@NotNull PsiFile file) {
     ArrayList<DependencyRule> result = new ArrayList<>();
-    for (DependencyRule dependencyRule : myRules) {
+    for (DependencyRule dependencyRule : myState.rules) {
       if (dependencyRule.isApplicable(file)) {
         result.add(dependencyRule);
       }
     }
-    return result.toArray(new DependencyRule[result.size()]);
+    return result.toArray(new DependencyRule[0]);
   }
 
   @Override
@@ -151,58 +132,54 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
     mySkipImportStatements = skip;
   }
 
-  @NotNull
   @Override
-  public Map<String, PackageSet> getUnnamedScopes() {
-    return myUnnamedScopes;
+  public @NotNull Map<String, PackageSet> getUnnamedScopes() {
+    return myState.unnamedScopes;
   }
 
-  @NotNull
   @Override
-  public DependencyRule[] getAllRules() {
-    return myRules.toArray(new DependencyRule[myRules.size()]);
+  public DependencyRule @NotNull [] getAllRules() {
+    List<DependencyRule> rules = myState.rules;
+    return rules.toArray(new DependencyRule[0]);
   }
 
   @Override
   public void removeAllRules() {
-    myRules.clear();
+    myState.rules.clear();
+  }
+
+  private void addRule(@NotNull DependencyRule rule, @NotNull State state) {
+    appendUnnamedScope(rule.getFromScope(), state);
+    appendUnnamedScope(rule.getToScope(), state);
+    state.rules.add(rule);
   }
 
   @Override
   public void addRule(@NotNull DependencyRule rule) {
-    appendUnnamedScope(rule.getFromScope());
-    appendUnnamedScope(rule.getToScope());
-    myRules.add(rule);
+    addRule(rule, myState);
   }
 
-  @Override
-  public void reloadRules() {
-    final Element element = new Element("rules_2_reload");
-    writeRules(element);
-    readRules(element);
-  }
-
-  private void appendUnnamedScope(final NamedScope fromScope) {
-    if (getScope(fromScope.getName()) == null) {
+  private void appendUnnamedScope(@NotNull NamedScope fromScope, @NotNull State state) {
+    if (getScope(fromScope.getScopeId()) == null) {
       final PackageSet packageSet = fromScope.getValue();
-      if (packageSet != null && !myUnnamedScopes.containsKey(packageSet.getText())) {
-        myUnnamedScopes.put(packageSet.getText(), packageSet);
+      if (packageSet != null && !state.unnamedScopes.containsKey(packageSet.getText())) {
+        state.unnamedScopes.put(packageSet.getText(), packageSet);
       }
     }
   }
 
   @Override
-  public String getDisplayName() {
-    return IdeBundle.message("shared.scopes.node.text");
+  public @NotNull String getDisplayName() {
+    return AnalysisBundle.message("shared.scopes.node.text");
   }
 
   @Override
   public Icon getIcon() {
-    return ourSharedScopeIcon.getValue();
+    return AllIcons.Ide.SharedScope;
   }
 
   @Override
-  public void loadState(Element element) {
+  public void loadState(@NotNull Element element) {
     Element option = element.getChild("option");
     if (option != null && "SKIP_IMPORT_STATEMENTS".equals(option.getAttributeValue("name"))) {
       mySkipImportStatementsWasSpecified = !myProject.isDefault();
@@ -210,68 +187,68 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
     }
 
     super.loadState(element);
+
     final NamedScope[] scopes = getEditableScopes();
     Arrays.sort(scopes, (s1, s2) -> {
-      final String name1 = s1.getName();
-      final String name2 = s2.getName();
-      if (Comparing.equal(name1, name2)){
+      final String name1 = s1.getScopeId();
+      final String name2 = s2.getScopeId();
+      if (Objects.equals(name1, name2)){
         return 0;
       }
       final List<String> order = myNamedScopeManager.myOrderState.myOrder;
       final int i1 = order.indexOf(name1);
       final int i2 = order.indexOf(name2);
-      return i1 > i2 ? 1 : -1;
+      return i1 - i2;
     });
     super.setScopes(scopes);
-    myUnnamedScopes.clear();
-    final List unnamedScopes = element.getChildren(UNNAMED_SCOPE);
+
+    State state = new State();
     final PackageSetFactory packageSetFactory = PackageSetFactory.getInstance();
-    for (Object unnamedScope : unnamedScopes) {
+    for (Element unnamedScope : element.getChildren(UNNAMED_SCOPE)) {
       try {
-        final String packageSet = ((Element)unnamedScope).getAttributeValue(VALUE);
-        myUnnamedScopes.put(packageSet, packageSetFactory.compile(packageSet));
+        final String packageSet = unnamedScope.getAttributeValue(VALUE);
+        state.unnamedScopes.put(packageSet, packageSetFactory.compile(packageSet));
       }
       catch (ParsingException ignored) {
         //skip pattern
       }
     }
 
-    readRules(element);
+    readRules(element, state);
+    myState = state;
   }
 
-  private void readRules(Element element) {
-    removeAllRules();
-
+  private void readRules(@NotNull Element element, State state) {
     for (Element rule1 : element.getChildren(DENY_RULE_KEY)) {
       DependencyRule rule = readRule(rule1);
       if (rule != null) {
-        addRule(rule);
+        addRule(rule, state);
       }
     }
   }
 
   @Override
-  public Element getState() {
+  public @NotNull Element getState() {
     Element element = super.getState();
-    assert element != null;
     if (mySkipImportStatements || mySkipImportStatementsWasSpecified) {
       element.addContent(new Element("option").setAttribute("name", "SKIP_IMPORT_STATEMENTS").setAttribute("value", Boolean.toString(mySkipImportStatements)));
     }
 
-    if (!myUnnamedScopes.isEmpty()) {
-      String[] unnamedScopes = myUnnamedScopes.keySet().toArray(new String[myUnnamedScopes.size()]);
+    State state = myState;
+    if (!state.unnamedScopes.isEmpty()) {
+      String[] unnamedScopes = ArrayUtilRt.toStringArray(state.unnamedScopes.keySet());
       Arrays.sort(unnamedScopes);
       for (String unnamedScope : unnamedScopes) {
         element.addContent(new Element(UNNAMED_SCOPE).setAttribute(VALUE, unnamedScope));
       }
     }
 
-    writeRules(element);
+    writeRules(element, state);
     return element;
   }
 
-  private void writeRules(Element element) {
-    for (DependencyRule rule : myRules) {
+  private static void writeRules(@NotNull Element element, @NotNull State state) {
+    for (DependencyRule rule : state.rules) {
       Element ruleElement = writeRule(rule);
       if (ruleElement != null) {
         element.addContent(ruleElement);
@@ -280,11 +257,14 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
   }
 
   @Override
-  @Nullable
-  public NamedScope getScope(@Nullable final String name) {
+  public @Nullable NamedScope getScope(@Nullable String scopeId) {
+    return getScope(scopeId, myState);
+  }
+
+  private NamedScope getScope(@Nullable String name, @NotNull State state) {
     final NamedScope scope = super.getScope(name);
     if (scope == null) {
-      final PackageSet packageSet = myUnnamedScopes.get(name);
+      final PackageSet packageSet = state.unnamedScopes.get(name);
       if (packageSet != null) {
         return new NamedScope.UnnamedScope(packageSet);
       }
@@ -296,20 +276,18 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
     return scope;
   }
 
-  @Nullable
-  private static Element writeRule(DependencyRule rule) {
+  private static @Nullable Element writeRule(DependencyRule rule) {
     NamedScope fromScope = rule.getFromScope();
     NamedScope toScope = rule.getToScope();
     if (fromScope == null || toScope == null) return null;
     Element ruleElement = new Element(DENY_RULE_KEY);
-    ruleElement.setAttribute(FROM_SCOPE_KEY, fromScope.getName());
-    ruleElement.setAttribute(TO_SCOPE_KEY, toScope.getName());
+    ruleElement.setAttribute(FROM_SCOPE_KEY, fromScope.getScopeId());
+    ruleElement.setAttribute(TO_SCOPE_KEY, toScope.getScopeId());
     ruleElement.setAttribute(IS_DENY_KEY, Boolean.valueOf(rule.isDenyRule()).toString());
     return ruleElement;
   }
 
-  @Nullable
-  private DependencyRule readRule(Element ruleElement) {
+  private @Nullable DependencyRule readRule(@NotNull Element ruleElement) {
     String fromScope = ruleElement.getAttributeValue(FROM_SCOPE_KEY);
     String toScope = ruleElement.getAttributeValue(TO_SCOPE_KEY);
     String denyRule = ruleElement.getAttributeValue(IS_DENY_KEY);
@@ -321,21 +299,18 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
   }
 
   static final class ScopesStateSplitter extends MainConfigurationStateSplitter {
-    @NotNull
     @Override
-    protected String getSubStateFileName(@NotNull Element element) {
+    protected @NotNull String getSubStateFileName(@NotNull Element element) {
       return element.getAttributeValue("name");
     }
 
-    @NotNull
     @Override
-    protected String getComponentStateFileName() {
+    protected @NotNull String getComponentStateFileName() {
       return "scope_settings";
     }
 
-    @NotNull
     @Override
-    protected String getSubStateTagName() {
+    protected @NotNull String getSubStateTagName() {
       return "scope";
     }
   }
@@ -344,25 +319,32 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
 
   private void reloadScopes() {
     UIUtil.invokeLaterIfNeeded(() -> {
-      if (getProject().isDisposed()) return;
+      if (getProject().isDisposed()) {
+        return;
+      }
+
       List<Pair<NamedScope, NamedScopesHolder>> scopeList = new ArrayList<>();
       addScopesToList(scopeList, this);
       addScopesToList(scopeList, myNamedScopeManager);
       myScopePairs.clear();
       myScopePairs.addAll(scopeList);
-      reloadRules();
+
+      Element element = new Element("rules_2_reload");
+      writeRules(element, myState);
+      State state = new State();
+      readRules(element, state);
+      myState = state;
     });
   }
 
-  private static void addScopesToList(@NotNull final List<Pair<NamedScope, NamedScopesHolder>> scopeList,
-                                      @NotNull final NamedScopesHolder holder) {
+  private static void addScopesToList(final @NotNull List<? super Pair<NamedScope, NamedScopesHolder>> scopeList,
+                                      final @NotNull NamedScopesHolder holder) {
     for (NamedScope scope : holder.getScopes()) {
       scopeList.add(Pair.create(scope, holder));
     }
   }
 
-  @NotNull
-  public List<Pair<NamedScope, NamedScopesHolder>> getScopeBasedHighlightingCachedScopes() {
+  public @NotNull List<Pair<NamedScope, NamedScopesHolder>> getScopeBasedHighlightingCachedScopes() {
     return myScopePairs;
   }
 
@@ -373,12 +355,12 @@ public class DependencyValidationManagerImpl extends DependencyValidationManager
   }
 
   @Override
-  public void setScopes(NamedScope[] scopes) {
+  public void setScopes(NamedScope @NotNull [] scopes) {
     super.setScopes(scopes);
     final List<String> order = myNamedScopeManager.myOrderState.myOrder;
     order.clear();
     for (NamedScope scope : scopes) {
-      order.add(scope.getName());
+      order.add(scope.getScopeId());
     }
   }
 }

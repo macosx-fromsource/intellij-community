@@ -19,11 +19,8 @@ import com.intellij.psi.tree.IElementType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * User: cdr
- */
 public interface PsiPolyadicExpression extends PsiExpression {
-  @NotNull PsiExpression[] getOperands();
+  PsiExpression @NotNull [] getOperands();
 
   @NotNull
   IElementType getOperationTokenType();

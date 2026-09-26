@@ -13,17 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.intellij.plugins.relaxNG.model;
 
 import com.intellij.psi.PsiElement;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 17.09.2007
- */
 public interface CommonElement<E extends PsiElement> {
   void accept(Visitor visitor);
 
@@ -32,7 +26,7 @@ public interface CommonElement<E extends PsiElement> {
   @Nullable
   E getPsiElement();
 
-  static abstract class Visitor {
+  abstract class Visitor {
     public void visitElement(CommonElement pattern) {
     }
 
@@ -44,7 +38,7 @@ public interface CommonElement<E extends PsiElement> {
       visitElement(pattern);
     }
 
-    public void visitDefine(Define define) {
+    public void visitDefine(Define<?, ?> define) {
       visitElement(define);
     }
 

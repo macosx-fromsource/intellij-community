@@ -1,34 +1,23 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.debugger
 
 import com.intellij.execution.KillableProcess
-import com.intellij.execution.process.ProcessAdapter
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessHandler
+import com.intellij.execution.process.ProcessListener
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.xdebugger.XDebugProcess
-import org.jetbrains.rpc.LOG
+import java.io.OutputStream
 
+@Deprecated("Please consider implementing own wrapper")
 class ProcessHandlerWrapper(private val debugProcess: XDebugProcess, private val handler: ProcessHandler) : ProcessHandler(), KillableProcess {
   init {
     if (handler.isStartNotified) {
       super.startNotify()
     }
 
-    handler.addProcessListener(object : ProcessAdapter() {
+    handler.addProcessListener(object : ProcessListener {
       override fun startNotified(event: ProcessEvent) {
         super@ProcessHandlerWrapper.startNotify()
       }
@@ -39,7 +28,19 @@ class ProcessHandlerWrapper(private val debugProcess: XDebugProcess, private val
     })
   }
 
-  override fun isSilentlyDestroyOnClose() = handler.isSilentlyDestroyOnClose
+  override fun addProcessListener(listener: ProcessListener) {
+    handler.addProcessListener(listener)
+  }
+
+  override fun addProcessListener(listener: ProcessListener, parentDisposable: Disposable) {
+    handler.addProcessListener(listener, parentDisposable)
+  }
+
+  override fun removeProcessListener(listener: ProcessListener) {
+    handler.removeProcessListener(listener)
+  }
+
+  override fun isSilentlyDestroyOnClose(): Boolean = handler.isSilentlyDestroyOnClose
 
   override fun startNotify() {
     handler.startNotify()
@@ -64,10 +65,10 @@ class ProcessHandlerWrapper(private val debugProcess: XDebugProcess, private val
     }
 
     debugProcess.stopAsync()
-      .done { stopProcess(destroy) }
-      .rejected {
+      .onSuccess { stopProcess(destroy) }
+      .onError {
         try {
-          LOG.error(it)
+          thisLogger().error(it)
         }
         finally {
           stopProcess(destroy)
@@ -75,11 +76,11 @@ class ProcessHandlerWrapper(private val debugProcess: XDebugProcess, private val
       }
   }
 
-  override fun detachIsDefault() = handler.detachIsDefault()
+  override fun detachIsDefault(): Boolean = handler.detachIsDefault()
 
-  override fun getProcessInput() = handler.processInput
+  override fun getProcessInput(): OutputStream? = handler.processInput
 
-  override fun canKillProcess() = handler is KillableProcess && handler.canKillProcess()
+  override fun canKillProcess(): Boolean = handler is KillableProcess && handler.canKillProcess()
 
   override fun killProcess() {
     if (handler is KillableProcess) {

@@ -16,25 +16,29 @@
 package com.intellij.vcs.log.data.index;
 
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.vcs.log.VcsLogDetailsFilter;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
 import java.util.Set;
 
 public interface VcsLogIndex {
-  void scheduleIndex(boolean full);
 
   boolean isIndexed(int commit);
 
   boolean isIndexed(@NotNull VirtualFile root);
 
-  void markForIndexing(int commit, @NotNull VirtualFile root);
+  boolean isIndexingEnabled(@NotNull VirtualFile root);
 
-  boolean canFilter(@NotNull List<VcsLogDetailsFilter> filters);
+  @Nullable
+  IndexDataGetter getDataGetter();
 
-  @NotNull
-  Set<Integer> filter(@NotNull List<VcsLogDetailsFilter> detailsFilters);
+  void addListener(@NotNull IndexingFinishedListener l);
 
-  void markCorrupted();
+  void removeListener(@NotNull IndexingFinishedListener l);
+
+  @NotNull Set<VirtualFile> getIndexingRoots();
+
+  interface IndexingFinishedListener {
+    void indexingFinished(@NotNull VirtualFile root);
+  }
 }

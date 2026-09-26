@@ -1,528 +1,529 @@
-/*
- * User: anna
- * Date: 30-Apr-2008
- */
 package com.intellij.refactoring;
 
-import com.intellij.psi.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.PsiAnonymousClass;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiEllipsisType;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypes;
 import com.intellij.psi.codeStyle.JavaCodeStyleSettings;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NotNull;
 
 public class MigrateTypeSignatureTest extends TypeMigrationTestBase {
-  @NotNull
   @Override
-  public String getTestRoot() {
-    return "/refactoring/migrateTypeSignature/";
+  protected String getTestDataPath() {
+    return super.getTestDataPath() + "/refactoring/migrateTypeSignature/";
   }
 
-  public void testExprAccess2Lvalue() throws Exception {
+  public void testExprAccess2Lvalue() {
     doTestFieldType("myForAccess", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("ClassParent", null));
+                    getElementFactory().createTypeFromText("ClassParent", null));
   }
 
-  public void testExprAccess2Rvalue() throws Exception {
+  public void testExprAccess2Rvalue() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("ClassGrandChild", null));
+                    getElementFactory().createTypeFromText("ClassGrandChild", null));
   }
 
-  public void testExprAccessParent2Lvalue() throws Exception {
+  public void testExprAccessParent2Lvalue() {
     doTestFieldType("myForSuperAccess", "Ession",
-                    myJavaFacade.getElementFactory().createTypeFromText("ClassParent", null));
+                    getElementFactory().createTypeFromText("ClassParent", null));
   }
 
-  public void testExprAccessParent2Rvalue() throws Exception {
+  public void testExprAccessParent2Rvalue() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("ClassGrandChild", null));
+                    getElementFactory().createTypeFromText("ClassGrandChild", null));
   }
 
-  public void testExprArrayAccessNegative() throws Exception {
-    doTestFirstParamType("meth", "Expr", PsiType.DOUBLE);
+  public void testExprArrayAccessNegative() {
+    doTestFirstParamType("meth", "Expr", PsiTypes.doubleType());
   }
 
-  public void testExprArrayAccessPositive() throws Exception {
-    doTestFirstParamType("meth", "Expr", PsiType.CHAR);
+  public void testExprArrayAccessPositive() {
+    doTestFirstParamType("meth", "Expr", PsiTypes.charType());
   }
 
-  public void testExprCalcBooleanBoolean() throws Exception {
-    doTestFirstParamType("meth", "Expr", PsiType.INT);
+  public void testExprCalcBooleanBoolean() {
+    doTestFirstParamType("meth", "Expr", PsiTypes.intType());
   }
 
-  public void testExprCalcBooleanNumeric() throws Exception {
+  public void testExprCalcBooleanNumeric() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText(CommonClassNames.JAVA_LANG_OBJECT, null));
+                         getElementFactory().createTypeFromText(CommonClassNames.JAVA_LANG_OBJECT, null));
   }
 
-  public void testExprCalcBooleanReference() throws Exception {
+  public void testExprCalcBooleanReference() {
     doTestFirstParamType("meth", "Expr",
-                         PsiType.DOUBLE);
+                         PsiTypes.doubleType());
   }
 
-  public void testExprCalcNumeric2Boolean() throws Exception {
-    doTestFirstParamType("meth", "Expr", PsiType.BOOLEAN);
+  public void testExprCalcNumeric2Boolean() {
+    doTestFirstParamType("meth", "Expr", PsiTypes.booleanType());
   }
 
-  public void testExprCalcNumeric2Floating() throws Exception {
-    doTestFirstParamType("meth", "Expr", PsiType.FLOAT);
+  public void testExprCalcNumeric2Floating() {
+    doTestFirstParamType("meth", "Expr", PsiTypes.floatType());
   }
 
-  public void testExprCalcNumeric2Int() throws Exception {
-    doTestFirstParamType("meth", "Expr", PsiType.LONG);
+  public void testExprCalcNumeric2Int() {
+    doTestFirstParamType("meth", "Expr", PsiTypes.longType());
   }
 
-  public void testExprCalcNumeric2String() throws Exception {
+  public void testExprCalcNumeric2String() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.String", null));
+                         getElementFactory().createTypeFromText("java.lang.String", null));
   }
 
-  public void testExprCast2LvalueNeg() throws Exception {
+  public void testExprCast2LvalueNeg() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.String", null));
+                         getElementFactory().createTypeFromText("java.lang.String", null));
   }
 
-  public void testExprCast2LvaluePos() throws Exception {
-    doTestFirstParamType("meth", "Expr", PsiType.INT);
+  public void testExprCast2LvaluePos() {
+    doTestFirstParamType("meth", "Expr", PsiTypes.intType());
   }
 
-  public void testExprConcatNumeric2Reference() throws Exception {
+  public void testExprConcatNumeric2Reference() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText(CommonClassNames.JAVA_LANG_OBJECT, null));
+                         getElementFactory().createTypeFromText(CommonClassNames.JAVA_LANG_OBJECT, null));
   }
 
-  public void testExprConcatNumeric2String() throws Exception {
+  public void testExprConcatNumeric2String() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.String", null));
+                         getElementFactory().createTypeFromText("java.lang.String", null));
   }
 
-  public void testExprConcatString2Numeric() throws Exception {
+  public void testExprConcatString2Numeric() {
     doTestFirstParamType("meth", "Expr",
-                         PsiType.INT);
+                         PsiTypes.intType());
   }
 
-  public void testExprConcatString2Reference() throws Exception {
+  public void testExprConcatString2Reference() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText(CommonClassNames.JAVA_LANG_OBJECT, null));
+                         getElementFactory().createTypeFromText(CommonClassNames.JAVA_LANG_OBJECT, null));
   }
 
-  public void testExprInstanceofNeg() throws Exception {
+  public void testExprInstanceofNeg() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText(CommonClassNames.JAVA_UTIL_LIST, null));
+                         getElementFactory().createTypeFromText(CommonClassNames.JAVA_UTIL_LIST, null));
   }
 
-  public void testExprInstanceofPos() throws Exception {
+  public void testExprInstanceofPos() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.util.AbstractMap", null));
+                         getElementFactory().createTypeFromText("java.util.AbstractMap", null));
   }
 
-  public void testExprLiteralBoolean() throws Exception {
+  public void testExprLiteralBoolean() {
     doTestFieldType("myField", "Expr",
-                    PsiType.BOOLEAN);
+                    PsiTypes.booleanType());
   }
 
-  public void testExprLiteralByte() throws Exception {
+  public void testExprLiteralByte() {
     doTestFieldType("myField", "Expr",
-                    PsiType.BYTE);
+                    PsiTypes.byteType());
   }
 
-  public void testExprLiteralChar() throws Exception {
+  public void testExprLiteralChar() {
     doTestFieldType("myField", "Expr",
-                    PsiType.CHAR);
+                    PsiTypes.charType());
   }
 
-  public void testExprLiteralClassExtends() throws Exception {
+  public void testExprLiteralClassExtends() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.lang.Class<? extends java.util.Collection[]>", null));
+                    getElementFactory().createTypeFromText("java.lang.Class<? extends java.util.Collection[]>", null));
   }
 
-  public void testExprLiteralClassPrimitive() throws Exception {
+  public void testExprLiteralClassPrimitive() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.lang.Class<Integer>", null));
+                    getElementFactory().createTypeFromText("java.lang.Class<Integer>", null));
   }
 
-  public void testExprLiteralClassPrimitiveArray() throws Exception {
+  public void testExprLiteralClassPrimitiveArray() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.lang.Class<int[]>", null));
+                    getElementFactory().createTypeFromText("java.lang.Class<int[]>", null));
   }
 
-  public void testExprLiteralClassRaw() throws Exception {
+  public void testExprLiteralClassRaw() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.lang.Class", null));
+                    getElementFactory().createTypeFromText("java.lang.Class", null));
   }
 
-  public void testExprLiteralClassReference() throws Exception {
+  public void testExprLiteralClassReference() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.lang.Class<java.util.Set>", null));
+                    getElementFactory().createTypeFromText("java.lang.Class<java.util.Set>", null));
   }
 
-  public void testExprLiteralClassReferenceArray() throws Exception {
+  public void testExprLiteralClassReferenceArray() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.lang.Class<java.util.Set[]>", null));
+                    getElementFactory().createTypeFromText("java.lang.Class<java.util.Set[]>", null));
   }
 
-  public void testExprLiteralClassSuper() throws Exception {
+  public void testExprLiteralClassSuper() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.lang.Class<? super java.util.AbstractSet[]>", null));
+                    getElementFactory().createTypeFromText("java.lang.Class<? super java.util.AbstractSet[]>", null));
   }
 
-  public void testExprLiteralDouble() throws Exception {
+  public void testExprLiteralDouble() {
     doTestFieldType("myField", "Expr",
-                    PsiType.DOUBLE);
+                    PsiTypes.doubleType());
   }
 
-  public void testExprLiteralFloat() throws Exception {
+  public void testExprLiteralFloat() {
     doTestFieldType("myField", "Expr",
-                    PsiType.FLOAT);
+                    PsiTypes.floatType());
   }
 
-  public void testExprLiteralInt() throws Exception {
+  public void testExprLiteralInt() {
     doTestFieldType("myField", "Expr",
-                    PsiType.INT);
+                    PsiTypes.intType());
   }
 
-  public void testExprLiteralLong() throws Exception {
+  public void testExprLiteralLong() {
     doTestFieldType("myField", "Expr",
-                    PsiType.LONG);
+                    PsiTypes.longType());
   }
 
-  public void testExprLiteralShort() throws Exception {
+  public void testExprLiteralShort() {
     doTestFieldType("myField", "Expr",
-                    PsiType.SHORT);
+                    PsiTypes.shortType());
   }
 
-  public void testExprLiteralString() throws Exception {
+  public void testExprLiteralString() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.lang.String", null));
+                    getElementFactory().createTypeFromText("java.lang.String", null));
   }
 
-  public void testExprNewArrayArray2Lvalue() throws Exception {
+  public void testExprNewArrayArray2Lvalue() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText("FaceParent", null).createArrayType());
+                         getElementFactory().createTypeFromText("FaceParent", null).createArrayType());
   }
 
-  public void testExprNewArrayArray2Rvalue() throws Exception {
+  public void testExprNewArrayArray2Rvalue() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("ClassParent", null).createArrayType().createArrayType().createArrayType());
+                    getElementFactory().createTypeFromText("ClassParent", null).createArrayType().createArrayType().createArrayType());
   }
 
-  public void testExprNewArrayGen2Rvalue() throws Exception {
+  public void testExprNewArrayGen2Rvalue() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.util.Set<java.lang.Integer>", null).createArrayType());
+                    getElementFactory().createTypeFromText("java.util.Set<java.lang.Integer>", null).createArrayType());
   }
 
-  public void testExprNewArrayPrimitive2Lvalue() throws Exception {
-    doTestFirstParamType("meth", "Expr", PsiType.INT);
+  public void testExprNewArrayPrimitive2Lvalue() {
+    doTestFirstParamType("meth", "Expr", PsiTypes.intType());
   }
 
-  public void testExprNewArrayPrimitive2Rvalue() throws Exception {
+  public void testExprNewArrayPrimitive2Rvalue() {
     doTestFieldType("myField", "Expr",
-                    PsiType.INT.createArrayType().createArrayType());
+                    PsiTypes.intType().createArrayType().createArrayType());
   }
 
-  public void testExprNewArrayReftype2Lvalue() throws Exception {
+  public void testExprNewArrayReftype2Lvalue() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText("FaceParent", null));
+                         getElementFactory().createTypeFromText("FaceParent", null));
   }
 
-  public void testExprNewArrayReftype2Rvalue() throws Exception {
+  public void testExprNewArrayReftype2Rvalue() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("ClassParent", null).createArrayType().createArrayType());
+                    getElementFactory().createTypeFromText("ClassParent", null).createArrayType().createArrayType());
   }
 
-  public void testExprNewGen() throws Exception {
+  public void testExprNewGen() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.util.Set<Subject>", null));
+                    getElementFactory().createTypeFromText("java.util.Set<Subject>", null));
   }
 
-  public void testExprNewGenExtends() throws Exception {
+  public void testExprNewGenExtends() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.util.Set<? extends Subject>", null));
+                    getElementFactory().createTypeFromText("java.util.Set<? extends Subject>", null));
   }
 
-  public void testExprNewGenSuper() throws Exception {
+  public void testExprNewGenSuper() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.util.Set<? super Subject>", null));
+                    getElementFactory().createTypeFromText("java.util.Set<? super Subject>", null));
   }
 
-  public void testExprNewReference() throws Exception {
+  public void testExprNewReference() {
     doTestFieldType("myField", "Expr",
-                    myJavaFacade.getElementFactory().createTypeFromText("Expr.Subject", null));
+                    getElementFactory().createTypeFromText("Expr.Subject", null));
   }
 
-  public void testExprReturn2Lvalue() throws Exception {
+  public void testExprReturn2Lvalue() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.String", null));
+                         getElementFactory().createTypeFromText("java.lang.String", null));
   }
 
-  public void testExprReturn2Rvalue() throws Exception {
+  public void testExprReturn2Rvalue() {
     doTestMethodType("meth", "Expr",
-                     myJavaFacade.getElementFactory().createTypeFromText("java.lang.String", null));
+                     getElementFactory().createTypeFromText("java.lang.String", null));
   }
 
-  public void testExprTernary() throws Exception {
+  public void testExprTernary() {
     doTestFirstParamType("meth", "Expr",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.String", null));
+                         getElementFactory().createTypeFromText("java.lang.String", null));
   }
 
-  public void testOverridingDown() throws Exception {
-    doTestMethodType("getInt", "Parent", PsiType.BYTE);
+  public void testOverridingDown() {
+    doTestMethodType("getInt", "Parent", PsiTypes.byteType());
   }
 
-  public void testOverridingUp() throws Exception {
-    doTestMethodType("getInt", "Child", PsiType.BYTE);
+  public void testOverridingUp() {
+    doTestMethodType("getInt", "Child", PsiTypes.byteType());
   }
 
-  public void testSpecJavadoc() throws Exception {
-    JavaCodeStyleSettings settings = getCurrentCodeStyleSettings().getCustomSettings(JavaCodeStyleSettings.class);
+  public void testSpecJavadoc() {
+    JavaCodeStyleSettings settings = JavaCodeStyleSettings.getInstance(getProject());
     settings.CLASS_NAMES_IN_JAVADOC = JavaCodeStyleSettings.FULLY_QUALIFY_NAMES_ALWAYS;
     doTestFirstParamType("meth", "Spec",
-                         myJavaFacade.getElementFactory().createTypeFromText(CommonClassNames.JAVA_UTIL_SET, null));
+                         getElementFactory().createTypeFromText(CommonClassNames.JAVA_UTIL_SET, null));
   }
 
-  public void testSpecNotUsed() throws Exception {
-    doTestFieldType("myField", "Spec", PsiType.BOOLEAN);
+  public void testSpecNotUsed() {
+    doTestFieldType("myField", "Spec", PsiTypes.booleanType());
   }
 
-  public void testTypeArrayReftype2Lvalue() throws Exception {
+  public void testTypeArrayReftype2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("Subject", null).createArrayType());
+                         getElementFactory().createTypeFromText("Subject", null).createArrayType());
   }
 
-  public void testTypeArrayReftype2Rvalue() throws Exception {
+  public void testTypeArrayReftype2Rvalue() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText("Subject", null).createArrayType().createArrayType());
+                    getElementFactory().createTypeFromText("Subject", null).createArrayType().createArrayType());
   }
 
-  public void testTypeArrayRoots2Lvalue() throws Exception {
+  public void testTypeArrayRoots2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("Holder", null).createArrayType());
+                         getElementFactory().createTypeFromText("Holder", null).createArrayType());
   }
 
-  public void testTypeArrayVararg2Lvalue() throws Exception {
+  public void testTypeArrayVararg2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         new PsiEllipsisType(myJavaFacade.getElementFactory().createTypeFromText("Subject", null)));
+                         new PsiEllipsisType(getElementFactory().createTypeFromText("Subject", null)));
   }
 
-  public void testTypeArrayVararg2RvalueNeg() throws Exception {
+  public void testTypeArrayVararg2RvalueNeg() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText("Descendant", null).createArrayType());
+                    getElementFactory().createTypeFromText("Descendant", null).createArrayType());
   }
 
-  public void testTypeArrayVararg2RvaluePos() throws Exception {
+  public void testTypeArrayVararg2RvaluePos() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText("Subject", null).createArrayType());
+                    getElementFactory().createTypeFromText("Subject", null).createArrayType());
   }
 
-  public void testTypeAutoboxBoolean2Lvalue() throws Exception {
+  public void testTypeAutoboxBoolean2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.Boolean", null));
+                         getElementFactory().createTypeFromText("java.lang.Boolean", null));
   }
 
-  public void testTypeAutoboxBoolean2Rvalue() throws Exception {
+  public void testTypeAutoboxBoolean2Rvalue() {
     doTestFieldType("myField", "Type",
-                    PsiType.BOOLEAN);
+                    PsiTypes.booleanType());
   }
 
-  public void testTypeAutoboxByte2Lvalue() throws Exception {
+  public void testTypeAutoboxByte2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.Byte", null));
+                         getElementFactory().createTypeFromText("java.lang.Byte", null));
   }
 
-  public void testTypeAutoboxByte2Rvalue() throws Exception {
+  public void testTypeAutoboxByte2Rvalue() {
     doTestFieldType("myField", "Type",
-                    PsiType.BYTE);
+                    PsiTypes.byteType());
   }
 
-  public void testTypeAutoboxChar2Lvalue() throws Exception {
+  public void testTypeAutoboxChar2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.Character", null));
+                         getElementFactory().createTypeFromText("java.lang.Character", null));
   }
 
-  public void testTypeAutoboxChar2Rvalue() throws Exception {
+  public void testTypeAutoboxChar2Rvalue() {
     doTestFieldType("myField", "Type",
-                    PsiType.CHAR);
+                    PsiTypes.charType());
   }
 
-  public void testTypeAutoboxDouble2Lvalue() throws Exception {
+  public void testTypeAutoboxDouble2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.Double", null));
+                         getElementFactory().createTypeFromText("java.lang.Double", null));
   }
 
-  public void testTypeAutoboxDouble2Rvalue() throws Exception {
+  public void testTypeAutoboxDouble2Rvalue() {
     doTestFieldType("myField", "Type",
-                    PsiType.DOUBLE);
+                    PsiTypes.doubleType());
   }
 
-  public void testTypeAutoboxFloat2Lvalue() throws Exception {
+  public void testTypeAutoboxFloat2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.Float", null));
+                         getElementFactory().createTypeFromText("java.lang.Float", null));
   }
 
-  public void testTypeAutoboxFloat2Rvalue() throws Exception {
+  public void testTypeAutoboxFloat2Rvalue() {
     doTestFieldType("myField", "Type",
-                    PsiType.FLOAT);
+                    PsiTypes.floatType());
   }
 
-  public void testTypeAutoboxInt2Lvalue() throws Exception {
+  public void testTypeAutoboxInt2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.Integer", null));
+                         getElementFactory().createTypeFromText("java.lang.Integer", null));
   }
 
-  public void testTypeAutoboxInt2Rvalue() throws Exception {
+  public void testTypeAutoboxInt2Rvalue() {
     doTestFieldType("myField", "Type",
-                    PsiType.INT);
+                    PsiTypes.intType());
   }
 
-  public void testTypeAutoboxLong2Lvalue() throws Exception {
+  public void testTypeAutoboxLong2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.Long", null));
+                         getElementFactory().createTypeFromText("java.lang.Long", null));
   }
 
-  public void testTypeAutoboxLong2Rvalue() throws Exception {
+  public void testTypeAutoboxLong2Rvalue() {
     doTestFieldType("myField", "Type",
-                    PsiType.LONG);
+                    PsiTypes.longType());
   }
 
-  public void testTypeAutoboxShort2Lvalue() throws Exception {
+  public void testTypeAutoboxShort2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.lang.Short", null));
+                         getElementFactory().createTypeFromText("java.lang.Short", null));
   }
 
-  public void testTypeAutoboxShort2Rvalue() throws Exception {
+  public void testTypeAutoboxShort2Rvalue() {
     doTestFieldType("myField", "Type",
-                    PsiType.SHORT);
+                    PsiTypes.shortType());
   }
 
-  public void testTypeGenAncestor2Lvalue() throws Exception {
+  public void testTypeGenAncestor2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.util.Set<Subject>", null));
+                         getElementFactory().createTypeFromText("java.util.Set<Subject>", null));
   }
 
-  public void testTypeGenAncestorWildcard2Lvalue() throws Exception {
+  public void testTypeGenAncestorWildcard2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("java.util.Set<? extends Subject>", null));
+                         getElementFactory().createTypeFromText("java.util.Set<? extends Subject>", null));
   }
 
-  public void testTypeGenDescendant2Rvalue() throws Exception {
+  public void testTypeGenDescendant2Rvalue() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.util.Set<Subject>", null));
+                    getElementFactory().createTypeFromText("java.util.Set<Subject>", null));
   }
 
-  public void testTypeGenDescendantWildcard2Rvalue() throws Exception {
+  public void testTypeGenDescendantWildcard2Rvalue() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText("java.util.Set<? super Subject>", null));
+                    getElementFactory().createTypeFromText("java.util.Set<? super Subject>", null));
   }
 
-  public void testTypeGenRaw2Lvalue() throws Exception {
+  public void testTypeGenRaw2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText(CommonClassNames.JAVA_UTIL_SET, null));
+                         getElementFactory().createTypeFromText(CommonClassNames.JAVA_UTIL_SET, null));
   }
 
-  public void testTypeGenRaw2Rvalue() throws Exception {
+  public void testTypeGenRaw2Rvalue() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText(CommonClassNames.JAVA_UTIL_SET, null));
+                    getElementFactory().createTypeFromText(CommonClassNames.JAVA_UTIL_SET, null));
   }
 
-  public void testTypePrimsubBoolean2Lvalue() throws Exception {
-    doTestFirstParamType("meth", "Type", PsiType.BOOLEAN);
+  public void testTypePrimsubBoolean2Lvalue() {
+    doTestFirstParamType("meth", "Type", PsiTypes.booleanType());
   }
 
-  public void testTypePrimsubBoolean2Rvalue() throws Exception {
-    doTestFieldType("myField", "Type", PsiType.BOOLEAN);
+  public void testTypePrimsubBoolean2Rvalue() {
+    doTestFieldType("myField", "Type", PsiTypes.booleanType());
   }
 
-  public void testTypePrimsubByte2Rvalue() throws Exception {
-    doTestFieldType("myField", "Type", PsiType.BYTE);
+  public void testTypePrimsubByte2Rvalue() {
+    doTestFieldType("myField", "Type", PsiTypes.byteType());
   }
 
-  public void testTypePrimsubChar2Lvalue() throws Exception {
-    doTestFirstParamType("meth", "Type", PsiType.CHAR);
+  public void testTypePrimsubChar2Lvalue() {
+    doTestFirstParamType("meth", "Type", PsiTypes.charType());
   }
 
-  public void testTypePrimsubChar2Rvalue() throws Exception {
-    doTestFieldType("myField", "Type", PsiType.CHAR);
+  public void testTypePrimsubChar2Rvalue() {
+    doTestFieldType("myField", "Type", PsiTypes.charType());
   }
 
-  public void testTypePrimsubDouble2Lvalue() throws Exception {
-    doTestFirstParamType("meth", "Type", PsiType.DOUBLE);
+  public void testTypePrimsubDouble2Lvalue() {
+    doTestFirstParamType("meth", "Type", PsiTypes.doubleType());
   }
 
-  public void testTypePrimsubFloat2Lvalue() throws Exception {
-    doTestFirstParamType("meth", "Type", PsiType.FLOAT);
+  public void testTypePrimsubFloat2Lvalue() {
+    doTestFirstParamType("meth", "Type", PsiTypes.floatType());
   }
 
-  public void testTypePrimsubFloat2Rvalue() throws Exception {
-    doTestFieldType("myField", "Type", PsiType.FLOAT);
+  public void testTypePrimsubFloat2Rvalue() {
+    doTestFieldType("myField", "Type", PsiTypes.floatType());
   }
 
-  public void testTypePrimsubInt2Lvalue() throws Exception {
-    doTestFirstParamType("meth", "Type", PsiType.INT);
+  public void testTypePrimsubInt2Lvalue() {
+    doTestFirstParamType("meth", "Type", PsiTypes.intType());
   }
 
-  public void testTypePrimsubInt2Rvalue() throws Exception {
-    doTestFieldType("myField", "Type", PsiType.INT);
+  public void testTypePrimsubInt2Rvalue() {
+    doTestFieldType("myField", "Type", PsiTypes.intType());
   }
 
-  public void testTypePrimsubLong2Lvalue() throws Exception {
-    doTestFirstParamType("meth", "Type", PsiType.LONG);
+  public void testTypePrimsubLong2Lvalue() {
+    doTestFirstParamType("meth", "Type", PsiTypes.longType());
   }
 
-  public void testTypePrimsubLong2Rvalue() throws Exception {
-    doTestFieldType("myField", "Type", PsiType.LONG);
+  public void testTypePrimsubLong2Rvalue() {
+    doTestFieldType("myField", "Type", PsiTypes.longType());
   }
 
-  public void testTypePrimsubShort2Lvalue() throws Exception {
-    doTestFirstParamType("meth", "Type", PsiType.SHORT);
+  public void testTypePrimsubShort2Lvalue() {
+    doTestFirstParamType("meth", "Type", PsiTypes.shortType());
   }
 
-  public void testTypePrimsubShort2Rvalue() throws Exception {
-    doTestFieldType("myField", "Type", PsiType.SHORT);
+  public void testTypePrimsubShort2Rvalue() {
+    doTestFieldType("myField", "Type", PsiTypes.shortType());
   }
 
-  public void testTypeRefClassChild2Rvalue() throws Exception {
+  public void testTypeRefClassChild2Rvalue() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText("ClassChild", null));
+                    getElementFactory().createTypeFromText("ClassChild", null));
   }
 
-  public void testTypeRefClassParent2Lvalue() throws Exception {
+  public void testTypeRefClassParent2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("ClassParent", null));
+                         getElementFactory().createTypeFromText("ClassParent", null));
   }
 
-  public void testTypeRefClassParent2Rvalue() throws Exception {
+  public void testTypeRefClassParent2Rvalue() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText("ClassParent", null));
+                    getElementFactory().createTypeFromText("ClassParent", null));
   }
 
-  public void testTypeRefFaceChild2Lvalue() throws Exception {
+  public void testTypeRefFaceChild2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("FaceChild", null));
+                         getElementFactory().createTypeFromText("FaceChild", null));
   }
 
-  public void testTypeRefFaceChild2Rvalue() throws Exception {
+  public void testTypeRefFaceChild2Rvalue() {
     doTestFieldType("myField", "Type",
-                    myJavaFacade.getElementFactory().createTypeFromText("FaceChild", null));
+                    getElementFactory().createTypeFromText("FaceChild", null));
   }
 
-  public void testTypeRefFaceParent2Lvalue() throws Exception {
+  public void testTypeRefFaceParent2Lvalue() {
     doTestFirstParamType("meth", "Type",
-                         myJavaFacade.getElementFactory().createTypeFromText("FaceParent", null));
+                         getElementFactory().createTypeFromText("FaceParent", null));
   }
 
   public void testMigrateAnonymousClassTypeParameters() {
     doTestAnonymousClassMethod("invoke",
-                               myJavaFacade.getElementFactory().createTypeFromText("java.lang.String", null));
+                               getElementFactory().createTypeFromText("java.lang.String", null));
   }
 
   public void testMigrateAnonymousClassTypeParameters2() {
     doTestAnonymousClassMethod("invoke",
-                               myJavaFacade.getElementFactory().createTypeFromText("java.lang.Long", null));
+                               getElementFactory().createTypeFromText("java.lang.Long", null));
   }
 
   protected void doTestAnonymousClassMethod(@NotNull final String methodName,
                                             final PsiType toType) {
     final RulesProvider provider = new RulesProvider() {
       @Override
-      public PsiType migrationType(PsiElement context) throws Exception {
+      public PsiType migrationType(PsiElement context) {
         return toType;
       }
 

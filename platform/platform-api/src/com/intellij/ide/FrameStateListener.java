@@ -1,43 +1,51 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide;
 
+import com.intellij.openapi.application.ApplicationActivationListener;
+import com.intellij.openapi.wm.IdeFrame;
+import com.intellij.util.messages.Topic;
+import org.jetbrains.annotations.NotNull;
+
 /**
- * Listener for receiving notifications when the IDEA window is activated or deactivated.
- *
- * @since 5.0.2
- * @see FrameStateManager#addListener(FrameStateListener)
- * @see FrameStateManager#removeListener(FrameStateListener)
+ * Listener for receiving notifications when the IDE window is activated or deactivated.
+ * <p>
+ * Please note that a 'spurious' sequence of events can be generated sometimes - a 'deactivated' event followed by 'activated' event
+ * (for the same frame). E.g. this happens on Linux when a dialog window closes - due to an asynchronous nature of focus transfers on Linux,
+ * this is perceived by AWT, as the dialog window losing focus (to nowhere), followed by the main frame getting focus.
  */
 public interface FrameStateListener {
-  /**
-   * Called when the IDEA window is deactivated.
-   */
-  void onFrameDeactivated();
+  @Topic.AppLevel
+  Topic<FrameStateListener> TOPIC = new Topic<>("FrameStateListener", FrameStateListener.class, Topic.BroadcastDirection.TO_DIRECT_CHILDREN);
 
   /**
-   * Called when the IDEA window is activated.
+   * Called when the IDE window is deactivated (some other application receives focus).
+   *
+   * @deprecated {@link ApplicationActivationListener#applicationDeactivated(IdeFrame)} can be used as an equivalent replacement. Use
+   * {@link #onFrameDeactivated(IdeFrame)}, if switching between different project windows also needs to be tracked.
    */
-  void onFrameActivated();
-
-  abstract class Adapter implements FrameStateListener {
-    @Override
-    public void onFrameDeactivated() { }
-
-    @Override
-    public void onFrameActivated() { }
+  @Deprecated
+  default void onFrameDeactivated() {
   }
+
+  /**
+   * Called when the IDE window is activated (it gets focus instead of some other application).
+   *
+   * @deprecated {@link ApplicationActivationListener#applicationActivated(IdeFrame)} can be used as an equivalent replacement. Use
+   * {@link #onFrameActivated(IdeFrame)}, if switching between different project windows also needs to be tracked.
+   */
+  @Deprecated
+  default void onFrameActivated() {
+  }
+
+  /**
+   * Invoked when an IDE frame becomes active, i.e. either it itself or one of its child windows becomes focused. This can happen
+   * on IDE activation, or e.g. on switching between different IDE projects' windows.
+   */
+  default void onFrameActivated(@NotNull IdeFrame frame) {}
+
+  /**
+   * Invoked when an IDE frame becomes inactive, i.e. neither it itself nor one of its child windows is focused anymore. This can happen
+   * on IDE deactivation, or e.g. on switching between different IDE projects' windows.
+   */
+  default void onFrameDeactivated(@NotNull IdeFrame frame) {}
 }

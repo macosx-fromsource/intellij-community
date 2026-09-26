@@ -8,13 +8,13 @@ class Test {
   void foo() {
     while(true) {
         Pojo x = newMethod();
-        if (x == null) break; 
-      System.out.println(x.it);
+        if (x == null) break;
+        System.out.println(x.it);
     }
   }
 
     @Nullable
-    private Pojo newMethod() {
+    private Test.Pojo newMethod() {
         Pojo x = things.get(0);
 
         if(x.it > 0) {

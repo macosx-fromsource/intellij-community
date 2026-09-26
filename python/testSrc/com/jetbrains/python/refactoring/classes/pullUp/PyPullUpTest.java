@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.refactoring.classes.pullUp;
 
 import com.jetbrains.python.psi.LanguageLevel;
@@ -22,6 +8,8 @@ import com.jetbrains.python.refactoring.classes.PyClassRefactoringTest;
 import com.jetbrains.python.refactoring.classes.membersManager.MembersManager;
 import com.jetbrains.python.refactoring.classes.membersManager.PyMemberInfo;
 import org.jetbrains.annotations.NotNull;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -29,6 +17,8 @@ import java.util.Collection;
 /**
  * @author Dennis.Ushakov
  */
+@Subsystems.Refactoring
+@Layers.Functional
 public class PyPullUpTest extends PyClassRefactoringTest {
 
   public PyPullUpTest() {
@@ -113,16 +103,20 @@ public class PyPullUpTest extends PyClassRefactoringTest {
 
   // PY-16747
   public void testAbstractMethodDocStringIndentationPreserved() {
-    myFixture.configureByFile(getMultiFileBaseName() + ".py");
-    doPullUp("B", "A", true, ".m");
-    myFixture.checkResultByFile(getMultiFileBaseName() + ".after.py");
+    runWithLanguageLevel(LanguageLevel.PYTHON27, () -> {
+      myFixture.configureByFile(getMultiFileBaseName() + ".py");
+      doPullUp("B", "A", true, ".m");
+      myFixture.checkResultByFile(getMultiFileBaseName() + ".after.py");
+    });
   }
 
   // PY-16770
   public void testAbstractMethodDocStringPrefixPreserved() {
-    myFixture.configureByFile(getMultiFileBaseName() + ".py");
-    doPullUp("B", "A", true, ".m");
-    myFixture.checkResultByFile(getMultiFileBaseName() + ".after.py");
+    runWithLanguageLevel(LanguageLevel.PYTHON27, () -> {
+      myFixture.configureByFile(getMultiFileBaseName() + ".py");
+      doPullUp("B", "A", true, ".m");
+      myFixture.checkResultByFile(getMultiFileBaseName() + ".after.py");
+    });
   }
 
   private void doMultiFileTest() {
@@ -136,29 +130,35 @@ public class PyPullUpTest extends PyClassRefactoringTest {
    * Ensures that pulling abstract method up to class that already uses ABCMeta works correctly
    */
   public void testAbstractMethodHasMeta() {
-    checkAbstract(".my_method");
+    runWithLanguageLevel(LanguageLevel.PYTHON27, () -> checkAbstract(".my_method"));
   }
 
   /**
    * Ensures that pulling abstract method up to class that has NO ABCMeta works correctly for py2 (__metaclass__ is added)
    */
   public void testAbstractMethodPy2AddMeta() {
-    checkAbstract(".my_method", ".my_method_2");
+    runWithLanguageLevel(LanguageLevel.PYTHON27, () -> checkAbstract(".my_method", ".my_method_2"));
   }
 
   /**
    * Ensures that pulling abstract method up to class that has NO ABCMeta works correctly for py3k (metaclass is added)
    */
   public void testAbstractMethodPy3AddMeta() {
-    setLanguageLevel(LanguageLevel.PYTHON34);
     checkAbstract(".my_method", ".my_class_method");
+  }
+
+  /**
+   * Ensures that pulling async method up as abstract preserves the async keyword
+   */
+  public void testAbstractAsyncMethod() {
+    checkAbstract(".async_method");
   }
 
   /**
    * Moves methods fromn Child to Parent and make them abstract
    * @param methodNames methods to check
    */
-  private void checkAbstract(@NotNull final String... methodNames) {
+  private void checkAbstract(final String @NotNull ... methodNames) {
     final String[] modules = {"Class", "SuperClass"};
     configureMultiFile(modules);
     doPullUp("Child", "Parent", true, methodNames);
@@ -170,7 +170,7 @@ public class PyPullUpTest extends PyClassRefactoringTest {
     doHelperTestSeveralMembers(className, superClassName, memberName);
   }
 
-  private void doHelperTestSeveralMembers(@NotNull final String className, @NotNull final String superClassName, @NotNull final String... memberNames) {
+  private void doHelperTestSeveralMembers(@NotNull final String className, @NotNull final String superClassName, final String @NotNull ... memberNames) {
     myFixture.configureByFile(getMultiFileBaseName() + ".py");
     doPullUp(className, superClassName, false, memberNames);
     myFixture.checkResultByFile(getMultiFileBaseName() + ".after.py");

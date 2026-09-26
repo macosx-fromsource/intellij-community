@@ -16,7 +16,11 @@
 package com.intellij.psi.impl.light;
 
 import com.intellij.lang.Language;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiTypeParameter;
+import com.intellij.psi.PsiTypeParameterList;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -26,7 +30,7 @@ import java.util.List;
  * @author Max Medvedev
  */
 public class LightTypeParameterListBuilder extends LightElement implements PsiTypeParameterList {
-  private final List<PsiTypeParameter> myParameters = new ArrayList<PsiTypeParameter>();
+  private final List<PsiTypeParameter> myParameters = new ArrayList<>();
   private PsiTypeParameter[] cached;
 
   public LightTypeParameterListBuilder(PsiManager manager, final Language language) {
@@ -49,20 +53,20 @@ public class LightTypeParameterListBuilder extends LightElement implements PsiTy
   }
 
   @Override
-  public PsiTypeParameter[] getTypeParameters() {
+  public PsiTypeParameter @NotNull [] getTypeParameters() {
     if (cached == null) {
       if (myParameters.isEmpty()) {
         cached = PsiTypeParameter.EMPTY_ARRAY;
       }
       else {
-        cached = myParameters.toArray(new PsiTypeParameter[myParameters.size()]);
+        cached = myParameters.toArray(PsiTypeParameter.EMPTY_ARRAY);
       }
     }
     return cached;
   }
 
   @Override
-  public int getTypeParameterIndex(PsiTypeParameter typeParameter) {
+  public int getTypeParameterIndex(@NotNull PsiTypeParameter typeParameter) {
     return myParameters.indexOf(typeParameter);
   }
 

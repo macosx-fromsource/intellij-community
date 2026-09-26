@@ -1,65 +1,94 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.ui;
 
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.util.ui.UIUtil;
-import sun.swing.SwingUtilities2;
+import com.intellij.openapi.editor.PlatformEditorBundle;
+import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.SystemInfoRt;
+import com.intellij.util.ui.AATextInfo;
+import com.intellij.util.ui.GraphicsUtil;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
+import java.awt.RenderingHints;
+import java.awt.font.FontRenderContext;
+import java.util.function.Supplier;
+
+import static org.jetbrains.annotations.Nls.Capitalization.Sentence;
 
 public enum AntialiasingType {
-  SUBPIXEL("Subpixel", RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB, true),
-  GREYSCALE("Greyscale", RenderingHints.VALUE_TEXT_ANTIALIAS_ON, true),
-  OFF("No antialiasing", RenderingHints.VALUE_TEXT_ANTIALIAS_OFF, false);
+  SUBPIXEL("Subpixel", () -> PlatformEditorBundle.message("settings.editor.antialiasing.subpixel"), RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB, true),
+  GREYSCALE("Greyscale", () ->  PlatformEditorBundle.message("settings.editor.antialiasing.greyscale"), RenderingHints.VALUE_TEXT_ANTIALIAS_ON, true),
+  OFF("No antialiasing", () -> PlatformEditorBundle.message("settings.editor.antialiasing.no.antialiasing"), RenderingHints.VALUE_TEXT_ANTIALIAS_OFF, false);
 
+  /**
+   * @deprecated Use {@link #getAATextInfoForSwingComponent} instead
+   */
+  @Deprecated(forRemoval = true)
   public static Object getAAHintForSwingComponent() {
-    UISettings uiSettings = ApplicationManager.getApplication() == null ? null : UISettings.getInstance();
-    if (uiSettings != null) {
-      AntialiasingType type = uiSettings.IDE_AA_TYPE;
-      if (type != null) return type.getTextInfo();
+    return getAATextInfoForSwingComponent();
+  }
+
+  public static @Nullable AATextInfo getAATextInfoForSwingComponent() {
+    UISettings uiSettings = UISettings.getInstanceOrNull();
+    if (uiSettings == null) {
+      return GREYSCALE.getTextInfo();
     }
-    return GREYSCALE.getTextInfo();
+    return uiSettings.getIdeAAType().getTextInfo();
+  }
+
+  public static boolean canUseSubpixelAAForIDE() {
+    return !SystemInfoRt.isMac || Boolean.getBoolean("enable.macos.ide.subpixelAA");
+  }
+
+  public static boolean canUseSubpixelAAForEditor() {
+    return !SystemInfo.isMacOSBigSur || Boolean.getBoolean("enable.macos.editor.subpixelAA");
   }
 
   public static Object getKeyForCurrentScope(boolean inEditor) {
-    UISettings uiSettings = ApplicationManager.getApplication() == null ? null : UISettings.getInstance();
+    UISettings uiSettings = UISettings.getInstanceOrNull();
     if (uiSettings != null) {
-      AntialiasingType type = inEditor ? uiSettings.EDITOR_AA_TYPE : uiSettings.IDE_AA_TYPE;
-      if (type != null) return type.myHint;
+      AntialiasingType type = inEditor ? uiSettings.getEditorAAType() : uiSettings.getIdeAAType();
+      return type.myHint;
     }
     return RenderingHints.VALUE_TEXT_ANTIALIAS_ON;
   }
 
-  private final String myName;
+  /**
+   * Updates antialiasing hint value in the given context according to application's global antialiasing settings
+   */
+  public static FontRenderContext updateContext(@NotNull FontRenderContext context, boolean inEditor) {
+    Object aaHint = getKeyForCurrentScope(inEditor);
+    return aaHint == context.getAntiAliasingHint()
+           ? context : new FontRenderContext(context.getTransform(), aaHint, context.getFractionalMetricsHint());
+  }
+
+  private final String mySerializationName;
+  private final Supplier<@Nls(capitalization = Sentence) String> myPresentableName;
   private final Object myHint;
   private final boolean isEnabled;
 
-  AntialiasingType(String name, Object hint, boolean enabled) {
-    myName = name;
+  AntialiasingType(@NonNls String serializationName,
+                   Supplier<@Nls(capitalization = Sentence) String> presentableName,
+                   Object hint,
+                   boolean enabled) {
+    mySerializationName = serializationName;
+    myPresentableName = presentableName;
     myHint = hint;
     isEnabled = enabled;
   }
 
-  public SwingUtilities2.AATextInfo getTextInfo() {
-    return !isEnabled ? null : new SwingUtilities2.AATextInfo(myHint, UIUtil.getLcdContrastValue());
+  public @Nullable AATextInfo getTextInfo() {
+    return isEnabled || SystemInfo.isJetBrainsJvm ? GraphicsUtil.createAATextInfo(myHint) : null;
   }
 
   @Override
-  public String toString() {
-    return myName;
+  public @NonNls String toString() {
+    return mySerializationName;
+  }
+
+  public @Nls(capitalization = Sentence) String getPresentableName() {
+    return myPresentableName.get();
   }
  }

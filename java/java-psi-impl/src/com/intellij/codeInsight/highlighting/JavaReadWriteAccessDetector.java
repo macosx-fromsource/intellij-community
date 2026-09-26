@@ -1,36 +1,35 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.highlighting;
 
-import com.intellij.psi.*;
-import com.intellij.psi.util.PropertyUtil;
+import com.intellij.psi.ImplicitVariable;
+import com.intellij.psi.PsiAnnotationMethod;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCompiledElement;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiForeachStatement;
+import com.intellij.psi.PsiIdentifier;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiNameValuePair;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.psi.PsiVariable;
+import com.intellij.psi.util.PropertyUtilBase;
 import com.intellij.psi.util.PsiUtil;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * @author yole
- */
+
 public class JavaReadWriteAccessDetector extends ReadWriteAccessDetector {
   @Override
-  public boolean isReadWriteAccessible(@NotNull final PsiElement element) {
-    return element instanceof PsiVariable && !(element instanceof ImplicitVariable) || element instanceof PsiClass;
+  public boolean isReadWriteAccessible(final @NotNull PsiElement element) {
+    return element instanceof PsiVariable && !(element instanceof ImplicitVariable)
+           || element instanceof PsiClass
+           || element instanceof PsiAnnotationMethod && !(element instanceof PsiCompiledElement);
   }
 
   @Override
-  public boolean isDeclarationWriteAccess(@NotNull final PsiElement element) {
+  public boolean isDeclarationWriteAccess(final @NotNull PsiElement element) {
     if (element instanceof PsiVariable && ((PsiVariable)element).getInitializer() != null) {
       return true;
     }
@@ -40,23 +39,26 @@ public class JavaReadWriteAccessDetector extends ReadWriteAccessDetector {
     return false;
   }
 
-  @NotNull
   @Override
-  public Access getReferenceAccess(@NotNull final PsiElement referencedElement, @NotNull final PsiReference reference) {
+  public @NotNull Access getReferenceAccess(final @NotNull PsiElement referencedElement, final @NotNull PsiReference reference) {
     return getExpressionAccess(reference.getElement());
   }
 
-  @NotNull
   @Override
-  public Access getExpressionAccess(@NotNull final PsiElement expression) {
-    if (!(expression instanceof PsiExpression)) return Access.Read;
+  public @NotNull Access getExpressionAccess(final @NotNull PsiElement expression) {
+    if (!(expression instanceof PsiExpression)) {
+      if (expression instanceof PsiNameValuePair || expression instanceof PsiIdentifier) {
+        return Access.Write;
+      }
+      return Access.Read;
+    }
     PsiExpression expr = (PsiExpression) expression;
     boolean readAccess = PsiUtil.isAccessedForReading(expr);
     boolean writeAccess = PsiUtil.isAccessedForWriting(expr);
     if (!writeAccess && expr instanceof PsiReferenceExpression) {
       //when searching usages of fields, should show all found setters as a "only write usage"
       PsiElement actualReferee = ((PsiReferenceExpression) expr).resolve();
-      if (actualReferee instanceof PsiMethod && PropertyUtil.isSimplePropertySetter((PsiMethod)actualReferee)) {
+      if (actualReferee instanceof PsiMethod && PropertyUtilBase.isSimplePropertySetter((PsiMethod)actualReferee)) {
         writeAccess = true;
         readAccess = false;
       }

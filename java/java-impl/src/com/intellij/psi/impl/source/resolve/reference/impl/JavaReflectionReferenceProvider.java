@@ -1,22 +1,13 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.source.resolve.reference.impl;
 
-import com.intellij.psi.*;
-import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpressionList;
+import com.intellij.psi.PsiLiteralExpression;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.psi.PsiReferenceProvider;
 import com.intellij.util.ProcessingContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -24,33 +15,23 @@ import org.jetbrains.annotations.Nullable;
 /**
  * @author Konstantin Bulenkov
  */
-public class JavaReflectionReferenceProvider extends PsiReferenceProvider {
-  @NotNull
+abstract class JavaReflectionReferenceProvider extends PsiReferenceProvider {
   @Override
-  public PsiReference[] getReferencesByElement(@NotNull PsiElement element, @NotNull ProcessingContext context) {
-    if (element instanceof PsiLiteralExpression) {
-      String value = getValue(((PsiLiteralExpression)element));
-      final PsiElement expressionList;
-      if (value != null && (expressionList = element.getParent()) instanceof PsiExpressionList) {
-        final PsiElement methodCall = expressionList.getParent();
-        final PsiExpression classAccess;
-        if (methodCall != null && (classAccess = getContext(methodCall)) != null) {
-          return new PsiReference[]{new JavaLangClassMemberReference((PsiLiteralExpression)element, classAccess)};
+  public PsiReference @NotNull [] getReferencesByElement(@NotNull PsiElement element, @NotNull ProcessingContext context) {
+    if (element instanceof PsiLiteralExpression literal && literal.getValue() instanceof String) {
+      PsiElement parent = element.getParent();
+      if (parent instanceof PsiExpressionList && parent.getParent() instanceof PsiMethodCallExpression call) {
+        PsiReferenceExpression methodReference = call.getMethodExpression();
+        PsiReference[] references = getReferencesByMethod(literal, methodReference, context);
+        if (references != null) {
+          return references;
         }
       }
     }
     return PsiReference.EMPTY_ARRAY;
   }
 
-  @Nullable
-  private static PsiExpression getContext(PsiElement methodCall) {
-    final PsiClassObjectAccessExpression expression = PsiTreeUtil.findChildOfType(methodCall, PsiClassObjectAccessExpression.class);
-    return expression == null ? PsiTreeUtil.findChildOfType(methodCall, PsiMethodCallExpression.class) : expression;
-  }
-
-  @Nullable
-  private static String getValue(PsiLiteralExpression element) {
-    final Object value = element.getValue();
-    return value instanceof String ? (String)value : null;
-  }
+  protected abstract PsiReference @Nullable [] getReferencesByMethod(@NotNull PsiLiteralExpression literalArgument,
+                                                                     @NotNull PsiReferenceExpression methodReference,
+                                                                     @NotNull ProcessingContext context);
 }

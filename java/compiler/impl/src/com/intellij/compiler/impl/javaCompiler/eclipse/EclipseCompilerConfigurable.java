@@ -1,90 +1,76 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.compiler.impl.javaCompiler.eclipse;
 
 import com.intellij.compiler.options.ComparingUtils;
-import com.intellij.openapi.compiler.CompilerBundle;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
-import com.intellij.ui.RawCommandLineEditor;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.Nullable;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.io.FileUtil;
 import org.jetbrains.jps.model.java.compiler.EclipseCompilerOptions;
 
-import javax.swing.*;
+import javax.swing.JComponent;
 
-/**
- * @author cdr
- */
 public class EclipseCompilerConfigurable implements Configurable {
-  private JPanel myPanel;
-  private JCheckBox myCbDeprecation;
-  private JCheckBox myCbDebuggingInfo;
-  private JCheckBox myCbGenerateNoWarnings;
-  private RawCommandLineEditor myAdditionalOptionsField;
-  private JCheckBox myCbProceedOnErrors;
+  private final Project myProject;
+  private EclipseCompilerConfigurableUi myUi;
   private final EclipseCompilerOptions myCompilerSettings;
 
-  public EclipseCompilerConfigurable(EclipseCompilerOptions options) {
+  public EclipseCompilerConfigurable(Project project, EclipseCompilerOptions options) {
+    myProject = project;
     myCompilerSettings = options;
-    myAdditionalOptionsField.setDialogCaption(CompilerBundle.message("java.compiler.option.additional.command.line.parameters"));
   }
 
+  @Override
   public String getDisplayName() {
     return null;
   }
 
-  @Nullable
-  @NonNls
-  public String getHelpTopic() {
-    return null;
-  }
-
+  @Override
   public JComponent createComponent() {
-    return myPanel;
+    myUi = new EclipseCompilerConfigurableUi(myProject);
+    return myUi.getPanel();
   }
 
+  @Override
   public boolean isModified() {
     boolean isModified = false;
 
-    isModified |= ComparingUtils.isModified(myCbDeprecation, myCompilerSettings.DEPRECATION);
-    isModified |= ComparingUtils.isModified(myCbDebuggingInfo, myCompilerSettings.DEBUGGING_INFO);
-    isModified |= ComparingUtils.isModified(myCbGenerateNoWarnings, myCompilerSettings.GENERATE_NO_WARNINGS);
-    isModified |= ComparingUtils.isModified(myCbProceedOnErrors, myCompilerSettings.PROCEED_ON_ERROR);
-    isModified |= ComparingUtils.isModified(myAdditionalOptionsField, myCompilerSettings.ADDITIONAL_OPTIONS_STRING);
+    isModified |= ComparingUtils.isModified(myUi.deprecationCb, myCompilerSettings.DEPRECATION);
+    isModified |= ComparingUtils.isModified(myUi.debuggingInfoCb, myCompilerSettings.DEBUGGING_INFO);
+    isModified |= ComparingUtils.isModified(myUi.generateNoWarningsCb, myCompilerSettings.GENERATE_NO_WARNINGS);
+    isModified |= ComparingUtils.isModified(myUi.proceedOnErrorsCb, myCompilerSettings.PROCEED_ON_ERROR);
+    isModified |= ComparingUtils.isModified(myUi.pathToEcjField, FileUtil.toSystemDependentName(myCompilerSettings.ECJ_TOOL_PATH));
+    isModified |= ComparingUtils.isModified(myUi.additionalOptionsField, myCompilerSettings.ADDITIONAL_OPTIONS_STRING);
+    isModified |= !myUi.optionsOverrideComponent.getModuleOptionsMap().equals(myCompilerSettings.ADDITIONAL_OPTIONS_OVERRIDE);
+
     return isModified;
   }
 
+  @Override
   public void apply() throws ConfigurationException {
-    myCompilerSettings.DEPRECATION =  myCbDeprecation.isSelected();
-    myCompilerSettings.DEBUGGING_INFO = myCbDebuggingInfo.isSelected();
-    myCompilerSettings.GENERATE_NO_WARNINGS = myCbGenerateNoWarnings.isSelected();
-    myCompilerSettings.PROCEED_ON_ERROR = myCbProceedOnErrors.isSelected();
-    myCompilerSettings.ADDITIONAL_OPTIONS_STRING = myAdditionalOptionsField.getText();
+    myCompilerSettings.DEPRECATION =  myUi.deprecationCb.isSelected();
+    myCompilerSettings.DEBUGGING_INFO = myUi.debuggingInfoCb.isSelected();
+    myCompilerSettings.GENERATE_NO_WARNINGS = myUi.generateNoWarningsCb.isSelected();
+    myCompilerSettings.PROCEED_ON_ERROR = myUi.proceedOnErrorsCb.isSelected();
+    myCompilerSettings.ECJ_TOOL_PATH = FileUtil.toSystemIndependentName(myUi.pathToEcjField.getText().trim());
+    myCompilerSettings.ADDITIONAL_OPTIONS_STRING = myUi.additionalOptionsField.getText();
+    myCompilerSettings.ADDITIONAL_OPTIONS_OVERRIDE.clear();
+    myCompilerSettings.ADDITIONAL_OPTIONS_OVERRIDE.putAll(myUi.optionsOverrideComponent.getModuleOptionsMap());
   }
 
+  @Override
   public void reset() {
-    myCbDeprecation.setSelected(myCompilerSettings.DEPRECATION);
-    myCbDebuggingInfo.setSelected(myCompilerSettings.DEBUGGING_INFO);
-    myCbGenerateNoWarnings.setSelected(myCompilerSettings.GENERATE_NO_WARNINGS);
-    myCbProceedOnErrors.setSelected(myCompilerSettings.PROCEED_ON_ERROR);
-    myAdditionalOptionsField.setText(myCompilerSettings.ADDITIONAL_OPTIONS_STRING);
+    myUi.deprecationCb.setSelected(myCompilerSettings.DEPRECATION);
+    myUi.debuggingInfoCb.setSelected(myCompilerSettings.DEBUGGING_INFO);
+    myUi.generateNoWarningsCb.setSelected(myCompilerSettings.GENERATE_NO_WARNINGS);
+    myUi.proceedOnErrorsCb.setSelected(myCompilerSettings.PROCEED_ON_ERROR);
+    myUi.pathToEcjField.setText(FileUtil.toSystemDependentName(myCompilerSettings.ECJ_TOOL_PATH));
+    myUi.additionalOptionsField.setText(myCompilerSettings.ADDITIONAL_OPTIONS_STRING);
+    myUi.optionsOverrideComponent.setModuleOptionsMap(myCompilerSettings.ADDITIONAL_OPTIONS_OVERRIDE);
   }
 
+  @Override
   public void disposeUIResources() {
-
+    myUi = null;
   }
 }

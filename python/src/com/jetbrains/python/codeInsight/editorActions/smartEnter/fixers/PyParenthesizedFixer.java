@@ -22,12 +22,6 @@ import com.jetbrains.python.codeInsight.editorActions.smartEnter.PySmartEnterPro
 import com.jetbrains.python.psi.PyParenthesizedExpression;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * Created by IntelliJ IDEA.
- * Author: Alexey.Ivanov
- * Date:   15.04.2010
- * Time:   17:42:08
- */
 public class PyParenthesizedFixer extends PyFixer<PyParenthesizedExpression> {
   public PyParenthesizedFixer() {
     super(PyParenthesizedExpression.class);

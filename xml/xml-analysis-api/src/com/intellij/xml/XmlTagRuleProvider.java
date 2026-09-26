@@ -24,7 +24,7 @@ public abstract class XmlTagRuleProvider {
 
   public static final ExtensionPointName<XmlTagRuleProvider> EP_NAME = ExtensionPointName.create("com.intellij.xml.xmlTagRuleProvider");
 
-  public abstract Rule[] getTagRule(@NotNull XmlTag tag);
+  public abstract Rule @NotNull [] getTagRule(@NotNull XmlTag tag);
 
   public static class Rule {
 

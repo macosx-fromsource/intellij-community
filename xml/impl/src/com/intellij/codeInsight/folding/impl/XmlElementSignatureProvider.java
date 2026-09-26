@@ -1,52 +1,36 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.folding.impl;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.xml.XmlDocument;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.xml.util.HtmlUtil;
+import com.intellij.xml.util.JspFileTypeUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.StringTokenizer;
 
-/**
- * @author yole
- */
 public class XmlElementSignatureProvider extends AbstractElementSignatureProvider {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.folding.impl.XmlElementSignatureProvider");
+  private static final Logger LOG = Logger.getInstance(XmlElementSignatureProvider.class);
 
   @Override
   public String getSignature(@NotNull PsiElement element) {
-    if (element instanceof XmlTag) {
-      XmlTag tag = (XmlTag)element;
+    if (element instanceof XmlTag tag) {
       PsiElement parent = tag.getParent();
 
       StringBuilder buffer = new StringBuilder();
       buffer.append("tag").append(ELEMENT_TOKENS_SEPARATOR);
       String name = tag.getName();
-      buffer.append(name.length() == 0 ? "<unnamed>" : escape(name));
+      buffer.append(name.isEmpty() ? "<unnamed>" : escape(name));
 
       buffer.append(ELEMENT_TOKENS_SEPARATOR);
-      buffer.append(getChildIndex(tag, parent, name, XmlTag.class));
+      int childIndex = getChildIndex(tag, parent, name, XmlTag.class);
+      if (childIndex < 0) return null;
+      buffer.append(childIndex);
 
       if (!(parent instanceof PsiFile)) {
         String parentSignature = getSignature(parent);
@@ -84,14 +68,13 @@ public class XmlElementSignatureProvider extends AbstractElementSignatureProvide
         String unescapedName = unescape(name);
         PsiElement result = restoreElementInternal(parent, unescapedName, index, XmlTag.class);
 
-        if (result == null &&
-            file.getFileType() == StdFileTypes.JSP) {
+        if (result == null && JspFileTypeUtil.isJsp(file)) {
           //TODO: FoldingBuilder API, psi roots, etc?
-          if (parent instanceof XmlDocument) {
+          if (parent instanceof XmlDocument xmlDocument) {
             // html tag, not found in jsp tree
-            result = restoreElementInternal(HtmlUtil.getRealXmlDocument((XmlDocument)parent), unescapedName, index, XmlTag.class);
+            result = restoreElementInternal(HtmlUtil.getRealXmlDocument(xmlDocument), unescapedName, index, XmlTag.class);
           }
-          else if (name.equals("<unnamed>") && parent != null) {
+          else if (name.equals("<unnamed>")) {
             // scriplet/declaration missed because null name
             result = restoreElementInternal(parent, "", index, XmlTag.class);
           }

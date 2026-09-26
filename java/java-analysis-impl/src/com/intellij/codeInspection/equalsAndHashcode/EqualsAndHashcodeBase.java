@@ -1,54 +1,37 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.equalsAndHashcode;
 
-import com.intellij.codeInspection.*;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
+import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.java.analysis.JavaAnalysisBundle;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Pair;
-import com.intellij.psi.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiIdentifier;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.CachedValueProvider;
 import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.MethodSignatureUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-/**
- * @author max
- */
-public class EqualsAndHashcodeBase extends BaseJavaBatchLocalInspectionTool {
+public class EqualsAndHashcodeBase extends AbstractBaseJavaLocalInspectionTool {
   @Override
-  @NotNull
-  public PsiElementVisitor buildVisitor(@NotNull final ProblemsHolder holder, final boolean isOnTheFly) {
+  public @NotNull PsiElementVisitor buildVisitor(final @NotNull ProblemsHolder holder, final boolean isOnTheFly) {
     final Project project = holder.getProject();
     Pair<PsiMethod, PsiMethod> pair = CachedValuesManager.getManager(project).getCachedValue(project, () -> {
       final JavaPsiFacade psiFacade = JavaPsiFacade.getInstance(project);
-      final PsiClass psiObjectClass = ApplicationManager.getApplication().runReadAction(
-          new Computable<PsiClass>() {
-            @Override
-            @Nullable
-            public PsiClass compute() {
-              return psiFacade.findClass(CommonClassNames.JAVA_LANG_OBJECT, GlobalSearchScope.allScope(project));
-            }
-          }
-      );
+      final PsiClass psiObjectClass = ReadAction
+        .compute(() -> psiFacade.findClass(CommonClassNames.JAVA_LANG_OBJECT, GlobalSearchScope.allScope(project)));
       if (psiObjectClass == null) {
         return CachedValueProvider.Result.create(null, ProjectRootManager.getInstance(project));
       }
@@ -56,7 +39,7 @@ public class EqualsAndHashcodeBase extends BaseJavaBatchLocalInspectionTool {
       PsiMethod myEquals = null;
       PsiMethod myHashCode = null;
       for (PsiMethod method : methods) {
-        @NonNls final String name = method.getName();
+        final @NonNls String name = method.getName();
         if ("equals".equals(name)) {
           myEquals = method;
         }
@@ -67,25 +50,29 @@ public class EqualsAndHashcodeBase extends BaseJavaBatchLocalInspectionTool {
       return CachedValueProvider.Result.create(Pair.create(myEquals, myHashCode), psiObjectClass);
     });
 
-    if (pair == null) return new PsiElementVisitor() {};
+    if (pair == null) return PsiElementVisitor.EMPTY_VISITOR;
 
     //jdk wasn't configured for the project
     final PsiMethod myEquals = pair.first;
     final PsiMethod myHashCode = pair.second;
-    if (myEquals == null || myHashCode == null || !myEquals.isValid() || !myHashCode.isValid()) return new PsiElementVisitor() {};
+    if (myEquals == null || myHashCode == null || !myEquals.isValid() || !myHashCode.isValid()) return PsiElementVisitor.EMPTY_VISITOR;
 
     return new JavaElementVisitor() {
-      @Override public void visitClass(PsiClass aClass) {
+      @Override public void visitClass(@NotNull PsiClass aClass) {
         super.visitClass(aClass);
         boolean [] hasEquals = {false};
         boolean [] hasHashCode = {false};
         processClass(aClass, hasEquals, hasHashCode, myEquals, myHashCode);
         if (hasEquals[0] != hasHashCode[0]) {
+          if (hasHashCode[0] && aClass.isRecord()) {
+            // Probably better distributed hashCode is implemented for a record class where default equals works fine
+            return;
+          }
           PsiIdentifier identifier = aClass.getNameIdentifier();
           holder.registerProblem(identifier != null ? identifier : aClass,
                                  hasEquals[0]
-                                  ? InspectionsBundle.message("inspection.equals.hashcode.only.one.defined.problem.descriptor", "<code>equals()</code>", "<code>hashCode()</code>")
-                                  : InspectionsBundle.message("inspection.equals.hashcode.only.one.defined.problem.descriptor","<code>hashCode()</code>", "<code>equals()</code>"),
+                                  ? JavaAnalysisBundle.message("inspection.equals.hashcode.only.one.defined.problem.descriptor", "<code>equals()</code>", "<code>hashCode()</code>")
+                                  : JavaAnalysisBundle.message("inspection.equals.hashcode.only.one.defined.problem.descriptor","<code>hashCode()</code>", "<code>equals()</code>"),
                                   buildFixes(isOnTheFly, hasEquals[0]));
         }
       }
@@ -98,30 +85,22 @@ public class EqualsAndHashcodeBase extends BaseJavaBatchLocalInspectionTool {
                                    PsiMethod equals, PsiMethod hashcode) {
     final PsiMethod[] methods = aClass.getMethods();
     for (PsiMethod method : methods) {
-      if (MethodSignatureUtil.areSignaturesEqual(method, equals)) {
+      if (MethodSignatureUtil.areSignaturesEqual(method, equals) && !method.hasModifierProperty(PsiModifier.ABSTRACT)) {
         hasEquals[0] = true;
       }
-      else if (MethodSignatureUtil.areSignaturesEqual(method, hashcode)) {
+      else if (MethodSignatureUtil.areSignaturesEqual(method, hashcode) && !method.hasModifierProperty(PsiModifier.ABSTRACT)) {
         hasHashCode[0] = true;
       }
     }
   }
 
   @Override
-  @NotNull
-  public String getDisplayName() {
-    return InspectionsBundle.message("inspection.equals.hashcode.display.name");
-  }
-
-  @Override
-  @NotNull
-  public String getGroupDisplayName() {
+  public @NotNull String getGroupDisplayName() {
     return "";
   }
 
   @Override
-  @NotNull
-  public String getShortName() {
+  public @NotNull String getShortName() {
     return "EqualsAndHashcode";
   }
 

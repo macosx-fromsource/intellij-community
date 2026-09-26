@@ -1,32 +1,22 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.annotator.intentions.dynamic;
 
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Computable;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiModifier;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.ProjectScope;
 import com.intellij.psi.search.SearchScope;
 import com.intellij.ui.treeStructure.treetable.ListTreeTableModelOnColumns;
 import com.intellij.ui.treeStructure.treetable.TreeTable;
-import com.intellij.util.ArrayUtil;
+import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.tree.TreeUtil;
 import icons.JetgroovyIcons;
 import org.jetbrains.annotations.NotNull;
@@ -41,28 +31,25 @@ import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.GrDynamicImplicitEle
 import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.GrLightMethodBuilder;
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
 
-import javax.swing.*;
+import javax.swing.Icon;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreePath;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 21.02.2008
- */
 public class GrDynamicImplicitMethod extends GrLightMethodBuilder implements GrDynamicImplicitElement {
   private static final Logger LOG = Logger.getInstance(GrDynamicImplicitMethod.class);
 
   private final String myContainingClassName;
-  private final List<ParamInfo> myParamInfos;
+  private final List<? extends ParamInfo> myParamInfos;
   private final String myReturnType;
 
   public GrDynamicImplicitMethod(PsiManager manager,
                                  String name,
                                  String containingClassName,
                                  boolean isStatic,
-                                 List<ParamInfo> paramInfos,
+                                 List<? extends ParamInfo> paramInfos,
                                  String returnType) {
     super(manager, name);
     myContainingClassName = containingClassName;
@@ -74,7 +61,7 @@ public class GrDynamicImplicitMethod extends GrLightMethodBuilder implements GrD
     }
 
     for (ParamInfo pair : paramInfos) {
-      addParameter(pair.name, pair.type, false);
+      addParameter(pair.name, pair.type);
     }
 
     setReturnType(returnType, getResolveScope());
@@ -87,8 +74,7 @@ public class GrDynamicImplicitMethod extends GrLightMethodBuilder implements GrD
   }
 
   @Override
-  @Nullable
-  public PsiClass getContainingClassElement() {
+  public @Nullable PsiClass getContainingClassElement() {
     return JavaPsiFacade.getInstance(getProject()).findClass(myContainingClassName, ProjectScope.getAllScope(getProject()));
   }
 
@@ -102,7 +88,8 @@ public class GrDynamicImplicitMethod extends GrLightMethodBuilder implements GrD
 
   @Override
   public GrDynamicImplicitMethod copy() {
-    return new GrDynamicImplicitMethod(myManager, getName(), getContainingClassName(), hasModifierProperty(PsiModifier.STATIC), ContainerUtil.newArrayList(myParamInfos), myReturnType);
+    return new GrDynamicImplicitMethod(myManager, getName(), getContainingClassName(), hasModifierProperty(PsiModifier.STATIC),
+                                       new ArrayList<>((Collection<? extends ParamInfo>)myParamInfos), myReturnType);
   }
 
   @Override
@@ -119,35 +106,27 @@ public class GrDynamicImplicitMethod extends GrLightMethodBuilder implements GrD
   }
 
   @Override
-  @Nullable
-  public PsiClass getContainingClass() {
-    return ApplicationManager.getApplication().runReadAction(new Computable<PsiClass>() {
-      @Override
-      public PsiClass compute() {
-        try {
-          final GrTypeElement typeElement = GroovyPsiElementFactory.getInstance(getProject()).createTypeElement(myContainingClassName);
-          if (typeElement == null) return null;
+  public @Nullable PsiClass getContainingClass() {
+    return ReadAction.compute(() -> {
+      try {
+        final GrTypeElement typeElement = GroovyPsiElementFactory.getInstance(getProject()).createTypeElement(myContainingClassName);
 
-          final PsiType type = typeElement.getType();
-          if (!(type instanceof PsiClassType)) return null;
-
-          return ((PsiClassType)type).resolve();
-        }
-        catch (IncorrectOperationException e) {
-          LOG.error(e);
-          return null;
-        }
+        return typeElement.getType() instanceof PsiClassType type ? type.resolve() : null;
+      }
+      catch (IncorrectOperationException e) {
+        LOG.error(e);
+        return null;
       }
     });
   }
 
+  @Override
   public String toString() {
     return "DynamicMethod:" + getName();
   }
 
   @Override
-  @NotNull
-  public SearchScope getUseScope() {
+  public @NotNull SearchScope getUseScope() {
     return GlobalSearchScope.projectScope(getProject());
   }
 
@@ -161,9 +140,8 @@ public class GrDynamicImplicitMethod extends GrLightMethodBuilder implements GrD
 
       Object root = model.getRoot();
 
-      if (root == null || !(root instanceof DefaultMutableTreeNode)) return;
+      if (!(root instanceof DefaultMutableTreeNode treeRoot)) return;
 
-      DefaultMutableTreeNode treeRoot = ((DefaultMutableTreeNode) root);
       DefaultMutableTreeNode desiredNode;
 
       JavaPsiFacade facade = JavaPsiFacade.getInstance(getProject());
@@ -183,7 +161,8 @@ public class GrDynamicImplicitMethod extends GrLightMethodBuilder implements GrD
       }
 
       for (PsiClass aSuper : PsiUtil.iterateSupers(psiClass, true)) {
-        methodElement = DynamicManager.getInstance(getProject()).findConcreteDynamicMethod(aSuper.getQualifiedName(), getName(), ArrayUtil.toStringArray(parameterTypes));
+        methodElement = DynamicManager.getInstance(getProject()).findConcreteDynamicMethod(aSuper.getQualifiedName(), getName(),
+                                                                                           ArrayUtilRt.toStringArray(parameterTypes));
 
         if (methodElement != null) {
           trueClass = aSuper;
@@ -231,14 +210,7 @@ public class GrDynamicImplicitMethod extends GrLightMethodBuilder implements GrD
   }
 
   @Override
-  @Nullable
-  public String getLocationString() {
-    return null;
-  }
-
-  @Override
-  @Nullable
-  public Icon getIcon(boolean open) {
+  public @Nullable Icon getIcon(boolean open) {
     return JetgroovyIcons.Groovy.Method;
   }
 }

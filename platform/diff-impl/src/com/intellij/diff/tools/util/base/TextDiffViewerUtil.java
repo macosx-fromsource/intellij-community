@@ -1,111 +1,144 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.diff.tools.util.base;
 
 import com.intellij.diff.DiffContext;
+import com.intellij.diff.actions.impl.SetEditorSettingsActionGroup;
 import com.intellij.diff.contents.DiffContent;
 import com.intellij.diff.contents.DocumentContent;
 import com.intellij.diff.contents.EmptyContent;
+import com.intellij.diff.contents.FileDocumentContentImpl;
 import com.intellij.diff.requests.ContentDiffRequest;
+import com.intellij.diff.tools.util.DiffNotifications;
 import com.intellij.diff.tools.util.FoldingModelSupport;
 import com.intellij.diff.tools.util.base.TextDiffSettingsHolder.TextDiffSettings;
 import com.intellij.diff.util.DiffUserDataKeys;
 import com.intellij.diff.util.DiffUserDataKeysEx;
 import com.intellij.diff.util.DiffUtil;
 import com.intellij.icons.AllIcons;
-import com.intellij.internal.statistic.UsageTrigger;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.actionSystem.ToggleAction;
+import com.intellij.openapi.actionSystem.Toggleable;
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction;
+import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.diff.DiffBundle;
+import com.intellij.openapi.diff.impl.DiffUsageTriggerCollector;
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.actions.EditorActionUtil;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.EditorModificationUtil;
 import com.intellij.openapi.editor.event.DocumentListener;
-import com.intellij.openapi.editor.event.EditorMouseEvent;
 import com.intellij.openapi.editor.ex.EditorEx;
+import com.intellij.openapi.editor.ex.EditorGutterComponentEx;
+import com.intellij.openapi.editor.ex.EditorPopupHandler;
+import com.intellij.openapi.editor.impl.ContextMenuPopupHandler;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.DumbAware;
-import com.intellij.openapi.util.Condition;
-import com.intellij.ui.ToggleActionButton;
-import com.intellij.util.EditorPopupHandler;
+import com.intellij.openapi.project.DumbAwareToggleAction;
+import com.intellij.openapi.project.ProjectLocator;
+import com.intellij.util.ArrayUtil;
 import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.event.HyperlinkEvent;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 
-public class TextDiffViewerUtil {
-  public static final Logger LOG = Logger.getInstance(TextDiffViewerUtil.class);
+import static com.intellij.diff.util.DiffUtil.isUserDataFlagSet;
 
-  @NotNull
-  public static List<AnAction> createEditorPopupActions() {
-    List<AnAction> result = new ArrayList<>();
-    result.add(ActionManager.getInstance().getAction("CompareClipboardWithSelection"));
+@ApiStatus.Internal
+public final class TextDiffViewerUtil {
+  private static final Logger LOG = Logger.getInstance(TextDiffViewerUtil.class);
 
-    result.add(Separator.getInstance());
-    ContainerUtil.addAll(result, ((ActionGroup)ActionManager.getInstance().getAction(IdeActions.GROUP_DIFF_EDITOR_POPUP)).getChildren(null));
-
-    return result;
+  public static void installGutterPopup(@NotNull List<? extends Editor> editors, @NotNull ActionGroup actionGroup) {
+    for (Editor editor : editors) {
+      if (editor.getGutter() instanceof EditorGutterComponentEx gutterEx) {
+        gutterEx.setGutterPopupGroup(actionGroup);
+      }
+    }
   }
 
-  @NotNull
-  public static FoldingModelSupport.Settings getFoldingModelSettings(@NotNull DiffContext context) {
+  public static @NotNull ActionGroup createEditorGutterActionGroup(@NotNull SetEditorSettingsActionGroup settingsGroup,
+                                                                   @NotNull List<@NotNull AnAction> additionalActions) {
+    List<AnAction> gutterActions = new ArrayList<>();
+    gutterActions.add(ActionManager.getInstance().getAction(IdeActions.GROUP_DIFF_EDITOR_GUTTER_POPUP));
+    gutterActions.addAll(additionalActions);
+    gutterActions.add(settingsGroup.getAppearanceGroup());
+    return new DefaultActionGroup(gutterActions);
+  }
+
+  public static @NotNull ActionGroup createEditorGutterActionGroup(@NotNull SetEditorSettingsActionGroup settingsGroup) {
+    return createEditorGutterActionGroup(settingsGroup, Collections.emptyList());
+  }
+
+  public static @NotNull FoldingModelSupport.Settings getFoldingModelSettings(@NotNull DiffContext context) {
     TextDiffSettings settings = getTextSettings(context);
+    return getFoldingModelSettings(settings);
+  }
+
+  public static @NotNull FoldingModelSupport.Settings getFoldingModelSettings(@NotNull TextDiffSettings settings) {
     return new FoldingModelSupport.Settings(settings.getContextRange(), settings.isExpandByDefault());
   }
 
-  @NotNull
-  public static TextDiffSettings getTextSettings(@NotNull DiffContext context) {
-    TextDiffSettings settings = context.getUserData(TextDiffSettingsHolder.KEY);
+
+  public static @NotNull TextDiffSettings getTextSettings(@NotNull DiffContext context) {
+    TextDiffSettings settings = context.getUserData(TextDiffSettings.KEY);
     if (settings == null) {
       settings = TextDiffSettings.getSettings(context.getUserData(DiffUserDataKeys.PLACE));
-      context.putUserData(TextDiffSettingsHolder.KEY, settings);
-      if (DiffUtil.isUserDataFlagSet(DiffUserDataKeys.DO_NOT_IGNORE_WHITESPACES, context)) {
+      context.putUserData(TextDiffSettings.KEY, settings);
+      if (isUserDataFlagSet(DiffUserDataKeys.DO_NOT_IGNORE_WHITESPACES, context)) {
         settings.setIgnorePolicy(IgnorePolicy.DEFAULT);
       }
     }
     return settings;
   }
 
-  @NotNull
-  public static boolean[] checkForceReadOnly(@NotNull DiffContext context, @NotNull ContentDiffRequest request) {
-    int contentCount = request.getContents().size();
+  public static boolean @NotNull [] checkForceReadOnly(@NotNull DiffContext context, @NotNull ContentDiffRequest request) {
+    List<DiffContent> contents = request.getContents();
+    int contentCount = contents.size();
     boolean[] result = new boolean[contentCount];
 
-    if (DiffUtil.isUserDataFlagSet(DiffUserDataKeys.FORCE_READ_ONLY, request, context)) {
-      Arrays.fill(result, true);
-      return result;
+    boolean[] data = request.getUserData(DiffUserDataKeys.FORCE_READ_ONLY_CONTENTS);
+    if (data != null && data.length != contentCount) {
+      LOG.warn("Invalid FORCE_READ_ONLY_CONTENTS key value: " + request);
+      data = null;
     }
 
-    boolean[] data = request.getUserData(DiffUserDataKeys.FORCE_READ_ONLY_CONTENTS);
-    if (data != null && data.length == contentCount) {
-      return data;
+    for (int i = 0; i < contents.size(); i++) {
+      if (isUserDataFlagSet(DiffUserDataKeys.FORCE_READ_ONLY, contents.get(i), request, context) ||
+          data != null && data[i]) {
+        result[i] = true;
+      }
     }
 
     return result;
   }
 
   public static void installDocumentListeners(@NotNull DocumentListener listener,
-                                              @NotNull List<Document> documents,
+                                              @NotNull List<? extends Document> documents,
                                               @NotNull Disposable disposable) {
-    for (Document document : ContainerUtil.newHashSet(documents)) {
+    for (Document document : new HashSet<>((Collection<? extends Document>)documents)) {
       document.addDocumentListener(listener, disposable);
     }
   }
@@ -129,12 +162,22 @@ public class TextDiffViewerUtil {
     if (sameDocuments) {
       StringBuilder message = new StringBuilder();
       message.append("DiffRequest with same documents detected\n");
-      message.append(request.toString()).append("\n");
+      message.append(request).append("\n");
       for (DiffContent content : contents) {
-        message.append(content.toString()).append("\n");
+        message.append(content).append("\n");
       }
-      LOG.warn(new Throwable(message.toString()));
+      LOG.warn(message.toString());
     }
+  }
+
+  public static @Nullable JPanel createEqualContentsNotification(@NotNull List<? extends DocumentContent> contents) {
+    boolean isPartialPreview = ContainerUtil.exists(contents, content ->
+      FileDocumentManager.getInstance().isPartialPreviewOfALargeFile(content.getDocument()));
+    if (isPartialPreview) return null;
+
+    boolean equalCharsets = areEqualCharsets(contents);
+    boolean equalSeparators = areEqualLineSeparators(contents);
+    return DiffNotifications.createEqualContents(equalCharsets, equalSeparators);
   }
 
   public static boolean areEqualLineSeparators(@NotNull List<? extends DiffContent> contents) {
@@ -148,163 +191,242 @@ public class TextDiffViewerUtil {
   }
 
   private static <T> boolean areEqualDocumentContentProperties(@NotNull List<? extends DiffContent> contents,
-                                                               @NotNull Function<DocumentContent, T> propertyGetter) {
+                                                               @NotNull Function<? super DocumentContent, ? extends T> propertyGetter) {
     List<T> properties = ContainerUtil.mapNotNull(contents, (content) -> {
       if (content instanceof EmptyContent) return null;
+      if (content instanceof FileDocumentContentImpl o && o.getProject() != null) {
+        try (AccessToken ignore = ProjectLocator.withPreferredProject(o.getFile(), o.getProject())) {
+          return propertyGetter.apply(o);
+        }
+      }
       return propertyGetter.fun((DocumentContent)content);
     });
 
     if (properties.size() < 2) return true;
-    return ContainerUtil.newHashSet(properties).size() == 1;
+    return new HashSet<>(properties).size() == 1;
+  }
+
+  public static void applyModification(@NotNull Document document1,
+                                       int line1,
+                                       int line2,
+                                       @NotNull Document document2,
+                                       int oLine1,
+                                       int oLine2,
+                                       boolean isLocalChangeRevert) {
+    DiffUtil.applyModification(document1, line1, line2, document2, oLine1, oLine2);
+
+    if (isLocalChangeRevert) {
+      DiffUtil.clearLineModificationFlags(document1, line1, line1 + (oLine2 - oLine1));
+    }
   }
 
   //
   // Actions
   //
 
-  // TODO: pretty icons ?
-  public static abstract class ComboBoxSettingAction<T> extends ComboBoxAction implements DumbAware {
-    private DefaultActionGroup myChildren;
+  public abstract static class ComboBoxSettingAction<T> extends ComboBoxAction implements DumbAware {
+    private DefaultActionGroup myActions;
 
     @Override
-    public void update(AnActionEvent e) {
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
       Presentation presentation = e.getPresentation();
-      presentation.setText(getText(getCurrentSetting()));
+      presentation.setText(getText(getValue()));
     }
 
-    @NotNull
-    public DefaultActionGroup getPopupGroup() {
-      initChildren();
-      return myChildren;
-    }
-
-    @NotNull
     @Override
-    protected DefaultActionGroup createPopupActionGroup(JComponent button) {
-      initChildren();
-      return myChildren;
+    protected @NotNull DefaultActionGroup createPopupActionGroup(@NotNull JComponent button, @NotNull DataContext context) {
+      return getActions();
     }
 
-    private void initChildren() {
-      if (myChildren == null) {
-        myChildren = new DefaultActionGroup();
-        for (T setting : getAvailableSettings()) {
-          myChildren.add(new MyAction(setting));
+    public @NotNull DefaultActionGroup getActions() {
+      if (myActions == null) {
+        myActions = new DefaultActionGroup();
+        for (T setting : getAvailableOptions()) {
+          myActions.add(new MyAction(setting));
         }
       }
+      return myActions;
     }
 
-    @NotNull
-    protected abstract List<T> getAvailableSettings();
+    protected abstract @NotNull @Unmodifiable List<T> getAvailableOptions();
 
-    @NotNull
-    protected abstract String getText(@NotNull T setting);
+    protected abstract @NotNull T getValue();
 
-    @NotNull
-    protected abstract T getCurrentSetting();
+    protected abstract void setValue(@NotNull T option);
 
-    protected abstract void applySetting(@NotNull T setting, @NotNull AnActionEvent e);
+    protected abstract @NotNull @Nls String getText(@NotNull T option);
 
-    private class MyAction extends AnAction implements DumbAware {
-      @NotNull private final T mySetting;
+    private class MyAction extends AnAction implements Toggleable, DumbAware {
+      private final @NotNull T myOption;
 
-      public MyAction(@NotNull T setting) {
-        super(getText(setting));
-        mySetting = setting;
+      @Override
+      public @NotNull ActionUpdateThread getActionUpdateThread() {
+        return ActionUpdateThread.EDT;
+      }
+
+      @Override
+      public void update(@NotNull AnActionEvent e) {
+        Toggleable.setSelected(e.getPresentation(), getValue() == myOption);
+      }
+
+      MyAction(@NotNull T option) {
+        super(getText(option));
+        myOption = option;
       }
 
       @Override
       public void actionPerformed(@NotNull AnActionEvent e) {
-        applySetting(mySetting, e);
+        setValue(myOption);
       }
     }
   }
 
-  public static abstract class HighlightPolicySettingAction extends ComboBoxSettingAction<HighlightPolicy> {
-    @NotNull protected final TextDiffSettings mySettings;
+  public abstract static class EnumPolicySettingAction<T extends Enum<T>> extends TextDiffViewerUtil.ComboBoxSettingAction<T> {
+    private final T @NotNull [] myPolicies;
 
-    public HighlightPolicySettingAction(@NotNull TextDiffSettings settings) {
+    public EnumPolicySettingAction(T @NotNull [] policies) {
+      assert policies.length > 0;
+      myPolicies = policies;
+
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      super.update(e);
+      e.getPresentation().setEnabledAndVisible(myPolicies.length > 1);
+    }
+
+    @Override
+    protected @NotNull @Unmodifiable List<T> getAvailableOptions() {
+      return ContainerUtil.sorted(Arrays.asList(myPolicies));
+    }
+
+    @Override
+    public @NotNull T getValue() {
+      T value = getStoredValue();
+      if (ArrayUtil.contains(value, myPolicies)) return value;
+
+      List<T> substitutes = getValueSubstitutes(value);
+      for (T substitute : substitutes) {
+        if (ArrayUtil.contains(substitute, myPolicies)) return substitute;
+      }
+
+      return myPolicies[0];
+    }
+
+    protected abstract @NotNull T getStoredValue();
+
+    protected @NotNull List<T> getValueSubstitutes(@NotNull T value) {
+      return Collections.emptyList();
+    }
+  }
+
+  public static class HighlightPolicySettingAction extends EnumPolicySettingAction<HighlightPolicy> {
+    protected final @NotNull TextDiffSettings mySettings;
+
+    public HighlightPolicySettingAction(@NotNull TextDiffSettings settings,
+                                        HighlightPolicy @NotNull ... policies) {
+      super(policies);
       mySettings = settings;
     }
 
     @Override
-    protected void applySetting(@NotNull HighlightPolicy setting, @NotNull AnActionEvent e) {
-      if (getCurrentSetting() == setting) return;
-      UsageTrigger.trigger("diff.TextDiffSettings.HighlightPolicy." + setting.name());
-      mySettings.setHighlightPolicy(setting);
-      update(e);
-      onSettingsChanged();
+    protected void setValue(@NotNull HighlightPolicy option) {
+      if (getValue() == option) return;
+      DiffUsageTriggerCollector.logToggleHighlightPolicy(option, mySettings.getPlace());
+      mySettings.setHighlightPolicy(option);
     }
 
-    @NotNull
     @Override
-    protected HighlightPolicy getCurrentSetting() {
+    protected @NotNull HighlightPolicy getStoredValue() {
       return mySettings.getHighlightPolicy();
     }
 
-    @NotNull
     @Override
-    protected String getText(@NotNull HighlightPolicy setting) {
-      return setting.getText();
+    protected @NotNull List<HighlightPolicy> getValueSubstitutes(@NotNull HighlightPolicy value) {
+      if (value == HighlightPolicy.BY_WORD_SPLIT) {
+        return Collections.singletonList(HighlightPolicy.BY_WORD);
+      }
+      if (value == HighlightPolicy.DO_NOT_HIGHLIGHT) {
+        return Collections.singletonList(HighlightPolicy.BY_LINE);
+      }
+      return Collections.singletonList(HighlightPolicy.BY_WORD);
     }
 
-    @NotNull
     @Override
-    protected List<HighlightPolicy> getAvailableSettings() {
-      return Arrays.asList(HighlightPolicy.values());
+    protected @Nls @NotNull String getText(@NotNull HighlightPolicy option) {
+      return option.getText();
     }
-
-    protected abstract void onSettingsChanged();
   }
 
-  public static abstract class IgnorePolicySettingAction extends ComboBoxSettingAction<IgnorePolicy> {
-    @NotNull protected final TextDiffSettings mySettings;
+  public static class IgnorePolicySettingAction extends EnumPolicySettingAction<IgnorePolicy> {
+    protected final @NotNull TextDiffSettings mySettings;
 
-    public IgnorePolicySettingAction(@NotNull TextDiffSettings settings) {
+    public IgnorePolicySettingAction(@NotNull TextDiffSettings settings,
+                                     IgnorePolicy @NotNull ... policies) {
+      super(policies);
       mySettings = settings;
     }
 
     @Override
-    protected void applySetting(@NotNull IgnorePolicy setting, @NotNull AnActionEvent e) {
-      if (getCurrentSetting() == setting) return;
-      UsageTrigger.trigger("diff.TextDiffSettings.IgnorePolicy." + setting.name());
-      mySettings.setIgnorePolicy(setting);
-      update(e);
-      onSettingsChanged();
+    protected void setValue(@NotNull IgnorePolicy option) {
+      if (getValue() == option) return;
+      DiffUsageTriggerCollector.logToggleIgnorePolicy(option, mySettings.getPlace());
+      mySettings.setIgnorePolicy(option);
     }
 
-    @NotNull
     @Override
-    protected IgnorePolicy getCurrentSetting() {
+    protected @NotNull IgnorePolicy getStoredValue() {
       return mySettings.getIgnorePolicy();
     }
 
-    @NotNull
     @Override
-    protected String getText(@NotNull IgnorePolicy setting) {
-      return setting.getText();
+    protected @NotNull List<IgnorePolicy> getValueSubstitutes(@NotNull IgnorePolicy value) {
+      if (value == IgnorePolicy.IGNORE_WHITESPACES_CHUNKS) {
+        return Collections.singletonList(IgnorePolicy.IGNORE_WHITESPACES);
+      }
+      if (value == IgnorePolicy.FORMATTING) {
+        return Collections.singletonList(IgnorePolicy.TRIM_WHITESPACES);
+      }
+      return Collections.singletonList(IgnorePolicy.DEFAULT);
     }
 
-    @NotNull
     @Override
-    protected List<IgnorePolicy> getAvailableSettings() {
-      return Arrays.asList(IgnorePolicy.values());
+    protected @Nls @NotNull String getText(@NotNull IgnorePolicy option) {
+      return option.getText();
     }
-
-    protected abstract void onSettingsChanged();
   }
 
-  public static class ToggleAutoScrollAction extends ToggleActionButton implements DumbAware {
-    @NotNull protected final TextDiffSettings mySettings;
+  public static class ToggleAutoScrollAction extends DumbAwareToggleAction {
+    protected final @NotNull TextDiffSettings mySettings;
 
     public ToggleAutoScrollAction(@NotNull TextDiffSettings settings) {
-      super("Synchronize Scrolling", AllIcons.Actions.SynchronizeScrolling);
+      super(DiffBundle.message("synchronize.scrolling"), null, AllIcons.Actions.SynchronizeScrolling);
       mySettings = settings;
     }
 
     @Override
-    public boolean isSelected(AnActionEvent e) {
-      return mySettings.isEnableSyncScroll();
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      super.update(e);
+      if (mySettings.isEnableAligningChangesMode()) {
+        e.getPresentation().setEnabled(false);
+        Toggleable.setSelected(e.getPresentation(), true);
+      }
+    }
+
+    @Override
+    public boolean isSelected(@NotNull AnActionEvent e) {
+      return mySettings.isEnableSyncScroll() || mySettings.isEnableAligningChangesMode();
     }
 
     @Override
@@ -313,17 +435,25 @@ public class TextDiffViewerUtil {
     }
   }
 
-  public static abstract class ToggleExpandByDefaultAction extends ToggleActionButton implements DumbAware {
-    @NotNull protected final TextDiffSettings mySettings;
+  public static class ToggleExpandByDefaultAction extends DumbAwareToggleAction {
+    protected final @NotNull TextDiffSettings mySettings;
+    private final FoldingModelSupport myFoldingSupport;
 
-    public ToggleExpandByDefaultAction(@NotNull TextDiffSettings settings) {
-      super("Collapse unchanged fragments", AllIcons.Actions.Collapseall);
+    public ToggleExpandByDefaultAction(@NotNull TextDiffSettings settings, @NotNull FoldingModelSupport foldingSupport) {
+      super(DiffBundle.message("collapse.unchanged.fragments"), null, AllIcons.Actions.Collapseall);
       mySettings = settings;
+      myFoldingSupport = foldingSupport;
     }
 
     @Override
-    public boolean isVisible() {
-      return mySettings.getContextRange() != -1;
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      super.update(e);
+      e.getPresentation().setVisible(mySettings.getContextRange() != -1 && myFoldingSupport.isEnabled());
     }
 
     @Override
@@ -339,23 +469,30 @@ public class TextDiffViewerUtil {
       expandAll(expand);
     }
 
-    protected abstract void expandAll(boolean expand);
+    protected void expandAll(boolean expand) {
+      myFoldingSupport.expandAll(expand);
+    }
   }
 
-  public static abstract class ReadOnlyLockAction extends ToggleAction implements DumbAware {
-    @NotNull protected final DiffContext myContext;
-    @NotNull protected final TextDiffSettings mySettings;
+  public abstract static class ReadOnlyLockAction extends ToggleAction implements DumbAware {
+    protected final @NotNull DiffContext myContext;
+    protected final @NotNull TextDiffSettings mySettings;
 
     public ReadOnlyLockAction(@NotNull DiffContext context) {
-      super("Disable editing", null, AllIcons.Nodes.Padlock);
+      super(DiffBundle.message("disable.editing"), null, AllIcons.Diff.Lock);
       myContext = context;
       mySettings = getTextSettings(context);
     }
 
     protected void applyDefaults() {
       if (isVisible()) { // apply default state
-        setSelected(null, isSelected(null));
+        setSelected(isSelected());
       }
+    }
+
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
     }
 
     @Override
@@ -369,12 +506,20 @@ public class TextDiffViewerUtil {
     }
 
     @Override
-    public boolean isSelected(AnActionEvent e) {
+    public boolean isSelected(@NotNull AnActionEvent e) {
+      return isSelected();
+    }
+
+    boolean isSelected() {
       return mySettings.isReadOnlyLock();
     }
 
     @Override
-    public void setSelected(AnActionEvent e, boolean state) {
+    public void setSelected(@NotNull AnActionEvent e, boolean state) {
+      setSelected(state);
+    }
+
+    void setSelected(boolean state) {
       mySettings.setReadOnlyLock(state);
       doApply(state);
     }
@@ -386,6 +531,20 @@ public class TextDiffViewerUtil {
     protected abstract void doApply(boolean readOnly);
 
     protected abstract boolean canEdit();
+
+    protected void putEditorHint(@NotNull EditorEx editor, boolean readOnly) {
+      if (readOnly) {
+        EditorModificationUtil.setReadOnlyHint(editor, DiffBundle.message("editing.viewer.hint.enable.editing.text"),
+                                               (e) -> {
+                                                 if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED) {
+                                                   setSelected(false);
+                                                 }
+                                               });
+      }
+      else {
+        EditorModificationUtil.setReadOnlyHint(editor, null);
+      }
+    }
   }
 
   public static class EditorReadOnlyLockAction extends ReadOnlyLockAction {
@@ -401,6 +560,7 @@ public class TextDiffViewerUtil {
     protected void doApply(boolean readOnly) {
       for (EditorEx editor : myEditableEditors) {
         editor.setViewer(readOnly);
+        putEditorHint(editor, readOnly);
       }
     }
 
@@ -410,18 +570,12 @@ public class TextDiffViewerUtil {
     }
   }
 
-  @NotNull
-  public static List<? extends EditorEx> getEditableEditors(@NotNull List<? extends EditorEx> editors) {
-    return ContainerUtil.filter(editors, new Condition<EditorEx>() {
-      @Override
-      public boolean value(EditorEx editor) {
-        return !editor.isViewer();
-      }
-    });
+  public static @NotNull List<? extends EditorEx> getEditableEditors(@NotNull List<? extends EditorEx> editors) {
+    return ContainerUtil.filter(editors, editor -> !editor.isViewer());
   }
 
   public static class EditorFontSizeSynchronizer implements PropertyChangeListener {
-    @NotNull private final List<? extends EditorEx> myEditors;
+    private final @NotNull List<? extends EditorEx> myEditors;
 
     private boolean myDuringUpdate = false;
 
@@ -440,16 +594,16 @@ public class TextDiffViewerUtil {
     public void propertyChange(PropertyChangeEvent evt) {
       if (myDuringUpdate) return;
 
-      if (!EditorEx.PROP_FONT_SIZE.equals(evt.getPropertyName())) return;
+      if (!EditorEx.PROP_FONT_SIZE_2D.equals(evt.getPropertyName())) return;
       if (evt.getOldValue().equals(evt.getNewValue())) return;
-      int fontSize = ((Integer)evt.getNewValue()).intValue();
+      float fontSize = ((Float)evt.getNewValue()).floatValue();
 
       for (EditorEx editor : myEditors) {
         if (evt.getSource() != editor) updateEditor(editor, fontSize);
       }
     }
 
-    public void updateEditor(@NotNull EditorEx editor, int fontSize) {
+    public void updateEditor(@NotNull EditorEx editor, float fontSize) {
       try {
         myDuringUpdate = true;
         editor.setFontSize(fontSize);
@@ -460,26 +614,22 @@ public class TextDiffViewerUtil {
     }
   }
 
-  public static class EditorActionsPopup extends EditorPopupHandler {
-    @NotNull private final List<? extends AnAction> myEditorPopupActions;
+  public static class EditorActionsPopup {
+    private final @NotNull List<? extends AnAction> myEditorPopupActions;
 
     public EditorActionsPopup(@NotNull List<? extends AnAction> editorPopupActions) {
       myEditorPopupActions = editorPopupActions;
     }
 
-    public void install(@NotNull List<? extends EditorEx> editors) {
-      for (EditorEx editor : editors) {
-        editor.addEditorMouseListener(this);
-        editor.setContextMenuGroupId(null); // disabling default context menu
-      }
-    }
+    public void install(@NotNull List<? extends EditorEx> editors, @NotNull JComponent component) {
+      DiffUtil.recursiveRegisterShortcutSet(new DefaultActionGroup(myEditorPopupActions), component, null);
 
-    @Override
-    public void invokePopup(final EditorMouseEvent event) {
-      if (myEditorPopupActions.isEmpty()) return;
-      ActionGroup group = new DefaultActionGroup(myEditorPopupActions);
-      EditorPopupHandler handler = EditorActionUtil.createEditorPopupHandler(group);
-      handler.invokePopup(event);
+      EditorPopupHandler handler = new ContextMenuPopupHandler.Simple(
+        myEditorPopupActions.isEmpty() ? null : new DefaultActionGroup(myEditorPopupActions)
+      );
+      for (EditorEx editor : editors) {
+        editor.installPopupHandler(handler);
+      }
     }
   }
 }

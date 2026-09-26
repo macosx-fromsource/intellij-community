@@ -15,9 +15,18 @@
  */
 package com.intellij.codeInsight.unwrap;
 
+import com.intellij.codeInsight.BlockUtils;
 import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiResourceList;
+import com.intellij.psi.PsiResourceListElement;
+import com.intellij.psi.PsiResourceVariable;
+import com.intellij.psi.PsiStatement;
+import com.intellij.psi.PsiTryStatement;
+import com.intellij.util.CommonJavaRefactoringUtil;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
 
 public class JavaTryUnwrapper extends JavaUnwrapper {
   public JavaTryUnwrapper() {
@@ -25,29 +34,32 @@ public class JavaTryUnwrapper extends JavaUnwrapper {
   }
 
   @Override
-  public boolean isApplicableTo(PsiElement e) {
+  public boolean isApplicableTo(@NotNull PsiElement e) {
     return e instanceof PsiTryStatement;
   }
 
   @Override
   protected void doUnwrap(final PsiElement element, final Context context) throws IncorrectOperationException {
-    final PsiTryStatement trySt = (PsiTryStatement)element;
+    PsiTryStatement trySt = (PsiTryStatement)element;
 
     PsiResourceList resourceList = trySt.getResourceList();
     if (resourceList != null) {
       for (PsiResourceListElement listElement : resourceList) {
         if (listElement instanceof PsiResourceVariable) {
           context.extractElement(listElement, trySt);
-          if (context.myIsEffective) {
+          if (context.isEffective()) {
             PsiStatement emptyStatement = JavaPsiFacade.getElementFactory(resourceList.getProject()).createStatementFromText(";", trySt);
-            trySt.getParent().addBefore(emptyStatement, trySt);
+            BlockUtils.addBefore(trySt, emptyStatement);
           }
         }
       }
     }
+    if (CommonJavaRefactoringUtil.isLoopOrIf(trySt.getParent())) {
+      trySt = BlockUtils.expandSingleStatementToBlockStatement(trySt);
+    }
+
     context.extractFromCodeBlock(trySt.getTryBlock(), trySt);
     context.extractFromCodeBlock(trySt.getFinallyBlock(), trySt);
-
     context.delete(trySt);
   }
 }

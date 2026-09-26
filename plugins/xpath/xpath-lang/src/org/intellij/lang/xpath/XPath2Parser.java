@@ -1,30 +1,12 @@
-/*
- * Copyright 2000-2011 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.intellij.lang.xpath;
 
 import com.intellij.lang.PsiBuilder;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.tree.TokenSet;
+import org.intellij.plugins.xpathView.XPathBundle;
 import org.jetbrains.annotations.Nullable;
 
-/*
-* Created by IntelliJ IDEA.
-* User: sweinreuter
-* Date: 03.01.11
-*/
 public class XPath2Parser extends XPathParser {
   @Override
   protected boolean parseExpr(PsiBuilder builder) {
@@ -34,7 +16,7 @@ public class XPath2Parser extends XPathParser {
       do {
         builder.advanceLexer();
         if (!parseExprSingle(builder)) {
-          builder.error("Expression expected");
+          builder.error(XPathBundle.message("parsing.error.expression.expected"));
         }
       } while (builder.getTokenType() == XPathTokenTypes.COMMA);
       seq.done(XPath2ElementTypes.SEQUENCE);
@@ -83,19 +65,19 @@ public class XPath2Parser extends XPathParser {
 
   private boolean parseIfExpr(PsiBuilder builder) {
     final PsiBuilder.Marker mark = builder.mark();
-    checkMatches(builder, XPath2TokenTypes.IF, "'if' expected");
-    checkMatches(builder, XPathTokenTypes.LPAREN, "'(' expected");
+    checkMatches(builder, XPath2TokenTypes.IF, XPathBundle.message("parsing.error.if.expected"));
+    checkMatches(builder, XPathTokenTypes.LPAREN, XPathBundle.message("parsing.error.opening.parenthesis.expected"));
     if (!parseExpr(builder)) {
-      builder.error("expression expected");
+      builder.error(XPathBundle.message("parsing.error.expression.expected"));
     }
-    checkMatches(builder, XPathTokenTypes.RPAREN, "')' expected");
-    checkMatches(builder, XPath2TokenTypes.THEN, "'then' expected");
+    checkMatches(builder, XPathTokenTypes.RPAREN, XPathBundle.message("parsing.error.closing.parenthesis.expected"));
+    checkMatches(builder, XPath2TokenTypes.THEN, XPathBundle.message("parsing.error.then.expected"));
     if (!parseExprSingle(builder)) {
-      builder.error("expression expected");
+      builder.error(XPathBundle.message("parsing.error.expression.expected"));
     }
-    checkMatches(builder, XPath2TokenTypes.ELSE, "'else' expected");
+    checkMatches(builder, XPath2TokenTypes.ELSE, XPathBundle.message("parsing.error.else.expected"));
     if (!parseExprSingle(builder)) {
-      builder.error("expression expected");
+      builder.error(XPathBundle.message("parsing.error.expression.expected"));
     }
     mark.done(XPath2ElementTypes.IF);
     return true;
@@ -103,15 +85,15 @@ public class XPath2Parser extends XPathParser {
 
   private boolean parseQuantifiedExpr(PsiBuilder builder) {
     PsiBuilder.Marker mark = builder.mark();
-    checkMatches(builder, XPath2TokenTypes.QUANTIFIERS, "'every' or 'some' expected");
+    checkMatches(builder, XPath2TokenTypes.QUANTIFIERS, XPathBundle.message("parsing.error.every.or.some.expected"));
 
     parseBindingSequence(builder);
 
-    checkMatches(builder, XPath2TokenTypes.SATISFIES, "'satisfies' expected");
+    checkMatches(builder, XPath2TokenTypes.SATISFIES, XPathBundle.message("parsing.error.satisfies.expected"));
 
     final PsiBuilder.Marker ret = builder.mark();
     if (!parseExprSingle(builder)) {
-      builder.error("expression expected");
+      builder.error(XPathBundle.message("parsing.error.expression.expected"));
     }
 
     ret.done(XPath2ElementTypes.BODY);
@@ -121,14 +103,14 @@ public class XPath2Parser extends XPathParser {
 
   protected boolean parseForExpr(PsiBuilder builder) {
     final PsiBuilder.Marker mark = builder.mark();
-    checkMatches(builder, XPath2TokenTypes.FOR, "'for' expected");
+    checkMatches(builder, XPath2TokenTypes.FOR, XPathBundle.message("parsing.error.for.expected"));
 
     parseBindingSequence(builder);
 
     final PsiBuilder.Marker ret = builder.mark();
-    checkMatches(builder, XPath2TokenTypes.RETURN, "'return' expected");
+    checkMatches(builder, XPath2TokenTypes.RETURN, XPathBundle.message("parsing.error.return.expected"));
     if (!parseExprSingle(builder)) {
-      builder.error("expression expected");
+      builder.error(XPathBundle.message("parsing.error.expression.expected"));
     }
 
     ret.done(XPath2ElementTypes.BODY);
@@ -145,10 +127,10 @@ public class XPath2Parser extends XPathParser {
       final PsiBuilder.Marker bindingSeq = builder.mark();
       parseVariableDecl(builder);
 
-      checkMatches(builder, XPath2TokenTypes.IN, "'in' expected");
+      checkMatches(builder, XPath2TokenTypes.IN, XPathBundle.message("parsing.error.in.expected"));
 
       if (!parseExprSingle(builder)) {
-        builder.error("expression expected");
+        builder.error(XPathBundle.message("parsing.error.expression.expected"));
       }
       bindingSeq.done(XPath2ElementTypes.BINDING_SEQ);
     } while (builder.getTokenType() == XPathTokenTypes.COMMA);
@@ -169,7 +151,7 @@ public class XPath2Parser extends XPathParser {
     while (XPath2TokenTypes.COMP_OPS.contains(builder.getTokenType())) {
       makeToken(builder);
       if (!parseRangeExpression(builder)) {
-        builder.error("expression expected");
+        builder.error(XPathBundle.message("parsing.error.expression.expected"));
       }
       expr.done(XPathElementTypes.BINARY_EXPRESSION);
       expr = expr.precede();
@@ -189,7 +171,7 @@ public class XPath2Parser extends XPathParser {
     while (builder.getTokenType() == XPath2TokenTypes.TO) {
       makeToken(builder);
       if (!parseAdditiveExpression(builder)) {
-        builder.error("expression expected");
+        builder.error(XPathBundle.message("parsing.error.expression.expected"));
       }
       expr.done(XPath2ElementTypes.RANGE_EXPRESSION);
       expr = expr.precede();
@@ -210,7 +192,7 @@ public class XPath2Parser extends XPathParser {
     while (XPath2TokenTypes.MULT_OPS.contains(builder.getTokenType())) {
       makeToken(builder);
       if (!parseUnionExpression(builder)) {
-        builder.error("expression expected");
+        builder.error(XPathBundle.message("parsing.error.expression.expected"));
       }
       expr.done(XPathElementTypes.BINARY_EXPRESSION);
       expr = expr.precede();
@@ -231,7 +213,7 @@ public class XPath2Parser extends XPathParser {
     while (XPath2TokenTypes.UNION_OPS.contains(builder.getTokenType())) {
       makeToken(builder);
       if (!parseIntersectExceptExpr(builder)) {
-        builder.error("expression expected");
+        builder.error(XPathBundle.message("parsing.error.expression.expected"));
       }
       expr.done(XPathElementTypes.BINARY_EXPRESSION);
       expr = expr.precede();
@@ -251,7 +233,7 @@ public class XPath2Parser extends XPathParser {
     while (XPath2TokenTypes.INTERSECT_EXCEPT.contains(builder.getTokenType())) {
       makeToken(builder);
       if (!parseInstanceofExpr(builder)) {
-        builder.error("expression expected");
+        builder.error(XPathBundle.message("parsing.error.expression.expected"));
       }
       expr.done(XPathElementTypes.BINARY_EXPRESSION);
       expr = expr.precede();
@@ -270,9 +252,9 @@ public class XPath2Parser extends XPathParser {
 
     if (builder.getTokenType() == XPath2TokenTypes.INSTANCE) {
       builder.advanceLexer();
-      checkMatches(builder, XPath2TokenTypes.OF, "'of' expected");
+      checkMatches(builder, XPath2TokenTypes.OF, XPathBundle.message("parsing.error.of.expected"));
       if (!parseSequenceType(builder)) {
-        builder.error("sequence type expected");
+        builder.error(XPathBundle.message("parsing.error.sequence.type.expected"));
       }
       expr.done(XPath2ElementTypes.INSTANCE_OF);
     } else {
@@ -292,9 +274,9 @@ public class XPath2Parser extends XPathParser {
     if (builder.getTokenType() == XPath2TokenTypes.TREAT) {
       builder.advanceLexer();
 
-      checkMatches(builder, XPath2TokenTypes.AS, "'as' expected");
+      checkMatches(builder, XPath2TokenTypes.AS, XPathBundle.message("parsing.error.as.expected"));
       if (!parseSequenceType(builder)) {
-        builder.error("sequence type expected");
+        builder.error(XPathBundle.message("parsing.error.sequence.type.expected"));
       }
       expr.done(XPath2ElementTypes.TREAT_AS);
     } else {
@@ -314,7 +296,7 @@ public class XPath2Parser extends XPathParser {
     if (builder.getTokenType() == XPath2TokenTypes.CASTABLE) {
       builder.advanceLexer();
 
-      checkMatches(builder, XPath2TokenTypes.AS, "'as' expected");
+      checkMatches(builder, XPath2TokenTypes.AS, XPathBundle.message("parsing.error.as.expected"));
       parseSingleType(builder);
       expr.done(XPath2ElementTypes.CASTABLE_AS);
     } else {
@@ -334,7 +316,7 @@ public class XPath2Parser extends XPathParser {
     if (builder.getTokenType() == XPath2TokenTypes.CAST) {
       builder.advanceLexer();
 
-      checkMatches(builder, XPath2TokenTypes.AS, "'as' expected");
+      checkMatches(builder, XPath2TokenTypes.AS, XPathBundle.message("parsing.error.as.expected"));
       parseSingleType(builder);
       expr.done(XPath2ElementTypes.CAST_AS);
     } else {
@@ -347,7 +329,7 @@ public class XPath2Parser extends XPathParser {
   private static void parseSingleType(PsiBuilder builder) {
     PsiBuilder.Marker mark = builder.mark();
     if (!parseQName(builder)) {
-      builder.error("QName expected");
+      builder.error(XPathBundle.message("parsing.error.qname.expected"));
     }
     if (builder.getTokenType() == XPath2TokenTypes.QUEST) {
       builder.advanceLexer();
@@ -387,8 +369,7 @@ public class XPath2Parser extends XPathParser {
     return false;
   }
 
-  @Nullable
-  private IElementType parseItemOrEmptySequenceType(PsiBuilder builder) {
+  private @Nullable IElementType parseItemOrEmptySequenceType(PsiBuilder builder) {
     final IElementType tokenType = builder.getTokenType();
     if (tokenType == XPath2TokenTypes.ITEM || tokenType == XPath2TokenTypes.EMPTY_SEQUENCE) {
       final PsiBuilder.Marker mark = builder.mark();
@@ -405,13 +386,14 @@ public class XPath2Parser extends XPathParser {
       builder.advanceLexer();
       if (builder.getTokenType() == XPathTokenTypes.COL) {
         builder.advanceLexer();
-        checkMatches(builder, XPathTokenTypes.NCNAME, "'NCName expected");
+        checkMatches(builder, XPathTokenTypes.NCNAME, XPathBundle.message("parsing.error.ncname.expected"));
       }
       return true;
     }
     return false;
   }
 
+  @Override
   protected boolean parseUnaryExpression(PsiBuilder builder) {
     if (XPathTokenTypes.ADD_OPS.contains(builder.getTokenType())) {
       PsiBuilder.Marker expr = builder.mark();
@@ -419,7 +401,7 @@ public class XPath2Parser extends XPathParser {
         builder.advanceLexer();
 
         if (!parseUnaryExpression(builder)) {
-          builder.error("Expression expected");
+          builder.error(XPathBundle.message("parsing.error.expression.expected"));
         }
         expr.done(XPathElementTypes.PREFIX_EXPRESSION);
         expr = expr.precede();
@@ -449,7 +431,7 @@ public class XPath2Parser extends XPathParser {
     } else if (builder.getTokenType() == XPathTokenTypes.ANY_PATH) {
       builder.advanceLexer();
       if (!parseRelativePathExpr(builder, false)) {
-        builder.error("relative path expected");
+        builder.error(XPathBundle.message("parsing.error.relative.path.expected"));
       }
       marker.done(XPathElementTypes.LOCATION_PATH);
       return true;
@@ -479,7 +461,7 @@ public class XPath2Parser extends XPathParser {
 
       makeToken(builder);
       if (!parseStepExpr(builder)) {
-        builder.error("expression expected");
+        builder.error(XPathBundle.message("parsing.error.expression.expected"));
       }
 
       expr.done(XPathElementTypes.STEP);
@@ -507,15 +489,15 @@ public class XPath2Parser extends XPathParser {
     if (XPathTokenTypes.AXIS.contains(builder.getTokenType())) {
       builder.advanceLexer();
       mark.done(XPathElementTypes.AXIS_SPECIFIER);
-      checkMatches(builder, XPathTokenTypes.COLCOL, ":: expected");
+      checkMatches(builder, XPathTokenTypes.COLCOL, XPathBundle.message("parsing.error.double.colon.expected"));
       if (!parseNodeTest(builder)) {
-        builder.error("node test expected");
+        builder.error(XPathBundle.message("parsing.error.node.test.expected"));
       }
     } else if (builder.getTokenType() == XPathTokenTypes.AT) {
       builder.advanceLexer();
       mark.done(XPathElementTypes.AXIS_SPECIFIER);
       if (!parseNodeTest(builder)) {
-        builder.error("node test expected");
+        builder.error(XPathBundle.message("parsing.error.node.test.expected"));
       }
     } else if (builder.getTokenType() == XPathTokenTypes.DOTDOT) {
       mark.drop();
@@ -566,7 +548,7 @@ public class XPath2Parser extends XPathParser {
     if (builder.getTokenType() == XPathTokenTypes.COL) {
       builder.advanceLexer();
       if (builder.getTokenType() != XPathTokenTypes.NCNAME) {
-        builder.error("NCName expected");
+        builder.error(XPathBundle.message("parsing.error.ncname.expected"));
       }
       builder.advanceLexer();
     }

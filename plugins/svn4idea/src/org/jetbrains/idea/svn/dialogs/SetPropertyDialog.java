@@ -1,79 +1,181 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.dialogs;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.help.HelpManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vcs.VcsException;
 import com.intellij.ui.DocumentAdapter;
+import com.intellij.ui.components.JBScrollPane;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.SvnBundle;
-import org.jetbrains.idea.svn.SvnPropertyKeys;
 import org.jetbrains.idea.svn.SvnVcs;
 import org.jetbrains.idea.svn.api.Depth;
+import org.jetbrains.idea.svn.api.Revision;
+import org.jetbrains.idea.svn.api.Target;
+import org.jetbrains.idea.svn.commandLine.SvnBindException;
 import org.jetbrains.idea.svn.properties.PropertyClient;
 import org.jetbrains.idea.svn.properties.PropertyConsumer;
 import org.jetbrains.idea.svn.properties.PropertyData;
 import org.jetbrains.idea.svn.properties.PropertyValue;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.wc.SVNRevision;
-import org.tmatesoft.svn.core.wc2.SvnTarget;
 
-import javax.swing.*;
-import javax.swing.event.ChangeEvent;
-import javax.swing.event.ChangeListener;
+import javax.swing.AbstractButton;
+import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+import javax.swing.JSeparator;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.UIManager;
 import javax.swing.event.DocumentEvent;
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.event.ItemEvent;
-import java.awt.event.ItemListener;
 import java.io.File;
+import java.lang.reflect.Method;
 import java.util.Collection;
+import java.util.ResourceBundle;
 import java.util.TreeSet;
 
-/**
- * @author alex
- */
+import static com.intellij.util.containers.ContainerUtil.addAll;
+import static org.jetbrains.idea.svn.SvnPropertyKeys.SVN_EOL_STYLE;
+import static org.jetbrains.idea.svn.SvnPropertyKeys.SVN_EXECUTABLE;
+import static org.jetbrains.idea.svn.SvnPropertyKeys.SVN_EXTERNALS;
+import static org.jetbrains.idea.svn.SvnPropertyKeys.SVN_IGNORE;
+import static org.jetbrains.idea.svn.SvnPropertyKeys.SVN_KEYWORDS;
+import static org.jetbrains.idea.svn.SvnPropertyKeys.SVN_MIME_TYPE;
+import static org.jetbrains.idea.svn.SvnPropertyKeys.SVN_NEEDS_LOCK;
+
 public class SetPropertyDialog extends DialogWrapper {
 
-  private static final Logger LOG = Logger.getInstance("org.jetbrains.idea.svn.dialogs.SetPropertyDialog");
+  private static final Logger LOG = Logger.getInstance(SetPropertyDialog.class);
 
-  private final String myPropertyName;
+  private final @NlsSafe @Nullable String myPropertyName;
   private final File[] myFiles;
 
-  private JComboBox myPropertyNameBox;
-  private JRadioButton mySetPropertyButton;
-  private JTextArea myValueText;
-  private JRadioButton myDeletePropertyButton;
-  private JCheckBox myRecursiveButton;
+  private final JComboBox<String> myPropertyNameBox;
+  private final JRadioButton mySetPropertyButton;
+  private final JTextArea myValueText;
+  private final JRadioButton myDeletePropertyButton;
+  private final JCheckBox myRecursiveButton;
   private final boolean myIsRecursionAllowed;
   private final SvnVcs myVCS;
 
-  @NonNls private static final String HELP_ID = "vcs.subversion.property";
-  private JPanel myMainPanel;
+  private static final @NonNls String HELP_ID = "vcs.subversion.property";
+  private final JPanel myMainPanel;
 
-  public SetPropertyDialog(Project project, File[] files, String name, boolean allowRecursion) {
+  public SetPropertyDialog(Project project, File[] files, @NlsSafe @Nullable String name, boolean allowRecursion) {
     super(project, true);
     myFiles = files;
     myPropertyName = name;
     myIsRecursionAllowed = allowRecursion;
+    {
+      // GUI initializer generated by IntelliJ IDEA GUI Designer
+      // >>> IMPORTANT!! <<<
+      // DO NOT EDIT OR ADD ANY CODE HERE!
+      myMainPanel = new JPanel();
+      myMainPanel.setLayout(new GridBagLayout());
+      final JLabel label1 = new JLabel();
+      this.$$$loadLabelText$$$(label1, this.$$$getMessageFromBundle$$$("messages/SvnBundle", "label.set.property.property.name"));
+      GridBagConstraints gbc;
+      gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 0;
+      gbc.anchor = GridBagConstraints.WEST;
+      gbc.insets = new Insets(2, 2, 2, 2);
+      myMainPanel.add(label1, gbc);
+      myPropertyNameBox = new JComboBox();
+      myPropertyNameBox.setEditable(true);
+      myPropertyNameBox.setRequestFocusEnabled(false);
+      gbc = new GridBagConstraints();
+      gbc.gridx = 1;
+      gbc.gridy = 0;
+      gbc.weightx = 1.0;
+      gbc.anchor = GridBagConstraints.WEST;
+      gbc.fill = GridBagConstraints.HORIZONTAL;
+      gbc.insets = new Insets(2, 2, 2, 2);
+      myMainPanel.add(myPropertyNameBox, gbc);
+      mySetPropertyButton = new JRadioButton();
+      mySetPropertyButton.setSelected(true);
+      this.$$$loadButtonText$$$(mySetPropertyButton,
+                                this.$$$getMessageFromBundle$$$("messages/SvnBundle", "radio.set.property.set.property.value"));
+      gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 1;
+      gbc.gridwidth = 2;
+      gbc.weightx = 1.0;
+      gbc.anchor = GridBagConstraints.WEST;
+      gbc.fill = GridBagConstraints.HORIZONTAL;
+      gbc.insets = new Insets(2, 2, 2, 2);
+      myMainPanel.add(mySetPropertyButton, gbc);
+      final JBScrollPane jBScrollPane1 = new JBScrollPane();
+      gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 2;
+      gbc.gridwidth = 2;
+      gbc.weightx = 1.0;
+      gbc.weighty = 1.0;
+      gbc.anchor = GridBagConstraints.WEST;
+      gbc.fill = GridBagConstraints.BOTH;
+      gbc.insets = new Insets(2, 2, 2, 2);
+      myMainPanel.add(jBScrollPane1, gbc);
+      myValueText = new JTextArea();
+      myValueText.setColumns(25);
+      myValueText.setRows(7);
+      myValueText.setText("");
+      jBScrollPane1.setViewportView(myValueText);
+      myDeletePropertyButton = new JRadioButton();
+      this.$$$loadButtonText$$$(myDeletePropertyButton,
+                                this.$$$getMessageFromBundle$$$("messages/SvnBundle", "radio.set.property.delete.property"));
+      gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 3;
+      gbc.gridwidth = 2;
+      gbc.weightx = 1.0;
+      gbc.anchor = GridBagConstraints.WEST;
+      gbc.fill = GridBagConstraints.HORIZONTAL;
+      gbc.insets = new Insets(2, 2, 2, 2);
+      myMainPanel.add(myDeletePropertyButton, gbc);
+      final JSeparator separator1 = new JSeparator();
+      Font separator1Font = UIManager.getFont("TextPane.font");
+      if (separator1Font != null) separator1.setFont(separator1Font);
+      gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 4;
+      gbc.gridwidth = 2;
+      gbc.weightx = 1.0;
+      gbc.anchor = GridBagConstraints.WEST;
+      gbc.fill = GridBagConstraints.HORIZONTAL;
+      gbc.insets = new Insets(2, 2, 2, 2);
+      myMainPanel.add(separator1, gbc);
+      myRecursiveButton = new JCheckBox();
+      this.$$$loadButtonText$$$(myRecursiveButton, this.$$$getMessageFromBundle$$$("messages/SvnBundle",
+                                                                                   "checkbox.set.property.update.properties.recursively"));
+      gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 5;
+      gbc.gridwidth = 2;
+      gbc.weightx = 1.0;
+      gbc.anchor = GridBagConstraints.WEST;
+      gbc.fill = GridBagConstraints.HORIZONTAL;
+      gbc.insets = new Insets(2, 2, 2, 2);
+      myMainPanel.add(myRecursiveButton, gbc);
+      label1.setLabelFor(myPropertyNameBox);
+      ButtonGroup buttonGroup;
+      buttonGroup = new ButtonGroup();
+      buttonGroup.add(mySetPropertyButton);
+      buttonGroup.add(myDeletePropertyButton);
+    }
     myVCS = SvnVcs.getInstance(project);
     setResizable(true);
     setTitle(SvnBundle.message("dialog.title.set.property"));
@@ -81,16 +183,84 @@ public class SetPropertyDialog extends DialogWrapper {
     init();
   }
 
-  protected void doHelpAction() {
-    HelpManager.getInstance().invokeHelp(HELP_ID);
+  private static Method $$$cachedGetBundleMethod$$$ = null;
+
+  /** @noinspection ALL */
+  private String $$$getMessageFromBundle$$$(String path, String key) {
+    ResourceBundle bundle;
+    try {
+      Class<?> thisClass = this.getClass();
+      if ($$$cachedGetBundleMethod$$$ == null) {
+        Class<?> dynamicBundleClass = thisClass.getClassLoader().loadClass("com.intellij.DynamicBundle");
+        $$$cachedGetBundleMethod$$$ = dynamicBundleClass.getMethod("getBundle", String.class, Class.class);
+      }
+      bundle = (ResourceBundle)$$$cachedGetBundleMethod$$$.invoke(null, path, thisClass);
+    }
+    catch (Exception e) {
+      bundle = ResourceBundle.getBundle(path);
+    }
+    return bundle.getString(key);
   }
 
-  @NotNull
-  protected Action[] createActions() {
-    return new Action[]{getOKAction(), getCancelAction(), getHelpAction()};
+  /** @noinspection ALL */
+  private void $$$loadLabelText$$$(JLabel component, String text) {
+    StringBuffer result = new StringBuffer();
+    boolean haveMnemonic = false;
+    char mnemonic = '\0';
+    int mnemonicIndex = -1;
+    for (int i = 0; i < text.length(); i++) {
+      if (text.charAt(i) == '&') {
+        i++;
+        if (i == text.length()) break;
+        if (!haveMnemonic && text.charAt(i) != '&') {
+          haveMnemonic = true;
+          mnemonic = text.charAt(i);
+          mnemonicIndex = result.length();
+        }
+      }
+      result.append(text.charAt(i));
+    }
+    component.setText(result.toString());
+    if (haveMnemonic) {
+      component.setDisplayedMnemonic(mnemonic);
+      component.setDisplayedMnemonicIndex(mnemonicIndex);
+    }
   }
 
+  /** @noinspection ALL */
+  private void $$$loadButtonText$$$(AbstractButton component, String text) {
+    StringBuffer result = new StringBuffer();
+    boolean haveMnemonic = false;
+    char mnemonic = '\0';
+    int mnemonicIndex = -1;
+    for (int i = 0; i < text.length(); i++) {
+      if (text.charAt(i) == '&') {
+        i++;
+        if (i == text.length()) break;
+        if (!haveMnemonic && text.charAt(i) != '&') {
+          haveMnemonic = true;
+          mnemonic = text.charAt(i);
+          mnemonicIndex = result.length();
+        }
+      }
+      result.append(text.charAt(i));
+    }
+    component.setText(result.toString());
+    if (haveMnemonic) {
+      component.setMnemonic(mnemonic);
+      component.setDisplayedMnemonicIndex(mnemonicIndex);
+    }
+  }
 
+  /** @noinspection ALL */
+  public JComponent $$$getRootComponent$$$() { return myMainPanel; }
+
+  @Override
+  protected String getHelpId() {
+    return HELP_ID;
+  }
+
+  @Override
   public JComponent getPreferredFocusedComponent() {
     return myPropertyNameBox;
   }
@@ -110,14 +280,17 @@ public class SetPropertyDialog extends DialogWrapper {
     return myRecursiveButton.isSelected();
   }
 
+  @Override
   public boolean shouldCloseOnCross() {
     return true;
   }
 
+  @Override
   protected String getDimensionServiceKey() {
     return "svn.propertyDialog";
   }
 
+  @Override
   protected void init() {
     super.init();
     if (myPropertyName != null) {
@@ -126,32 +299,29 @@ public class SetPropertyDialog extends DialogWrapper {
     else {
       myPropertyNameBox.getEditor().setItem("");
     }
-    myPropertyNameBox.addItemListener(new ItemListener() {
-      public void itemStateChanged(ItemEvent e) {
-        if (e.getStateChange() == ItemEvent.SELECTED) {
-          String name = getPropertyName();
-          updatePropertyValue(name);
-          getOKAction().setEnabled(name != null && !"".equals(name.trim()));
-        }
+    myPropertyNameBox.addItemListener(e -> {
+      if (e.getStateChange() == ItemEvent.SELECTED) {
+        String name = getPropertyName();
+        updatePropertyValue(name);
+        getOKAction().setEnabled(name != null && !name.trim().isEmpty());
       }
     });
     Component editor = myPropertyNameBox.getEditor().getEditorComponent();
-    if (editor instanceof JTextField) {
-      JTextField jTextField = (JTextField)editor;
+    if (editor instanceof JTextField jTextField) {
       jTextField.getDocument().addDocumentListener(new DocumentAdapter() {
-        protected void textChanged(DocumentEvent e) {
+        @Override
+        protected void textChanged(@NotNull DocumentEvent e) {
           String name = getPropertyName();
           updatePropertyValue(name);
-          getOKAction().setEnabled(name != null && !"".equals(name.trim()));
+          getOKAction().setEnabled(name != null && !name.trim().isEmpty());
         }
       });
-
     }
-    getOKAction().setEnabled(myPropertyName != null && !"".equals(myPropertyName.trim()));
+    getOKAction().setEnabled(myPropertyName != null && !myPropertyName.trim().isEmpty());
   }
 
   private void updatePropertyValue(String name) {
-    if (myFiles.length == 0 || myFiles.length > 1) {
+    if (myFiles.length != 1) {
       return;
     }
     File file = myFiles[0];
@@ -166,15 +336,14 @@ public class SetPropertyDialog extends DialogWrapper {
     }
   }
 
-  @Nullable
-  private PropertyValue getProperty(@NotNull File file, @NotNull String name) {
+  private @Nullable PropertyValue getProperty(@NotNull File file, @NotNull String name) {
     PropertyValue result;
 
     try {
       PropertyClient client = myVCS.getFactory(file).createPropertyClient();
-      result = client.getProperty(SvnTarget.fromFile(file, SVNRevision.WORKING), name, false, SVNRevision.WORKING);
+      result = client.getProperty(Target.on(file, Revision.WORKING), name, false, Revision.WORKING);
     }
-    catch (VcsException e) {
+    catch (SvnBindException e) {
       LOG.info(e);
       result = null;
     }
@@ -182,69 +351,49 @@ public class SetPropertyDialog extends DialogWrapper {
     return result;
   }
 
+  @Override
   protected JComponent createCenterPanel() {
-    fillPropertyNames(myFiles);
+    for (@NlsSafe String name : getPropertyNames(myFiles)) {
+      myPropertyNameBox.addItem(name);
+    }
+
     if (myPropertyName != null) {
       myPropertyNameBox.getEditor().setItem(myPropertyName);
       myPropertyNameBox.getEditor().selectAll();
     }
-    mySetPropertyButton.addChangeListener(new ChangeListener() {
-      public void stateChanged(ChangeEvent e) {
-        if (mySetPropertyButton.isSelected()) {
-          myValueText.setEnabled(true);
-        }
-        else {
-          myValueText.setEnabled(false);
-        }
+    mySetPropertyButton.addChangeListener(e -> {
+      if (mySetPropertyButton.isSelected()) {
+        myValueText.setEnabled(true);
+      }
+      else {
+        myValueText.setEnabled(false);
       }
     });
     myRecursiveButton.setEnabled(myIsRecursionAllowed);
     return myMainPanel;
   }
 
-  private void fillPropertyNames(File[] files) {
+  private @NotNull Collection<@NlsSafe String> getPropertyNames(File[] files) {
     final Collection<String> names = new TreeSet<>();
     if (files.length == 1) {
       File file = files[0];
       try {
         PropertyConsumer handler = new PropertyConsumer() {
+          @Override
           public void handleProperty(File path, PropertyData property) {
-            String name = property.getName();
-            if (name != null) {
-              names.add(name);
-            }
-          }
-
-          public void handleProperty(SVNURL url, PropertyData property) {
-          }
-
-          public void handleProperty(long revision, PropertyData property) {
+            names.add(property.getName());
           }
         };
 
         PropertyClient client = myVCS.getFactory(file).createPropertyClient();
-        client.list(SvnTarget.fromFile(file, SVNRevision.WORKING), SVNRevision.WORKING, Depth.EMPTY, handler);
+        client.list(Target.on(file, Revision.WORKING), Revision.WORKING, Depth.EMPTY, handler);
       }
-      catch (VcsException e) {
+      catch (SvnBindException e) {
         LOG.info(e);
       }
     }
 
-    fillProperties(names);
-
-    for (final String name : names) {
-      myPropertyNameBox.addItem(name);
-    }
-  }
-
-  @SuppressWarnings({"HardCodedStringLiteral"})
-  private static void fillProperties(final Collection<String> names) {
-    names.add(SvnPropertyKeys.SVN_EOL_STYLE);
-    names.add(SvnPropertyKeys.SVN_KEYWORDS);
-    names.add(SvnPropertyKeys.SVN_NEEDS_LOCK);
-    names.add(SvnPropertyKeys.SVN_MIME_TYPE);
-    names.add(SvnPropertyKeys.SVN_EXECUTABLE);
-    names.add(SvnPropertyKeys.SVN_IGNORE);
-    names.add(SvnPropertyKeys.SVN_EXTERNALS);
+    addAll(names, SVN_EOL_STYLE, SVN_KEYWORDS, SVN_NEEDS_LOCK, SVN_MIME_TYPE, SVN_EXECUTABLE, SVN_IGNORE, SVN_EXTERNALS);
+    return names;
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,11 +41,8 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefini
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 import org.jetbrains.plugins.groovy.lang.psi.impl.PsiImplUtil;
 import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.GroovyScriptClass;
-import org.jetbrains.plugins.groovy.refactoring.GroovyChangeContextUtil;
+import org.jetbrains.plugins.groovy.util.GroovyChangeContextUtil;
 
-/**
- * @author peter
- */
 public class GroovyGenerationInfo<T extends PsiMember> extends PsiGenerationInfo<T> {
   private static final Logger LOG = Logger.getInstance(GroovyGenerationInfo.class);
 
@@ -136,9 +133,9 @@ public class GroovyGenerationInfo<T extends PsiMember> extends PsiGenerationInfo
   }
 
   @Override
-  public void positionCaret(Editor editor, boolean toEditMethodBody) {
+  public void positionCaret(@NotNull Editor editor, boolean toEditMethodBody) {
     final T firstMember = getPsiMember();
-    LOG.assertTrue(firstMember.isValid());
+    LOG.assertTrue(firstMember != null);
 
     if (toEditMethodBody) {
       GrMethod method = (GrMethod)firstMember;
@@ -168,8 +165,7 @@ public class GroovyGenerationInfo<T extends PsiMember> extends PsiGenerationInfo
     }
 
     int offset;
-    if (firstMember instanceof GrMethod) {
-      GrMethod method = (GrMethod)firstMember;
+    if (firstMember instanceof GrMethod method) {
       GrCodeBlock body = method.getBlock();
       if (body == null) {
         offset = method.getTextRange().getStartOffset();

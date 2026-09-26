@@ -17,7 +17,8 @@ package com.intellij.openapi.editor.impl;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.TextChange;
-import com.intellij.util.text.StringFactory;
+import com.intellij.util.text.CharArrayUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
@@ -27,15 +28,12 @@ import java.util.List;
  * Encapsulates logic of merging set of changes into particular text.
  * <p/>
  * Thread-safe.
- * 
- * @author Denis Zhdanov
- * @since 12/22/10 12:02 PM
  */
-@SuppressWarnings({"MethodMayBeStatic"})
+@ApiStatus.Internal
 public class BulkChangesMerger {
 
   public static final BulkChangesMerger INSTANCE = new BulkChangesMerger();
-  private static final Logger LOG = Logger.getInstance("#" + BulkChangesMerger.class.getName());
+  private static final Logger LOG = Logger.getInstance(BulkChangesMerger.class);
 
   /**
    * Merges given changes within the given text and returns result as a new char sequence.
@@ -46,8 +44,8 @@ public class BulkChangesMerger {
    *                      are sorted by offsets in ascending order 
    * @return              merge result
    */
-  public CharSequence mergeToCharSequence(@NotNull char[] text, int textLength, @NotNull List<? extends TextChange> changes) {
-    return StringFactory.createShared(mergeToCharArray(text, textLength, changes));
+  public CharSequence mergeToCharSequence(char @NotNull [] text, int textLength, @NotNull List<? extends TextChange> changes) {
+    return new String(mergeToCharArray(text, textLength, changes));
   }
   
   /**
@@ -59,7 +57,7 @@ public class BulkChangesMerger {
    *                      are sorted by offsets in ascending order 
    * @return              merge result
    */
-  public char[] mergeToCharArray(@NotNull char[] text, int textLength, @NotNull List<? extends TextChange> changes) {
+  public char @NotNull [] mergeToCharArray(char @NotNull [] text, int textLength, @NotNull List<? extends TextChange> changes) {
     int newLength = textLength;
     for (TextChange change : changes) {
       newLength += change.getText().length() - (change.getEnd() - change.getStart());
@@ -92,11 +90,11 @@ public class BulkChangesMerger {
   /**
    * Allows to perform 'in-place' merge of the given changes to the given array.
    * <p/>
-   * I.e. it's considered that given array contains particular text at <code>[0; length)</code> region and given changes define
+   * I.e. it's considered that given array contains particular text at {@code [0; length)} region and given changes define
    * offsets against it. It's also assumed that given array length is enough to contain resulting text after applying the changes.
    * <p/>
-   * Example: consider that initial text is <code>'12345'</code> and given changes are <code>'remove text at [1; 3) interval'</code>
-   * and <code>'replace text at [4; 5) interval with 'abcde''</code>. Resulting text is <code>'14abcde'</code> then and given array
+   * Example: consider that initial text is {@code '12345'} and given changes are {@code 'remove text at [1; 3) interval'}
+   * and {@code 'replace text at [4; 5) interval with 'abcde''}. Resulting text is {@code '14abcde'} then and given array
    * length should be not less than 7.
    * 
    * @param data      data array
@@ -104,7 +102,7 @@ public class BulkChangesMerger {
    * @param changes   change to apply to the target text
    * @throws IllegalArgumentException     if given array is not big enough to contain the resulting text
    */
-  public void mergeInPlace(@NotNull char[] data, int length, @NotNull List<? extends TextChangeImpl> changes)
+  public void mergeInPlace(char @NotNull [] data, int length, @NotNull List<? extends TextChangeImpl> changes)
     throws IllegalArgumentException
   {
     // Consider two corner cases:
@@ -167,12 +165,6 @@ public class BulkChangesMerger {
       System.arraycopy(merged, 0, data, 0, length + diff);
     }
   }
-  
-  private static void copy(@NotNull char[] data, int offset, @NotNull CharSequence text) {
-    for (int i = 0; i < text.length(); i++) {
-      data[i + offset] = text.charAt(i);
-    }
-  }
 
   /**
    * Given an offset of some location in the document, returns offset of this location after application of given changes. List of changes
@@ -202,7 +194,7 @@ public class BulkChangesMerger {
     private       int                            myFirstChangeShift;
     private       int                            myLastChangeShift;
 
-    Context(@NotNull List<? extends TextChangeImpl> changes, @NotNull char[] data, int inputLength, int outputLength) {
+    Context(@NotNull List<? extends TextChangeImpl> changes, char @NotNull [] data, int inputLength, int outputLength) {
       myChanges = changes;
       myData = data;
       myInputLength = inputLength;
@@ -212,9 +204,8 @@ public class BulkChangesMerger {
     /**
      * Asks current context to update its state in order to point to the first change in a group.
      * 
-     * @return      <code>true</code> if the first change in a group is found; <code>false</code> otherwise
+     * @return      {@code true} if the first change in a group is found; {@code false} otherwise
      */
-    @SuppressWarnings({"ForLoopThatDoesntUseLoopVariable"})
     public boolean startGroup() {
       // Define first change that increases or reduces text length.
       for (boolean first = true; myDiff == 0 && myChangeGroupStartIndex < myChanges.size(); myChangeGroupStartIndex++, first = false) {
@@ -224,7 +215,8 @@ public class BulkChangesMerger {
           myDiff += myFirstChangeShift;
         }
         if (myDiff == 0) {
-          copy(myData, change.getStart() + (first ? myFirstChangeShift : 0), change.getText());
+          int offset = change.getStart() + (first ? myFirstChangeShift : 0);
+          CharArrayUtil.getChars(change.getText(), myData, offset);
         }
         else {
           myDataStartOffset = change.getStart();
@@ -255,7 +247,7 @@ public class BulkChangesMerger {
         }
 
         // Changes group is not constructed yet.
-        if (!(myDiff > 0 ^ newDiff > 0)) {
+        if (myDiff > 0 == newDiff > 0) {
           myDiff = newDiff;
           continue;
         }
@@ -311,7 +303,7 @@ public class BulkChangesMerger {
         }
         int length = change.getText().length();
         if (length > 0) {
-          copy(myData, outputOffset - length, change.getText());
+          CharArrayUtil.getChars(change.getText(), myData, outputOffset - length);
           outputOffset -= length;
         }
       }
@@ -341,7 +333,7 @@ public class BulkChangesMerger {
         }
         int length = change.getText().length();
         if (length > 0) {
-          copy(myData, myDataStartOffset, change.getText());
+          CharArrayUtil.getChars(change.getText(), myData, myDataStartOffset);
           myDataStartOffset += length;
         }
       }

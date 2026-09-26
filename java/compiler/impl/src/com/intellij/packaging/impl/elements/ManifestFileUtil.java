@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.packaging.impl.elements;
 
 import com.intellij.CommonBundle;
@@ -20,8 +6,9 @@ import com.intellij.ide.util.ClassFilter;
 import com.intellij.ide.util.TreeClassChooser;
 import com.intellij.ide.util.TreeClassChooserFactory;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.Result;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.compiler.JavaCompilerBundle;
 import com.intellij.openapi.compiler.make.ManifestBuilder;
 import com.intellij.openapi.deployment.DeploymentUtil;
 import com.intellij.openapi.diagnostic.Logger;
@@ -29,16 +16,16 @@ import com.intellij.openapi.fileChooser.FileChooser;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.OrderEnumerator;
+import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Ref;
-import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VfsUtil;
+import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.packaging.artifacts.ArtifactType;
 import com.intellij.packaging.elements.CompositePackagingElement;
@@ -50,13 +37,19 @@ import com.intellij.packaging.impl.artifacts.PackagingElementPath;
 import com.intellij.packaging.impl.artifacts.PackagingElementProcessor;
 import com.intellij.packaging.ui.ArtifactEditorContext;
 import com.intellij.packaging.ui.ManifestFileConfiguration;
+import com.intellij.pom.java.JavaFeature;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiMethodUtil;
+import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.PathUtil;
+import com.intellij.util.concurrency.ThreadingAssertions;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.jps.model.java.JavaResourceRootType;
+import org.jetbrains.jps.model.java.JavaSourceRootType;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -69,11 +62,8 @@ import java.util.jar.Attributes;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
-/**
- * @author nik
- */
-public class ManifestFileUtil {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.roots.ui.configuration.artifacts.ArtifactEditorContextImpl");
+public final class ManifestFileUtil {
+  private static final Logger LOG = Logger.getInstance(ManifestFileUtil.class);
   public static final String MANIFEST_PATH = JarFile.MANIFEST_NAME;
   public static final String MANIFEST_FILE_NAME = PathUtil.getFileName(MANIFEST_PATH);
   public static final String MANIFEST_DIR_NAME = PathUtil.getParentPath(MANIFEST_PATH);
@@ -81,13 +71,11 @@ public class ManifestFileUtil {
   private ManifestFileUtil() {
   }
 
-  @Nullable
-  public static VirtualFile findManifestFile(@NotNull CompositePackagingElement<?> root, PackagingElementResolvingContext context, ArtifactType artifactType) {
+  public static @Nullable VirtualFile findManifestFile(@NotNull CompositePackagingElement<?> root, PackagingElementResolvingContext context, ArtifactType artifactType) {
     return ArtifactUtil.findSourceFileByOutputPath(root, MANIFEST_PATH, context, artifactType);
   }
 
-  @Nullable
-  public static VirtualFile suggestManifestFileDirectory(@NotNull CompositePackagingElement<?> root, PackagingElementResolvingContext context, ArtifactType artifactType) {
+  public static @Nullable VirtualFile suggestManifestFileDirectory(@NotNull CompositePackagingElement<?> root, PackagingElementResolvingContext context, ArtifactType artifactType) {
     final VirtualFile metaInfDir = ArtifactUtil.findSourceFileByOutputPath(root, MANIFEST_DIR_NAME, context, artifactType);
     if (metaInfDir != null) {
       return metaInfDir;
@@ -95,25 +83,27 @@ public class ManifestFileUtil {
 
     final Ref<VirtualFile> sourceDir = Ref.create(null);
     final Ref<VirtualFile> sourceFile = Ref.create(null);
-    ArtifactUtil.processElementsWithSubstitutions(root.getChildren(), context, artifactType, PackagingElementPath.EMPTY, new PackagingElementProcessor<PackagingElement<?>>() {
-      @Override
-      public boolean process(@NotNull PackagingElement<?> element, @NotNull PackagingElementPath path) {
-        if (element instanceof FileCopyPackagingElement) {
-          final VirtualFile file = ((FileCopyPackagingElement)element).findFile();
-          if (file != null) {
-            sourceFile.set(file);
-          }
-        }
-        else if (element instanceof DirectoryCopyPackagingElement) {
-          final VirtualFile file = ((DirectoryCopyPackagingElement)element).findFile();
-          if (file != null) {
-            sourceDir.set(file);
-            return false;
-          }
-        }
-        return true;
-      }
-    });
+    ArtifactUtil.processElementsWithSubstitutions(root.getChildren(), context, artifactType, PackagingElementPath.EMPTY,
+                                                  new PackagingElementProcessor<>() {
+                                                    @Override
+                                                    public boolean process(@NotNull PackagingElement<?> element,
+                                                                           @NotNull PackagingElementPath path) {
+                                                      if (element instanceof FileCopyPackagingElement) {
+                                                        final VirtualFile file = ((FileCopyPackagingElement)element).findFile();
+                                                        if (file != null) {
+                                                          sourceFile.set(file);
+                                                        }
+                                                      }
+                                                      else if (element instanceof DirectoryCopyPackagingElement) {
+                                                        final VirtualFile file = ((DirectoryCopyPackagingElement)element).findFile();
+                                                        if (file != null) {
+                                                          sourceDir.set(file);
+                                                          return false;
+                                                        }
+                                                      }
+                                                      return true;
+                                                    }
+                                                  });
 
     if (!sourceDir.isNull()) {
       return sourceDir.get();
@@ -124,19 +114,24 @@ public class ManifestFileUtil {
     return suggestBaseDir(project, sourceFile.get());
   }
 
-  @Nullable
-  public static VirtualFile suggestManifestFileDirectory(@NotNull Project project, @Nullable Module module) {
-    OrderEnumerator enumerator = module != null ? OrderEnumerator.orderEntries(module) : OrderEnumerator.orderEntries(project);
-    final VirtualFile[] files = enumerator.withoutDepModules().withoutLibraries().withoutSdk().productionOnly().sources().getRoots();
-    if (files.length > 0) {
-      return files[0];
+  public static @Nullable VirtualFile suggestManifestFileDirectory(@NotNull Project project, @Nullable Module selectedModule) {
+    Module[] modules = selectedModule != null ? new Module[] {selectedModule} : ModuleManager.getInstance(project).getModules();
+    VirtualFile resourceRoot = null;
+    VirtualFile sourceRoot = null;
+    for (Module module : modules) {
+      if (resourceRoot == null) {
+        resourceRoot = ContainerUtil.getFirstItem(ModuleRootManager.getInstance(module).getSourceRoots(JavaResourceRootType.RESOURCE));
+      }
+      if (ArtifactUtil.areResourceFilesFromSourceRootsCopiedToOutput(module) && sourceRoot == null)
+        sourceRoot = ContainerUtil.getFirstItem(ModuleRootManager.getInstance(module).getSourceRoots(JavaSourceRootType.SOURCE));
     }
+    if (resourceRoot != null) return resourceRoot;
+    if (sourceRoot != null) return sourceRoot;
     return suggestBaseDir(project, null);
   }
 
 
-  @Nullable
-  private static VirtualFile suggestBaseDir(@NotNull Project project, final @Nullable VirtualFile file) {
+  private static @Nullable VirtualFile suggestBaseDir(@NotNull Project project, final @Nullable VirtualFile file) {
     final VirtualFile[] contentRoots = ProjectRootManager.getInstance(project).getContentRoots();
     if (file == null && contentRoots.length > 0) {
       return contentRoots[0];
@@ -144,7 +139,7 @@ public class ManifestFileUtil {
 
     if (file != null) {
       for (VirtualFile contentRoot : contentRoots) {
-        if (VfsUtil.isAncestor(contentRoot, file, false)) {
+        if (VfsUtilCore.isAncestor(contentRoot, file, false)) {
           return contentRoot;
         }
       }
@@ -154,23 +149,15 @@ public class ManifestFileUtil {
   }
 
   public static Manifest readManifest(@NotNull VirtualFile manifestFile) {
-    try {
-      final InputStream inputStream = manifestFile.getInputStream();
-      final Manifest manifest;
-      try {
-        manifest = new Manifest(inputStream);
-      }
-      finally {
-        inputStream.close();
-      }
-      return manifest;
+    try (InputStream inputStream = manifestFile.getInputStream()) {
+      return new Manifest(inputStream);
     }
     catch (IOException ignored) {
       return new Manifest();
     }
   }
 
-  public static void updateManifest(@NotNull final VirtualFile file, final @Nullable String mainClass, final @Nullable List<String> classpath, final boolean replaceValues) {
+  public static void updateManifest(final @NotNull VirtualFile file, final @Nullable String mainClass, final @Nullable List<String> classpath, final boolean replaceValues) {
     final Manifest manifest = readManifest(file);
     final Attributes mainAttributes = manifest.getMainAttributes();
 
@@ -207,14 +194,8 @@ public class ManifestFileUtil {
     ManifestBuilder.setVersionAttribute(mainAttributes);
 
     ApplicationManager.getApplication().runWriteAction(() -> {
-      try {
-        final OutputStream outputStream = file.getOutputStream(ManifestFileUtil.class);
-        try {
-          manifest.write(outputStream);
-        }
-        finally {
-          outputStream.close();
-        }
+      try (OutputStream outputStream = file.getOutputStream(ManifestFileUtil.class)) {
+        manifest.write(outputStream);
       }
       catch (IOException e) {
         LOG.info(e);
@@ -222,8 +203,7 @@ public class ManifestFileUtil {
     });
   }
 
-  @NotNull
-  public static ManifestFileConfiguration createManifestFileConfiguration(@NotNull VirtualFile manifestFile) {
+  public static @NotNull ManifestFileConfiguration createManifestFileConfiguration(@NotNull VirtualFile manifestFile) {
     final String path = manifestFile.getPath();
     Manifest manifest = readManifest(manifestFile);
     String mainClass = manifest.getMainAttributes().getValue(Attributes.Name.MAIN_CLASS);
@@ -237,7 +217,7 @@ public class ManifestFileUtil {
 
   public static List<String> getClasspathForElements(List<? extends PackagingElement<?>> elements, PackagingElementResolvingContext context, final ArtifactType artifactType) {
     final List<String> classpath = new ArrayList<>();
-    final PackagingElementProcessor<PackagingElement<?>> processor = new PackagingElementProcessor<PackagingElement<?>>() {
+    final PackagingElementProcessor<PackagingElement<?>> processor = new PackagingElementProcessor<>() {
       @Override
       public boolean process(@NotNull PackagingElement<?> element, @NotNull PackagingElementPath path) {
         if (element instanceof FileCopyPackagingElement) {
@@ -260,8 +240,7 @@ public class ManifestFileUtil {
     return classpath;
   }
 
-  @Nullable
-  public static VirtualFile showDialogAndCreateManifest(final ArtifactEditorContext context, final CompositePackagingElement<?> element) {
+  public static @Nullable VirtualFile showDialogAndCreateManifest(final ArtifactEditorContext context, final CompositePackagingElement<?> element) {
     FileChooserDescriptor descriptor = createDescriptorForManifestDirectory();
     final VirtualFile directory = suggestManifestFileDirectory(element, context, context.getArtifactType());
     final VirtualFile file = FileChooser.chooseFile(descriptor, context.getProject(), directory);
@@ -272,47 +251,33 @@ public class ManifestFileUtil {
     return createManifestFile(file, context.getProject());
   }
 
-  @Nullable
-  public static VirtualFile createManifestFile(final @NotNull VirtualFile directory, final @NotNull Project project) {
-    ApplicationManager.getApplication().assertIsDispatchThread();
-    final Ref<IOException> exc = Ref.create(null);
-    final VirtualFile file = new WriteAction<VirtualFile>() {
-      protected void run(@NotNull final Result<VirtualFile> result) {
+  public static @Nullable VirtualFile createManifestFile(final @NotNull VirtualFile directory, final @NotNull Project project) {
+    ThreadingAssertions.assertEventDispatchThread();
+    try {
+      return WriteAction.compute(() -> {
         VirtualFile dir = directory;
-        try {
-          if (!dir.getName().equals(MANIFEST_DIR_NAME)) {
-            dir = VfsUtil.createDirectoryIfMissing(dir, MANIFEST_DIR_NAME);
-          }
-          final VirtualFile file = dir.createChildData(this, MANIFEST_FILE_NAME);
-          final OutputStream output = file.getOutputStream(this);
-          try {
-            final Manifest manifest = new Manifest();
-            ManifestBuilder.setVersionAttribute(manifest.getMainAttributes());
-            manifest.write(output);
-          }
-          finally {
-            output.close();
-          }
-          result.setResult(file);
+        if (!dir.getName().equals(MANIFEST_DIR_NAME)) {
+          dir = VfsUtil.createDirectoryIfMissing(dir, MANIFEST_DIR_NAME);
         }
-        catch (IOException e) {
-          exc.set(e);
+        final VirtualFile f = dir.createChildData(dir, MANIFEST_FILE_NAME);
+        try (OutputStream output = f.getOutputStream(dir)) {
+          final Manifest manifest = new Manifest();
+          ManifestBuilder.setVersionAttribute(manifest.getMainAttributes());
+          manifest.write(output);
         }
-      }
-    }.execute().getResultObject();
-
-    final IOException exception = exc.get();
-    if (exception != null) {
-      LOG.info(exception);
-      Messages.showErrorDialog(project, exception.getMessage(), CommonBundle.getErrorTitle());
+        return f;
+      });
+    }
+    catch (IOException e) {
+      LOG.info(e);
+      Messages.showErrorDialog(project, e.getMessage(), CommonBundle.getErrorTitle());
       return null;
     }
-    return file;
   }
 
   public static FileChooserDescriptor createDescriptorForManifestDirectory() {
     FileChooserDescriptor descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor();
-    descriptor.setTitle("Select Directory for META-INF/MANIFEST.MF file");
+    descriptor.setTitle(JavaCompilerBundle.message("select.directory.for.meta.inf.manifest.mf.file"));
     return descriptor;
   }
 
@@ -320,25 +285,34 @@ public class ManifestFileUtil {
                                              final @NotNull CompositePackagingElement<?> element) {
     context.editLayout(context.getArtifact(), () -> {
       final VirtualFile file = findManifestFile(element, context, context.getArtifactType());
-      if (file == null || !FileUtil.pathsEqual(file.getPath(), path)) {
-        PackagingElementFactory.getInstance().addFileCopy(element, MANIFEST_DIR_NAME, path, MANIFEST_FILE_NAME);
+      if (file == null || !VfsUtilCore.pathEqualsTo(file, path)) {
+        PackagingElementFactory.getInstance().addFileCopy(element, MANIFEST_DIR_NAME, path, MANIFEST_FILE_NAME, true);
       }
     });
   }
 
-  @Nullable
-  public static PsiClass selectMainClass(Project project, final @Nullable String initialClassName) {
+  public static @Nullable PsiClass selectMainClass(Project project, final @Nullable String initialClassName) {
     final TreeClassChooserFactory chooserFactory = TreeClassChooserFactory.getInstance(project);
     final GlobalSearchScope searchScope = GlobalSearchScope.allScope(project);
     final PsiClass aClass = initialClassName != null ? JavaPsiFacade.getInstance(project).findClass(initialClassName, searchScope) : null;
-    final TreeClassChooser chooser =
-        chooserFactory.createWithInnerClassesScopeChooser("Select Main Class", searchScope, new MainClassFilter(), aClass);
+    final TreeClassChooser chooser;
+    if (JavaFeature.IMPLICIT_CLASSES.isSufficient(PsiUtil.getLanguageLevel(project))) {
+      chooser =
+        chooserFactory.createWithInnerAndImplicitClassesScopeChooser(JavaCompilerBundle.message("dialog.title.manifest.select.main.class"),
+                                                                     searchScope, new MainClassFilter(), aClass);
+    }
+    else {
+      chooser =
+        chooserFactory.createWithInnerClassesScopeChooser(JavaCompilerBundle.message("dialog.title.manifest.select.main.class"),
+                                                          searchScope, new MainClassFilter(), aClass);
+    }
     chooser.showDialog();
     return chooser.getSelected();
   }
 
   public static void setupMainClassField(final Project project, final TextFieldWithBrowseButton field) {
     field.addActionListener(new ActionListener() {
+      @Override
       public void actionPerformed(ActionEvent e) {
         final PsiClass selected = selectMainClass(project, field.getText());
         if (selected != null) {
@@ -349,13 +323,10 @@ public class ManifestFileUtil {
   }
 
   private static class MainClassFilter implements ClassFilter {
+    @Override
     public boolean isAccepted(final PsiClass aClass) {
-      return ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
-        @Override
-        public Boolean compute() {
-          return PsiMethodUtil.MAIN_CLASS.value(aClass) && PsiMethodUtil.hasMainMethod(aClass);
-        }
-      });
+      return ReadAction
+        .compute(() -> PsiMethodUtil.MAIN_CLASS.value(aClass) && PsiMethodUtil.hasMainMethod(aClass));
     }
   }
 }

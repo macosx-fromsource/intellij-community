@@ -1,21 +1,9 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger;
 
+import com.intellij.debugger.source.DebuggerSourceFileResolver;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
@@ -27,7 +15,15 @@ import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.pom.Navigatable;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassOwner;
+import com.intellij.psi.PsiComment;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiForStatement;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
+import com.intellij.psi.SyntheticElement;
 import com.intellij.reference.SoftReference;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
@@ -36,17 +32,12 @@ import org.jetbrains.annotations.Nullable;
 import java.lang.ref.WeakReference;
 import java.util.List;
 
-/**
- * User: lex
- * Date: Oct 24, 2003
- * Time: 8:23:06 PM
- */
-public abstract class SourcePosition implements Navigatable{
-  private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.SourcePosition");
-  @NotNull
-  public abstract PsiFile getFile();
+public abstract class SourcePosition implements Navigatable {
+  private static final Logger LOG = Logger.getInstance(SourcePosition.class);
 
-  public abstract PsiElement getElementAt();
+  public abstract @NotNull PsiFile getFile();
+
+  public abstract @Nullable PsiElement getElementAt();
 
   /**
    * @return a zero-based line number
@@ -58,22 +49,25 @@ public abstract class SourcePosition implements Navigatable{
   public abstract Editor openEditor(boolean requestFocus);
 
   private abstract static class SourcePositionCache extends SourcePosition {
-    @NotNull private final PsiFile myFile;
-    private long myModificationStamp = -1L;
+    private final @NotNull PsiFile myFile;
+    private final @Nullable SmartPsiElementPointer<PsiFile> myFilePointer;
+    private long myModificationStamp;
 
     private WeakReference<PsiElement> myPsiElementRef;
     private Integer myLine;
     private Integer myOffset;
 
-    public SourcePositionCache(@NotNull PsiFile file) {
+    SourcePositionCache(@NotNull PsiFile file) {
       myFile = file;
-      updateData();
+      myFilePointer = ReadAction.compute(
+        () -> file.isValid() ? SmartPointerManager.getInstance(file.getProject()).createSmartPsiElementPointer(file) : null);
+      myModificationStamp = file.getModificationStamp();
     }
 
     @Override
-    @NotNull
-    public PsiFile getFile() {
-      return myFile;
+    public @NotNull PsiFile getFile() {
+      PsiFile file = myFilePointer != null ? ReadAction.compute(myFilePointer::getElement) : null;
+      return file != null ? file : myFile; // in case of full invalidation, rollback to the original psiFile
     }
 
     @Override
@@ -115,8 +109,8 @@ public abstract class SourcePosition implements Navigatable{
     }
 
     private void updateData() {
-      if(dataUpdateNeeded()) {
-        myModificationStamp = myFile.getModificationStamp();
+      if (dataUpdateNeeded()) {
+        myModificationStamp = getFile().getModificationStamp();
         myLine = null;
         myOffset = null;
         myPsiElementRef = null;
@@ -124,37 +118,49 @@ public abstract class SourcePosition implements Navigatable{
     }
 
     private boolean dataUpdateNeeded() {
-      if (myModificationStamp != myFile.getModificationStamp()) {
+      if (myModificationStamp != getFile().getModificationStamp()) {
         return true;
       }
       PsiElement psiElement = SoftReference.dereference(myPsiElementRef);
-      return psiElement != null && !ApplicationManager.getApplication().runReadAction((Computable<Boolean>)psiElement::isValid);
+      return psiElement != null && !ReadAction.compute(psiElement::isValid);
     }
 
     @Override
     public int getLine() {
       updateData();
-      if (myLine == null) {
-        myLine = calcLine();
+      Integer line = myLine;
+      int result;
+      if (line == null) {
+        result = calcLine();
+        myLine = result;
       }
-      return myLine.intValue();
+      else {
+        result = line;
+      }
+      return result;
     }
 
     @Override
     public int getOffset() {
       updateData();
-      if (myOffset == null) {
-        myOffset = calcOffset();
+      Integer offset = myOffset;
+      int result;
+      if (offset == null) {
+        result = calcOffset();
+        myOffset = result;
       }
-      return myOffset.intValue();
+      else {
+        result = offset;
+      }
+      return result;
     }
 
     @Override
-    public PsiElement getElementAt() {
+    public @Nullable PsiElement getElementAt() {
       updateData();
       PsiElement element = SoftReference.dereference(myPsiElementRef);
       if (element == null) {
-        element = ApplicationManager.getApplication().runReadAction((Computable<PsiElement>)this::calcPsiElement);
+        element = ReadAction.compute(this::calcPsiElement);
         myPsiElementRef = new WeakReference<>(element);
         return element;
       }
@@ -170,7 +176,8 @@ public abstract class SourcePosition implements Navigatable{
           document = getDocument(file.getOriginalFile());
         }
       }
-      catch (ProcessCanceledException ignored) {}
+      catch (ProcessCanceledException ignored) {
+      }
       catch (Throwable e) {
         LOG.error(e);
       }
@@ -185,13 +192,12 @@ public abstract class SourcePosition implements Navigatable{
       return -1;
     }
 
-    @Nullable
-    private static Document getDocument(@NotNull PsiFile file) {
+    private static @Nullable Document getDocument(@NotNull PsiFile file) {
       Project project = file.getProject();
       if (project.isDisposed()) {
         return null;
       }
-      return PsiDocumentManager.getInstance(project).getDocument(file);
+      return ReadAction.compute(() -> file.getViewProvider().getDocument());
     }
 
     protected int calcOffset() {
@@ -208,8 +214,7 @@ public abstract class SourcePosition implements Navigatable{
       return -1;
     }
 
-    @Nullable
-    protected PsiElement calcPsiElement() {
+    protected @Nullable PsiElement calcPsiElement() {
       // currently PsiDocumentManager does not store documents for mirror file, so we store original file
       PsiFile psiFile = getFile();
       if (!psiFile.isValid()) {
@@ -273,7 +278,7 @@ public abstract class SourcePosition implements Navigatable{
     }
   }
 
-  public static SourcePosition createFromLineComputable(@NotNull final PsiFile file, final Computable<Integer> line) {
+  public static SourcePosition createFromLineComputable(final @NotNull PsiFile file, final Computable<Integer> line) {
     return new SourcePositionCache(file) {
       @Override
       protected int calcLine() {
@@ -282,7 +287,7 @@ public abstract class SourcePosition implements Navigatable{
     };
   }
 
-  public static SourcePosition createFromLine(@NotNull final PsiFile file, final int line) {
+  public static SourcePosition createFromLine(final @NotNull PsiFile file, final int line) {
     return new SourcePositionCache(file) {
       @Override
       protected int calcLine() {
@@ -296,7 +301,7 @@ public abstract class SourcePosition implements Navigatable{
     };
   }
 
-  public static SourcePosition createFromOffset(@NotNull final PsiFile file, final int offset) {
+  public static SourcePosition createFromOffset(final @NotNull PsiFile file, final int offset) {
     return new SourcePositionCache(file) {
       @Override
       protected int calcOffset() {
@@ -310,19 +315,12 @@ public abstract class SourcePosition implements Navigatable{
     };
   }
 
-  @Nullable
-  public static SourcePosition createFromElement(@NotNull PsiElement element) {
+  public static @Nullable SourcePosition createFromElement(@NotNull PsiElement element) {
     ApplicationManager.getApplication().assertReadAccessAllowed();
     PsiElement navigationElement = element.getNavigationElement();
     final SmartPsiElementPointer<PsiElement> pointer =
       SmartPointerManager.getInstance(navigationElement.getProject()).createSmartPsiElementPointer(navigationElement);
-    final PsiFile psiFile;
-    if (JspPsiUtil.isInJspFile(navigationElement)) {
-      psiFile = JspPsiUtil.getJspFile(navigationElement);
-    }
-    else {
-      psiFile = navigationElement.getContainingFile();
-    }
+    var psiFile = DebuggerSourceFileResolver.findSourceFile(navigationElement);
     if (psiFile == null) return null;
     return new SourcePositionCache(psiFile) {
       @Override
@@ -332,17 +330,17 @@ public abstract class SourcePosition implements Navigatable{
 
       @Override
       protected int calcOffset() {
-        return ApplicationManager.getApplication().runReadAction((Computable<Integer>)() -> {
-            PsiElement elem = pointer.getElement();
-            return elem != null ? elem.getTextOffset() : -1;
+        return ReadAction.compute(() -> {
+          PsiElement elem = pointer.getElement();
+          return elem != null ? elem.getTextOffset() : -1;
         });
       }
     };
   }
 
+  @Override
   public boolean equals(Object o) {
-    if(o instanceof SourcePosition) {
-      SourcePosition sourcePosition = (SourcePosition)o;
+    if (o instanceof SourcePosition sourcePosition) {
       return Comparing.equal(sourcePosition.getFile(), getFile()) && sourcePosition.getOffset() == getOffset();
     }
 

@@ -1,29 +1,25 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.commandLine;
 
-import com.intellij.execution.process.ProcessOutputTypes;
+import com.intellij.execution.process.ProcessOutputType;
 import com.intellij.openapi.util.Key;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.api.ProgressEvent;
 import org.jetbrains.idea.svn.api.ProgressTracker;
-import org.tmatesoft.svn.core.SVNException;
 
 import java.io.File;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * @author Konstantin Kolosovsky.
- */
+import static org.jetbrains.idea.svn.api.BaseSvnClient.callHandler;
+
 public class BaseUpdateCommandListener extends LineCommandAdapter {
 
-  @NotNull
-  private final UpdateOutputLineConverter converter;
+  private final @NotNull UpdateOutputLineConverter converter;
 
-  @Nullable
-  private final ProgressTracker handler;
+  private final @Nullable ProgressTracker handler;
 
-  @NotNull
-  private final AtomicReference<SVNException> exception;
+  private final @NotNull AtomicReference<SvnBindException> exception;
 
   public BaseUpdateCommandListener(@NotNull File base, @Nullable ProgressTracker handler) {
     this.handler = handler;
@@ -33,14 +29,14 @@ public class BaseUpdateCommandListener extends LineCommandAdapter {
 
   @Override
   public void onLineAvailable(String line, Key outputType) {
-    if (ProcessOutputTypes.STDOUT.equals(outputType)) {
+    if (ProcessOutputType.isStdout(outputType)) {
       final ProgressEvent event = converter.convert(line);
       if (event != null) {
         beforeHandler(event);
         try {
-          callHandler(event);
+          callHandler(handler, event);
         }
-        catch (SVNException e) {
+        catch (SvnBindException e) {
           cancel();
           exception.set(e);
         }
@@ -48,17 +44,11 @@ public class BaseUpdateCommandListener extends LineCommandAdapter {
     }
   }
 
-  private void callHandler(ProgressEvent event) throws SVNException {
-    if (handler != null) {
-      handler.consume(event);
-    }
-  }
-
   public void throwWrappedIfException() throws SvnBindException {
-    SVNException e = exception.get();
+    SvnBindException e = exception.get();
 
     if (e != null) {
-      throw new SvnBindException(e);
+      throw e;
     }
   }
 

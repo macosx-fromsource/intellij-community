@@ -15,6 +15,13 @@
  */
 package com.jetbrains.python.postfix;
 
+import com.jetbrains.python.allure.Components;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
+@Subsystems.CodeCompletion
+@Components.Postfix
+@Layers.Functional
 public class PyMainPostfixTemplateTest extends PyPostfixTemplateTestCase {
 
   public void testPrint() {
@@ -22,6 +29,10 @@ public class PyMainPostfixTemplateTest extends PyPostfixTemplateTestCase {
   }
 
   public void testSeveralStatements() {
+    doTest();
+  }
+
+  public void testComment() {
     doTest();
   }
 

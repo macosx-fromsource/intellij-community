@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2011 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,15 @@ package com.intellij.openapi.editor.actionSystem;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.util.Producer;
+import org.jetbrains.annotations.Nullable;
 
 import java.awt.datatransfer.Transferable;
 
 /**
- * @author pegov
+ * {@link EditorActionHandler Handlers} for {@link com.intellij.openapi.actionSystem.IdeActions#ACTION_EDITOR_PASTE EditorPaste} action
+ * should implement this interface if they want to affect text drag-n-drop behaviour in editor.
  */
 public interface EditorTextInsertHandler {
   
-  void execute(final Editor editor, final DataContext dataContext, final Producer<Transferable> producer);  
+  void execute(final Editor editor, final DataContext dataContext, @Nullable Producer<? extends Transferable> producer);
 }

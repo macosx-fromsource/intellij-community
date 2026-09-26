@@ -1,50 +1,34 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util;
 
-import com.intellij.openapi.util.SystemInfo;
-import org.junit.Test;
+import com.intellij.execution.util.EnvVariablesTable;
+import com.intellij.util.system.OS;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
-import java.util.Map;
+import java.io.File;
+import java.util.List;
 
-import static org.junit.Assert.*;
-import static org.junit.Assume.assumeTrue;
+import static com.intellij.openapi.util.io.IoTestUtil.assumeWindows;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-/**
- * @author mike
- * @since Sep 19, 2002
- */
+@Timeout(30)
 public class EnvironmentUtilTest {
-  @Test(timeout = 30000)
-  public void map() {
+  @Test void map() {
     assertNotNull(EnvironmentUtil.getEnvironmentMap());
   }
 
-  @Test
-  public void path() {
+  @Test void path() {
     assertNotNull(EnvironmentUtil.getValue("PATH"));
-    if (SystemInfo.isWindows) {
+    if (OS.CURRENT == OS.Windows) {
       assertNotNull(EnvironmentUtil.getValue("Path"));
     }
   }
 
-  @Test
-  public void parse() {
-    String text = "V1=single line\0V2=multiple\nlines\0V3=single line\0PWD=?\0";
-    Map<String, String> map = EnvironmentUtil.testParser(text);
+  @Test void parse() {
+    var lines = new String[]{"V1=single line", "V2=multiple\nlines", "V3=single line", "PWD=?", ""};
+    var map = EnvironmentUtil.parseEnv(lines);
     assertEquals("single line", map.get("V1"));
     assertEquals("multiple\nlines", map.get("V2"));
     assertEquals("single line", map.get("V3"));
@@ -57,10 +41,43 @@ public class EnvironmentUtilTest {
     }
   }
 
-  @Test(timeout = 30000)
-  public void load() {
-    assumeTrue(SystemInfo.isUnix);
-    Map<String, String> env = EnvironmentUtil.testLoader();
-    assertTrue(env.size() >= System.getenv().size() / 2);
+  @Test void testPath() {
+    var list = substitute("PATH=\"/foo/bar" + File.pathSeparator + "$PATH$\"", "PATH=/hey");
+    assertEquals("/foo/bar" + File.pathSeparator + "/hey", list.getFirst());
+  }
+
+  @Test void testParentFoo() {
+    var list = substitute("BAR=$FOO$", "FOO=/hey");
+    assertEquals("/hey", list.getFirst());
+  }
+
+  @Test void testFooBar() {
+    var list = substitute("FOO=/hey;BAR=$FOO$", "");
+    assertEquals("/hey", list.get(0));
+    assertEquals("/hey", list.get(1));
+  }
+
+  @Test void testTransitive() {
+    var list = substitute("FOO=/hey;BAR=$FOO$;THIRD=$BAR$", "");
+    assertEquals("/hey", list.get(0));
+    assertEquals("/hey", list.get(1));
+    assertEquals("/hey", list.get(2));
+  }
+
+  @Test
+  public void testWindowsCaseInsensitive() {
+    assumeWindows();
+
+    var list = substitute("FIRST=$foo$;SECOND=$FOO$;THIRD=$fOo$", "FOo=/hey");
+    assertEquals("/hey", list.get(0));
+    assertEquals("/hey", list.get(1));
+    assertEquals("/hey", list.get(2));
+  }
+
+  private static List<String> substitute(String environment, String parent) {
+    var env = EnvVariablesTable.parseEnvsFromText(environment);
+    var parentEnv = EnvVariablesTable.parseEnvsFromText(parent);
+    EnvironmentUtil.inlineParentOccurrences(env, parentEnv);
+    return env.values().stream().toList();
   }
 }

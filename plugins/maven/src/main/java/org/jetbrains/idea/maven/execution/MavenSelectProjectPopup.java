@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.maven.execution;
 
 import com.intellij.ide.util.treeView.NodeRenderer;
@@ -21,18 +7,22 @@ import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.ui.popup.PopupChooserBuilder;
 import com.intellij.openapi.util.Ref;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.TreeSpeedSearch;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.Consumer;
-import com.intellij.util.containers.Convertor;
 import icons.MavenIcons;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.maven.project.MavenProject;
+import org.jetbrains.idea.maven.project.MavenProjectBundle;
 import org.jetbrains.idea.maven.project.MavenProjectsManager;
 import org.jetbrains.idea.maven.utils.MavenProjectNamer;
 
-import javax.swing.*;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JTextField;
+import javax.swing.JTree;
 import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.TreePath;
 import java.awt.event.ActionEvent;
@@ -44,22 +34,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * @author Sergey Evdokimov
- */
-public class MavenSelectProjectPopup {
+public final class MavenSelectProjectPopup {
 
-  public static void attachToWorkingDirectoryField(@NotNull final MavenProjectsManager projectsManager,
+  public static void attachToWorkingDirectoryField(final @NotNull MavenProjectsManager projectsManager,
                                                    final JTextField workingDirectoryField,
                                                    final JButton showModulesButton,
-                                                   @Nullable final JComponent focusAfterSelection) {
+                                                   final @Nullable JComponent focusAfterSelection) {
     attachToButton(projectsManager, showModulesButton, project -> {
       workingDirectoryField.setText(project.getDirectory());
 
       if (focusAfterSelection != null) {
         ApplicationManager.getApplication().invokeLater(() -> {
           if (workingDirectoryField.hasFocus()) {
-            focusAfterSelection.requestFocus();
+            IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> IdeFocusManager.getGlobalInstance().requestFocus(focusAfterSelection, true));
           }
         });
       }
@@ -78,15 +65,16 @@ public class MavenSelectProjectPopup {
     });
   }
 
-  public static void attachToButton(@NotNull final MavenProjectsManager projectsManager,
-                                    @NotNull final JButton button,
-                                    @NotNull final Consumer<MavenProject> callback) {
+  public static void attachToButton(final @NotNull MavenProjectsManager projectsManager,
+                                    final @NotNull JButton button,
+                                    final @NotNull Consumer<? super MavenProject> callback) {
     button.addActionListener(new ActionListener() {
       @Override
       public void actionPerformed(ActionEvent e) {
         List<MavenProject> projectList = projectsManager.getProjects();
         if (projectList.isEmpty()) {
-          JBPopupFactory.getInstance().createMessage("Maven projects not found").showUnderneathOf(button);
+          JBPopupFactory.getInstance().createMessage(
+            MavenProjectBundle.message("popup.content.maven.projects.not.found")).showUnderneathOf(button);
           return;
         }
 
@@ -98,7 +86,7 @@ public class MavenSelectProjectPopup {
         projectTree.setRootVisible(false);
         projectTree.setCellRenderer(new NodeRenderer() {
           @Override
-          public void customizeCellRenderer(JTree tree,
+          public void customizeCellRenderer(@NotNull JTree tree,
                                             Object value,
                                             boolean selected,
                                             boolean expanded,
@@ -115,17 +103,14 @@ public class MavenSelectProjectPopup {
           }
         });
 
-        new TreeSpeedSearch(projectTree, new Convertor<TreePath, String>() {
-          @Override
-          public String convert(TreePath o) {
-            Object lastPathComponent = o.getLastPathComponent();
-            if (!(lastPathComponent instanceof DefaultMutableTreeNode)) return null;
+        TreeSpeedSearch.installOn(projectTree, false, o -> {
+          Object lastPathComponent = o.getLastPathComponent();
+          if (!(lastPathComponent instanceof DefaultMutableTreeNode)) return null;
 
-            Object userObject = ((DefaultMutableTreeNode)lastPathComponent).getUserObject();
+          Object userObject = ((DefaultMutableTreeNode)lastPathComponent).getUserObject();
 
-            //noinspection SuspiciousMethodCalls
-            return projectsNameMap.get(userObject);
-          }
+          //noinspection SuspiciousMethodCalls
+          return projectsNameMap.get(userObject);
         });
 
         final Ref<JBPopup> popupRef = new Ref<>();
@@ -156,9 +141,9 @@ public class MavenSelectProjectPopup {
         });
 
         JBPopup popup = new PopupChooserBuilder(projectTree)
-          .setTitle("Select maven project")
+          .setTitle(RunnerBundle.message("maven.select.project"))
           .setResizable(true)
-          .setItemChoosenCallback(clickCallBack).setAutoselectOnMouseMove(true)
+          .setItemChosenCallback(clickCallBack).setAutoselectOnMouseMove(true)
           .setCloseOnEnter(false)
           .createPopup();
 
@@ -168,7 +153,7 @@ public class MavenSelectProjectPopup {
       }
 
       private DefaultMutableTreeNode buildTree(List<MavenProject> projectList) {
-        MavenProject[] projects = projectList.toArray(new MavenProject[projectList.size()]);
+        MavenProject[] projects = projectList.toArray(new MavenProject[0]);
         Arrays.sort(projects, new MavenProjectNamer.MavenProjectComparator());
 
         Map<MavenProject, DefaultMutableTreeNode> projectsToNode = new HashMap<>();

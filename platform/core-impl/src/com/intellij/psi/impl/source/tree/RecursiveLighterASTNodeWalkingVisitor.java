@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.psi.impl.source.tree;
 
@@ -20,19 +6,16 @@ import com.intellij.lang.LighterAST;
 import com.intellij.lang.LighterASTNode;
 import com.intellij.lang.LighterASTTokenNode;
 import com.intellij.lang.LighterLazyParseableNode;
-import com.intellij.util.Function;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.util.WalkingState;
-import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.Stack;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Collections;
 import java.util.List;
 
 public abstract class RecursiveLighterASTNodeWalkingVisitor extends LighterASTNodeVisitor {
-  @NotNull private final LighterAST ast;
-  private final Stack<IndexedLighterASTNode[]> childrenStack = new Stack<IndexedLighterASTNode[]>();
-  private final Stack<IndexedLighterASTNode> parentStack = new Stack<IndexedLighterASTNode>();
+  private final @NotNull LighterAST ast;
+  private final Stack<IndexedLighterASTNode> parentStack = new Stack<>();
 
   // wrapper around LighterASTNode which remembers its position in parents' children list for performance
   private static class IndexedLighterASTNode {
@@ -70,7 +53,6 @@ public abstract class RecursiveLighterASTNodeWalkingVisitor extends LighterASTNo
           indexedChildren[i-1].next = indexedNode;
         }
       }
-      childrenStack.push(indexedChildren);
       parentStack.push(element);
       return children.isEmpty() ? null : indexedChildren[0];
     }
@@ -81,7 +63,7 @@ public abstract class RecursiveLighterASTNodeWalkingVisitor extends LighterASTNo
     }
   }
 
-  protected RecursiveLighterASTNodeWalkingVisitor(@NotNull final LighterAST ast) {
+  protected RecursiveLighterASTNodeWalkingVisitor(@NotNull LighterAST ast) {
     this.ast = ast;
 
     myWalkingState = new WalkingState<IndexedLighterASTNode>(new LighterASTGuide()) {
@@ -90,13 +72,13 @@ public abstract class RecursiveLighterASTNodeWalkingVisitor extends LighterASTNo
         RecursiveLighterASTNodeWalkingVisitor.this.elementFinished(element.node);
 
         if (parentStack.peek() == element) { // getFirstChild returned nothing. otherwise getFirstChild() was not called, i.e. super.visitNode() was not called i.e. just ignore
-          childrenStack.pop();
           parentStack.pop();
         }
       }
 
       @Override
       public void visit(@NotNull IndexedLighterASTNode iNode) {
+        ProgressManager.checkCanceled();
         LighterASTNode element = iNode.node;
         RecursiveLighterASTNodeWalkingVisitor visitor = RecursiveLighterASTNodeWalkingVisitor.this;
         if (element instanceof LighterLazyParseableNode) {

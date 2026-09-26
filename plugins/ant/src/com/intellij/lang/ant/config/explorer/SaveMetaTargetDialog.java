@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.ant.config.explorer;
 
 import com.intellij.lang.ant.AntBundle;
@@ -21,19 +7,32 @@ import com.intellij.lang.ant.config.AntConfigurationBase;
 import com.intellij.lang.ant.config.impl.ExecuteCompositeTargetEvent;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.ui.ListUtil;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.components.JBList;
-import com.intellij.util.ArrayUtil;
+import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.Action;
+import javax.swing.DefaultListModel;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
+import javax.swing.ListModel;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
-import java.awt.*;
+import java.awt.Component;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.ArrayList;
+import java.util.List;
 
 public class SaveMetaTargetDialog extends DialogWrapper {
   private JList myTargetList;
@@ -54,15 +53,17 @@ public class SaveMetaTargetDialog extends DialogWrapper {
     init();
   }
 
+  @Override
   protected String getDimensionServiceKey() {
     return "#com.intellij.ant.explorer.SaveMetaTargetDialog";
   }
 
-  @NotNull
-  protected Action[] createActions() {
+  @Override
+  protected Action @NotNull [] createActions() {
     return new Action[]{getOKAction(), getCancelAction()};
   }
 
+  @Override
   protected void doOKAction() {
     final ExecuteCompositeTargetEvent eventObject = createEventObject();
     if (myAntConfiguration.getTargetForEvent(eventObject) == null) {
@@ -75,15 +76,17 @@ public class SaveMetaTargetDialog extends DialogWrapper {
     }
   }
 
+  @Override
   public JComponent getPreferredFocusedComponent() {
     return myTfName;
   }
 
+  @Override
   protected JComponent createCenterPanel() {
     final JPanel panel = new JPanel(new GridBagLayout());
     final JLabel nameLabel = new JLabel(AntBundle.message("save.meta.data.name.label"));
     panel.add(nameLabel, new GridBagConstraints(0, GridBagConstraints.RELATIVE, 1, 1, 0.0, 0.0, GridBagConstraints.NORTHWEST,
-                                                GridBagConstraints.NONE, JBUI.emptyInsets(), 0, 0));
+                                                GridBagConstraints.NONE, JBInsets.emptyInsets(), 0, 0));
     myTfName = new JTextField(myInitialEvent.getPresentableName());
     nameLabel.setLabelFor(myTfName);
     myTfName.selectAll();
@@ -92,8 +95,8 @@ public class SaveMetaTargetDialog extends DialogWrapper {
 
     final DefaultListModel dataModel = new DefaultListModel();
     myTargetList = new JBList(dataModel);
-    final String[] targetNames = myInitialEvent.getTargetNames();
-    for (String name : targetNames) {
+    final List<String> targetNames = myInitialEvent.getTargetNames();
+    for (@NlsSafe String name : targetNames) {
       dataModel.addElement(name);
     }
     panel.add(new JLabel(AntBundle.message("save.meta.data.targets.label")), new GridBagConstraints(0, GridBagConstraints.RELATIVE, 1, 1,
@@ -112,6 +115,7 @@ public class SaveMetaTargetDialog extends DialogWrapper {
                                                  GridBagConstraints.HORIZONTAL, JBUI.insetsLeft(6), 0, 0));
 
     class UpdateAction implements ActionListener {
+      @Override
       public void actionPerformed(ActionEvent e) {
         upButton.setEnabled(ListUtil.canMoveSelectedItemsUp(myTargetList));
         downButton.setEnabled(ListUtil.canMoveSelectedItemsDown(myTargetList));
@@ -119,6 +123,7 @@ public class SaveMetaTargetDialog extends DialogWrapper {
     }
 
     upButton.addActionListener(new UpdateAction() {
+      @Override
       public void actionPerformed(ActionEvent e) {
         ListUtil.moveSelectedItemsUp(myTargetList);
         super.actionPerformed(e);
@@ -126,6 +131,7 @@ public class SaveMetaTargetDialog extends DialogWrapper {
     });
 
     downButton.addActionListener(new UpdateAction() {
+      @Override
       public void actionPerformed(ActionEvent e) {
         ListUtil.moveSelectedItemsDown(myTargetList);
         super.actionPerformed(e);
@@ -133,6 +139,7 @@ public class SaveMetaTargetDialog extends DialogWrapper {
     });
 
     myTargetList.addListSelectionListener(new ListSelectionListener() {
+      @Override
       public void valueChanged(ListSelectionEvent e) {
         upButton.setEnabled(ListUtil.canMoveSelectedItemsUp(myTargetList));
         downButton.setEnabled(ListUtil.canMoveSelectedItemsDown(myTargetList));
@@ -145,9 +152,9 @@ public class SaveMetaTargetDialog extends DialogWrapper {
   private ExecuteCompositeTargetEvent createEventObject() {
     final ListModel model = myTargetList.getModel();
     final int size = model.getSize();
-    final String[] names = ArrayUtil.newStringArray(size);
+    final List<@NlsSafe String> names  = new ArrayList<>();
     for (int idx = 0; idx < size; idx++) {
-      names[idx] = (String)model.getElementAt(idx);
+      names.add((String)model.getElementAt(idx));
     }
     final ExecuteCompositeTargetEvent event = new ExecuteCompositeTargetEvent(names);
     event.setPresentableName(myTfName.getText().trim());

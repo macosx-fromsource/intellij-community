@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,6 @@ package com.intellij.remoteServer;
 
 import com.intellij.openapi.options.UnnamedConfigurable;
 
-/**
- * @author nik
- */
 public abstract class RemoteServerConfigurable implements UnnamedConfigurable {
   /**
    * When user edits a server configuration IDEA periodically tries to connect to the server to check the configuration and show
@@ -28,9 +25,5 @@ public abstract class RemoteServerConfigurable implements UnnamedConfigurable {
    */
   public boolean canCheckConnection() {
     return true;
-  }
-
-  @Override
-  public void disposeUIResources() {
   }
 }

@@ -1,38 +1,41 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.actions;
 
+import com.intellij.icons.AllIcons;
+import com.intellij.ide.ui.MaximizeDialogKt;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.ui.ScreenUtil;
+import com.intellij.openapi.actionSystem.PlatformCoreDataKeys;
+import com.intellij.ui.ComponentUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.Icon;
+import javax.swing.JDialog;
+import java.awt.Component;
+import java.awt.Window;
 
-public class MaximizeActiveDialogAction extends WindowAction {
+import static com.intellij.ide.ui.MaximizeDialogKt.isMaximizeButtonShown;
+
+@ApiStatus.Internal
+public final class MaximizeActiveDialogAction extends WindowAction {
   @Override
-  public void actionPerformed(AnActionEvent e) {
-    if (myWindow instanceof JDialog) {
-      doMaximize((JDialog)myWindow);
-    }
+  protected @Nullable Icon getIconFor(@Nullable Window window) {
+    if (!(window instanceof JDialog dialog)) return null;
+    return MaximizeDialogKt.canBeMaximized(dialog) ? AllIcons.Windows.Maximize : AllIcons.Windows.Restore;
   }
 
-  public static void doMaximize(JDialog dialog) {
-    JRootPane rootPane = dialog != null ? dialog.getRootPane() : null;
-    if (rootPane == null) return;
-    Rectangle screenRectangle = ScreenUtil.getScreenRectangle(dialog);
+  @Override
+  protected boolean isVisibleFor(@Nullable Window window) {
+    if (!(window instanceof JDialog dialog)) return false;
+    return isMaximizeButtonShown(dialog);
+  }
 
-
-    if (dialog.getBounds().equals(screenRectangle)) {
-      //We have to restore normal state
-      Object value = rootPane.getClientProperty("NORMAL_BOUNDS");
-      if (value instanceof Rectangle) {
-        Rectangle bounds = (Rectangle)value;
-        ScreenUtil.fitToScreen(bounds);
-        dialog.setBounds(bounds);
-        rootPane.putClientProperty("NORMAL_BOUNDS", null);
-      }
-    }
-    else {
-      rootPane.putClientProperty("NORMAL_BOUNDS", dialog.getBounds());
-      dialog.setBounds(screenRectangle);
-    }
+  @Override
+  public void actionPerformed(@NotNull AnActionEvent e) {
+    @Nullable Component component = e.getData(PlatformCoreDataKeys.CONTEXT_COMPONENT);
+    Window window = ComponentUtil.getWindow(component);
+    if (!(window instanceof JDialog)) return;
+    MaximizeDialogKt.toggleMaximized((JDialog)window);
   }
 }

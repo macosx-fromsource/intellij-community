@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.scope;
 
 import com.intellij.openapi.util.Key;
@@ -33,8 +19,20 @@ public interface PsiScopeProcessor {
    */
   boolean execute(@NotNull PsiElement element, @NotNull ResolveState state);
 
-  @Nullable
-  <T> T getHint(@NotNull Key<T> hintKey);
+  /**
+   * Called if the reference is imported but unresolved, so the target may not exist 
+   * due to incomplete project setup.
+   *
+   * @return false to stop processing.
+   */
+  default boolean executeForUnresolved() {
+    return true;
+  }
 
-  void handleEvent(@NotNull Event event, @Nullable Object associated);
+  default @Nullable <T> T getHint(@NotNull Key<T> hintKey) {
+    return null;
+  }
+
+  default void handleEvent(@NotNull Event event, @Nullable Object associated) {
+  }
 }

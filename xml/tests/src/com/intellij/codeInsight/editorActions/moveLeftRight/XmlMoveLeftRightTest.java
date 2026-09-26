@@ -16,7 +16,7 @@
 package com.intellij.codeInsight.editorActions.moveLeftRight;
 
 import com.intellij.codeInsight.editorActions.AbstractMoveElementLeftRightTest;
-import com.intellij.testFramework.TestFileType;
+import com.intellij.ide.highlighter.XmlFileType;
 
 public class XmlMoveLeftRightTest extends AbstractMoveElementLeftRightTest {
   public void testMoveAttributes() throws Exception {
@@ -25,7 +25,7 @@ public class XmlMoveLeftRightTest extends AbstractMoveElementLeftRightTest {
   }
   
   @Override
-  protected void configureEditor(String contents) throws Exception {
-    init(contents, TestFileType.XML);
+  protected void configureEditor(String contents) {
+    init(contents, XmlFileType.INSTANCE);
   }
 }

@@ -1,36 +1,28 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
-import org.jetbrains.java.decompiler.main.TextBuffer;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.main.collectors.BytecodeMappingTracer;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.CheckTypesResult;
+import org.jetbrains.java.decompiler.struct.consts.PooledConstant;
+import org.jetbrains.java.decompiler.struct.consts.PrimitiveConstant;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
-import org.jetbrains.java.decompiler.util.InterpreterUtil;
+import org.jetbrains.java.decompiler.util.TextBuffer;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
-import java.util.Set;
+import java.util.Objects;
+
+import static org.jetbrains.java.decompiler.modules.decompiler.SwitchPatternHelper.isBootstrapSwitch;
 
 public class SwitchExprent extends Exprent {
 
   private Exprent value;
-  private List<List<ConstExprent>> caseValues = new ArrayList<>();
+  private List<List<Exprent>> caseValues = new ArrayList<>();
 
-  public SwitchExprent(Exprent value, Set<Integer> bytecodeOffsets) {
+  public SwitchExprent(Exprent value, BitSet bytecodeOffsets) {
     super(EXPRENT_SWITCH);
     this.value = value;
 
@@ -41,8 +33,8 @@ public class SwitchExprent extends Exprent {
   public Exprent copy() {
     SwitchExprent swExpr = new SwitchExprent(value.copy(), bytecode);
 
-    List<List<ConstExprent>> lstCaseValues = new ArrayList<>();
-    for (List<ConstExprent> lst : caseValues) {
+    List<List<Exprent>> lstCaseValues = new ArrayList<>();
+    for (List<Exprent> lst : caseValues) {
       lstCaseValues.add(new ArrayList<>(lst));
     }
     swExpr.setCaseValues(lstCaseValues);
@@ -51,7 +43,7 @@ public class SwitchExprent extends Exprent {
   }
 
   @Override
-  public VarType getExprType() {
+  public @NotNull VarType getExprType() {
     return value.getExprType();
   }
 
@@ -63,8 +55,8 @@ public class SwitchExprent extends Exprent {
     result.addMaxTypeExprent(value, VarType.VARTYPE_INT);
 
     VarType valType = value.getExprType();
-    for (List<ConstExprent> lst : caseValues) {
-      for (ConstExprent expr : lst) {
+    for (List<Exprent> lst : caseValues) {
+      for (Exprent expr : lst) {
         if (expr != null) {
           VarType caseType = expr.getExprType();
           if (!caseType.equals(valType)) {
@@ -79,8 +71,7 @@ public class SwitchExprent extends Exprent {
   }
 
   @Override
-  public List<Exprent> getAllExprents() {
-    List<Exprent> lst = new ArrayList<>();
+  public List<Exprent> getAllExprents(List<Exprent> lst) {
     lst.add(value);
     return lst;
   }
@@ -88,7 +79,28 @@ public class SwitchExprent extends Exprent {
   @Override
   public TextBuffer toJava(int indent, BytecodeMappingTracer tracer) {
     tracer.addMapping(bytecode);
-    return value.toJava(indent, tracer).enclose("switch(", ")");
+    //if it is impossible to process
+    TextBuffer buf = new TextBuffer();
+    if (isBootstrapSwitch(this)) {
+      InvocationExprent invocationExprent = (InvocationExprent)value;
+      List<Exprent> parameters = invocationExprent.getParameters();
+      if (parameters.size() == 2) {
+        Exprent exprent = parameters.get(1);
+        buf.append("//$FF: ").append(exprent.toJava(indent, tracer)).append("->").append("value").appendLineSeparator();
+        tracer.incrementCurrentSourceLine();
+        List<PooledConstant> arguments = invocationExprent.getBootstrapArguments();
+        for (int i = 0; i < arguments.size(); i++) {
+          PooledConstant argument = arguments.get(i);
+          if (argument instanceof PrimitiveConstant primitiveConstant && primitiveConstant.value != null) {
+            buf.appendIndent(indent).append("//").append(i).append("->").append(primitiveConstant.value.toString()).appendLineSeparator();
+            tracer.incrementCurrentSourceLine();
+          }
+        }
+        buf.appendIndent(indent);
+      }
+    }
+    buf.append(value.toJava(indent, tracer).enclose("switch (", ")"));
+    return buf;
   }
 
   @Override
@@ -104,19 +116,34 @@ public class SwitchExprent extends Exprent {
       return true;
     }
 
-    if (o == null || !(o instanceof SwitchExprent)) {
+    if (!(o instanceof SwitchExprent sw)) {
       return false;
     }
 
-    SwitchExprent sw = (SwitchExprent)o;
-    return InterpreterUtil.equalObjects(value, sw.getValue());
+    return Objects.equals(value, sw.getValue());
+  }
+
+  @Override
+  public void fillBytecodeRange(@Nullable BitSet values) {
+    if (caseValues != null && !caseValues.isEmpty()) {
+      for (List<Exprent> l : caseValues) {
+        if (l != null && !l.isEmpty()) {
+          for (Exprent e : l) {
+            if (e != null)
+              e.fillBytecodeRange(values);
+          }
+        }
+      }
+    }
+    measureBytecode(values, value);
+    measureBytecode(values);
   }
 
   public Exprent getValue() {
     return value;
   }
 
-  public void setCaseValues(List<List<ConstExprent>> caseValues) {
+  public void setCaseValues(List<List<Exprent>> caseValues) {
     this.caseValues = caseValues;
   }
 }

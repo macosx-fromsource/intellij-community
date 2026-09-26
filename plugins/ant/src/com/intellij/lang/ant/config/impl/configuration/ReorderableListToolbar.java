@@ -16,12 +16,11 @@
 package com.intellij.lang.ant.config.impl.configuration;
 
 import com.intellij.openapi.actionSystem.ActionManager;
-import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.ui.ReorderableListController;
 
-import javax.swing.*;
+import javax.swing.JList;
 import java.util.ArrayList;
 
 public class ReorderableListToolbar<T> extends ReorderableListController<T> {
@@ -31,6 +30,7 @@ public class ReorderableListToolbar<T> extends ReorderableListController<T> {
     super(list);
   }
 
+  @Override
   public void addActionDescription(final ActionDescription description) {
     myActions.add(description);
   }
@@ -44,6 +44,6 @@ public class ReorderableListToolbar<T> extends ReorderableListController<T> {
   }
 
   public ActionToolbar createActionToolbar(final boolean horizontal) {
-    return ActionManager.getInstance().createActionToolbar(ActionPlaces.UNKNOWN, createActionGroup(), horizontal);
+    return ActionManager.getInstance().createActionToolbar("AntReorderableListToolbar", createActionGroup(), horizontal);
   }
 }

@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2011 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor;
 
 import com.intellij.lang.ASTNode;
@@ -30,24 +16,24 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Base super-class for {@link LineWrapPositionStrategy} implementations that want to restrict wrap positions
  * only for particular elements/tokens (e.g. we may want to avoid line wrap in the middle of xml tag name etc).
- * 
- * @author Denis Zhdanov
- * @since 5/12/11 12:30 PM
  */
 public abstract class PsiAwareLineWrapPositionStrategy implements LineWrapPositionStrategy {
 
-  private static final Logger LOG = Logger.getInstance("#" + PsiAwareLineWrapPositionStrategy.class.getName());
+  private static final Logger LOG = Logger.getInstance(PsiAwareLineWrapPositionStrategy.class);
   
   private final TokenSet myEnabledTypes;
   private final boolean  myNonVirtualOnly;
 
+  public static final int NO_ELEMENT_WRAP = -1;
+  public static final int NO_LINE_WRAP = -2;
+
   /**
-   * Creates new <code>PsiAwareLineWrapPositionStrategy</code> object.
+   * Creates new {@code PsiAwareLineWrapPositionStrategy} object.
    * 
    * @param nonVirtualOnly  defines if current PSI-aware logic should be exploited only for 'real wrap' position requests
    * @param enabledTypes    target element/token types where line wrapping is allowed
    */
-  public PsiAwareLineWrapPositionStrategy(boolean nonVirtualOnly, @NotNull IElementType ... enabledTypes) {
+  public PsiAwareLineWrapPositionStrategy(boolean nonVirtualOnly, IElementType @NotNull ... enabledTypes) {
     myEnabledTypes = TokenSet.create(enabledTypes);
     myNonVirtualOnly = nonVirtualOnly;
     if (enabledTypes.length <= 0) {
@@ -63,11 +49,12 @@ public abstract class PsiAwareLineWrapPositionStrategy implements LineWrapPositi
                                    int endOffset,
                                    int maxPreferredOffset,
                                    boolean allowToBeyondMaxPreferredOffset,
-                                   boolean virtual) {
-    if (virtual && myNonVirtualOnly) {
+                                   boolean isSoftWrap) {
+    if (isSoftWrap && myNonVirtualOnly) {
       LineWrapPositionStrategy implementation = LanguageLineWrapPositionStrategy.INSTANCE.getDefaultImplementation();
+      //noinspection ConstantConditions
       return implementation.calculateWrapPosition(
-        document, project, startOffset, endOffset, maxPreferredOffset, allowToBeyondMaxPreferredOffset, virtual
+        document, project, startOffset, endOffset, maxPreferredOffset, allowToBeyondMaxPreferredOffset, isSoftWrap
       );
     }
 
@@ -96,9 +83,12 @@ public abstract class PsiAwareLineWrapPositionStrategy implements LineWrapPositi
         TextRange textRange = element.getTextRange();
         int start = Math.max(textRange.getStartOffset(), startOffset);
         int end = Math.min(textRange.getEndOffset(), endOffset);
-        int result = doCalculateWrapPosition(document, project, start, end, maxPreferredOffset, false, virtual);
+        int result = doCalculateWrapPosition(document, project, element, start, end, maxPreferredOffset, isSoftWrap);
         if (result >= 0) {
           return result;
+        }
+        else if (result == NO_LINE_WRAP) {
+          break;
         }
 
         // Assume that it's possible to wrap on token boundary (makes sense at least for the tokens that occupy one symbol only).
@@ -123,27 +113,31 @@ public abstract class PsiAwareLineWrapPositionStrategy implements LineWrapPositi
    * @param startOffset                       start offset to use with the given text holder (inclusive)
    * @param endOffset                         end offset to use with the given text holder (exclusive)
    * @param maxPreferredOffset                this method is expected to do its best to return offset that belongs to
-   *                                          <code>(startOffset; maxPreferredOffset]</code> interval. However, it's allowed
-   *                                          to return value from <code>(maxPreferredOffset; endOffset]</code> interval
-   *                                          unless <code>'allowToBeyondMaxPreferredOffset'</code> if <code>'false'</code>
-   * @param allowToBeyondMaxPreferredOffset   indicates if it's allowed to return value from
-   *                                          <code>(maxPreferredOffset; endOffset]</code> interval in case of inability to
-   *                                          find appropriate offset from <code>(startOffset; maxPreferredOffset]</code> interval
-   * @param virtual                           identifies if current request is for virtual wrap (soft wrap) position
-   * @return                                  offset from <code>(startOffset; endOffset]</code> interval where
-   *                                          target line should be wrapped OR <code>-1</code> if no wrapping should be performed
+   *                                          {@code (startOffset; maxPreferredOffset]} interval. However, it's allowed
+   *                                          to return value from {@code (maxPreferredOffset; endOffset]} interval
+   *                                          unless {@code 'allowToBeyondMaxPreferredOffset'} if {@code 'false'}
+   * @param isSoftWrap                        identifies if current request is for virtual wrap (soft wrap) position
+   * @return                                  offset from {@code (startOffset; endOffset]} interval where
+   *                                          target line should be wrapped, {@link #NO_ELEMENT_WRAP} if no wrapping
+   *                                          should be performed within the element OR {@link #NO_LINE_WRAP} if the
+   *                                          entire line wrapping is not allowed.
    */
   protected abstract int doCalculateWrapPosition(
-    @NotNull Document document, @Nullable Project project, int startOffset, int endOffset, int maxPreferredOffset,
-    boolean allowToBeyondMaxPreferredOffset, boolean virtual
+    @NotNull Document document,
+    @Nullable Project project,
+    @NotNull PsiElement element,
+    int startOffset,
+    int endOffset,
+    int maxPreferredOffset,
+    boolean isSoftWrap
   );
 
   /**
    * Allows to check if line wrap at the text range defined by the given element is allowed.
    * 
    * @param element     element that defines target text range
-   * @return            <code>true</code> if wrapping at the text range defined by the given element is allowed;
-   *                    <code>false</code> otherwise
+   * @return            {@code true} if wrapping at the text range defined by the given element is allowed;
+   *                    {@code false} otherwise
    */
   private boolean allowToWrapInside(@NotNull PsiElement element) {
     TextRange textRange = element.getTextRange();
@@ -159,20 +153,19 @@ public abstract class PsiAwareLineWrapPositionStrategy implements LineWrapPositi
     return false;
   }
   
-  @Nullable
-  private static PsiElement getPrevious(@NotNull PsiElement element) {
+  private static @Nullable PsiElement getPrevious(@NotNull PsiElement element) {
     PsiElement result = element.getPrevSibling();
     if (result != null) {
       return result;
     } 
     
-    PsiElement parent = element.getParent();
+    PsiElement parent = getParentWithinFile(element);
     if (parent == null) {
       return null;
     }
 
     PsiElement parentSibling = null;
-    for (; parent != null && parentSibling == null; parent = parent.getParent()) {
+    for (; parent != null && parentSibling == null; parent = getParentWithinFile(parent)) {
       parentSibling = parent.getPrevSibling();
     }
 
@@ -182,5 +175,10 @@ public abstract class PsiAwareLineWrapPositionStrategy implements LineWrapPositi
 
     result = parentSibling.getLastChild();
     return result == null ? parentSibling : result;
+  }
+
+  private static @Nullable PsiElement getParentWithinFile(@NotNull PsiElement element) {
+    PsiElement parent = element.getParent();
+    return parent == null || parent instanceof PsiFile ? null : parent;
   }
 }

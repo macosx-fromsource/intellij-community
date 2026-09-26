@@ -1,23 +1,7 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.highlighter;
 
 import com.intellij.openapi.editor.Document;
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
-import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.TextRange;
@@ -29,26 +13,24 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
-/**
- * Created by IntelliJ IDEA.
- * User: Irina.Chernushina
- * Date: 9/8/11
- * Time: 12:52 PM
- */
 public class FragmentedEditorHighlighter implements EditorHighlighter {
   private final List<Element> myPieces;
   private final Document myDocument;
   private final int myAdditionalOffset;
   private final boolean myMergeByTextAttributes;
 
-  public FragmentedEditorHighlighter(HighlighterIterator sourceIterator, List<TextRange> ranges) {
+  public FragmentedEditorHighlighter(@NotNull EditorHighlighter highlighter, TextRange range) {
+    this(highlighter.createIterator(range.getStartOffset()), Collections.singletonList(range));
+  }
+
+  private FragmentedEditorHighlighter(@NotNull HighlighterIterator sourceIterator, List<? extends TextRange> ranges) {
     this(sourceIterator, ranges, 0, false);
   }
 
-  public FragmentedEditorHighlighter(HighlighterIterator sourceIterator,
-                                     List<TextRange> ranges,
-                                     final int additionalOffset,
-                                     boolean mergeByTextAttributes) {
+  private FragmentedEditorHighlighter(@NotNull HighlighterIterator sourceIterator,
+                                      List<? extends TextRange> ranges,
+                                      final int additionalOffset,
+                                      boolean mergeByTextAttributes) {
     myMergeByTextAttributes = mergeByTextAttributes;
     myDocument = sourceIterator.getDocument();
     myPieces = new ArrayList<>();
@@ -56,7 +38,7 @@ public class FragmentedEditorHighlighter implements EditorHighlighter {
     translate(sourceIterator, ranges);
   }
 
-  private void translate(HighlighterIterator iterator, List<TextRange> ranges) {
+  private void translate(HighlighterIterator iterator, List<? extends TextRange> ranges) {
     int offset = 0;
     int index = 0;
 
@@ -79,7 +61,7 @@ public class FragmentedEditorHighlighter implements EditorHighlighter {
       }
 
       if (range.getEndOffset() < iterator.getEnd()) {
-        offset += range.getLength() + 1 + myAdditionalOffset;  // myAdditionalOffset because of extra line - for shoene separators
+        offset += range.getLength() + 1 + myAdditionalOffset;  // myAdditionalOffset because of extra line - for shown separators
         int lastEnd = myPieces.isEmpty() ? -1 : myPieces.get(myPieces.size() - 1).getEnd();
         addElement(new Element(Math.max(offset - 1 - myAdditionalOffset, lastEnd), offset, null, TextAttributes.ERASE_MARKER));
         index++;
@@ -110,10 +92,9 @@ public class FragmentedEditorHighlighter implements EditorHighlighter {
     }
   }
 
-  @NotNull
   @Override
-  public HighlighterIterator createIterator(int startOffset) {
-    int index = Collections.binarySearch(myPieces, new Element(startOffset, 0, null, null), (o1, o2) -> o1.getStart() - o2.getStart());
+  public @NotNull HighlighterIterator createIterator(int startOffset) {
+    int index = Collections.binarySearch(myPieces, new Element(startOffset, 0, null, null), Comparator.comparingInt(Element::getStart));
     // index: (-insertion point - 1), where insertionPoint is the index of the first element greater than the key
     // and we need index of the first element that is less or equal (floorElement)
     if (index < 0) index = Math.max(-index - 2, 0);
@@ -121,26 +102,10 @@ public class FragmentedEditorHighlighter implements EditorHighlighter {
   }
 
   @Override
-  public void setText(@NotNull CharSequence text) {
-  }
-
-  @Override
   public void setEditor(@NotNull HighlighterClient editor) {
   }
 
-  @Override
-  public void setColorScheme(@NotNull EditorColorsScheme scheme) {
-  }
-
-  @Override
-  public void beforeDocumentChange(DocumentEvent event) {
-  }
-
-  @Override
-  public void documentChanged(DocumentEvent event) {
-  }
-
-  private class ProxyIterator implements HighlighterIterator {
+  private final class ProxyIterator implements HighlighterIterator {
     private final Document myDocument;
     private int myIdx;
 
@@ -194,7 +159,7 @@ public class FragmentedEditorHighlighter implements EditorHighlighter {
     }
   }
 
-  private static class Element {
+  private static final class Element {
     private final int myStart;
     private final int myEnd;
     private final IElementType myElementType;

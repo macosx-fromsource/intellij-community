@@ -1,132 +1,172 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.ui;
 
 import com.intellij.codeInspection.CommonProblemDescriptor;
-import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.SuppressIntentionAction;
-import com.intellij.codeInspection.reference.RefElement;
 import com.intellij.codeInspection.reference.RefEntity;
+import com.intellij.concurrency.ConcurrentCollectionFactory;
+import com.intellij.lang.LangBundle;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.psi.PsiElement;
-import com.intellij.util.containers.ContainerUtil;
-import gnu.trove.TObjectHashingStrategy;
+import com.intellij.util.containers.HashingStrategy;
+import com.intellij.util.containers.Interner;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-/**
- * @author Dmitry Batkovich
- */
-public abstract class SuppressableInspectionTreeNode extends CachedInspectionTreeNode implements RefElementAndDescriptorAware {
-  @NotNull
-  private final InspectionResultsView myView;
+@ApiStatus.Internal
+public abstract class SuppressableInspectionTreeNode extends InspectionTreeNode {
+  private final @NotNull InspectionToolPresentation myPresentation;
   private volatile Set<SuppressIntentionAction> myAvailableSuppressActions;
-  protected final InspectionToolPresentation myPresentation;
+  private volatile @Nls String myPresentableName;
+  private volatile Boolean myValid;
+  private volatile NodeState myPreviousState;
 
-  protected SuppressableInspectionTreeNode(Object userObject, @NotNull InspectionToolPresentation presentation) {
-    super(userObject);
-    myView = presentation.getContext().getView();
+  SuppressableInspectionTreeNode(@NotNull InspectionToolPresentation presentation, @NotNull InspectionTreeNode parent) {
+    super(parent);
     myPresentation = presentation;
   }
 
-  @NotNull
-  public InspectionToolPresentation getPresentation() {
+  void nodeAdded() {
+    super.dropProblemCountCaches();
+    ReadAction.runBlocking(() -> myValid = calculateIsValid());
+    //force calculation
+    getProblemLevels();
+  }
+
+  @Override
+  protected boolean doesNeedInternProblemLevels() {
+    return true;
+  }
+
+  public @NotNull InspectionToolPresentation getPresentation() {
     return myPresentation;
   }
 
   public boolean canSuppress() {
-    return isLeaf();
+    return getChildren().isEmpty();
   }
 
-  public final boolean isAlreadySuppressedFromView() {
-    final Object usrObj = getUserObject();
-    return usrObj != null && myView.getSuppressedNodes(myPresentation.getToolWrapper().getShortName()).contains(usrObj);
-  }
+  public abstract boolean isAlreadySuppressedFromView();
 
   public abstract boolean isQuickFixAppliedFromView();
 
-  @Nullable
   @Override
-  public String getCustomizedTailText() {
-    final String text = super.getCustomizedTailText();
-    if (text != null) {
-      return text;
+  void dropProblemCountCaches() {
+    super.dropProblemCountCaches();
+    NodeState currentState = calculateState();
+    if (!currentState.equals(myPreviousState)) {
+      myPreviousState = currentState;
     }
-    return isAlreadySuppressedFromView() ? "Suppressed" : null;
   }
 
-  @NotNull
-  public Set<SuppressIntentionAction> getAvailableSuppressActions() {
-    return myAvailableSuppressActions;
+  public @NotNull Set<SuppressIntentionAction> getAvailableSuppressActions() {
+    Set<SuppressIntentionAction> availableSuppressActions = myAvailableSuppressActions;
+    if (availableSuppressActions == null) {
+      myAvailableSuppressActions = availableSuppressActions = calculateAvailableSuppressActions();
+    }
+    return availableSuppressActions;
   }
 
   public void removeSuppressActionFromAvailable(@NotNull SuppressIntentionAction action) {
     myAvailableSuppressActions.remove(action);
   }
 
+  public abstract @Nullable RefEntity getElement();
+
   @Override
-  protected void init(Project project) {
-    super.init(project);
-    myAvailableSuppressActions = getElement() == null
+  public final boolean isValid() {
+    Boolean valid = myValid;
+    if (valid == null) {
+      myValid = valid = ReadAction.computeBlocking(() -> calculateIsValid());
+    }
+    return valid;
+  }
+
+  @Override
+  public final String getPresentableText() {
+    String name = myPresentableName;
+    if (name == null) {
+      myPresentableName = name = ReadAction.computeBlocking(() -> calculatePresentableName());
+    }
+    return name;
+  }
+
+  @Override
+  public @Nullable String getTailText() {
+    if (isQuickFixAppliedFromView()) {
+      return "";
+    }
+    if (isAlreadySuppressedFromView()) {
+      return LangBundle.message("suppressed");
+    }
+    return !isValid() ? LangBundle.message("no.longer.valid") : null;
+  }
+
+  private @NotNull Set<SuppressIntentionAction> calculateAvailableSuppressActions() {
+    return getElement() == null
                                  ? Collections.emptySet()
-                                 : getOnlyAvailableSuppressActions(project);
+                                 : calculateAvailableSuppressActions(myPresentation.getContext().getProject());
   }
 
-  @NotNull
-  public final Pair<PsiElement, CommonProblemDescriptor> getSuppressContent() {
-    RefEntity refElement = getElement();
-    CommonProblemDescriptor descriptor = getDescriptor();
-    PsiElement element = descriptor instanceof ProblemDescriptor
-                         ? ((ProblemDescriptor)descriptor).getPsiElement()
-                         : refElement instanceof RefElement
-                           ? ((RefElement)refElement).getElement()
-                           : null;
-    return Pair.create(element, descriptor);
+  public abstract @NotNull Pair<PsiElement, CommonProblemDescriptor> getSuppressContent();
+
+  private @NotNull Set<SuppressIntentionAction> calculateAvailableSuppressActions(@NotNull Project project) {
+    if (myPresentation.isDummy()) return Collections.emptySet();
+    Pair<PsiElement, CommonProblemDescriptor> suppressContent = getSuppressContent();
+    PsiElement element = suppressContent.getFirst();
+    if (element == null) return Collections.emptySet();
+    InspectionResultsView view = myPresentation.getContext().getView();
+    if (view == null) return Collections.emptySet();
+    InspectionViewSuppressActionHolder suppressActionHolder = view.getSuppressActionHolder();
+    SuppressIntentionAction[] actions = suppressActionHolder.getSuppressActions(myPresentation.getToolWrapper(), element);
+    if (actions.length == 0) return Collections.emptySet();
+    return suppressActionHolder.internSuppressActions(Arrays.stream(actions)
+      .filter(action -> action.isAvailable(project, null, element))
+      .collect(Collectors.toCollection(() -> ConcurrentCollectionFactory.createConcurrentSet(HashingStrategy.identity()))));
   }
 
-  @NotNull
-  private Set<SuppressIntentionAction> getOnlyAvailableSuppressActions(@NotNull Project project) {
-    final Set<SuppressIntentionAction> actions = getSuppressActions();
-    if (actions.isEmpty()) {
-      return Collections.emptySet();
-    }
-    final Pair<PsiElement, CommonProblemDescriptor> suppress = getSuppressContent();
-    final PsiElement suppressElement = suppress.getFirst();
-    if (suppressElement == null) {
-      return actions;
-    }
-    Set<SuppressIntentionAction> availableActions = null;
-    for (SuppressIntentionAction action : actions) {
-      if (action.isAvailable(project, null, suppressElement)) {
-        if (availableActions == null) {
-          availableActions = ContainerUtil.newConcurrentSet(TObjectHashingStrategy.IDENTITY);
-        }
-        availableActions.add(action);
+  protected abstract @Nls String calculatePresentableName();
+
+  protected abstract boolean calculateIsValid();
+
+  protected void dropCaches() {
+    doDropCache();
+    dropProblemCountCaches();
+  }
+
+  private void doDropCache() {
+    myProblemLevels.drop();
+    if (isQuickFixAppliedFromView() || isAlreadySuppressedFromView()) return;
+    // calculate all data on background thread
+    ReadAction.runBlocking(() -> {
+      myValid = calculateIsValid();
+      myPresentableName = calculatePresentableName();
+    });
+
+    for (InspectionTreeNode child : getChildren()) {
+      if (child instanceof SuppressableInspectionTreeNode suppressable) {
+        suppressable.doDropCache();
       }
     }
-
-    return availableActions == null ? Collections.emptySet() : availableActions;
   }
 
-  @NotNull
-  private Set<SuppressIntentionAction> getSuppressActions() {
-    return myView.getSuppressActions(myPresentation.getToolWrapper());
+  private record NodeState(boolean isValid, boolean isSuppressed, boolean isFixApplied, boolean isExcluded) {
+    private static final Interner<NodeState> INTERNER = Interner.createInterner();
+  }
+
+  private @NotNull NodeState calculateState() {
+    NodeState state = new NodeState(isValid(), isAlreadySuppressedFromView(), isQuickFixAppliedFromView(), isExcluded());
+    synchronized (NodeState.INTERNER) {
+      return NodeState.INTERNER.intern(state);
+    }
   }
 }

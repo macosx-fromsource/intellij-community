@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.gant;
 
 import com.intellij.execution.CantRunException;
@@ -28,6 +14,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.config.GroovyConfigUtils;
 import org.jetbrains.plugins.groovy.runner.GroovyScriptRunConfiguration;
 import org.jetbrains.plugins.groovy.runner.GroovyScriptRunner;
@@ -37,10 +24,10 @@ import org.jetbrains.plugins.groovy.util.LibrariesUtil;
 import java.io.File;
 import java.util.List;
 
-/**
- * @author ilyas
- */
 public class GantRunner extends GroovyScriptRunner {
+
+  private static final String UNIQUE_STRING = "d230efbae4b744ae86ef4014eef1b387";
+
   @Override
   public boolean shouldRefreshAfterFinish() {
     return true;
@@ -55,13 +42,13 @@ public class GantRunner extends GroovyScriptRunner {
   public void ensureRunnerConfigured(@NotNull GroovyScriptRunConfiguration configuration) throws RuntimeConfigurationException {
     Project project = configuration.getProject();
     if (GantUtils.getSDKInstallPath(configuration.getModule(), project).isEmpty()) {
-      RuntimeConfigurationException e = new RuntimeConfigurationException("Gant is not configured");
+      RuntimeConfigurationException e = new RuntimeConfigurationException(GroovyBundle.message("dialog.message.gant.not.configured"));
       e.setQuickFix(() -> ShowSettingsUtil.getInstance().editConfigurable(project, new GantConfigurable(project)));
       throw e;
     }
   }
 
-  private static String getGantConfPath(final String gantHome) {
+  private static @Nullable String getGantConfPath(final String gantHome) {
     String confPath = FileUtil.toSystemDependentName(gantHome + "/conf/gant-starter.conf");
     if (new File(confPath).exists()) {
       return confPath;
@@ -81,13 +68,14 @@ public class GantRunner extends GroovyScriptRunner {
     setGroovyHome(params, gantHome);
 
     final String confPath = getGantConfPath(gantHome);
-    params.getVMParametersList().add("-Dgroovy.starter.conf=" + confPath);
+    if (confPath != null) {
+      params.getVMParametersList().add("-Dgroovy.starter.conf=" + confPath);
+      params.getProgramParametersList().add("--conf");
+      params.getProgramParametersList().add(confPath);
+    }
 
     params.getVMParametersList().addParametersString(configuration.getVMParameters());
     params.setMainClass("org.codehaus.groovy.tools.GroovyStarter");
-
-    params.getProgramParametersList().add("--conf");
-    params.getProgramParametersList().add(confPath);
 
     if (gantHome.contains("grails")) {
       params.getClassPath().addAllFiles(GroovyUtils.getFilesInDirectoryByPattern(gantHome + "/lib", ".*\\.jar"));
@@ -111,6 +99,7 @@ public class GantRunner extends GroovyScriptRunner {
 
     if (configuration.isDebugEnabled()) {
       params.getProgramParametersList().add("--debug");
+      params.getProgramParametersList().add("-D" + UNIQUE_STRING);
     }
 
     params.getProgramParametersList().addParametersString(configuration.getProgramParameters());

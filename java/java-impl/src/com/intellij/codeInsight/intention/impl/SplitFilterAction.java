@@ -1,110 +1,125 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.intention.impl;
 
-import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
+import com.intellij.java.JavaBundle;
+import com.intellij.modcommand.ActionContext;
+import com.intellij.modcommand.ModPsiUpdater;
+import com.intellij.modcommand.Presentation;
+import com.intellij.modcommand.PsiUpdateModCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiComment;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiExpressionList;
+import com.intellij.psi.PsiJavaToken;
+import com.intellij.psi.PsiLambdaExpression;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiPatternVariable;
+import com.intellij.psi.PsiPolyadicExpression;
+import com.intellij.psi.util.JavaPsiPatternUtil;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.util.IncorrectOperationException;
+import com.siyeh.ig.psiutils.VariableAccessUtils;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 import static com.intellij.codeInsight.intention.impl.SplitConditionUtil.getLOperands;
 import static com.intellij.codeInsight.intention.impl.SplitConditionUtil.getROperands;
 
-public class SplitFilterAction extends PsiElementBaseIntentionAction {
+public final class SplitFilterAction extends PsiUpdateModCommandAction<PsiJavaToken> {
   private static final Logger LOG = Logger.getInstance(SplitFilterAction.class.getName());
 
+  public SplitFilterAction() {
+    super(PsiJavaToken.class);
+  }
+  
   @Override
-  public boolean isAvailable(@NotNull Project project, Editor editor, @NotNull PsiElement element) {
+  protected @Nullable Presentation getPresentation(@NotNull ActionContext context, @NotNull PsiJavaToken element) {
     final PsiPolyadicExpression expression = SplitConditionUtil.findCondition(element, true, false);
-    if (expression == null || expression.getOperands().length < 2) return false;
+    if (expression == null || expression.getOperands().length < 2) return null;
 
     PsiElement parent = PsiUtil.skipParenthesizedExprUp(expression.getParent());
-    if (!(parent instanceof PsiLambdaExpression)) return false;
-    if (((PsiLambdaExpression)parent).getParameterList().getParametersCount() != 1) return false;
-    parent = parent.getParent();
+    if (!(parent instanceof PsiLambdaExpression lambda)) return null;
+    if (lambda.getParameterList().getParametersCount() != 1) return null;
+    parent = PsiUtil.skipParenthesizedExprUp(parent.getParent());
 
-    if (!(parent instanceof PsiExpressionList)) return false;
+    if (!(parent instanceof PsiExpressionList)) return null;
     final PsiElement gParent = parent.getParent();
-    if (!(gParent instanceof PsiMethodCallExpression)) return false;
+    if (!(gParent instanceof PsiMethodCallExpression call)) return null;
+    if (!MergeFilterChainAction.isFilterCall(call) || hasPatternVariablesUsedAfterSplit(expression, element)) return null;
+    
+    return Presentation.of(JavaBundle.message("intention.split.filter.text"));
+  }
 
-    if (MergeFilterChainAction.isFilterCall((PsiMethodCallExpression)gParent)) {
-      return true;
+  private static boolean hasPatternVariablesUsedAfterSplit(@NotNull PsiPolyadicExpression expression, @NotNull PsiElement token) {
+    List<PsiExpression> afterOperands = new ArrayList<>();
+    for (PsiElement after = token; after != null; after = after.getNextSibling()) {
+      if (after instanceof PsiExpression) {
+        afterOperands.add((PsiExpression)after);
+      }
     }
-
+    for (PsiElement child = expression.getFirstChild(); child != token; child = child.getNextSibling()) {
+      if (child instanceof PsiExpression) {
+        for (PsiPatternVariable variable : JavaPsiPatternUtil.getExposedPatternVariables((PsiExpression)child)) {
+          for (PsiExpression operand : afterOperands) {
+            if (VariableAccessUtils.variableIsUsed(variable, operand)) return true;
+          }
+        }
+      }
+    }
     return false;
   }
 
-  @NotNull
   @Override
-  public String getText() {
-    return CodeInsightBundle.message("intention.split.filter.text");
+  public @NotNull String getFamilyName() {
+    return JavaBundle.message("intention.split.filter.family");
   }
 
   @Override
-  @NotNull
-  public String getFamilyName() {
-    return CodeInsightBundle.message("intention.split.filter.family");
-  }
+  protected void invoke(@NotNull ActionContext context, @NotNull PsiJavaToken token, @NotNull ModPsiUpdater updater) {
+    final PsiPolyadicExpression expression = SplitConditionUtil.findCondition(token, true, false);
 
-  @Override
-  public void invoke(@NotNull Project project, Editor editor, @NotNull PsiElement element) throws IncorrectOperationException {
-    final PsiJavaToken token = (PsiJavaToken)element;
-    final PsiPolyadicExpression expression = SplitConditionUtil.findCondition(element, true, false);
-
-    final PsiLambdaExpression lambdaExpression = PsiTreeUtil.getParentOfType(expression, PsiLambdaExpression.class);
-    LOG.assertTrue(lambdaExpression != null);
-    final String lambdaParameterName = lambdaExpression.getParameterList().getParameters()[0].getName();
+    final PsiLambdaExpression originalLambdaExpression = PsiTreeUtil.getParentOfType(expression, PsiLambdaExpression.class);
+    LOG.assertTrue(originalLambdaExpression != null);
+    final String lambdaParameterName = originalLambdaExpression.getParameterList().getParameters()[0].getName();
+    final PsiElement originalLambdaExpressionBody = originalLambdaExpression.getBody();
+    LOG.assertTrue(originalLambdaExpressionBody != null);
 
     final PsiMethodCallExpression methodCallExpression = PsiTreeUtil.getParentOfType(expression, PsiMethodCallExpression.class);
     LOG.assertTrue(methodCallExpression != null, expression);
+    final PsiExpression qualifierExpression = methodCallExpression.getMethodExpression().getQualifierExpression();
+    LOG.assertTrue(qualifierExpression != null);
 
-    PsiExpression lOperand = getLOperands(expression, token);
-    PsiExpression rOperand = getROperands(expression, token);
+    final PsiMethodCallExpression newFilterCall = (PsiMethodCallExpression)JavaPsiFacade.getElementFactory(context.project())
+        .createExpressionFromText("a.filter(" + lambdaParameterName + " -> x)", methodCallExpression);
+    final PsiLambdaExpression newFilterLambda = (PsiLambdaExpression)newFilterCall.getArgumentList().getExpressions()[0];
+    final PsiExpression filterCallQualifier = newFilterCall.getMethodExpression().getQualifierExpression();
+    LOG.assertTrue(filterCallQualifier != null);
+    final PsiElement newFilterLambdaBody = newFilterLambda.getBody();
+    LOG.assertTrue(newFilterLambdaBody != null);
 
-    final Collection<PsiComment> comments = PsiTreeUtil.findChildrenOfType(expression, PsiComment.class);
-
-    final PsiMethodCallExpression chainedCall =
-      (PsiMethodCallExpression)JavaPsiFacade.getElementFactory(project).createExpressionFromText("a.filter(" + lambdaParameterName + " -> x)", expression);
-    final PsiExpression argExpression = chainedCall.getArgumentList().getExpressions()[0];
-    final PsiElement rReplaced = ((PsiLambdaExpression)argExpression).getBody().replace(rOperand);
-
-    final PsiExpression compoundArg = methodCallExpression.getArgumentList().getExpressions()[0];
-
+    final Collection<PsiComment> comments = PsiTreeUtil.getChildrenOfTypeAsList(expression, PsiComment.class);
     final int separatorOffset = token.getTextOffset();
     for (PsiComment comment : comments) {
       if (comment.getTextOffset() < separatorOffset) {
-        compoundArg.getParent().add(comment);
+        newFilterLambda.getParent().add(comment);
       }
       else {
-        rReplaced.getParent().add(comment);
+        originalLambdaExpression.addBefore(comment, originalLambdaExpressionBody);
       }
     }
 
-    ((PsiLambdaExpression)compoundArg).getBody().replace(lOperand);
-
-    chainedCall.getMethodExpression().getQualifierExpression().replace(methodCallExpression);
-    methodCallExpression.replace(chainedCall);
+    PsiExpression rOperands = getROperands(expression, token);
+    PsiExpression lOperands = getLOperands(expression, token);
+    originalLambdaExpressionBody.replace(rOperands);
+    newFilterLambdaBody.replace(lOperands);
+    filterCallQualifier.replace(qualifierExpression);
+    qualifierExpression.replace(newFilterCall);
   }
 
 }

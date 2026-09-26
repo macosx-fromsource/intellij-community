@@ -1,98 +1,123 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.testIntegration;
 
 import com.intellij.codeInsight.TestFrameworks;
+import com.intellij.execution.ExecutionBundle;
+import com.intellij.execution.RunManager;
+import com.intellij.execution.RunnerAndConfigurationSettings;
 import com.intellij.execution.TestStateStorage;
+import com.intellij.execution.configurations.ConfigurationType;
 import com.intellij.execution.lineMarker.ExecutorAction;
 import com.intellij.execution.lineMarker.RunLineMarkerContributor;
-import com.intellij.execution.testframework.TestIconMapper;
-import com.intellij.execution.testframework.sm.runner.states.TestStateInfo;
-import com.intellij.icons.AllIcons;
-import com.intellij.openapi.project.Project;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.DumbAware;
+import com.intellij.openapi.project.DumbService;
+import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiIdentifier;
 import com.intellij.psi.PsiMethod;
+import com.intellij.psi.util.ClassUtil;
+import com.intellij.psi.util.PsiMethodUtil;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.util.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @author Dmitry Avdeev
  */
-public class TestRunLineMarkerProvider extends RunLineMarkerContributor {
+public class TestRunLineMarkerProvider extends RunLineMarkerContributor implements DumbAware {
+  private static final String URL_TEST_PREFIX = "java:test://";
+  private static final String URL_SUITE_PREFIX = "java:suite://";
+  private static final Logger LOG = Logger.getInstance(TestRunLineMarkerProvider.class);
 
-  private static final Function<PsiElement, String> TOOLTIP_PROVIDER = element -> "Run Test";
 
-  @Nullable
   @Override
-  public Info getInfo(PsiElement e) {
+  public @Nullable Info getInfo(@NotNull PsiElement e) {
     if (isIdentifier(e)) {
       PsiElement element = e.getParent();
-      if (element instanceof PsiClass) {
-        TestFramework framework = TestFrameworks.detectFramework((PsiClass)element);
-        if (framework != null && framework.isTestClass(element)) {
-          String url = "java:suite://" + ((PsiClass)element).getQualifiedName();
-          return getInfo(url, e.getProject(), true);
-        }
+      if (element instanceof PsiClass psiClass) {
+        if (!isTestClass(psiClass)) return null;
+        String url = URL_SUITE_PREFIX + ClassUtil.getJVMClassName(psiClass);
+        TestStateStorage.Record state = TestStateStorage.getInstance(e.getProject()).getState(url);
+        return getInfo(state, true, PsiMethodUtil.hasMainInClass(psiClass) ? 1 : 0);
       }
-      if (element instanceof PsiMethod) {
-        PsiClass psiClass = PsiTreeUtil.getParentOfType(element, PsiClass.class);
-        if (psiClass != null) {
-          TestFramework framework = TestFrameworks.detectFramework(psiClass);
-          if (framework != null && framework.isTestMethod(element)) {
-            String url = "java:test://" + psiClass.getQualifiedName() + "." + ((PsiMethod)element).getName();
-            return getInfo(url, e.getProject(), false);
-          }
+      if (element instanceof PsiMethod psiMethod) {
+        PsiClass containingClass = PsiTreeUtil.getParentOfType(psiMethod, PsiClass.class);
+        if (!isTestMethod(containingClass, psiMethod)) return null;
+        if (isIgnoredForGradleConfiguration(containingClass, psiMethod)) return null;
+        String urlSuffix = ClassUtil.getJVMClassName(containingClass) + "/" + psiMethod.getName();
+
+        List<String> urlList = new ArrayList<>();
+        urlList.add(URL_TEST_PREFIX + urlSuffix);
+        if (isGradleConfiguration(containingClass)) {
+          urlList.add(URL_SUITE_PREFIX + urlSuffix);
         }
+
+        TestStateStorage.Record state = null;
+        for (String url : urlList) {
+          state = TestStateStorage.getInstance(e.getProject()).getState(url);
+          if (state != null) break;
+        }
+        return getInfo(state, false, 0);
       }
     }
     return null;
   }
 
-  @NotNull
-  private static Info getInfo(String url, Project project, boolean isClass) {
-    Icon icon = getTestStateIcon(url, project, isClass);
-    return new Info(icon, TOOLTIP_PROVIDER, ExecutorAction.getActions(1));
+  /**
+   * Gradle can't run ignored methods while IDEA runner can, so when using a Gradle configuration, we don't want to show the line marker for
+   * ignored methods.
+   */
+  private static boolean isIgnoredForGradleConfiguration(@NotNull PsiClass psiClass, @NotNull PsiMethod psiMethod) {
+    if (!isGradleConfiguration(psiClass)) return false;
+    //now gradle doesn't support dumb mode
+    if (DumbService.getInstance(psiClass.getProject()).isDumb()) return true;
+    for (TestFramework testFramework : TestFramework.EXTENSION_NAME.getExtensionList()) {
+      if (testFramework.isTestClass(psiClass) && testFramework.isIgnoredMethod(psiMethod)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean isGradleConfiguration(@NotNull PsiClass psiClass) {
+    RunnerAndConfigurationSettings currentConfiguration = RunManager.getInstance(psiClass.getProject()).getSelectedConfiguration();
+    if (currentConfiguration == null) return false;
+    ConfigurationType configurationType = currentConfiguration.getType();
+    return configurationType.getId().equals("GradleRunConfiguration");
+  }
+
+  private static boolean isTestClass(PsiClass clazz) {
+    if (clazz == null) return false;
+    try {
+      return DumbService.getInstance(clazz.getProject()).computeWithAlternativeResolveEnabled(() -> {
+        TestFramework framework = TestFrameworks.detectFramework(clazz);
+        return framework != null && framework.isTestClass(clazz);
+      });
+    }
+    catch (IndexNotReadyException e) {
+      LOG.error(e);
+      return false;
+    }
+  }
+
+  private static boolean isTestMethod(PsiClass containingClass, PsiMethod method) {
+    if (containingClass == null) return false;
+    TestFramework framework = TestFrameworks.detectFramework(containingClass);
+    return framework != null && framework.isTestMethod(method, false);
+  }
+
+  private static @NotNull Info getInfo(TestStateStorage.Record state, boolean isClass, int order) {
+    AnAction[] actions = ExecutorAction.getActions(order);
+    return new Info(getTestStateIcon(state, isClass), actions, element -> ExecutionBundle.message("run.text"));
   }
 
   protected boolean isIdentifier(PsiElement e) {
     return e instanceof PsiIdentifier;
-  }
-
-  private static Icon getTestStateIcon(String url, Project project, boolean isClass) {
-    TestStateStorage.Record state = TestStateStorage.getInstance(project).getState(url);
-    if (state != null) {
-      TestStateInfo.Magnitude magnitude = TestIconMapper.getMagnitude(state.magnitude);
-      if (magnitude != null) {
-        switch (magnitude) {
-          case ERROR_INDEX:
-          case FAILED_INDEX:
-            return AllIcons.RunConfigurations.TestState.Red2;
-          case PASSED_INDEX:
-          case COMPLETE_INDEX:
-            return AllIcons.RunConfigurations.TestState.Green2;
-          default:
-        }
-      }
-    }
-    return isClass ? AllIcons.RunConfigurations.TestState.Run_run : AllIcons.RunConfigurations.TestState.Run;
   }
 }

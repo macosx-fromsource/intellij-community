@@ -1,69 +1,90 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.testing;
 
-import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.SettingsCategory;
 import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.module.ModuleServiceManager;
-import com.intellij.util.xmlb.XmlSerializerUtil;
+import com.jetbrains.python.defaultProjectAwareService.PyDefaultProjectAwareModuleConfiguratorImpl;
+import com.jetbrains.python.defaultProjectAwareService.PyDefaultProjectAwareService;
+import com.jetbrains.python.defaultProjectAwareService.PyDefaultProjectAwareServiceClasses;
+import com.jetbrains.python.defaultProjectAwareService.PyDefaultProjectAwareServiceModuleConfigurator;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
-import java.util.List;
+public abstract class TestRunnerService
+  extends
+  PyDefaultProjectAwareService<TestRunnerService.ServiceState, TestRunnerService, TestRunnerService.AppService, TestRunnerService.ModuleService> {
 
-/**
- * User: catherine
- */
-@State(name = "TestRunnerService")
-public class TestRunnerService implements PersistentStateComponent<TestRunnerService> {
-  private List<String> myConfigurations = new ArrayList<>();
-  public String PROJECT_TEST_RUNNER = "";
+  static final String MODULE_STATE_COMPONENT = "TestRunnerService";
 
-  public TestRunnerService() {
-    myConfigurations.add(PythonTestConfigurationsModel.PYTHONS_UNITTEST_NAME);
-    myConfigurations.add(PythonTestConfigurationsModel.PYTHONS_NOSETEST_NAME);
-    myConfigurations.add(PythonTestConfigurationsModel.PY_TEST_NAME);
-    myConfigurations.add(PythonTestConfigurationsModel.PYTHONS_ATTEST_NAME);
+  private static final PyDefaultProjectAwareServiceClasses<ServiceState, TestRunnerService, AppService, ModuleService, TestRunnerServiceFactory>
+    SERVICE_CLASSES = new PyDefaultProjectAwareServiceClasses<>(AppService.class, TestRunnerServiceFactory.class);
+  private static final TestRunnerDetector DETECTOR = new TestRunnerDetector();
+
+  protected TestRunnerService() {
+    super(new ServiceState());
   }
 
-  public List<String> getConfigurations() {
-    return myConfigurations;
+  TestRunnerService(Module module) {
+    super(new ServiceState(), MODULE_STATE_COMPONENT, ServiceState.class, module);
   }
 
-  @Override
-  public TestRunnerService getState() {
-    return this;
+  public final @NotNull PyAbstractTestFactory<?> getSelectedFactory() {
+    return PyTestsSharedKt.getFactoryByIdOrDefault(getProjectConfiguration());
   }
 
-  @Override
-  public void loadState(TestRunnerService state) {
-    XmlSerializerUtil.copyBean(state, this);
+  public final void setSelectedFactory(@NotNull PyAbstractTestFactory<?> factory) {
+    setProjectConfiguration(factory.getId());
   }
 
-  public void setProjectConfiguration(String projectConfiguration) {
-    PROJECT_TEST_RUNNER = projectConfiguration;
+  public static @NotNull TestRunnerService getInstance(@Nullable Module module) {
+    return SERVICE_CLASSES.getService(module);
   }
 
-  public static TestRunnerService getInstance(@NotNull Module module) {
-    return ModuleServiceManager.getService(module, TestRunnerService.class);
+  public static @NotNull PyDefaultProjectAwareServiceModuleConfigurator getConfigurator() {
+    return new PyDefaultProjectAwareModuleConfiguratorImpl<>(SERVICE_CLASSES, DETECTOR);
   }
 
-  public String getProjectConfiguration() {
-    return PROJECT_TEST_RUNNER.isEmpty() ? PythonTestConfigurationsModel.PYTHONS_UNITTEST_NAME : PROJECT_TEST_RUNNER;
+  /**
+   * Use {@link #setSelectedFactory(PyAbstractTestFactory)} (String)}
+   */
+  public final void setProjectConfiguration(@NotNull String projectConfiguration) {
+    var state = getState();
+    state.PROJECT_TEST_RUNNER = projectConfiguration;
+    if (myModule != null) {
+      loadState(state);
+    }
   }
 
+  /**
+   * Use {@link #getSelectedFactory()} instead
+   */
+  public final @NotNull String getProjectConfiguration() {
+    return getState().PROJECT_TEST_RUNNER;
+  }
+
+  static final class ServiceState {
+    public @NotNull String PROJECT_TEST_RUNNER;
+
+    ServiceState(@NotNull String projectTestRunner) {
+      assert !projectTestRunner.isEmpty();
+      PROJECT_TEST_RUNNER = projectTestRunner;
+    }
+
+    ServiceState() {
+      this(PythonTestConfigurationType.getInstance().getAutoDetectFactory().getId());
+    }
+  }
+
+
+  @State(name = "AppTestRunnerService", storages = @Storage("TestRunnerService.xml"), category = SettingsCategory.TOOLS)
+  static final class AppService extends TestRunnerService {
+  }
+
+  static final class ModuleService extends TestRunnerService {
+    ModuleService(Module module) {
+      super(module);
+    }
+  }
 }

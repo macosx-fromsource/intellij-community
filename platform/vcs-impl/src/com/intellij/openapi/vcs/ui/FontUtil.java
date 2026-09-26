@@ -1,64 +1,71 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.ui;
 
-import com.intellij.openapi.editor.impl.ComplementaryFontsRegistry;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.ide.ui.UISettingsUtils;
+import com.intellij.openapi.editor.colors.EditorFontType;
+import com.intellij.openapi.editor.impl.FontFallbackIterator;
+import com.intellij.util.ui.StartupUiUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
-import java.awt.*;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.font.FontRenderContext;
 
-public class FontUtil {
-  @NotNull
-  public static Font getFontAbleToDisplay(char c, int size, int style, @NotNull String family) {
-    return ComplementaryFontsRegistry.getFontAbleToDisplay(c, size, style, family).getFont();
-  }
-
-  @NotNull
-  public static String getHtmlWithFonts(@NotNull String input) {
-    Font font = UIUtil.getLabelFont();
+public final class FontUtil {
+  public static @NotNull @Nls String getHtmlWithFonts(@NotNull @Nls String input) {
+    Font font = StartupUiUtil.getLabelFont();
     return getHtmlWithFonts(input, font.getStyle(), font);
   }
 
-  @NotNull
-  public static String getHtmlWithFonts(@NotNull String input, int style, @NotNull Font baseFont) {
+  public static @NotNull @Nls String getHtmlWithFonts(@NotNull @Nls String input, int style, @NotNull Font baseFont) {
     int start = baseFont.canDisplayUpTo(input);
     if (start == -1) return input;
 
-    Font font = null;
-    StringBuilder result = new StringBuilder(input.substring(0, start));
-    for (int i = start; i < input.length(); i++) {
-      char c = input.charAt(i);
-      if (baseFont.canDisplay(c)) {
-        if (font != null) result.append("</font>");
-        result.append(c);
-        font = null;
+    @Nls StringBuilder result = new StringBuilder();
+
+    FontFallbackIterator it = new FontFallbackIterator();
+    it.setPreferredFont(baseFont.getFamily(), baseFont.getSize());
+    it.setFontStyle(style);
+
+    it.start(input, 0, input.length());
+    while (!it.atEnd()) {
+      Font font = it.getFont();
+
+      boolean insideFallbackBlock = !font.getFamily().equals(baseFont.getFamily());
+      if (insideFallbackBlock) {
+        result.append("<font face=\"").append(font.getFamily()).append("\">"); //NON-NLS
       }
-      else if (font != null && font.canDisplay(c)) {
-        result.append(c);
+
+      result.append(input, it.getStart(), it.getEnd());
+
+      if (insideFallbackBlock) {
+        result.append("</font>"); //NON-NLS
       }
-      else {
-        if (font != null) result.append("</font>");
-        font = getFontAbleToDisplay(c, baseFont.getSize(), style, baseFont.getFamily());
-        if (font != baseFont) result.append("<font face=\"").append(font.getFamily()).append("\">");
-        result.append(c);
-      }
+
+      it.advance();
     }
-    if (font != null) result.append("</font>");
 
     return result.toString();
+  }
+
+  public static @NotNull Font getEditorFont() {
+    return EditorFontType.getGlobalPlainFont().deriveFont(UISettingsUtils.getInstance().getScaledEditorFontSize());
+  }
+
+  public static @NotNull Font getCommitMessageFont() {
+    return getEditorFont();
+  }
+
+  public static Font getCommitMetadataFont() {
+    return StartupUiUtil.getLabelFont();
+  }
+
+  public static int getStandardAscent(@NotNull Font font, @NotNull Graphics g) {
+    FontRenderContext context = ((Graphics2D)g).getFontRenderContext();
+    char[] chars = {'G', 'l', 'd', 'h', 'f'};
+    double y = font.layoutGlyphVector(context, chars, 0, chars.length, Font.LAYOUT_LEFT_TO_RIGHT).getVisualBounds().getY();
+    return Math.toIntExact(Math.round(Math.ceil(-y)));
   }
 }

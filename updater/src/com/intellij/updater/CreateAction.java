@@ -1,27 +1,19 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.updater;
 
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
+
+import static com.intellij.updater.Runner.LOG;
 
 public class CreateAction extends PatchAction {
   public CreateAction(Patch patch, String path) {
@@ -34,13 +26,15 @@ public class CreateAction extends PatchAction {
 
   @Override
   protected void doBuildPatchFile(File olderFile, File newerFile, ZipOutputStream patchOutput) throws IOException {
-    Runner.logger().info("building PatchFile");
-    patchOutput.putNextEntry(new ZipEntry(myPath));
-    if (!newerFile.isDirectory()) {
-      if (Utils.isLink(newerFile)) {
+    patchOutput.putNextEntry(new ZipEntry(getPath()));
+
+    if (!Files.isDirectory(newerFile.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+      FileType type = getFileType(newerFile);
+      writeFileType(patchOutput, type);
+      if (type == FileType.SYMLINK) {
         writeLinkInfo(newerFile, patchOutput);
-      } else {
-        writeExecutableFlag(patchOutput, newerFile);
+      }
+      else {
         Utils.copyFileToStream(newerFile, patchOutput);
       }
     }
@@ -48,52 +42,62 @@ public class CreateAction extends PatchAction {
     patchOutput.closeEntry();
   }
 
+  private static void writeLinkInfo(File file, OutputStream out) throws IOException {
+    String target = Utils.readLink(file);
+    if (target.isEmpty()) throw new IOException("Invalid link: " + file);
+    byte[] bytes = target.getBytes(StandardCharsets.UTF_8);
+    out.write(bytes.length);
+    out.write(bytes);
+  }
+
   @Override
-  public ValidationResult validate(File toDir) {
+  public ValidationResult validate(File toDir) throws IOException {
     File toFile = getFile(toDir);
-    ValidationResult result = doValidateAccess(toFile, ValidationResult.Action.CREATE);
+    ValidationResult result = doValidateAccess(toFile, ValidationResult.Action.CREATE, true);
     if (result != null) return result;
 
-    if (toFile.exists()) {
+    if (!isOptional() && toFile.exists()) {
       ValidationResult.Option[] options = myPatch.isStrict()
                                           ? new ValidationResult.Option[]{ValidationResult.Option.REPLACE}
                                           : new ValidationResult.Option[]{ValidationResult.Option.REPLACE, ValidationResult.Option.KEEP};
-      return new ValidationResult(ValidationResult.Kind.CONFLICT, myPath,
-                                  ValidationResult.Action.CREATE,
-                                  ValidationResult.ALREADY_EXISTS_MESSAGE,
-                                  options);
+      String message = UpdaterUI.message("file.exists"), details = "checksum 0x" + Long.toHexString(myPatch.digestFile(toFile));
+      return new ValidationResult(ValidationResult.Kind.CONFLICT, getPath(), ValidationResult.Action.CREATE, message, details, options);
     }
     return null;
   }
 
   @Override
-  protected boolean isModified(File toFile) throws IOException {
+  protected boolean isModified(File toFile) {
     return false;
   }
 
   @Override
   protected void doApply(ZipFile patchFile, File backupDir, File toFile) throws IOException {
+    LOG.info("Create action. File: " + toFile.getAbsolutePath());
     prepareToWriteFile(toFile);
 
-    ZipEntry entry = Utils.getZipEntry(patchFile, myPath);
+    ZipEntry entry = Utils.getZipEntry(patchFile, getPath());
     if (entry.isDirectory()) {
       if (!toFile.mkdir()) {
-        throw new IOException("Unable to create directory " + myPath);
+        throw new IOException("Unable to create directory " + getPath());
       }
-    } else {
-      InputStream in = Utils.findEntryInputStreamForEntry(patchFile, entry);
-      try {
-        int filePermissions = in.read();
-        if (filePermissions > 1 ) {
-          Utils.createLink(readLinkInfo(in, filePermissions), toFile);
+    }
+    else {
+      try (InputStream in = Utils.findEntryInputStreamForEntry(patchFile, entry)) {
+        if (in == null) {
+          throw new IOException("Invalid entry " + getPath());
+        }
+
+        FileType type = readFileType(in);
+        if (type == FileType.SYMLINK) {
+          Utils.createLink(readLinkInfo(in), toFile);
         }
         else {
           Utils.copyStreamToFile(in, toFile);
-          Utils.setExecutable(toFile, filePermissions == 1 );
+          if (type == FileType.EXECUTABLE_FILE) {
+            Utils.setExecutable(toFile);
+          }
         }
-      }
-      finally {
-        in.close();
       }
     }
   }
@@ -112,10 +116,14 @@ public class CreateAction extends PatchAction {
     }
   }
 
-  protected void doBackup(File toFile, File backupFile) {
-    // do nothing
+  private static String readLinkInfo(InputStream in) throws IOException {
+    int length = in.read();
+    if (length <= 0) throw new IOException("Stream format error");
+    byte[] bytes = Utils.readBytes(in, length);
+    return new String(bytes, StandardCharsets.UTF_8);
   }
 
+  @Override
   protected void doRevert(File toFile, File backupFile) throws IOException {
     Utils.delete(toFile);
   }

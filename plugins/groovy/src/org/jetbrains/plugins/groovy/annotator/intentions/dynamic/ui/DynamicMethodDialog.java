@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.annotator.intentions.dynamic.ui;
 
 import com.intellij.psi.PsiType;
@@ -28,18 +14,15 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpres
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
 import org.jetbrains.plugins.groovy.lang.psi.expectedTypes.GroovyExpectedTypesProvider;
 
-import javax.swing.*;
+import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
 import javax.swing.table.TableColumn;
-import java.awt.*;
-import java.util.EventObject;
+import java.awt.Component;
+import java.awt.FontMetrics;
 import java.util.List;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 18.02.2008
- */
 public class DynamicMethodDialog extends DynamicDialog {
 
   public DynamicMethodDialog(GrReferenceExpression referenceExpression) {
@@ -104,18 +87,13 @@ public class DynamicMethodDialog extends DynamicDialog {
 
 
   private class TypeColumnInfo extends ColumnInfo<ParamInfo, String> {
-    public TypeColumnInfo() {
+    TypeColumnInfo() {
       super(GroovyBundle.message("dynamic.type"));
     }
 
     @Override
     public String valueOf(ParamInfo pair) {
       return pair.type;
-    }
-
-    @Override
-    public boolean isCellEditable(ParamInfo stringPsiTypeMyPair) {
-      return false;
     }
 
     @Override
@@ -133,7 +111,7 @@ public class DynamicMethodDialog extends DynamicDialog {
   }
 
   private static class NameColumnInfo extends ColumnInfo<ParamInfo, String> {
-    public NameColumnInfo() {
+    NameColumnInfo() {
       super(GroovyBundle.message("dynamic.name"));
     }
 
@@ -151,18 +129,14 @@ public class DynamicMethodDialog extends DynamicDialog {
   private static class MySuggestedNameCellEditor extends AbstractTableCellEditor {
     JTextField myNameField;
 
-    public MySuggestedNameCellEditor(String[] names) {
+    MySuggestedNameCellEditor(String[] names) {
       myNameField = names.length == 0 ? new JTextField() : new JTextField(names[0]);
     }
 
     @Override
     public String getCellEditorValue() {
+      //noinspection HardCodedStringLiteral
       return myNameField.getText();
-    }
-
-    @Override
-    public boolean isCellEditable(EventObject e) {
-      return true;
     }
 
     @Override

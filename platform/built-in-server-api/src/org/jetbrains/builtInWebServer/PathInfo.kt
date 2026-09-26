@@ -1,17 +1,32 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.builtInWebServer
 
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.util.io.FileUtilRt
+import com.intellij.openapi.vfs.StandardFileSystems
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
+import org.jetbrains.annotations.ApiStatus
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.invariantSeparatorsPathString
+import kotlin.io.path.isDirectory
 
-class PathInfo(val ioFile: Path?, val file: VirtualFile?, val root: VirtualFile, moduleName: String? = null, val isLibrary: Boolean = false, val isRootNameOptionalInPath: Boolean = false) {
+class PathInfo(
+  val ioFile: Path?,
+  file: VirtualFile?,
+  val root: VirtualFile,
+  moduleName: String? = null,
+  val isLibrary: Boolean = false,
+  val isRootNameOptionalInPath: Boolean = false,
+) {
+  var file: VirtualFile? = file
+    private set
+
   var moduleName: String? = moduleName
-    set
+    @ApiStatus.Internal set
 
   /**
    * URL path.
@@ -39,25 +54,36 @@ class PathInfo(val ioFile: Path?, val file: VirtualFile?, val root: VirtualFile,
       builder.append(FileUtilRt.getRelativePath(relativeTo.path, ioFile!!.toString().replace(File.separatorChar, '/'), '/'))
     }
     else {
-      builder.append(VfsUtilCore.getRelativePath(file, relativeTo, '/'))
+      builder.append(VfsUtilCore.getRelativePath(file!!, relativeTo, '/'))
     }
     return builder.toString()
+  }
+
+  fun getOrResolveVirtualFile(): VirtualFile? {
+    return if (file == null) {
+      val result = StandardFileSystems.local().findFileByPath(ioFile!!.invariantSeparatorsPathString)
+      file = result
+      result
+    }
+    else {
+      file
+    }
   }
 
   /**
    * System-dependent path to file.
    */
-  val filePath: String by lazy { if (ioFile == null) FileUtilRt.toSystemDependentName(file!!.path) else ioFile.toString() }
+  val filePath: String by lazy { ioFile?.toString() ?: FileUtilRt.toSystemDependentName(file!!.path) }
 
   val isValid: Boolean
     get() = if (ioFile == null) file!!.isValid else Files.exists(ioFile)
 
   val name: String
-    get() = if (ioFile == null) file!!.name else ioFile.fileName.toString()
+    get() = ioFile?.fileName?.toString() ?: file!!.name
 
   val fileType: FileType
     get() = if (ioFile == null) file!!.fileType else FileTypeManager.getInstance().getFileTypeByFileName(ioFile.fileName.toString())
 
 
-  fun isDirectory(): Boolean = if (ioFile == null) file!!.isDirectory else Files.isDirectory(ioFile)
+  fun isDirectory(): Boolean = ioFile?.isDirectory() ?: file!!.isDirectory
 }

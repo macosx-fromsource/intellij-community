@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.template.impl;
 
 import com.intellij.codeInsight.lookup.LookupElement;
@@ -23,17 +9,35 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
+import com.intellij.psi.JVMElementFactories;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiIdentifier;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiResolveHelper;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeParameter;
+import com.intellij.psi.PsiTypeParameterList;
+import com.intellij.psi.PsiTypeParameterListOwner;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.psi.util.PsiUtil;
+import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-public class JavaTemplateUtil {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.template.impl.JavaTemplateUtil");
+public final class JavaTemplateUtil {
+  private static final Logger LOG = Logger.getInstance(JavaTemplateUtil.class);
 
   private JavaTemplateUtil() {
   }
@@ -54,11 +58,9 @@ public class JavaTemplateUtil {
       classes.add((PsiClass)item);
     }
     else if (item instanceof PsiClassType) {
-      PsiClass aClass = PsiUtil.resolveClassInType((PsiType)item);
-      if (aClass != null) {
-        classes.add(aClass);
-      }
-      collectClassParams((PsiType)item, classes);
+      PsiTypesUtil.TypeParameterSearcher searcher = new PsiTypesUtil.TypeParameterSearcher();
+      ((PsiClassType)item).accept(searcher);
+      classes.addAll(searcher.getTypeParameters());
     }
 
     if (!classes.isEmpty()) {
@@ -69,7 +71,7 @@ public class JavaTemplateUtil {
           if (method != null) {
             if (!method.hasModifierProperty(PsiModifier.STATIC)) {
               PsiTypeParameterListOwner owner = ((PsiTypeParameter)aClass).getOwner();
-              if (PsiTreeUtil.isAncestor(owner, method, false)) {
+              if (isInScopeOf(method, owner)) {
                 continue;
               }
             }
@@ -101,18 +103,19 @@ public class JavaTemplateUtil {
     }
   }
 
-  private static void collectClassParams(PsiType item, List<PsiClass> classes) {
-    PsiClass aClass = PsiUtil.resolveClassInType(item);
-    if (aClass instanceof PsiTypeParameter) {
-      classes.add(aClass);
+  /**
+   * @return true if the method is inside the owner of a type parameter, so the method can use that type
+   * parameter. A {@link com.intellij.modcommand.ModCommandAction} runs the template fields on a copy of
+   * the file, and the owner then comes from the original file. So the check compares the elements
+   * instead of the identity.
+   */
+  private static boolean isInScopeOf(@NotNull PsiMethod method, @Nullable PsiTypeParameterListOwner owner) {
+    if (owner == null) return false;
+    PsiManager manager = method.getManager();
+    for (PsiElement parent = method; parent != null && !(parent instanceof PsiFile); parent = parent.getParent()) {
+      if (manager.areElementsEquivalent(parent, owner)) return true;
     }
-
-    if (item instanceof PsiClassType) {
-      PsiType[] parameters = ((PsiClassType)item).getParameters();
-      for (PsiType parameter : parameters) {
-        collectClassParams(parameter, classes);
-      }
-    }
+    return false;
   }
 
   public static void addImportForClass(final Document document, final PsiClass aClass, final int start, final int end) {
@@ -138,8 +141,7 @@ public class JavaTemplateUtil {
         if (!(tmp instanceof PsiJavaCodeReferenceElement) || tmp.getTextRange().getEndOffset() > end) break;
         parent = tmp;
       }
-      if (parent instanceof PsiJavaCodeReferenceElement && !((PsiJavaCodeReferenceElement) parent).isQualified()) {
-        final PsiJavaCodeReferenceElement ref = (PsiJavaCodeReferenceElement) parent;
+      if (parent instanceof PsiJavaCodeReferenceElement ref && !ref.isQualified()) {
         ApplicationManager.getApplication().runWriteAction(() -> {
           try {
             ref.bindToElement(aClass);
@@ -151,14 +153,14 @@ public class JavaTemplateUtil {
     }
   }
 
-  public static LookupElement addElementLookupItem(Set<LookupElement> items, PsiElement element) {
+  public static LookupElement addElementLookupItem(Set<? super LookupElement> items, PsiElement element) {
     final LookupElement item = LookupItemUtil.objectToLookupItem(element);
     items.add(item);
     item.putUserData(TemplateLookupSelectionHandler.KEY_IN_LOOKUP_ITEM, new JavaTemplateLookupSelectionHandler());
     return item;
   }
 
-  public static LookupElement addTypeLookupItem(Set<LookupElement> items, PsiType type) {
+  public static LookupElement addTypeLookupItem(Set<? super LookupElement> items, PsiType type) {
     final LookupElement item = PsiTypeLookupItem.createLookupItem(type, null);
     items.add(item);
     item.putUserData(TemplateLookupSelectionHandler.KEY_IN_LOOKUP_ITEM, new JavaTemplateLookupSelectionHandler());

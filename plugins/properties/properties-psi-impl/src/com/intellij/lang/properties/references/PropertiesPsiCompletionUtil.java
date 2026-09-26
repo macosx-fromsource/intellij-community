@@ -1,49 +1,38 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.lang.properties.references;
 
 import com.intellij.lang.properties.IProperty;
-import com.intellij.lang.properties.PropertiesFileProcessor;
 import com.intellij.lang.properties.PropertiesReferenceManager;
 import com.intellij.lang.properties.psi.PropertiesFile;
 import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.openapi.util.Comparing;
-import gnu.trove.THashSet;
-import gnu.trove.TObjectHashingStrategy;
+import com.intellij.openapi.vfs.VirtualFile;
+import it.unimi.dsi.fastutil.Hash;
+import it.unimi.dsi.fastutil.objects.ObjectOpenCustomHashSet;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
-public class PropertiesPsiCompletionUtil {
+public final class PropertiesPsiCompletionUtil {
   public static void addVariantsFromFile(PropertyReferenceBase propertyReference,
                                          final PropertiesFile propertiesFile,
                                          final Set<Object> variants) {
     if (propertiesFile == null) return;
-    if (!ProjectRootManager.getInstance(propertiesFile.getProject()).getFileIndex().isInContent(propertiesFile.getVirtualFile())) return;
+    VirtualFile virtualFile = propertiesFile.getVirtualFile();
+    if (virtualFile == null || !ProjectRootManager.getInstance(propertiesFile.getProject()).getFileIndex().isInContent(virtualFile)) return;
     List<? extends IProperty> properties = propertiesFile.getProperties();
     for (IProperty property : properties) {
       propertyReference.addKey(property, variants);
     }
   }
 
-  static Set<Object> getPropertiesKeys(final PropertyReferenceBase propertyReference) {
-    final Set<Object> variants = new THashSet<>(new TObjectHashingStrategy<Object>() {
-      public int computeHashCode(final Object object) {
+  public static Set<Object> getPropertiesKeys(final PropertyReferenceBase propertyReference) {
+    final Set<Object> variants = new ObjectOpenCustomHashSet<>(new Hash.Strategy<>() {
+      @Override
+      public int hashCode(@Nullable Object object) {
         if (object instanceof IProperty) {
-          final String key = ((IProperty)object).getKey();
+          String key = ((IProperty)object).getKey();
           return key == null ? 0 : key.hashCode();
         }
         else {
@@ -51,21 +40,22 @@ public class PropertiesPsiCompletionUtil {
         }
       }
 
-      public boolean equals(final Object o1, final Object o2) {
+      @Override
+      public boolean equals(@Nullable Object o1, @Nullable Object o2) {
+        if (o1 == o2) {
+          return true;
+        }
         return o1 instanceof IProperty && o2 instanceof IProperty &&
-               Comparing.equal(((IProperty)o1).getKey(), ((IProperty)o2).getKey(), true);
+               Objects.equals(((IProperty)o1).getKey(), ((IProperty)o2).getKey());
       }
     });
     List<PropertiesFile> propertiesFileList = propertyReference.getPropertiesFiles();
     if (propertiesFileList == null) {
       PropertiesReferenceManager
-        .getInstance(propertyReference.getElement().getProject()).processAllPropertiesFiles(new PropertiesFileProcessor() {
-        @Override
-        public boolean process(String baseName, PropertiesFile propertiesFile) {
+        .getInstance(propertyReference.getElement().getProject()).processAllPropertiesFiles((baseName, propertiesFile) -> {
           addVariantsFromFile(propertyReference, propertiesFile, variants);
           return true;
-        }
-      });
+        });
     }
     else {
       for (PropertiesFile propFile : propertiesFileList) {

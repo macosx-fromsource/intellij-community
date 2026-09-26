@@ -1,102 +1,96 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.structureView.impl.java;
 
 import com.intellij.ide.structureView.StructureViewTreeElement;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassInitializer;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiRecordComponent;
+import com.intellij.psi.PsiRecordHeader;
 import com.intellij.psi.impl.PsiImplUtil;
 import com.intellij.psi.impl.light.LightElement;
+import com.siyeh.ig.psiutils.PsiElementOrderComparator;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * @author Konstantin Bulenkov
  */
 public class JavaClassTreeElement extends JavaClassTreeElementBase<PsiClass> {
-  private final Set<PsiClass> myParents;
 
-  public JavaClassTreeElement(PsiClass cls, boolean inherited, Set<PsiClass> parents) {
+  public JavaClassTreeElement(PsiClass cls, boolean inherited) {
     super(inherited, cls);
-    myParents = parents;
-    myParents.add(cls);
   }
 
   @Override
-  @NotNull
-  public Collection<StructureViewTreeElement> getChildrenBase() {
-    return getClassChildren();
+  public @NotNull Collection<StructureViewTreeElement> getChildrenBase() {
+    return getClassChildren(getElement());
   }
 
-  private Collection<StructureViewTreeElement> getClassChildren() {
-    final PsiClass aClass = getElement();
+  static Collection<StructureViewTreeElement> getClassChildren(PsiClass aClass) {
     if (aClass == null) return Collections.emptyList();
 
-    LinkedHashSet<PsiElement> members = getOwnChildren(aClass);
+    List<PsiElement> members = new ArrayList<>(getOwnChildren(aClass));
+    members.sort(PsiElementOrderComparator.getInstance());
     List<StructureViewTreeElement> children = new ArrayList<>(members.size());
-
-    //aClass.processDeclarations(new AddAllMembersProcessor(inherited, aClass), ResolveState.initial(), null, aClass);
 
     for (PsiElement child : members) {
       if (!child.isValid()) continue;
-      if (child instanceof PsiClass && !myParents.contains((PsiClass)child)) {
-        children.add(new JavaClassTreeElement((PsiClass)child, false, myParents));
+      switch (child) {
+        case PsiClass c -> children.add(new JavaClassTreeElement(c, false));
+        case PsiField f -> children.add(new PsiFieldTreeElement(f, false));
+        case PsiMethod m -> children.add(new PsiMethodTreeElement(m, false));
+        case PsiClassInitializer i -> children.add(new ClassInitializerTreeElement(i));
+        default -> {}
       }
-      else if (child instanceof PsiField) {
-        children.add(new PsiFieldTreeElement((PsiField)child, false));
-      }
-      else if (child instanceof PsiMethod) {
-        children.add(new PsiMethodTreeElement((PsiMethod)child, false));
-      }
-      else if (child instanceof PsiClassInitializer) {
-        children.add(new ClassInitializerTreeElement((PsiClassInitializer)child));
+    }
+    PsiRecordHeader header = aClass.getRecordHeader();
+    if (header != null) {
+      for (PsiRecordComponent recordComponent : header.getRecordComponents()) {
+        children.add(new JavaRecordComponentTreeElement(recordComponent, false));
       }
     }
     return children;
   }
 
-  static LinkedHashSet<PsiElement> getOwnChildren(PsiClass aClass) {
-    LinkedHashSet<PsiElement> members = new LinkedHashSet<>();
-    addPhysicalElements(aClass.getFields(), members);
-    addPhysicalElements(aClass.getMethods(), members);
-    addPhysicalElements(aClass.getInnerClasses(), members);
-    addPhysicalElements(aClass.getInitializers(), members);
+  static @NotNull Set<PsiElement> getOwnChildren(@NotNull PsiClass aClass) {
+    HashSet<PsiElement> members = new HashSet<>();
+    addPhysicalElements(aClass.getFields(), members, aClass);
+    addPhysicalElements(aClass.getMethods(), members, aClass);
+    addPhysicalElements(aClass.getInnerClasses(), members, aClass);
+    addPhysicalElements(aClass.getInitializers(), members, aClass);
     return members;
   }
 
-  private static void addPhysicalElements(PsiElement[] elements, LinkedHashSet<PsiElement> to) {
-    for (PsiElement element : elements) {
+  private static void addPhysicalElements(PsiMember @NotNull [] elements, @NotNull Collection<? super PsiElement> to, @NotNull PsiClass aClass) {
+    for (PsiMember element : elements) {
       PsiElement mirror = PsiImplUtil.handleMirror(element);
-      if (!(mirror instanceof LightElement)) {
+      if (mirror instanceof LightElement) continue;
+      if (mirror instanceof PsiMember member && aClass.equals(member.getContainingClass())) {
         to.add(mirror);
       }
     }
   }
 
-  public Set<PsiClass> getParents() {
-    return myParents;
-  }
-
   @Override
   public String getPresentableText() {
-    return getElement().getName();
+    PsiClass o = getElement();
+    return o == null ? "" : o.getName();
   }
 
   @Override
   public boolean isPublic() {
-    return getElement().getParent() instanceof PsiFile || super.isPublic();
+    PsiClass o = getElement();
+    return o != null && o.getParent() instanceof PsiFile || super.isPublic();
   }
 }

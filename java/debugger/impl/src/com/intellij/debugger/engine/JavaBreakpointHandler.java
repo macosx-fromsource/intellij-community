@@ -1,31 +1,21 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.engine;
 
-import com.intellij.debugger.engine.events.DebuggerCommandImpl;
-import com.intellij.debugger.ui.breakpoints.*;
+import com.intellij.debugger.impl.PrioritizedTask;
+import com.intellij.debugger.ui.breakpoints.Breakpoint;
+import com.intellij.debugger.ui.breakpoints.BreakpointManager;
+import com.intellij.debugger.ui.breakpoints.JavaCollectionBreakpointType;
+import com.intellij.debugger.ui.breakpoints.JavaExceptionBreakpointType;
+import com.intellij.debugger.ui.breakpoints.JavaFieldBreakpointType;
+import com.intellij.debugger.ui.breakpoints.JavaLineBreakpointType;
+import com.intellij.debugger.ui.breakpoints.JavaMethodBreakpointType;
+import com.intellij.debugger.ui.breakpoints.JavaWildcardMethodBreakpointType;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
 import com.intellij.xdebugger.breakpoints.XBreakpointHandler;
 import com.intellij.xdebugger.breakpoints.XBreakpointType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * @author egor
- */
 public class JavaBreakpointHandler extends XBreakpointHandler {
   protected final DebugProcessImpl myProcess;
 
@@ -34,8 +24,7 @@ public class JavaBreakpointHandler extends XBreakpointHandler {
     myProcess = process;
   }
 
-  @Nullable
-  protected Breakpoint createJavaBreakpoint(@NotNull XBreakpoint xBreakpoint) {
+  protected @Nullable Breakpoint createJavaBreakpoint(@NotNull XBreakpoint xBreakpoint) {
     return null;
   }
 
@@ -50,36 +39,17 @@ public class JavaBreakpointHandler extends XBreakpointHandler {
       final Breakpoint bpt = javaBreakpoint;
       BreakpointManager.addBreakpoint(bpt);
       // use schedule not to block initBreakpoints
-      myProcess.getManagerThread().schedule(new DebuggerCommandImpl() {
-        @Override
-        protected void action() throws Exception {
-          bpt.createRequest(myProcess);
-        }
-
-        @Override
-        public Priority getPriority() {
-          return Priority.HIGH;
-        }
-      });
+      myProcess.getManagerThread().schedule(PrioritizedTask.Priority.HIGH, () -> bpt.createRequest(myProcess));
     }
   }
 
   @Override
-  public void unregisterBreakpoint(@NotNull final XBreakpoint breakpoint, boolean temporary) {
+  public void unregisterBreakpoint(final @NotNull XBreakpoint breakpoint, boolean temporary) {
     final Breakpoint javaBreakpoint = BreakpointManager.getJavaBreakpoint(breakpoint);
     if (javaBreakpoint != null) {
       // use schedule not to block initBreakpoints
-      myProcess.getManagerThread().schedule(new DebuggerCommandImpl() {
-        @Override
-        protected void action() throws Exception {
-          myProcess.getRequestsManager().deleteRequest(javaBreakpoint);
-        }
-
-        @Override
-        public Priority getPriority() {
-          return Priority.HIGH;
-        }
-      });
+      myProcess.getManagerThread().schedule(PrioritizedTask.Priority.HIGH,
+                                            () -> myProcess.getRequestsManager().deleteRequest(javaBreakpoint));
     }
   }
 
@@ -110,6 +80,12 @@ public class JavaBreakpointHandler extends XBreakpointHandler {
   public static class JavaFieldBreakpointHandler extends JavaBreakpointHandler {
     public JavaFieldBreakpointHandler(DebugProcessImpl process) {
       super(JavaFieldBreakpointType.class, process);
+    }
+  }
+
+  public static class JavaCollectionBreakpointHandler extends JavaBreakpointHandler {
+    public JavaCollectionBreakpointHandler(DebugProcessImpl process) {
+      super(JavaCollectionBreakpointType.class, process);
     }
   }
 }

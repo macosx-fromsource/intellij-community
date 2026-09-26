@@ -1,54 +1,49 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.theoryinpractice.testng.model;
 
 import com.intellij.execution.ExternalizablePath;
 import com.intellij.execution.JavaExecutionUtil;
 import com.intellij.execution.Location;
-import com.intellij.execution.junit.JUnitUtil;
 import com.intellij.execution.junit2.info.MethodLocation;
 import com.intellij.execution.testframework.TestSearchScope;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.io.FileUtilRt;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiMethod;
 import com.intellij.psi.PsiPackage;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.jps.model.serialization.PathMacroUtil;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
- * @author Hani Suleiman Date: Jul 20, 2005 Time: 1:11:01 PM
+ * @author Hani Suleiman
  */
 public class TestData implements Cloneable
 {
   public String SUITE_NAME;
   public String PACKAGE_NAME;
-  public String MAIN_CLASS_NAME;
+  public @NlsSafe String MAIN_CLASS_NAME;
   public String METHOD_NAME;
-  public String GROUP_NAME;
+  public @NlsSafe String GROUP_NAME;
   public String TEST_OBJECT;
-  public String VM_PARAMETERS;
+  // should be private, but for now we use DefaultJDOMExternalizer, so, public
+  public String VM_PARAMETERS = "-ea";
   public String PARAMETERS;
-  public String WORKING_DIRECTORY;
+  public String WORKING_DIRECTORY = PathMacroUtil.MODULE_WORKING_DIR;
   public String OUTPUT_DIRECTORY;
-  public String ANNOTATION_TYPE;
 
-  public String ENV_VARIABLES;
   private Map<String, String> ENVS = new LinkedHashMap<>();
   public boolean PASS_PARENT_ENVS = true;
 
@@ -73,19 +68,19 @@ public class TestData implements Cloneable
     TEST_SEARCH_SCOPE.setScope(testseachscope);
   }
 
-  public String getPackageName() {
+  public @NlsSafe String getPackageName() {
     return PACKAGE_NAME == null ? "" : PACKAGE_NAME;
   }
 
-  public String getGroupName() {
+  public @NlsSafe String getGroupName() {
     return GROUP_NAME == null ? "" : GROUP_NAME;
   }
 
-  public String getMethodName() {
+  public @NotNull @NlsSafe String getMethodName() {
     return METHOD_NAME == null ? "" : METHOD_NAME;
   }
 
-  public String getSuiteName() {
+  public @NotNull @NlsSafe String getSuiteName() {
     return SUITE_NAME == null ? "" : SUITE_NAME;
   }
 
@@ -97,8 +92,8 @@ public class TestData implements Cloneable
     return OUTPUT_DIRECTORY == null ? "" : OUTPUT_DIRECTORY;
   }
 
-  public void setVMParameters(String value) {
-    VM_PARAMETERS = value;
+  public void setVMParameters(@Nullable String value) {
+    VM_PARAMETERS = StringUtil.nullize(value);
   }
 
   public String getVMParameters() {
@@ -114,30 +109,29 @@ public class TestData implements Cloneable
   }
 
   public void setWorkingDirectory(String value) {
-    WORKING_DIRECTORY = ExternalizablePath.urlValue(value);
+    WORKING_DIRECTORY = StringUtil.isEmptyOrSpaces(value) ? "" : FileUtilRt.toSystemIndependentName(value.trim());
   }
 
-  public String getWorkingDirectory(Project project) {
+  public String getWorkingDirectory() {
     return ExternalizablePath.localPathValue(WORKING_DIRECTORY);
   }
 
   @Override
   public boolean equals(Object obj) {
-    if (!(obj instanceof TestData)) {
+    if (!(obj instanceof TestData data)) {
       return false;
     } else {
-      TestData data = (TestData) obj;
-      return Comparing.equal(TEST_OBJECT, data.TEST_OBJECT)
-          && Comparing.equal(getMainClassName(), data.getMainClassName())
-          && Comparing.equal(getPackageName(), data.getPackageName())
-          && Comparing.equal(getSuiteName(), data.getSuiteName())
-          && Comparing.equal(getMethodName(), data.getMethodName())
-          && Comparing.equal(WORKING_DIRECTORY, data.WORKING_DIRECTORY)
-          && Comparing.equal(OUTPUT_DIRECTORY, data.OUTPUT_DIRECTORY)
-          && Comparing.equal(VM_PARAMETERS, data.VM_PARAMETERS)
-          && Comparing.equal(PARAMETERS, data.PARAMETERS)
-          && Comparing.equal(myPatterns, data.myPatterns)
-          && USE_DEFAULT_REPORTERS == data.USE_DEFAULT_REPORTERS;
+      return Objects.equals(TEST_OBJECT, data.TEST_OBJECT)
+             && Objects.equals(getMainClassName(), data.getMainClassName())
+             && Objects.equals(getPackageName(), data.getPackageName())
+             && Objects.equals(getSuiteName(), data.getSuiteName())
+             && Objects.equals(getMethodName(), data.getMethodName())
+             && Objects.equals(WORKING_DIRECTORY, data.WORKING_DIRECTORY)
+             && Objects.equals(OUTPUT_DIRECTORY, data.OUTPUT_DIRECTORY)
+             && Objects.equals(VM_PARAMETERS, data.VM_PARAMETERS)
+             && Objects.equals(PARAMETERS, data.PARAMETERS)
+             && Comparing.equal(myPatterns, data.myPatterns)
+             && USE_DEFAULT_REPORTERS == data.USE_DEFAULT_REPORTERS;
     }
   }
 
@@ -202,8 +196,7 @@ public class TestData implements Cloneable
 
   public Module setMainClass(PsiClass psiclass) {
     MAIN_CLASS_NAME = JavaExecutionUtil.getRuntimeQualifiedName(psiclass);
-    PsiPackage psipackage = JUnitUtil.getContainingPackage(psiclass);
-    PACKAGE_NAME = psipackage == null ? "" : psipackage.getQualifiedName();
+    PACKAGE_NAME = StringUtil.getPackageName(Objects.requireNonNull(psiclass.getQualifiedName()));
     return JavaExecutionUtil.findModule(psiclass);
   }
 

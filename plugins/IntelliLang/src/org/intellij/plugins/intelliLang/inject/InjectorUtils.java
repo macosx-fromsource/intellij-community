@@ -1,60 +1,63 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.intellij.plugins.intelliLang.inject;
 
 import com.intellij.codeInsight.completion.CompletionUtil;
 import com.intellij.lang.Language;
+import com.intellij.lang.LanguageParserDefinitions;
+import com.intellij.lang.ParserDefinition;
 import com.intellij.lang.injection.MultiHostRegistrar;
-import com.intellij.openapi.extensions.Extensions;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.fileTypes.LanguageFileType;
+import com.intellij.openapi.fileTypes.ex.FileTypeIdentifiableByVirtualFile;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.Ref;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
-import com.intellij.psi.impl.source.tree.injected.MultiHostRegistrarImpl;
-import com.intellij.psi.impl.source.tree.injected.Place;
+import com.intellij.psi.ElementManipulators;
+import com.intellij.psi.PsiComment;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiLanguageInjectionHost;
+import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil;
 import com.intellij.psi.injection.ReferenceInjector;
 import com.intellij.psi.util.CachedValueProvider;
 import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.testFramework.LightVirtualFile;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.ObjectUtils;
-import com.intellij.util.Producer;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.StringSearcher;
-import gnu.trove.TIntArrayList;
 import org.intellij.plugins.intelliLang.Configuration;
 import org.intellij.plugins.intelliLang.inject.config.BaseInjection;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * @author Gregory.Shrago
  */
-public class InjectorUtils {
+public final class InjectorUtils {
   public static final Comparator<TextRange> RANGE_COMPARATOR = (o1, o2) -> {
     if (o1.intersects(o2)) return 0;
     return o1.getStartOffset() - o2.getStartOffset();
@@ -63,19 +66,32 @@ public class InjectorUtils {
   private InjectorUtils() {
   }
 
-  @Nullable
-  public static Language getLanguage(@NotNull BaseInjection injection) {
+  public static @Nullable Language getLanguage(@NotNull BaseInjection injection) {
     return getLanguageByString(injection.getInjectedLanguageId());
   }
 
-  @Nullable
-  public static Language getLanguageByString(String languageId) {
+  public static @Nullable Language getLanguageByString(@NotNull String languageId) {
     Language language = InjectedLanguage.findLanguageById(languageId);
     if (language != null) return language;
     ReferenceInjector injector = ReferenceInjector.findById(languageId);
     if (injector != null) return injector.toLanguage();
-    FileType fileType = FileTypeManager.getInstance().getFileTypeByExtension(languageId);
-    return fileType instanceof LanguageFileType ? ((LanguageFileType)fileType).getLanguage() : null;
+    FileTypeManager fileTypeManager = FileTypeManager.getInstance();
+    FileType fileType = fileTypeManager.getFileTypeByExtension(languageId);
+    if (fileType instanceof LanguageFileType) {
+      return ((LanguageFileType)fileType).getLanguage();
+    }
+
+    LightVirtualFile virtualFileNamedAsLanguageId = new LightVirtualFile(languageId);
+    LightVirtualFile virtualFileWithLanguageIdAsExtension = new LightVirtualFile("textmate." + languageId);
+    for (FileType registeredFileType : fileTypeManager.getRegisteredFileTypes()) {
+      if (registeredFileType instanceof FileTypeIdentifiableByVirtualFile &&
+          registeredFileType instanceof LanguageFileType &&
+          (((FileTypeIdentifiableByVirtualFile)registeredFileType).isMyFileType(virtualFileNamedAsLanguageId) ||
+           ((FileTypeIdentifiableByVirtualFile)registeredFileType).isMyFileType(virtualFileWithLanguageIdAsExtension))) {
+        return ((LanguageFileType)registeredFileType).getLanguage();
+      }
+    }
+    return null;
   }
 
   public static boolean registerInjectionSimple(@NotNull PsiLanguageInjectionHost host,
@@ -89,88 +105,117 @@ public class InjectorUtils {
       InjectedLanguage.create(injection.getInjectedLanguageId(), injection.getPrefix(), injection.getSuffix(), false);
 
     List<TextRange> ranges = injection.getInjectedArea(host);
-    List<Trinity<PsiLanguageInjectionHost, InjectedLanguage, TextRange>> list = ContainerUtil.newArrayListWithCapacity(ranges.size());
+    List<InjectionInfo> list = new ArrayList<>(ranges.size());
 
     for (TextRange range : ranges) {
-      list.add(Trinity.create(host, injectedLanguage, range));
+      list.add(new InjectionInfo(host, injectedLanguage, range));
     }
-    //if (host.getChildren().length > 0) {
-    //  host.putUserData(LanguageInjectionSupport.HAS_UNPARSABLE_FRAGMENTS, Boolean.TRUE);
-    //}
-    registerInjection(language, list, host.getContainingFile(), registrar);
-    if (support != null) {
-      registerSupport(support, true, registrar);
-    }
+    registerInjection(language, host.getContainingFile(), list, registrar, it -> {
+      if (support != null) {
+        registerSupport(it, support, true);
+      }
+    });
     return !ranges.isEmpty();
   }
 
-  public static void registerInjection(Language language,
-                                       List<Trinity<PsiLanguageInjectionHost, InjectedLanguage, TextRange>> list,
-                                       PsiFile containingFile,
-                                       MultiHostRegistrar registrar) {
+  /**
+   * Record that represents a single injection
+   * @param host the element that hosts the injection
+   * @param language language of the injected content
+   * @param range range of the injection within the host
+   */
+  public record InjectionInfo(@NotNull PsiLanguageInjectionHost host, @NotNull InjectedLanguage language, @NotNull TextRange range) {
+  }
+
+  public static void registerInjection(@Nullable Language language,
+                                       @NotNull PsiFile containingFile,
+                                       @NotNull List<InjectionInfo> list,
+                                       @NotNull MultiHostRegistrar registrar) {
+    registerInjection(language, containingFile, list, registrar, null);
+  }
+
+
+  public static void registerInjection(@Nullable Language language,
+                                       @NotNull PsiFile containingFile,
+                                       @NotNull List<InjectionInfo> list,
+                                       @NotNull MultiHostRegistrar registrar,
+                                       @Nullable Consumer<MultiHostRegistrar> customizeInjection) {
     // if language isn't injected when length == 0, subsequent edits will not cause the language to be injected as well.
     // Maybe IDEA core is caching a bit too aggressively here?
     if (language == null/* && (pair.second.getLength() > 0*/) {
       return;
     }
+    ParserDefinition parser = LanguageParserDefinitions.INSTANCE.forLanguage(language);
+    ReferenceInjector injector = ReferenceInjector.findById(language.getID());
+    if (parser == null && injector != null) {
+      for (InjectionInfo trinity : list) {
+        String prefix = trinity.language().getPrefix();
+        String suffix = trinity.language().getSuffix();
+        PsiLanguageInjectionHost host = trinity.host();
+        TextRange textRange = trinity.range();
+        InjectedLanguageUtil.injectReference(registrar, language, prefix, suffix, host, textRange);
+        return;
+      }
+      return;
+    }
     boolean injectionStarted = false;
-    for (Trinity<PsiLanguageInjectionHost, InjectedLanguage, TextRange> t : list) {
-      PsiLanguageInjectionHost host = t.first;
-      if (host.getContainingFile() != containingFile) continue;
+    for (InjectionInfo t : list) {
+      PsiLanguageInjectionHost host = t.host();
+      if (host.getContainingFile() != containingFile || !host.isValidHost()) continue;
 
-      TextRange textRange = t.third;
-      InjectedLanguage injectedLanguage = t.second;
+      TextRange textRange = t.range();
+      InjectedLanguage injectedLanguage = t.language();
 
       if (!injectionStarted) {
-        registrar.startInjecting(language);
         // TextMate language requires file extension
-        if (registrar instanceof MultiHostRegistrarImpl && !StringUtil.equalsIgnoreCase(language.getID(), t.second.getID())) {
-          ((MultiHostRegistrarImpl)registrar).setFileExtension(StringUtil.toLowerCase(t.second.getID()));
+        if (!StringUtil.equalsIgnoreCase(language.getID(), t.language().getID())) {
+          registrar.startInjecting(language, StringUtil.toLowerCase(t.language().getID()));
+        }
+        else {
+          registrar.startInjecting(language);
         }
         injectionStarted = true;
       }
       registrar.addPlace(injectedLanguage.getPrefix(), injectedLanguage.getSuffix(), host, textRange);
+    }
+    if (customizeInjection != null) {
+      customizeInjection.accept(registrar);
     }
     if (injectionStarted) {
       registrar.doneInjecting();
     }
   }
 
-  private static final Map<String, LanguageInjectionSupport> ourSupports;
-  static {
-    ourSupports = new LinkedHashMap<>();
-    for (LanguageInjectionSupport support : Arrays.asList(Extensions.getExtensions(LanguageInjectionSupport.EP_NAME))) {
-      ourSupports.put(support.getId(), support);
+  public static @NotNull @Unmodifiable Collection<String> getActiveInjectionSupportIds() {
+    return ContainerUtil.map(LanguageInjectionSupport.EP_NAME.getExtensionList(), LanguageInjectionSupport::getId);
+  }
+
+  public static @NotNull Collection<LanguageInjectionSupport> getActiveInjectionSupports() {
+    return LanguageInjectionSupport.EP_NAME.getExtensionList();
+  }
+
+  public static @Nullable LanguageInjectionSupport findInjectionSupport(@NotNull String id) {
+    if (TemporaryPlacesRegistry.SUPPORT_ID.equals(id)) return new TemporaryLanguageInjectionSupport();
+    for (LanguageInjectionSupport support : LanguageInjectionSupport.EP_NAME.getExtensionList()) {
+      if (id.equals(support.getId())) return support;
     }
+    return null;
   }
 
-  @NotNull
-  public static Collection<String> getActiveInjectionSupportIds() {
-    return ourSupports.keySet();
-  }
-  public static Collection<LanguageInjectionSupport> getActiveInjectionSupports() {
-    return ourSupports.values();
-  }
-
-  @Nullable
-  public static LanguageInjectionSupport findInjectionSupport(final String id) {
-    return ourSupports.get(id);
-  }
-
-  @NotNull
-  public static Class[] getPatternClasses(final String supportId) {
+  public static Class<?> @NotNull [] getPatternClasses(@NotNull String supportId) {
     final LanguageInjectionSupport support = findInjectionSupport(supportId);
     return support == null ? ArrayUtil.EMPTY_CLASS_ARRAY : support.getPatternClasses();
   }
 
-  @NotNull
-  public static LanguageInjectionSupport findNotNullInjectionSupport(final String id) {
-    final LanguageInjectionSupport result = findInjectionSupport(id);
-    assert result != null: id+" injector not found";
+  public static @NotNull LanguageInjectionSupport findNotNullInjectionSupport(@NotNull String id) {
+    LanguageInjectionSupport result = findInjectionSupport(id);
+    if (result == null) {
+      throw new IllegalStateException(id + " injector not found");
+    }
     return result;
   }
 
-  public static StringBuilder appendStringPattern(@NotNull StringBuilder sb, @NotNull String prefix, @NotNull String text, @NotNull String suffix) {
+  public static @NotNull StringBuilder appendStringPattern(@NotNull StringBuilder sb, @NotNull String prefix, @NotNull String text, @NotNull String suffix) {
     sb.append(prefix).append("string().");
     final String[] parts = text.split("[,|\\s]+");
     boolean useMatches = false;
@@ -200,7 +245,7 @@ public class InjectorUtils {
     return sb;
   }
 
-  public static boolean isRegexp(final String s) {
+  public static boolean isRegexp(@NotNull String s) {
     boolean hasReChars = false;
     for (int i = 0, len = s.length(); i < len; i++) {
       final char c = s.charAt(i);
@@ -210,6 +255,7 @@ public class InjectorUtils {
     }
     if (hasReChars) {
       try {
+        //noinspection ResultOfObjectAllocationIgnored
         new URL(s);
       }
       catch (MalformedURLException e) {
@@ -219,67 +265,96 @@ public class InjectorUtils {
     return false;
   }
 
-  public static void registerSupport(@NotNull LanguageInjectionSupport support, boolean settingsAvailable, @NotNull MultiHostRegistrar registrar) {
-    putInjectedFileUserData(registrar, LanguageInjectionSupport.INJECTOR_SUPPORT, support);
+  /**
+   * @deprecated Use {@link #registerSupport(MultiHostRegistrar, LanguageInjectionSupport, boolean)} instead
+   */
+  @Deprecated
+  public static void registerSupport(@NotNull LanguageInjectionSupport support,
+                                     boolean settingsAvailable,
+                                     @NotNull PsiElement element,
+                                     @NotNull Language language) {
+    putInjectedFileUserData(element, language, LanguageInjectionSupport.INJECTOR_SUPPORT, support);
     if (settingsAvailable) {
-      putInjectedFileUserData(registrar, LanguageInjectionSupport.SETTINGS_EDITOR, support);
+      putInjectedFileUserData(element, language, LanguageInjectionSupport.SETTINGS_EDITOR, support);
     }
   }
 
-  public static <T> void putInjectedFileUserData(MultiHostRegistrar registrar, Key<T> key, T value) {
-    PsiFile psiFile = getInjectedFile(registrar);
-    if (psiFile != null) psiFile.putUserData(key, value);
+  public static void registerSupport(@NotNull MultiHostRegistrar registrar,
+                                     @NotNull LanguageInjectionSupport support,
+                                     boolean settingsAvailable) {
+    registrar.putInjectedFileUserData(LanguageInjectionSupport.INJECTOR_SUPPORT, support);
+    if (settingsAvailable) {
+      registrar.putInjectedFileUserData(LanguageInjectionSupport.SETTINGS_EDITOR, support);
+    }
   }
 
-  public static PsiFile getInjectedFile(MultiHostRegistrar registrar) {
-    final List<Pair<Place,PsiFile>> result = ((MultiHostRegistrarImpl)registrar).getResult();
-    return result == null || result.isEmpty() ? null : result.get(result.size() - 1).second;
+  /**
+   * Does not work with multiple injections on the same host.
+   *
+   * @deprecated Use {@link MultiHostRegistrar#putInjectedFileUserData(Key, Object)} when registering the injection.
+   */
+  @Deprecated
+  public static <T> void putInjectedFileUserData(@NotNull PsiElement element, @NotNull Language language, @NotNull Key<T> key, @Nullable T value) {
+    InjectedLanguageUtil.putInjectedFileUserData(element, language, key, value);
   }
 
   @SuppressWarnings("UnusedParameters")
-  public static Configuration getEditableInstance(Project project) {
+  public static Configuration getEditableInstance(@NotNull Project project) {
     return Configuration.getInstance();
   }
 
-  public static boolean canBeRemoved(BaseInjection injection) {
+  public static boolean canBeRemoved(@NotNull BaseInjection injection) {
     if (injection.isEnabled()) return false;
     if (StringUtil.isNotEmpty(injection.getPrefix()) || StringUtil.isNotEmpty(injection.getSuffix())) return false;
     if (StringUtil.isNotEmpty(injection.getValuePattern())) return false;
     return true;
   }
 
-  @Nullable
-  public static BaseInjection findCommentInjection(@NotNull PsiElement context, @NotNull String supportId, @Nullable Ref<PsiElement> causeRef) {
-    PsiElement target = CompletionUtil.getOriginalOrSelf(context);
-    PsiFile file = target.getContainingFile();
-    if (file == null) return null;
-    TreeMap<TextRange, BaseInjection> map = getInjectionMap(file);
-    if (map == null) return null;
-    Map.Entry<TextRange, BaseInjection> entry = map.lowerEntry(target.getTextRange());
-    if (entry == null) return null;
+  private static @Nullable CommentInjectionData findCommentInjectionData(@NotNull PsiElement context, @Nullable Ref<? super PsiElement> causeRef) {
+    return findCommentInjectionData(context, true, causeRef);
+  }
 
+  public static @Nullable Pair.NonNull<PsiComment, CommentInjectionData> findClosestCommentInjectionData(@NotNull PsiElement context) {
+    PsiFile file = context.getContainingFile();
+    if (file == null) return null;
+    TreeMap<TextRange, CommentInjectionData> map = getInjectionMap(file);
+    if (map == null) return null;
+    Map.Entry<TextRange, CommentInjectionData> entry = map.lowerEntry(context.getTextRange());
+    if (entry == null) return null;
     PsiComment psiComment = PsiTreeUtil.findElementOfClassAtOffset(file, entry.getKey().getStartOffset(), PsiComment.class, false);
     if (psiComment == null) return null;
+    return Pair.createNonNull(psiComment, entry.getValue());
+  }
+
+  public static @Nullable CommentInjectionData findCommentInjectionData(@NotNull PsiElement context, boolean treeElementsIncludeComment, @Nullable Ref<? super PsiElement> causeRef) {
+    PsiElement target = CompletionUtil.getOriginalOrSelf(context);
+    Pair.NonNull<PsiComment, CommentInjectionData> pair = findClosestCommentInjectionData(target);
+    if (pair == null) return null;
+    PsiComment psiComment = pair.first;
+    CommentInjectionData injectionData = pair.second;
     TextRange r0 = psiComment.getTextRange();
 
     // calculate topmost siblings & heights
     PsiElement commonParent = PsiTreeUtil.findCommonParent(psiComment, target);
-    int h1 = 0, h2 = 0;
-    PsiElement e1 = psiComment, e2 = target;
-    for (PsiElement e = e1; e != commonParent; e1 = e, e = e.getParent(), h1++);
-    for (PsiElement e = e2; e != commonParent; e2 = e, e = e.getParent(), h2++);
+    if (commonParent == null) return null;
+    PsiElement topmostElement = target;
+    PsiElement parent = target;
+    while (parent != null && (treeElementsIncludeComment ? parent : parent.getParent()) != commonParent) {
+      topmostElement = parent;
+      parent = parent.getParent();
+    }
 
     // make sure comment is close enough and ...
     int off1 = r0.getEndOffset();
-    int off2 = e2.getTextRange().getStartOffset();
+    int off2 = topmostElement.getTextRange().getStartOffset();
     if (off2 - off1 > 120) {
       return null;
     }
-    else if (off2 - off1 > 2) {
-      // ... there's no non-empty valid host in between comment and e2
-      Producer<PsiElement> producer = prevWalker(e2, commonParent);
+    if (off2 - off1 > 2) {
+      // ... there's no non-empty valid host in between comment and topmostElement
+      Supplier<PsiElement> producer = prevWalker(topmostElement, commonParent);
       PsiElement e;
-      while ( (e = producer.produce()) != null && e != psiComment) {
+      while ( (e = producer.get()) != null && e != psiComment) {
         if (e instanceof PsiLanguageInjectionHost &&
             ((PsiLanguageInjectionHost)e).isValidHost() &&
             !StringUtil.isEmptyOrSpaces(e.getText())) {
@@ -290,35 +365,45 @@ public class InjectorUtils {
     if (causeRef != null) {
       causeRef.set(psiComment);
     }
-    return new BaseInjection(supportId).copyFrom(entry.getValue());
+    return injectionData;
   }
 
-  @Nullable
-  private static TreeMap<TextRange, BaseInjection> getInjectionMap(@NotNull final PsiFile file) {
+  public static @Nullable BaseInjection findCommentInjection(@NotNull PsiElement context,
+                                                             @NotNull String supportId,
+                                                             @Nullable Ref<? super PsiElement> causeRef) {
+    CommentInjectionData data = findCommentInjectionData(context, causeRef);
+    if (data == null) return null;
+    BaseInjection injection = new BaseInjection(supportId);
+    injection.setPrefix(data.getPrefix());
+    injection.setSuffix(data.getSuffix());
+    injection.setInjectedLanguageId(data.getInjectedLanguageId());
+    injection.setDisplayName(data.getDisplayName());
+    return injection;
+  }
+
+  private static @Nullable TreeMap<TextRange, CommentInjectionData> getInjectionMap(final @NotNull PsiFile file) {
     return CachedValuesManager.getCachedValue(file, () -> {
-      TreeMap<TextRange, BaseInjection> map = calcInjections(file);
+      TreeMap<TextRange, CommentInjectionData> map = calcInjections(file);
       return CachedValueProvider.Result.create(map.isEmpty() ? null : map, file);
     });
   }
 
-  @NotNull
-  protected static TreeMap<TextRange, BaseInjection> calcInjections(PsiFile file) {
-    final TreeMap<TextRange, BaseInjection> injectionMap = new TreeMap<>(RANGE_COMPARATOR);
+  private static @NotNull TreeMap<TextRange,CommentInjectionData> calcInjections(@NotNull PsiFile file) {
+    final TreeMap<TextRange, CommentInjectionData> injectionMap = new TreeMap<>(RANGE_COMPARATOR);
 
-    TIntArrayList ints = new TIntArrayList();
     StringSearcher searcher = new StringSearcher("language=", true, true, false);
     CharSequence contents = file.getViewProvider().getContents();
     final char[] contentsArray = CharArrayUtil.fromSequenceWithoutCopying(contents);
 
-    int s0 = 0, s1 = contents.length();
+    int s0 = 0;
+    int s1 = contents.length();
     for (int idx = searcher.scan(contents, contentsArray, s0, s1);
          idx != -1;
          idx = searcher.scan(contents, contentsArray, idx + 1, s1)) {
-      ints.add(idx);
       PsiComment element = PsiTreeUtil.findElementOfClassAtOffset(file, idx, PsiComment.class, false);
       if (element != null) {
         String str = ElementManipulators.getValueText(element).trim();
-        BaseInjection injection = detectInjectionFromText("", str);
+        CommentInjectionData injection = str.startsWith("language=") ? new CommentInjectionData(decodeMap(str), str) : null;
         if (injection != null) {
           injectionMap.put(element.getTextRange(), injection);
         }
@@ -328,7 +413,7 @@ public class InjectorUtils {
   }
 
   private static final Pattern MAP_ENTRY_PATTERN = Pattern.compile("([\\S&&[^=]]+)=(\"(?:[^\"]|\\\\\")*\"|\\S*)");
-  public static Map<String, String> decodeMap(CharSequence charSequence) {
+  private static @NotNull Map<String, String> decodeMap(@NotNull CharSequence charSequence) {
     if (StringUtil.isEmpty(charSequence)) return Collections.emptyMap();
     final Matcher matcher = MAP_ENTRY_PATTERN.matcher(charSequence);
     final LinkedHashMap<String, String> map = new LinkedHashMap<>();
@@ -339,28 +424,12 @@ public class InjectorUtils {
     return map;
   }
 
-  @Nullable
-  public static BaseInjection detectInjectionFromText(String supportId, String text) {
-    if (text == null || !text.startsWith("language=")) return null;
-    Map<String, String> map = decodeMap(text);
-    String languageId = map.get("language");
-    String prefix = ObjectUtils.notNull(map.get("prefix"), "");
-    String suffix = ObjectUtils.notNull(map.get("suffix"), "");
-    BaseInjection injection = new BaseInjection(supportId);
-    injection.setDisplayName(text);
-    injection.setInjectedLanguageId(languageId);
-    injection.setPrefix(prefix);
-    injection.setSuffix(suffix);
-    return injection;
-  }
-
-  private static Producer<PsiElement> prevWalker(final PsiElement element, final PsiElement scope) {
-    return new Producer<PsiElement>() {
+  private static @NotNull Supplier<PsiElement> prevWalker(@NotNull PsiElement element, @NotNull PsiElement scope) {
+    return new Supplier<>() {
       PsiElement e = element;
 
-      @Nullable
       @Override
-      public PsiElement produce() {
+      public @Nullable PsiElement get() {
         if (e == null || e == scope) return null;
         PsiElement prev = e.getPrevSibling();
         if (prev != null) {
@@ -372,5 +441,35 @@ public class InjectorUtils {
         }
       }
     };
+  }
+
+  public static class CommentInjectionData {
+    private final String myDisplayName;
+    private final Map<String, String> myMap;
+
+    CommentInjectionData(@NotNull Map<String, String> map, @NotNull String displayName) {
+      myMap = Collections.unmodifiableMap(map);
+      myDisplayName = displayName;
+    }
+
+    public @NotNull String getPrefix() {
+      return ObjectUtils.notNull(myMap.get("prefix"), "");
+    }
+
+    public @NotNull String getSuffix() {
+      return ObjectUtils.notNull(myMap.get("suffix"), "");
+    }
+
+    public @NotNull String getInjectedLanguageId() {
+      return ObjectUtils.notNull(myMap.get("language"), "");
+    }
+
+    public @NlsSafe @NotNull String getDisplayName() {
+      return myDisplayName;
+    }
+
+    public @NotNull Map<String, String> getValues() {
+      return myMap;
+    }
   }
 }

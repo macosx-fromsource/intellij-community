@@ -1,57 +1,57 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.completion;
 
+import com.intellij.application.options.CodeStyle;
 import com.intellij.codeInsight.lookup.LookupElement;
 import com.intellij.codeInsight.lookup.LookupElementDecorator;
 import com.intellij.codeInsight.lookup.LookupElementPresentation;
 import com.intellij.codeInsight.lookup.TypedLookupItem;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.util.ClassConditionKey;
 import com.intellij.openapi.util.Key;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiArrayAccessExpression;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiExpressionStatement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiNewExpression;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiVariable;
+import com.intellij.psi.ResolveResult;
 import com.intellij.psi.codeStyle.CodeStyleManager;
-import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.text.CharArrayUtil;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
 import java.util.Set;
 
-/**
- * @author peter
- */
 public class JavaChainLookupElement extends LookupElementDecorator<LookupElement> implements TypedLookupItem {
   public static final Key<Boolean> CHAIN_QUALIFIER = Key.create("CHAIN_QUALIFIER");
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.completion.JavaChainLookupElement");
   public static final ClassConditionKey<JavaChainLookupElement> CLASS_CONDITION_KEY = ClassConditionKey.create(JavaChainLookupElement.class);
   private final LookupElement myQualifier;
+  private final String mySeparator;
 
   public JavaChainLookupElement(LookupElement qualifier, LookupElement main) {
+    this(qualifier, main, ".");
+  }
+  
+  public JavaChainLookupElement(LookupElement qualifier, LookupElement main, String separator) {
     super(main);
     myQualifier = qualifier;
+    mySeparator = separator;
   }
 
-  @NotNull
   @Override
-  public String getLookupString() {
-    return maybeAddParentheses(myQualifier.getLookupString()) + "." + getDelegate().getLookupString();
+  public @NotNull String getLookupString() {
+    return maybeAddParentheses(myQualifier.getLookupString()) + mySeparator + getDelegate().getLookupString();
   }
 
   public LookupElement getQualifier() {
@@ -59,26 +59,20 @@ public class JavaChainLookupElement extends LookupElementDecorator<LookupElement
   }
 
   @Override
-  public Set<String> getAllLookupStrings() {
-    final Set<String> strings = getDelegate().getAllLookupStrings();
-    final THashSet<String> result = new THashSet<>();
-    result.addAll(strings);
-    result.add(getLookupString());
-    return result;
+  public @NotNull Set<String> getAllLookupStrings() {
+    return Set.of(getLookupString());
   }
 
-  @NotNull
   @Override
-  public String toString() {
-    return maybeAddParentheses(myQualifier.toString()) + "." + getDelegate();
+  public @NotNull String toString() {
+    return maybeAddParentheses(myQualifier.toString()) + mySeparator + getDelegate();
   }
 
   private String maybeAddParentheses(String s) {
     return getQualifierObject() instanceof PsiMethod ? s + "()" : s;
   }
 
-  @Nullable
-  private Object getQualifierObject() {
+  private @Nullable Object getQualifierObject() {
     Object qObject = myQualifier.getObject();
     if (qObject instanceof ResolveResult) {
       qObject = ((ResolveResult)qObject).getElement();
@@ -92,13 +86,13 @@ public class JavaChainLookupElement extends LookupElementDecorator<LookupElement
   }
 
   @Override
-  public void renderElement(LookupElementPresentation presentation) {
+  public void renderElement(@NotNull LookupElementPresentation presentation) {
     super.renderElement(presentation);
     final LookupElementPresentation qualifierPresentation = new LookupElementPresentation();
     myQualifier.renderElement(qualifierPresentation);
     String name = maybeAddParentheses(qualifierPresentation.getItemText());
     final String qualifierText = myQualifier.as(CastingLookupElementDecorator.CLASS_CONDITION_KEY) != null ? "(" + name + ")" : name;
-    presentation.setItemText(qualifierText + "." + presentation.getItemText());
+    presentation.setItemText(qualifierText + mySeparator + presentation.getItemText());
 
     if (myQualifier instanceof JavaPsiClassReferenceElement) {
       presentation.appendTailText(((JavaPsiClassReferenceElement)myQualifier).getLocationString(), false);
@@ -109,7 +103,7 @@ public class JavaChainLookupElement extends LookupElementDecorator<LookupElement
   }
 
   @Override
-  public void handleInsert(InsertionContext context) {
+  public void handleInsert(@NotNull InsertionContext context) {
     final Document document = context.getEditor().getDocument();
     document.replaceString(context.getStartOffset(), context.getTailOffset(), ";");
     myQualifier.putUserData(CHAIN_QUALIFIER, true);
@@ -120,18 +114,18 @@ public class JavaChainLookupElement extends LookupElementDecorator<LookupElement
 
     int start = CharArrayUtil.shiftForward(context.getDocument().getCharsSequence(), context.getStartOffset(), " \t\n");
     if (shouldParenthesizeQualifier(context.getFile(), start, qualifierContext.getTailOffset())) {
-      final String space = CodeStyleSettingsManager.getSettings(qualifierContext.getProject()).SPACE_WITHIN_PARENTHESES ? " " : "";
+      final String space = CodeStyle.getLanguageSettings(context.getFile()).SPACE_WITHIN_PARENTHESES ? " " : "";
       document.insertString(start, "(" + space);
       document.insertString(qualifierContext.getTailOffset(), space + ")");
     }
 
-    final char atTail = document.getCharsSequence().charAt(context.getTailOffset() - 1);
+    char atTail = document.getCharsSequence().charAt(qualifierContext.getTailOffset());
     if (atTail != ';') {
       return;
     }
-    document.replaceString(context.getTailOffset() - 1, context.getTailOffset(), ".");
+    document.replaceString(qualifierContext.getTailOffset(), qualifierContext.getTailOffset() + 1, mySeparator);
 
-    CompletionUtil.emulateInsertion(getDelegate(), context.getTailOffset(), context);
+    CompletionUtil.emulateInsertion(getDelegate(), qualifierContext.getTailOffset() + mySeparator.length(), context);
     context.commitDocument();
 
     int formatStart = context.getOffset(oldStart);
@@ -172,10 +166,11 @@ public class JavaChainLookupElement extends LookupElementDecorator<LookupElement
     return true;
   }
 
-  @NotNull
-  private LookupElement getComparableQualifier() {
+  private @Nullable LookupElement getComparableQualifier() {
     final CastingLookupElementDecorator casting = myQualifier.as(CastingLookupElementDecorator.CLASS_CONDITION_KEY);
-    return casting == null ? myQualifier : casting.getDelegate();
+    LookupElement qualifier = casting == null ? myQualifier : casting.getDelegate();
+    if (qualifier.getObject() instanceof PsiClass) return null;
+    return qualifier;
   }
 
   @Override
@@ -183,13 +178,13 @@ public class JavaChainLookupElement extends LookupElementDecorator<LookupElement
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     if (!super.equals(o)) return false;
-
-    return getComparableQualifier().equals(((JavaChainLookupElement)o).getComparableQualifier());
+    if (!mySeparator.equals(((JavaChainLookupElement)o).mySeparator)) return false;
+    return Objects.equals(getComparableQualifier(), ((JavaChainLookupElement)o).getComparableQualifier());
   }
 
   @Override
   public int hashCode() {
-    return 31 * super.hashCode() + getComparableQualifier().hashCode();
+    return 31 * super.hashCode() + Objects.hashCode(getComparableQualifier());
   }
 
   @Override
@@ -199,5 +194,23 @@ public class JavaChainLookupElement extends LookupElementDecorator<LookupElement
       return JavaCompletionUtil.getQualifiedMemberReferenceType(JavaCompletionUtil.getLookupElementType(myQualifier), (PsiMember)object);
     }
     return ((PsiVariable) object).getType();
+  }
+
+  /**
+   * @param base base item to create a chain
+   * @param item nested item
+   * @return false if the chain looks redundant, and it's better not to suggest it.
+   */
+  static boolean isReasonableChain(LookupElement base, LookupElement item) {
+    PsiElement baseElement = base.getPsiElement();
+    PsiElement itemElement = item.getPsiElement();
+    if (baseElement == null || itemElement == null) return true;
+    if (baseElement.equals(itemElement)) return false;
+    if (itemElement instanceof PsiMember member) {
+      PsiClass itemClass = member.getContainingClass();
+      if (itemClass == null || itemClass.equals(baseElement)) return true;
+      if (PsiTreeUtil.isAncestor(itemClass, baseElement, true)) return false;
+    }
+    return true;
   }
 }

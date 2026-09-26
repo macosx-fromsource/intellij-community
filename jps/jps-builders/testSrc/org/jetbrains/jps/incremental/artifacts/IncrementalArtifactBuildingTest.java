@@ -29,9 +29,6 @@ import static com.intellij.util.io.TestFileSystemItem.fs;
 import static org.jetbrains.jps.incremental.artifacts.LayoutElementTestUtil.archive;
 import static org.jetbrains.jps.incremental.artifacts.LayoutElementTestUtil.root;
 
-/**
- * @author nik
- */
 public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
   public void testCopyChangedFile() {
     String file1 = createFile("dir/a.txt", "aaa");
@@ -120,7 +117,7 @@ public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
     buildAllAndAssertUpToDate();
   }
 
-  public void testNonExistentFileRoot() throws IOException {
+  public void testNonExistentFileRoot() {
     String file = getAbsolutePath("a.txt");
     JpsArtifact a = addArtifact(root().fileCopy(file));
     buildArtifacts(a);
@@ -138,7 +135,7 @@ public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
     buildAllAndAssertUpToDate();
   }
 
-  public void testNonExistentDirectoryRoot() throws IOException {
+  public void testNonExistentDirectoryRoot() {
     String dir = getAbsolutePath("d");
     JpsArtifact a = addArtifact(root().dirCopy(dir));
     buildArtifacts(a);
@@ -267,7 +264,7 @@ public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
     assertDeletedAndCopied("out/artifacts/a/x.jar", "a/a.txt");
   }
 
-  public void testRenameFile() throws Exception {
+  public void testRenameFile() {
     final String file = createFile("a/a.txt");
     final JpsArtifact a = addArtifact(root().parentDirCopy(file));
     buildAll();
@@ -279,7 +276,7 @@ public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
   }
 
   //IDEADEV-25840
-  public void testUpdateFileIfCaseOfLetterInNameChanged() throws Exception {
+  public void testUpdateFileIfCaseOfLetterInNameChanged() {
     final String file = createFile("a/a.txt");
     final JpsArtifact a = addArtifact("a", root().parentDirCopy(file));
     buildAll();
@@ -291,7 +288,7 @@ public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
   }
 
   //IDEADEV-41556
-  public void testDeleteFilesFromSelectedArtifactsOnly() throws Exception {
+  public void testDeleteFilesFromSelectedArtifactsOnly() {
     final String file = createFile("a/a.txt");
     final JpsArtifact a1 = addArtifact("a1", root().parentDirCopy(file));
     final JpsArtifact a2 = addArtifact("a2", root().parentDirCopy(file));
@@ -311,7 +308,7 @@ public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
   }
 
   //IDEA-51910
-  public void testTwoArtifactsWithSameOutput() throws Exception {
+  public void testTwoArtifactsWithSameOutput() {
     final String res1 = PathUtil.getParentPath(createFile("res1/a.txt", "1"));
     final String res2 = PathUtil.getParentPath(createFile("res2/a.txt", "2"));
     final JpsArtifact a1 = addArtifact("a1", root().dirCopy(res1));
@@ -328,9 +325,8 @@ public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
     assertOutput(a2, fs().file("a.txt", "2"));
   }
 
-  //todo[nik] fix
   //ZD-51993
-  public void _testFilesCopiedToTwoDifferentPlacesInArtifact() {
+  public void testFilesCopiedToTwoDifferentPlacesInArtifact() {
     final String fileA = createFile("res/a.txt", "0");
     final String fileB = createFile("res/b.txt", "0");
     String dir = PathUtil.getParentPath(fileA);
@@ -350,5 +346,34 @@ public class IncrementalArtifactBuildingTest extends ArtifactBuilderTestCase {
     assertOutput(a, fs()
                       .dir("d").file("a.txt", "1").file("b.txt", "1").end()
                       .archive("a.zip").file("a.txt", "1").file("b.txt", "1"));
+  }
+
+  public void testCreateJarIfMissing() {
+    final String file = createFile("a/a.txt", "a");
+    JpsArtifact a = addArtifact(root()
+                                  .archive("x.jar")
+                                  .fileCopy(file));
+    var createdJar = "out/artifacts/a/x.jar";
+    buildAll();
+    assertOutput(a, fs().file("x.jar"));
+
+    deleteFile(createdJar);
+    assertOutput(a, fs());
+
+    buildAll();
+    assertOutput(a, fs().file("x.jar"));
+  }
+
+  public void testCopyFileIfMissing() {
+    final String file = createFile("a/a.txt", "a");
+    JpsArtifact a = addArtifact(root().fileCopy(file));
+    buildAll();
+    assertOutput(a, fs().file("a.txt"));
+
+    deleteFile("out/artifacts/a/a.txt");
+    assertOutput(a, fs());
+
+    buildAll();
+    assertOutput(a, fs().file("a.txt"));
   }
 }

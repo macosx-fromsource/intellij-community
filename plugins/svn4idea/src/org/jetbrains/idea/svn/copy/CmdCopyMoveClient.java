@@ -1,3 +1,4 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.copy;
 
 import com.intellij.openapi.util.SystemInfo;
@@ -7,21 +8,18 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.api.BaseSvnClient;
 import org.jetbrains.idea.svn.api.ProgressTracker;
+import org.jetbrains.idea.svn.api.Revision;
+import org.jetbrains.idea.svn.api.Target;
 import org.jetbrains.idea.svn.checkin.CmdCheckinClient;
 import org.jetbrains.idea.svn.checkin.CommitEventHandler;
 import org.jetbrains.idea.svn.commandLine.BaseUpdateCommandListener;
 import org.jetbrains.idea.svn.commandLine.CommandUtil;
 import org.jetbrains.idea.svn.commandLine.SvnCommandName;
-import org.tmatesoft.svn.core.wc.SVNRevision;
-import org.tmatesoft.svn.core.wc2.SvnTarget;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author Konstantin Kolosovsky.
- */
 public class CmdCopyMoveClient extends BaseSvnClient implements CopyMoveClient {
 
   @Override
@@ -38,18 +36,18 @@ public class CmdCopyMoveClient extends BaseSvnClient implements CopyMoveClient {
     // directory being renamed will be blocked by svn process
     File workingDirectory =
       isMove && !SystemInfo.isFileSystemCaseSensitive && FileUtil.filesEqual(src, dst) ? CommandUtil.getHomeDirectory() : null;
-    execute(myVcs, SvnTarget.fromFile(dst), workingDirectory, getCommandName(isMove), parameters, null);
+    execute(myVcs, Target.on(dst), workingDirectory, getCommandName(isMove), parameters, null);
   }
 
   @Override
-  public long copy(@NotNull SvnTarget source,
-                   @NotNull SvnTarget destination,
-                   @Nullable SVNRevision revision,
+  public long copy(@NotNull Target source,
+                   @NotNull Target destination,
+                   @Nullable Revision revision,
                    boolean makeParents,
                    boolean isMove,
                    @NotNull String message,
                    @Nullable CommitEventHandler handler) throws VcsException {
-    if (!destination.isURL()) {
+    if (!destination.isUrl()) {
       throw new IllegalArgumentException("Only urls are supported as destination " + destination);
     }
 
@@ -74,9 +72,9 @@ public class CmdCopyMoveClient extends BaseSvnClient implements CopyMoveClient {
   }
 
   @Override
-  public void copy(@NotNull SvnTarget source,
+  public void copy(@NotNull Target source,
                    @NotNull File destination,
-                   @Nullable SVNRevision revision,
+                   @Nullable Revision revision,
                    boolean makeParents,
                    @Nullable ProgressTracker handler) throws VcsException {
     List<String> parameters = new ArrayList<>();
@@ -94,8 +92,7 @@ public class CmdCopyMoveClient extends BaseSvnClient implements CopyMoveClient {
     listener.throwWrappedIfException();
   }
 
-  @NotNull
-  private static SvnCommandName getCommandName(boolean isMove) {
+  private static @NotNull SvnCommandName getCommandName(boolean isMove) {
     return isMove ? SvnCommandName.move : SvnCommandName.copy;
   }
 }

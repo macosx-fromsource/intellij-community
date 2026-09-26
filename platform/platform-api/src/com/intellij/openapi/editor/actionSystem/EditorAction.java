@@ -1,74 +1,84 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.actionSystem;
 
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.ide.lightEdit.LightEditCompatible;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.CustomizedDataContext;
+import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.application.AccessToken;
+import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.command.UndoConfirmationPolicy;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.extensions.Extensions;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.DumbAware;
-import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.concurrency.ThreadingAssertions;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 
+import static com.intellij.concurrency.ThreadContext.withThreadLocal;
 import static com.intellij.openapi.actionSystem.CommonDataKeys.EDITOR;
 import static com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT;
 
-public abstract class EditorAction extends AnAction implements DumbAware {
-  private EditorActionHandler myHandler;
-  private boolean myHandlersLoaded;
+public abstract class EditorAction extends AnAction implements DumbAware, LightEditCompatible {
+  private static final Logger LOG = Logger.getInstance(EditorAction.class);
+  private static final Logger HANDLER_LOG = Logger.getInstance(EditorActionHandler.HANDLER_LOG_CATEGORY);
 
-  public final EditorActionHandler getHandler() {
-    ensureHandlersLoaded();
-    return myHandler;
-  }
+  private EditorActionHandler myHandler;
+  private DynamicEditorActionHandler myDynamicHandler;
 
   protected EditorAction(EditorActionHandler defaultHandler) {
     myHandler = defaultHandler;
     setEnabledInModalContext(true);
   }
 
-  public final EditorActionHandler setupHandler(@NotNull EditorActionHandler newHandler) {
-    ensureHandlersLoaded();
-    EditorActionHandler tmp = myHandler;
-    myHandler = newHandler;
-    myHandler.setWorksInInjected(isInInjectedContext());
+  public final synchronized EditorActionHandler setupHandler(@NotNull EditorActionHandler newHandler) {
+    debugLog(newHandler, "setup EditorActionHandler");
+    EditorActionHandler tmp = getHandler();
+    doSetupHandler(newHandler);
     return tmp;
   }
 
-  private void ensureHandlersLoaded() {
-    if (!myHandlersLoaded) {
-      myHandlersLoaded = true;
-      final String id = ActionManager.getInstance().getId(this);
-      EditorActionHandlerBean[] extensions = Extensions.getExtensions(EditorActionHandlerBean.EP_NAME);
-      for (int i = extensions.length - 1; i >= 0; i--) {
-        final EditorActionHandlerBean handlerBean = extensions[i];
-        if (handlerBean.action.equals(id)) {
-          myHandler = handlerBean.getHandler(myHandler);
-          myHandler.setWorksInInjected(isInInjectedContext());
-        }
-      }
+  public final synchronized EditorActionHandler getHandler() {
+    if (myDynamicHandler == null && myHandler != null) {
+      myDynamicHandler = new DynamicEditorActionHandler(this, myHandler);
+      doSetupHandler(myDynamicHandler);
+    }
+    return myHandler;
+  }
+
+  public synchronized void clearDynamicHandlersCache() {
+    if (myDynamicHandler != null) {
+      myDynamicHandler.clearCache();
     }
   }
 
+  public synchronized <T> @Nullable T getHandlerOfType(@NotNull Class<T> type) {
+    EditorActionHandler handler = getHandler(); // make sure handlers are initialized in EditorAction.getHandlerOfType
+    if (handler != null) {
+      T result = handler.getHandlerOfType(type);
+      if (result != null) {
+        return result;
+      }
+    }
+    EditorActionHandler dynamicHandler = myDynamicHandler;
+    if (dynamicHandler != null && dynamicHandler != handler) {
+      return dynamicHandler.getHandlerOfType(type);
+    }
+    return null;
+  }
+
   @Override
-  public void setInjectedContext(boolean worksInInjected) {
+  public synchronized void setInjectedContext(boolean worksInInjected) {
     super.setInjectedContext(worksInInjected);
     // we assume that this method is called in constructor at the point
     // where the chain of handlers is not initialized yet
@@ -77,36 +87,86 @@ public abstract class EditorAction extends AnAction implements DumbAware {
   }
 
   @Override
-  public final void actionPerformed(AnActionEvent e) {
+  public final void actionPerformed(@NotNull AnActionEvent e) {
     DataContext dataContext = e.getDataContext();
     Editor editor = getEditor(dataContext);
-    actionPerformed(editor, dataContext);
+    if (this instanceof LatencyAwareEditorAction && editor != null) {
+      String actionId = ActionManager.getInstance().getId(this);
+      InputEvent inputEvent = e.getInputEvent();
+      if (actionId != null && inputEvent != null) {
+        LatencyRecorder latencyRecorder = LatencyRecorder.getInstance();
+        if (latencyRecorder != null) {
+          latencyRecorder.recordLatencyAwareAction(editor, actionId, inputEvent.getWhen());
+        }
+      }
+    }
+    if (this.getTemplatePresentation().isRWLockRequired()) {
+      WriteIntentReadAction.run(() -> actionPerformed(editor, dataContext));
+    } else {
+      AccessToken token = withThreadLocal(ThreadingAssertions.inputEventWithoutWriteIntentLock, (__) -> (exception) -> LockFreeEditorActionsCore.INSTANCE.showBalloonWithAdvice(exception));
+      try (token) {
+        actionPerformed(editor, dataContext);
+      }
+    }
   }
 
-  @Nullable
-  protected Editor getEditor(@NotNull DataContext dataContext) {
-    return EDITOR.getData(dataContext);
-  }
-
-  public final void actionPerformed(final Editor editor, @NotNull final DataContext dataContext) {
-    if (editor == null) return;
-
-    final EditorActionHandler handler = getHandler();
-    Runnable command = () -> handler.execute(editor, null, getProjectAwareDataContext(editor, dataContext));
-
-    if (!handler.executeInCommand(editor, dataContext)) {
-      command.run();
+  public final void actionPerformed(Editor editor, @NotNull DataContext dataContext) {
+    if (editor == null) {
       return;
     }
-
+    if (editor.isDisposed()) {
+      VirtualFile file = FileDocumentManager.getInstance().getFile(editor.getDocument());
+      LOG.error("Action " + this + " invoked on a disposed editor" + (file == null ? "" : " for file " + file));
+      return;
+    }
+    EditorActionHandler handler = getHandler();
+    if (!handler.executeInCommand(editor, dataContext)) {
+      executeHandler(handler, editor, dataContext);
+      return;
+    }
     String commandName = getTemplatePresentation().getText();
-    if (commandName == null) commandName = "";
-    CommandProcessor.getInstance().executeCommand(editor.getProject(),
-                                                  command,
-                                                  commandName,
-                                                  handler.getCommandGroupId(editor),
-                                                  UndoConfirmationPolicy.DEFAULT,
-                                                  editor.getDocument());
+    CommandProcessor.getInstance().executeCommand(
+      editor.getProject(),
+      () -> executeHandler(handler, editor, dataContext),
+      commandName == null ? "" : commandName,
+      handler.getCommandGroupId(editor),
+      UndoConfirmationPolicy.DEFAULT,
+      editor.getDocument()
+    );
+  }
+
+  @Override
+  public void update(@NotNull AnActionEvent e) {
+    Presentation presentation = e.getPresentation();
+    DataContext dataContext = e.getDataContext();
+    Editor editor = getEditor(dataContext);
+    if (editor == null) {
+      if (e.isFromContextMenu()) {
+        presentation.setEnabledAndVisible(false);
+      }
+      else {
+        presentation.setEnabled(false);
+      }
+    }
+    else {
+      if (editor.isDisposed()) {
+        LOG.error("Disposed editor in " + dataContext + " for " + this);
+        presentation.setEnabled(false);
+      }
+      else {
+        if (e.getInputEvent() instanceof KeyEvent) {
+          updateForKeyboardAccess(editor, presentation, dataContext);
+        }
+        else {
+          update(editor, presentation, dataContext);
+        }
+      }
+    }
+  }
+
+  @Override
+  public @NotNull ActionUpdateThread getActionUpdateThread() {
+    return ActionUpdateThread.BGT;
   }
 
   public void update(Editor editor, Presentation presentation, DataContext dataContext) {
@@ -117,40 +177,38 @@ public abstract class EditorAction extends AnAction implements DumbAware {
     update(editor, presentation, dataContext);
   }
 
-  @Override
-  public void update(AnActionEvent e) {
-    Presentation presentation = e.getPresentation();
-    DataContext dataContext = e.getDataContext();
-    Editor editor = getEditor(dataContext);
-    if (editor == null) {
-      presentation.setEnabled(false);
-    }
-    else {
-      if (e.getInputEvent() instanceof KeyEvent) {
-        updateForKeyboardAccess(editor, presentation, dataContext);
-      }
-      else {
-        update(editor, presentation, dataContext);
-      }
+  protected @Nullable Editor getEditor(@NotNull DataContext dataContext) {
+    return EDITOR.getData(dataContext);
+  }
+
+  private void doSetupHandler(@NotNull EditorActionHandler newHandler) {
+    myHandler = newHandler;
+    myHandler.setWorksInInjected(isInInjectedContext()); // IDEA-128025 Expand selection in multiple carets through injections still failing
+  }
+
+  private void executeHandler(
+    @NotNull EditorActionHandler handler,
+    @NotNull Editor editor,
+    @NotNull DataContext dataContext
+  ) {
+    debugLog(editor, "handler started");
+    handler.execute(editor, null, getProjectAwareDataContext(editor, dataContext));
+    debugLog(editor, "handler finished");
+  }
+
+  private void debugLog(@NotNull Object object, @NotNull String prefix) {
+    if (HANDLER_LOG.isDebugEnabled()) {
+      HANDLER_LOG.debug(
+        prefix + " for EditorAction " + this.getClass() + " with " + object,
+        HANDLER_LOG.isTraceEnabled() ? new Throwable() : null
+      );
     }
   }
 
-  private static DataContext getProjectAwareDataContext(final Editor editor, @NotNull final DataContext original) {
+  private static @NotNull DataContext getProjectAwareDataContext(@NotNull Editor editor, @NotNull DataContext original) {
     if (PROJECT.getData(original) == editor.getProject()) {
-      return new DialogAwareDataContext(original);
+      return original;
     }
-
-    return new DataContext() {
-      @Override
-      public Object getData(String dataId) {
-        if (PROJECT.is(dataId)) {
-          final Project project = editor.getProject();
-          if (project != null) {
-            return project;
-          }
-        }
-        return original.getData(dataId);
-      }
-    };
+    return CustomizedDataContext.withSnapshot(original, sink -> sink.set(PROJECT, editor.getProject()));
   }
 }

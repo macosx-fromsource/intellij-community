@@ -15,17 +15,24 @@
  */
 package com.jetbrains.python;
 
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
 import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.jetbrains.python.fixtures.PyResolveTestCase;
-import com.jetbrains.python.psi.*;
+import com.jetbrains.python.psi.LanguageLevel;
+import com.jetbrains.python.psi.PyClass;
+import com.jetbrains.python.psi.PyReferenceOwner;
 
 /**
  * @author Mikhail Golubev
  */
+@Subsystems.CodeInsight
+@Layers.Functional
 public class PyInjectionResolveTest extends PyResolveTestCase {
   @Override
   protected PsiElement doResolve() {
@@ -44,44 +51,23 @@ public class PyInjectionResolveTest extends PyResolveTestCase {
     return reference.resolve();
   }
 
-
-  // PY-20783
-  public void testFStringFunctionParameter() {
-    assertResolvesTo(LanguageLevel.PYTHON36, PyParameter.class, "param");
-  }
-  
-  // PY-20783
-  public void testFStringLocalVariable() {
-    assertResolvesTo(LanguageLevel.PYTHON36, PyTargetExpression.class, "foo");
-  }
-  
-   // PY-20783
-  public void testFStringLocalVariableUnresolved() {
-    runWithLanguageLevel(LanguageLevel.PYTHON36, () -> assertNull(doResolve()));
-  }
-
-  // PY-20783
-  public void testFStringNestedScopes() {
-    assertResolvesTo(LanguageLevel.PYTHON36, PyTargetExpression.class, "foo");
-  }
-  
   public void testTypeCommentReference() {
     assertResolvesTo(PyClass.class, "MyClass");
   }
 
   // PY-20863
   public void testQuotedTypeReferenceInsideClass() {
-    assertResolvesTo(LanguageLevel.PYTHON30, PyClass.class, "MyClass");
+    assertResolvesTo(LanguageLevel.PYTHON34, PyClass.class, "MyClass");
   }
   
   // PY-20863
   public void testQuotedTypeReferenceInsideFunction() {
-    assertResolvesTo(LanguageLevel.PYTHON30, PyClass.class, "MyClass");
+    assertResolvesTo(LanguageLevel.PYTHON34, PyClass.class, "MyClass");
   }
   
   // PY-20863
   public void testQuotedTypeReferenceTopLevel() {
-    assertResolvesTo(LanguageLevel.PYTHON30, PyClass.class, "MyClass");
+    assertResolvesTo(LanguageLevel.PYTHON34, PyClass.class, "MyClass");
   }
 
   // PY-20377
@@ -93,4 +79,30 @@ public class PyInjectionResolveTest extends PyResolveTestCase {
   public void testFunctionTypeCommentReturnTypeReference() {
     assertResolvesTo(PyClass.class, "MyClass");
   }
+
+  // PY-61858
+  public void testNewStyleGenericClassBoundForwardReference() {
+    assertResolvesTo(PyClass.class, "MyClass");
+  }
+
+  // PY-61858
+  public void testNewStyleGenericFunctionBoundForwardReference() {
+    assertResolvesTo(PyClass.class, "MyClass");
+  }
+
+  // PY-61858
+  public void testNewStyleGenericTypeAliasForwardReference() {
+    assertResolvesTo(PyClass.class, "MyClass");
+  }
+
+  // PY-59986
+  public void testQuotedUnionTypeReferenceTopLevel() {
+    assertResolvesTo(PyClass.class, "int");
+  }
+
+  // PY-88670
+  public void testQuotedTypeReferenceInTypeVar() {
+    assertResolvesTo(PyClass.class, "int");
+  }
+
 }

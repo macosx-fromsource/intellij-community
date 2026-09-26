@@ -19,13 +19,12 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.impl.DebugUtil;
 import com.intellij.psi.impl.PsiManagerEx;
-import com.intellij.psi.impl.PsiManagerImpl;
 import com.intellij.psi.stubs.ObjectStubTree;
 import com.intellij.psi.stubs.StubTreeLoader;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.testFramework.TestDataFile;
 import com.intellij.testFramework.fixtures.JavaCodeInsightTestFixture;
-import com.intellij.testFramework.fixtures.LightCodeInsightFixtureTestCase;
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import com.intellij.util.xml.DomElement;
 import com.intellij.util.xml.DomFileDescription;
 import com.intellij.util.xml.DomFileElement;
@@ -35,15 +34,19 @@ import com.intellij.util.xml.stubs.model.Foo;
 
 /**
  * @author Dmitry Avdeev
- *         Date: 8/8/12
  */
-public abstract class DomStubTest extends LightCodeInsightFixtureTestCase {
+public abstract class DomStubTest extends LightJavaCodeInsightFixtureTestCase {
 
   private static final String HTTP_FOO_DTD = "http://foo.dtd";
-  private static final DomFileDescription<Foo> DOM_FILE_DESCRIPTION = new DomFileDescription<Foo>(Foo.class, "foo", HTTP_FOO_DTD) {
+  private static final DomFileDescription<Foo> DOM_FILE_DESCRIPTION = new DomFileDescription<>(Foo.class, "foo", HTTP_FOO_DTD) {
     @Override
     public boolean hasStubs() {
       return true;
+    }
+
+    @Override
+    public int getStubVersion() {
+      return 0;
     }
 
     @Override
@@ -58,7 +61,7 @@ public abstract class DomStubTest extends LightCodeInsightFixtureTestCase {
     StubTreeLoader loader = StubTreeLoader.getInstance();
     VirtualFile file = psiFile.getVirtualFile();
     assertTrue(loader.canHaveStub(file));
-    ObjectStubTree stubTree = loader.readFromVFile(fixture.getProject(), file);
+    ObjectStubTree<?> stubTree = loader.readFromVFile(fixture.getProject(), file);
     assertNotNull(stubTree);
     ElementStub root = (ElementStub)stubTree.getRoot();
     assertNotNull(root);
@@ -68,7 +71,7 @@ public abstract class DomStubTest extends LightCodeInsightFixtureTestCase {
   @Override
   public void setUp() throws Exception {
     super.setUp();
-    ((DomManagerImpl)DomManager.getDomManager(getProject())).registerFileDescription(DOM_FILE_DESCRIPTION, getTestRootDisposable());
+    ((DomManagerImpl)DomManager.getDomManager(getProject())).registerFileDescription(DOM_FILE_DESCRIPTION, myFixture.getTestRootDisposable());
   }
 
   @Override
@@ -98,10 +101,10 @@ public abstract class DomStubTest extends LightCodeInsightFixtureTestCase {
     assertNotNull(virtualFile);
     XmlFile file = (XmlFile)((PsiManagerEx)getPsiManager()).getFileManager().findFile(virtualFile);
     assertFalse(file.getNode().isParsed());
-    ObjectStubTree tree = StubTreeLoader.getInstance().readOrBuild(getProject(), virtualFile, file);
+    ObjectStubTree<?> tree = StubTreeLoader.getInstance().readOrBuild(getProject(), virtualFile, file);
     assertNotNull("Can't build stubs for " + path, tree);
 
-    ((PsiManagerImpl)getPsiManager()).cleanupForNextTest();
+    ((PsiManagerEx)getPsiManager()).cleanupForNextTest();
 
     file = (XmlFile)getPsiManager().findFile(virtualFile);
     assertNotNull(file);

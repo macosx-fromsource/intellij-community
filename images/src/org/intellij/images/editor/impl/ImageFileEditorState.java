@@ -18,6 +18,7 @@ package org.intellij.images.editor.impl;
 import com.intellij.openapi.fileEditor.FileEditorState;
 import com.intellij.openapi.fileEditor.FileEditorStateLevel;
 import com.intellij.openapi.fileEditor.TransferableFileEditorState;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.Serializable;
 import java.util.HashMap;
@@ -32,19 +33,22 @@ public class ImageFileEditorState implements TransferableFileEditorState, Serial
   public static final String BACKGROUND_VISIBLE_OPTION = "backgroundVisible";
   public static final String GRID_VISIBLE_OPTION = "gridVisible";
   public static final String ZOOM_FACTOR_OPTION = "zoomFactor";
+  public static final String ZOOM_FACTOR_CHANGED_OPTION = "zoomFactorChanged";
 
   private boolean backgroundVisible;
   private boolean gridVisible;
   private double zoomFactor;
+  private boolean zoomFactorChanged;
 
-  ImageFileEditorState(boolean backgroundVisible, boolean gridVisible, double zoomFactor) {
+  public ImageFileEditorState(boolean backgroundVisible, boolean gridVisible, double zoomFactor, boolean zoomFactorChanged) {
     this.backgroundVisible = backgroundVisible;
     this.gridVisible = gridVisible;
     this.zoomFactor = zoomFactor;
+    this.zoomFactorChanged = zoomFactorChanged;
   }
 
   @Override
-  public boolean canBeMergedWith(FileEditorState otherState, FileEditorStateLevel level) {
+  public boolean canBeMergedWith(@NotNull FileEditorState otherState, @NotNull FileEditorStateLevel level) {
     return otherState instanceof ImageFileEditorState;
   }
 
@@ -60,6 +64,15 @@ public class ImageFileEditorState implements TransferableFileEditorState, Serial
     return zoomFactor;
   }
 
+  public boolean isZoomFactorChanged() {
+    return zoomFactorChanged;
+  }
+
+  @Override
+  public void setCopiedFromMasterEditor() {
+    zoomFactorChanged = true;
+  }
+
   @Override
   public String getEditorId() {
     return IMAGE_EDITOR_ID;
@@ -71,6 +84,7 @@ public class ImageFileEditorState implements TransferableFileEditorState, Serial
     map.put(BACKGROUND_VISIBLE_OPTION, String.valueOf(backgroundVisible));
     map.put(GRID_VISIBLE_OPTION, String.valueOf(gridVisible));
     map.put(ZOOM_FACTOR_OPTION, String.valueOf(zoomFactor));
+    map.put(ZOOM_FACTOR_CHANGED_OPTION, String.valueOf(zoomFactorChanged));
     return map;
   }
 
@@ -78,17 +92,22 @@ public class ImageFileEditorState implements TransferableFileEditorState, Serial
   public void setTransferableOptions(Map<String, String> options) {
     String o = options.get(BACKGROUND_VISIBLE_OPTION);
     if (o != null) {
-      backgroundVisible = Boolean.valueOf(o);
+      backgroundVisible = Boolean.parseBoolean(o);
     }
 
     o = options.get(GRID_VISIBLE_OPTION);
     if (o != null) {
-      gridVisible = Boolean.valueOf(o);
+      gridVisible = Boolean.parseBoolean(o);
     }
 
     o = options.get(ZOOM_FACTOR_OPTION);
     if (o != null) {
       zoomFactor = Double.parseDouble(o);
+    }
+
+    o = options.get(ZOOM_FACTOR_CHANGED_OPTION);
+    if (o != null) {
+      zoomFactorChanged = Boolean.parseBoolean(o);
     }
   }
 }

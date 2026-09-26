@@ -1,1 +1,0 @@
-map(<weak_warning descr="Expected type 'Optional[(Any) -> Any]' (matched generic type 'Optional[(TypeVar('T')) -> TypeVar('V')]'), got 'str' instead">'foo'</weak_warning>, <weak_warning descr="Expected type 'Iterable' (matched generic type 'Iterable[TypeVar('T')]'), got '(c: Any) -> int' instead">lambda c: 42</weak_warning>)

@@ -1,77 +1,61 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.ui.impl.watch;
 
 import com.intellij.debugger.engine.evaluation.EvaluateException;
 import com.intellij.debugger.engine.evaluation.EvaluationContext;
-import com.intellij.debugger.engine.evaluation.EvaluationContextImpl;
 import com.intellij.debugger.impl.DebuggerContextImpl;
+import com.intellij.debugger.impl.DebuggerUtilsEx;
+import com.intellij.debugger.jdi.JvmtiError;
 import com.intellij.debugger.jdi.StackFrameProxyImpl;
-import com.intellij.debugger.ui.impl.nodes.NodeComparator;
-import com.intellij.debugger.ui.tree.DebuggerTreeNode;
 import com.intellij.debugger.ui.tree.NodeDescriptor;
 import com.intellij.debugger.ui.tree.NodeManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.util.StringBuilderSpinAllocator;
-import com.intellij.util.containers.HashMap;
+import com.intellij.openapi.util.NlsContexts;
+import com.sun.jdi.InternalException;
 import com.sun.jdi.Location;
 import com.sun.jdi.Method;
-import com.sun.jdi.ReferenceType;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
- ** finds correspondence between new descriptor and one created on the previous steps
- ** stores maximum  CACHED_STEPS steps
- ** call saveState function to start new step
+ * <ul>
+ * <li>finds correspondence between new descriptor and one created on the previous steps
+ * <li>stores maximum CACHED_STEPS steps
+ * <li>call saveState function to start new step
+ * </ul>
  */
-
-public class NodeManagerImpl extends NodeDescriptorFactoryImpl implements NodeManager{
-  private static final Comparator<DebuggerTreeNode> ourNodeComparator = new NodeComparator();
-
-  private final DebuggerTree myDebuggerTree;
+public class NodeManagerImpl extends NodeDescriptorFactoryImpl implements NodeManager {
   private String myHistoryKey = null;
   private final Map<String, DescriptorTree> myHistories = new HashMap<>();
 
-  public NodeManagerImpl(Project project, DebuggerTree tree) {
+  public NodeManagerImpl(Project project) {
     super(project);
-    myDebuggerTree = tree;
   }
 
-  public static Comparator<DebuggerTreeNode> getNodeComparator() {
-    return ourNodeComparator;
+  /**
+   * @deprecated Use {@link #NodeManagerImpl(Project)}.
+   */
+  @SuppressWarnings({"removal", "unused"})
+  @Deprecated(forRemoval = true)
+  public NodeManagerImpl(Project project, DebuggerTree tree) {
+    this(project);
   }
 
-  public DebuggerTreeNodeImpl createNode(NodeDescriptor descriptor, EvaluationContext evaluationContext) {
-    ((NodeDescriptorImpl)descriptor).setContext((EvaluationContextImpl)evaluationContext);
-    return DebuggerTreeNodeImpl.createNode(getTree(), (NodeDescriptorImpl)descriptor, (EvaluationContextImpl)evaluationContext);
-  }
-
-  public DebuggerTreeNodeImpl getDefaultNode() {
-    return DebuggerTreeNodeImpl.createNodeNoUpdate(getTree(), new DefaultNodeDescriptor());
+  @Override
+  public @NotNull DebuggerTreeNodeImpl createNode(NodeDescriptor descriptor, EvaluationContext evaluationContext) {
+    return new DebuggerTreeNodeImpl(descriptor);
   }
 
   public DebuggerTreeNodeImpl createMessageNode(MessageDescriptor descriptor) {
-    return DebuggerTreeNodeImpl.createNodeNoUpdate(getTree(), descriptor);
+    return new DebuggerTreeNodeImpl(descriptor);
   }
 
-  public DebuggerTreeNodeImpl createMessageNode(String message) {
-    return DebuggerTreeNodeImpl.createNodeNoUpdate(getTree(), new MessageDescriptor(message));
+  @Override
+  public @NotNull DebuggerTreeNodeImpl createMessageNode(@NlsContexts.Label String message) {
+    return new DebuggerTreeNodeImpl(new MessageDescriptor(message));
   }
 
   public void setHistoryByContext(final DebuggerContextImpl context) {
@@ -87,7 +71,7 @@ public class NodeManagerImpl extends NodeDescriptorFactoryImpl implements NodeMa
     final DescriptorTree descriptorTree;
     if (historyKey != null) {
       final DescriptorTree historyTree = myHistories.get(historyKey);
-      descriptorTree = (historyTree != null)? historyTree : new DescriptorTree(true);
+      descriptorTree = (historyTree != null) ? historyTree : new DescriptorTree(true);
     }
     else {
       descriptorTree = new DescriptorTree(true);
@@ -98,43 +82,35 @@ public class NodeManagerImpl extends NodeDescriptorFactoryImpl implements NodeMa
   }
 
 
-  @Nullable
-  public String getContextKey(final StackFrameProxyImpl frame) {
+  public @Nullable String getContextKey(final StackFrameProxyImpl frame) {
     return getContextKeyForFrame(frame);
   }
 
-  @Nullable
-  public static String getContextKeyForFrame(final StackFrameProxyImpl frame) {
+  public static @Nullable String getContextKeyForFrame(final StackFrameProxyImpl frame) {
     if (frame == null) {
       return null;
     }
     try {
       final Location location = frame.location();
-      final Method method = location.method();
-      final ReferenceType referenceType = location.declaringType();
-      final StringBuilder builder = StringBuilderSpinAllocator.alloc();
-      try {
-        return builder.append(referenceType.signature()).append("#").append(method.name()).append(method.signature()).toString();
+      final Method method = DebuggerUtilsEx.getMethod(location);
+      if (method == null) {
+        return null;
       }
-      finally {
-        StringBuilderSpinAllocator.dispose(builder);
+      return location.declaringType().signature() + "#" + method.name() + method.signature();
+    }
+    catch (EvaluateException ignored) {
+    }
+    catch (InternalException ie) {
+      if (ie.errorCode() != JvmtiError.INVALID_METHODID) {
+        throw ie;
       }
     }
-    catch (EvaluateException e) {
-      return null;
-    }
+    return null;
   }
 
+  @Override
   public void dispose() {
-    clearHistory();
-    super.dispose();
-  }
-
-  public void clearHistory() {
     myHistories.clear();
-  }
-
-  private DebuggerTree getTree() {
-    return myDebuggerTree;
+    super.dispose();
   }
 }

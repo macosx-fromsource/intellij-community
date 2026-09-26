@@ -1,52 +1,97 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.projectRoots.impl;
 
-import com.intellij.openapi.components.ServiceManager;
-import com.intellij.openapi.project.ProjectBundle;
+import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.java.JavaBundle;
+import com.intellij.openapi.application.Application;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.projectRoots.DefaultJdkConfigurator;
 import com.intellij.openapi.projectRoots.JavaSdk;
+import com.intellij.openapi.projectRoots.JdkUtil;
 import com.intellij.openapi.projectRoots.ProjectJdkTable;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.projectRoots.SdkTypeId;
+import com.intellij.util.CurrentJavaVersion;
 import com.intellij.util.SystemProperties;
-import org.jdom.Element;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.jps.model.java.JdkVersionDetector;
 
-public class JavaAwareProjectJdkTableImpl extends ProjectJdkTableImpl {
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
+
+public final class JavaAwareProjectJdkTableImpl extends ProjectJdkTableImpl {
+  private static final String DEFAULT_JDK_CONFIGURED = "defaultJdkConfigured";
+
   public static JavaAwareProjectJdkTableImpl getInstanceEx() {
-    return (JavaAwareProjectJdkTableImpl)ServiceManager.getService(ProjectJdkTable.class);
+    return (JavaAwareProjectJdkTableImpl)ProjectJdkTable.getInstance();
   }
 
-  private final JavaSdk myJavaSdk;
   private Sdk myInternalJdk;
 
-  public JavaAwareProjectJdkTableImpl(final JavaSdk javaSdk) {
-    myJavaSdk = javaSdk;
+  @RequiresEdt
+  @Override
+  public void preconfigure() {
+    PropertiesComponent propertiesComponent = PropertiesComponent.getInstance();
+    Application application = ApplicationManager.getApplication();
+    if (propertiesComponent.getBoolean(DEFAULT_JDK_CONFIGURED, false) || application.isUnitTestMode()) return;
+
+    try {
+      Sdk jdk = ProgressManager.getInstance().runProcessWithProgressSynchronously(
+        this::guessJdk, JavaBundle.message("progress.title.detecting.jdk"), true, null);
+      if (jdk != null) {
+        application.runWriteAction(() -> addJdk(jdk));
+      }
+    }
+    catch (ProcessCanceledException ignored) {
+    }
+    // If cancelled once, let's avoid subsequent attempts
+    // While this detection is usually fast, on some machines it could be slow for strange reasons.
+    // e.g., JAVA_HOME points to unreachable network drive. In this case, give up further attempts.
+    propertiesComponent.setValue(DEFAULT_JDK_CONFIGURED, true);
   }
 
-  public Sdk getInternalJdk() {
+  private @Nullable Sdk guessJdk() {
+    JavaSdk javaSdk = JavaSdk.getInstance();
+    List<Sdk> jdks = getSdksOfType(javaSdk);
+    if (!jdks.isEmpty()) return null;
+    String homePath = ApplicationManager.getApplication().getService(DefaultJdkConfigurator.class).guessJavaHome();
+    if (homePath == null || !javaSdk.isValidSdkHome(homePath)) return null;
+    String suggestedName = JdkUtil.suggestJdkName(javaSdk.getVersionString(homePath));
+    if (suggestedName == null) return null;
+    ProgressManager.checkCanceled();
+    return javaSdk.createJdk(suggestedName, homePath, false);
+  }
+
+  /**
+   * @deprecated Bundled JDK must not be used. See IDEA-225960
+   */
+  @Deprecated(forRemoval = true)
+  public @NotNull Sdk getInternalJdk() {
     if (myInternalJdk == null) {
-      final String jdkHome = SystemProperties.getJavaHome();
-      final String versionName = ProjectBundle.message("sdk.java.name.template", SystemProperties.getJavaVersion());
-      myInternalJdk = myJavaSdk.createJdk(versionName, jdkHome);
+      Path javaHome = Paths.get(SystemProperties.getJavaHome());
+      if (JdkUtil.checkForJre(javaHome) && !JdkUtil.checkForJdk(javaHome)) {
+        // handle situation like javaHome="<somewhere>/jdk1.8.0_212/jre" (see IDEA-226353)
+        Path javaHomeParent = javaHome.getParent();
+        if (javaHomeParent != null && JdkUtil.checkForJre(javaHomeParent) && JdkUtil.checkForJdk(javaHomeParent)) {
+          javaHome = javaHomeParent;
+        }
+      }
+
+      String versionName = JdkVersionDetector.formatVersionString(CurrentJavaVersion.currentJavaVersion());
+      myInternalJdk = JavaSdk.getInstance().createJdk(versionName, javaHome.toAbsolutePath().toString(), !JdkUtil.checkForJdk(javaHome));
     }
     return myInternalJdk;
   }
 
   @Override
-  public void removeJdk(final Sdk jdk) {
+  public void removeJdk(@NotNull Sdk jdk) {
     super.removeJdk(jdk);
     if (jdk.equals(myInternalJdk)) {
       myInternalJdk = null;
@@ -54,23 +99,17 @@ public class JavaAwareProjectJdkTableImpl extends ProjectJdkTableImpl {
   }
 
   @Override
-  public SdkTypeId getDefaultSdkType() {
-    return myJavaSdk;
+  public @NotNull SdkTypeId getDefaultSdkType() {
+    return JavaSdk.getInstance();
   }
 
-  @Override
-  public void loadState(final Element element) {
-    myInternalJdk = null;
-    try {
-      super.loadState(element);
-    }
-    finally {
-      getInternalJdk();
-    }
-  }
-
-  @Override
-  protected String getSdkTypeName(final String type) {
-    return type != null ? type : JavaSdk.getInstance().getName();
+  @TestOnly
+  public static void removeInternalJdkInTests() {
+    WriteAction.run(()-> {
+      JavaAwareProjectJdkTableImpl table = getInstanceEx();
+      if (table.myInternalJdk != null) {
+        table.removeJdk(table.myInternalJdk);
+      }
+    });
   }
 }

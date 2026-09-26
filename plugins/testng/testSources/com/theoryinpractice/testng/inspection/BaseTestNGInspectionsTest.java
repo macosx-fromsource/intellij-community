@@ -34,7 +34,7 @@ public abstract class BaseTestNGInspectionsTest extends JavaCodeInsightFixtureTe
   @NonNls private static final String AFTER = "after";
 
   @Override
-  protected void tuneFixture(JavaModuleFixtureBuilder moduleBuilder) throws Exception {
+  protected void tuneFixture(JavaModuleFixtureBuilder moduleBuilder) {
     moduleBuilder.setMockJdkLevel(JavaModuleFixtureBuilder.MockJdkLevel.jdk15);
     moduleBuilder.addLibrary("junit", PathUtil.getJarPathForClass(TestCase.class));
     moduleBuilder.addLibrary("testng", PathUtil.getJarPathForClass(AfterMethod.class));
@@ -47,6 +47,20 @@ public abstract class BaseTestNGInspectionsTest extends JavaCodeInsightFixtureTe
   }
 
   public void doTest() {
+    final String testName = getTestName(false);
+    IntentionAction resultAction = getAction();
+    myFixture.launchAction(resultAction);
+    myFixture.checkResultByFile(AFTER + testName + ".java");
+  }
+
+  public void doTestWithPreview() {
+    final String testName = getTestName(false);
+    IntentionAction resultAction = getAction();
+    myFixture.checkPreviewAndLaunchAction(resultAction);
+    myFixture.checkResultByFile(AFTER + testName + ".java");
+  }
+
+  private IntentionAction getAction() {
     IntentionAction resultAction = null;
     final String testName = getTestName(false);
     final String resultActionName = getActionName();
@@ -57,14 +71,12 @@ public abstract class BaseTestNGInspectionsTest extends JavaCodeInsightFixtureTe
       }
     }
     Assert.assertNotNull(resultAction, "action isn't found");
-    myFixture.launchAction(resultAction);
-    myFixture.checkResultByFile(AFTER + testName + ".java");
+    return resultAction;
   }
-
 
   protected abstract LocalInspectionTool getEnabledTool();
 
   protected String getActionName() {
     return getEnabledTool().getDisplayName();
-  };
+  }
 }

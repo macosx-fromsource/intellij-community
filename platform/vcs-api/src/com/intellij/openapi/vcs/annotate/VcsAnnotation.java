@@ -22,11 +22,6 @@ import com.intellij.openapi.vcs.history.VcsRevisionNumber;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * @author irengrig
- *         Date: 3/10/11
- *         Time: 4:22 PM
- */
 public class VcsAnnotation {
   private final FilePath myFilePath;
   private final VcsLineAnnotationData myBasicAnnotation;

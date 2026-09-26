@@ -1,27 +1,21 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.engine.requests;
 
+import com.intellij.debugger.JavaDebuggerBundle;
+import com.intellij.debugger.engine.DebugProcessImpl;
 import com.intellij.debugger.engine.DebuggerManagerThreadImpl;
+import com.intellij.debugger.impl.DebuggerUtilsAsync;
+import com.intellij.debugger.impl.DebuggerUtilsEx;
+import com.intellij.debugger.impl.DebuggerUtilsImpl;
 import com.intellij.debugger.settings.DebuggerSettings;
+import com.intellij.debugger.ui.overhead.OverheadProducer;
+import com.intellij.debugger.ui.overhead.OverheadTimings;
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.registry.Registry;
-import com.intellij.util.ArrayUtil;
-import com.sun.jdi.*;
+import com.sun.jdi.Method;
+import com.sun.jdi.ObjectCollectedException;
+import com.sun.jdi.ThreadReference;
+import com.sun.jdi.Value;
 import com.sun.jdi.event.Event;
 import com.sun.jdi.event.MethodEntryEvent;
 import com.sun.jdi.event.MethodExitEvent;
@@ -32,14 +26,11 @@ import com.sun.jdi.request.MethodExitRequest;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.lang.reflect.InvocationTargetException;
-
 /**
  * @author Eugene Zhuravlev
- *         Date: Nov 23, 2006
  */
-public class MethodReturnValueWatcher  {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.engine.requests.MethodReturnValueWatcher");
+public class MethodReturnValueWatcher {
+  private static final Logger LOG = Logger.getInstance(MethodReturnValueWatcher.class);
   private @Nullable Method myLastExecutedMethod;
   private @Nullable Value myLastMethodReturnValue;
 
@@ -48,14 +39,15 @@ public class MethodReturnValueWatcher  {
   private @Nullable Method myEntryMethod;
   private @Nullable MethodExitRequest myExitRequest;
 
-  private java.lang.reflect.Method myReturnValueMethod;
-  private volatile boolean myEnabled;
-  private boolean myFeatureEnabled;
+  private volatile boolean myTrackingEnabled;
   private final EventRequestManager myRequestManager;
+  private final DebugProcessImpl myProcess;
+  private final Overhead myOverhead;
 
-  public MethodReturnValueWatcher(EventRequestManager requestManager) {
+  public MethodReturnValueWatcher(EventRequestManager requestManager, DebugProcessImpl process) {
     myRequestManager = requestManager;
-    myFeatureEnabled = DebuggerSettings.getInstance().WATCH_RETURN_VALUES;
+    myProcess = process;
+    myOverhead = new Overhead(process);
   }
 
   private void processMethodExitEvent(MethodExitEvent event) {
@@ -63,31 +55,25 @@ public class MethodReturnValueWatcher  {
       LOG.debug("<- " + event.method());
     }
     try {
-      if (Registry.is("debugger.watch.return.speedup") && Comparing.equal(myEntryMethod, event.method())) {
-        LOG.debug("Now watching all");
-        enableEntryWatching(true);
-        createExitRequest().enable();
+      if (myEntryMethod != null) {
+        // first check declaring type to avoid method calculation in some cases
+        if (myEntryMethod.declaringType().equals(event.location().declaringType()) && myEntryMethod.equals(event.method())) {
+          LOG.debug("Now watching all");
+          enableEntryWatching(true);
+          myEntryMethod = null;
+          DebuggerUtilsAsync.setEnabled(createExitRequest(), true);
+        }
+        else {
+          return;
+        }
       }
       final Method method = event.method();
-      //myLastMethodReturnValue = event.returnValue();
-      try {
-        if (myReturnValueMethod == null) {
-          //noinspection HardCodedStringLiteral
-          myReturnValueMethod = MethodExitEvent.class.getDeclaredMethod("returnValue", ArrayUtil.EMPTY_CLASS_ARRAY);
-        }
-        final Value retVal = (Value)myReturnValueMethod.invoke(event);
-        
-        if (method == null || !"void".equals(method.returnTypeName())) {
-          // remember methods with non-void return types only
-          myLastExecutedMethod = method;
-          myLastMethodReturnValue = retVal;
-        }
-      }
-      catch (NoSuchMethodException ignored) {
-      }
-      catch (IllegalAccessException ignored) {
-      }
-      catch (InvocationTargetException ignored) {
+      final Value retVal = event.returnValue();
+
+      if (method == null || !DebuggerUtilsEx.isVoid(method)) {
+        // remember methods with non-void return types only
+        myLastExecutedMethod = method;
+        myLastMethodReturnValue = retVal;
       }
     }
     catch (UnsupportedOperationException ex) {
@@ -100,11 +86,11 @@ public class MethodReturnValueWatcher  {
       LOG.debug("-> " + event.method());
     }
     try {
-      if (myEntryRequest != null && myEntryRequest.isEnabled()) {
+      if (myEntryRequest != null && myEntryRequest.isEnabled() && myEntryMethod == null) {
         myExitRequest = createExitRequest();
-        myExitRequest.addClassFilter(event.method().declaringType());
+        myExitRequest.addClassFilter(event.location().declaringType());
         myEntryMethod = event.method();
-        myExitRequest.enable();
+        DebuggerUtilsAsync.setEnabled(myExitRequest, true);
 
         if (LOG.isDebugEnabled()) {
           LOG.debug("Now watching only " + event.method());
@@ -113,54 +99,49 @@ public class MethodReturnValueWatcher  {
         enableEntryWatching(false);
       }
     }
-    catch (VMDisconnectedException e) {
-      throw e;
-    }
     catch (Exception e) {
-      LOG.error(e);
+      DebuggerUtilsImpl.logError(e);
     }
   }
 
   private void enableEntryWatching(boolean enable) {
     if (myEntryRequest != null) {
-      myEntryRequest.setEnabled(enable);
+      DebuggerUtilsAsync.setEnabled(myEntryRequest, enable);
     }
   }
 
-  @Nullable
-  public Method getLastExecutedMethod() {
+  public @Nullable Method getLastExecutedMethod() {
     return myLastExecutedMethod;
   }
 
-  @Nullable
-  public Value getLastMethodReturnValue() {
+  public @Nullable Value getLastMethodReturnValue() {
     return myLastMethodReturnValue;
   }
 
-  public boolean isFeatureEnabled() {
-    return myFeatureEnabled;
+  private static boolean isEnabled() {
+    return DebuggerSettings.getInstance().WATCH_RETURN_VALUES;
   }
 
-  public boolean isEnabled() {
-    return myEnabled;
-  }
-
-  public void setFeatureEnabled(final boolean featureEnabled) {
-    myFeatureEnabled = featureEnabled;
+  public void setEnabled(final boolean enabled) {
+    DebuggerSettings.getInstance().WATCH_RETURN_VALUES = enabled;
     clear();
+  }
+
+  public boolean isTrackingEnabled() {
+    return myTrackingEnabled;
   }
 
   public void enable(ThreadReference thread) {
     setTrackingEnabled(true, thread);
   }
-  
+
   public void disable() {
     setTrackingEnabled(false, null);
   }
-  
+
   private void setTrackingEnabled(boolean trackingEnabled, final ThreadReference thread) {
-    myEnabled = trackingEnabled;
-    updateRequestState(trackingEnabled && myFeatureEnabled, thread);
+    myTrackingEnabled = trackingEnabled;
+    updateRequestState(trackingEnabled && isEnabled(), thread);
   }
 
   public void clear() {
@@ -169,25 +150,24 @@ public class MethodReturnValueWatcher  {
     myThread = null;
   }
 
-  private void updateRequestState(final boolean enabled, @Nullable final ThreadReference thread) {
+  private void updateRequestState(final boolean enabled, final @Nullable ThreadReference thread) {
     DebuggerManagerThreadImpl.assertIsManagerThread();
     try {
       if (myEntryRequest != null) {
-        myRequestManager.deleteEventRequest(myEntryRequest);
+        DebuggerUtilsAsync.deleteEventRequest(myRequestManager, myEntryRequest);
         myEntryRequest = null;
       }
       if (myExitRequest != null) {
-        myRequestManager.deleteEventRequest(myExitRequest);
+        DebuggerUtilsAsync.deleteEventRequest(myRequestManager, myExitRequest);
         myExitRequest = null;
       }
       if (enabled) {
+        OverheadTimings.add(myProcess, myOverhead, 1, null);
         clear();
         myThread = thread;
 
-        if (Registry.is("debugger.watch.return.speedup")) {
-          createEntryRequest().enable();
-        }
-        createExitRequest().enable();
+        DebuggerUtilsAsync.setEnabled(createEntryRequest(), true);
+        DebuggerUtilsAsync.setEnabled(createExitRequest(), true);
       }
     }
     catch (ObjectCollectedException ignored) {
@@ -202,25 +182,23 @@ public class MethodReturnValueWatcher  {
     return myEntryRequest;
   }
 
-  @NotNull
-  private MethodExitRequest createExitRequest() {
+  private @NotNull MethodExitRequest createExitRequest() {
     DebuggerManagerThreadImpl.assertIsManagerThread(); // to ensure EventRequestManager synchronization
     if (myExitRequest != null) {
-      myRequestManager.deleteEventRequest(myExitRequest);
+      DebuggerUtilsAsync.deleteEventRequest(myRequestManager, myExitRequest);
     }
     myExitRequest = prepareRequest(myRequestManager.createMethodExitRequest());
     return myExitRequest;
   }
 
-  @NotNull
-  private <T extends EventRequest> T prepareRequest(T request) {
-    request.setSuspendPolicy(Registry.is("debugger.watch.return.speedup") ? EventRequest.SUSPEND_EVENT_THREAD : EventRequest.SUSPEND_NONE);
+  private @NotNull <T extends EventRequest> T prepareRequest(T request) {
+    request.setSuspendPolicy(EventRequest.SUSPEND_EVENT_THREAD);
     if (myThread != null) {
-      if (request instanceof MethodEntryRequest) {
-        ((MethodEntryRequest)request).addThreadFilter(myThread);
+      if (request instanceof MethodEntryRequest entryRequest) {
+        entryRequest.addThreadFilter(myThread);
       }
-      else if (request instanceof MethodExitRequest) {
-        ((MethodExitRequest)request).addThreadFilter(myThread);
+      else if (request instanceof MethodExitRequest exitRequest) {
+        exitRequest.addThreadFilter(myThread);
       }
     }
     request.putProperty(WATCHER_REQUEST_KEY, true);
@@ -233,12 +211,37 @@ public class MethodReturnValueWatcher  {
       return false;
     }
 
-    if (event instanceof MethodEntryEvent) {
-      processMethodEntryEvent(((MethodEntryEvent)event));
+    if (event instanceof MethodEntryEvent entryEvent) {
+      processMethodEntryEvent(entryEvent);
     }
-    else if (event instanceof MethodExitEvent) {
-      processMethodExitEvent(((MethodExitEvent)event));
+    else if (event instanceof MethodExitEvent exitEvent) {
+      processMethodExitEvent(exitEvent);
     }
     return true;
+  }
+
+  static class Overhead implements OverheadProducer {
+    private final DebugProcessImpl myProcess;
+
+    Overhead(DebugProcessImpl process) {
+      myProcess = process;
+    }
+
+    @Override
+    public boolean isEnabled() {
+      return MethodReturnValueWatcher.isEnabled();
+    }
+
+    @Override
+    public void setEnabled(final boolean enabled) {
+      myProcess.setWatchMethodReturnValuesEnabled(enabled);
+    }
+
+    @Override
+    public @NotNull OverheadProducer.Presentation computePresentation() {
+      return new OverheadProducer.Presentation(
+        JavaDebuggerBundle.message("action.watches.method.return.value.enable"),
+        AllIcons.Debugger.WatchLastReturnValue);
+    }
   }
 }

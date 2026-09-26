@@ -1,160 +1,145 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/*
- * User: anna
- * Date: 09-Jul-2007
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.util.newProjectWizard;
 
-import com.intellij.ide.IdeBundle;
-import com.intellij.ide.util.newProjectWizard.modes.ImportMode;
-import com.intellij.ide.util.newProjectWizard.modes.WizardMode;
+import com.intellij.ide.JavaUiBundle;
 import com.intellij.ide.util.projectWizard.ModuleWizardStep;
 import com.intellij.ide.util.projectWizard.ProjectBuilder;
 import com.intellij.ide.util.projectWizard.WizardContext;
-import com.intellij.ide.wizard.Step;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.ProjectJdkTable;
 import com.intellij.openapi.projectRoots.Sdk;
-import com.intellij.openapi.roots.ui.configuration.DefaultModulesProvider;
-import com.intellij.openapi.roots.ui.configuration.ModulesProvider;
-import com.intellij.projectImport.ProjectImportBuilder;
+import com.intellij.openapi.projectRoots.SdkTypeId;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.projectImport.ImportChooserStep;
 import com.intellij.projectImport.ProjectImportProvider;
-import com.intellij.util.Function;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
-import java.awt.*;
+import java.awt.Component;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+
+import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.mapping;
+import static java.util.stream.Collectors.toList;
 
 public class AddModuleWizard extends AbstractProjectWizard {
-  private static final String ADD_MODULE_TITLE = IdeBundle.message("title.add.module");
-  private static final String NEW_PROJECT_TITLE = IdeBundle.message("title.new.project");
-  private ProjectImportProvider[] myImportProviders;
-  private final ModulesProvider myModulesProvider;
-  private WizardMode myWizardMode;
+
+  private final @NotNull List<ProjectImportProvider> myImportProviders;
+  private final @NotNull StepSequence myStepSequence;
 
   /**
-   * @param project if null, the wizard will start creating new project, otherwise will add a new module to the existing project.
+   * @param project if null, the wizard will start creating a new project, otherwise will add a new module to the existing project.
    */
-  public AddModuleWizard(@Nullable Project project, String filePath, ProjectImportProvider... importProviders) {
+  public AddModuleWizard(
+    @Nullable Project project,
+    @NotNull String filePath,
+    ProjectImportProvider... importProviders
+  ) {
     super(getImportWizardTitle(project, importProviders), project, filePath);
-    myImportProviders = importProviders;
-    myModulesProvider = DefaultModulesProvider.createForProject(project);
-    initModuleWizard(project, filePath);
+    myImportProviders = Arrays.asList(importProviders);
+    myStepSequence = createStepSequence(myImportProviders, myWizardContext);
+    initModuleWizard(filePath);
   }
 
   /**
-   * @param project if null, the wizard will start creating new project, otherwise will add a new module to the existing project.
+   * @param project if null, the wizard will start creating a new project, otherwise will add a new module to the existing project.
    */
-  public AddModuleWizard(Project project, Component dialogParent, String filePath, ProjectImportProvider... importProviders) {
+  public AddModuleWizard(
+    @Nullable Project project,
+    @NotNull Component dialogParent,
+    @NotNull String filePath,
+    ProjectImportProvider... importProviders
+  ) {
     super(getImportWizardTitle(project, importProviders), project, dialogParent);
-    myImportProviders = importProviders;
-    myModulesProvider = DefaultModulesProvider.createForProject(project);
-    initModuleWizard(project, filePath);
+    myImportProviders = Arrays.asList(importProviders);
+    myStepSequence = createStepSequence(myImportProviders, myWizardContext);
+    initModuleWizard(filePath);
   }
 
-  private static String getImportWizardTitle(Project project, ProjectImportProvider... providers) {
-    StringBuilder builder = new StringBuilder("Import ");
-    builder.append(project == null ? "Project" : "Module");
-    if (providers.length == 1) {
-      builder.append(" from ").append(providers[0].getName());
+  private static @NlsContexts.DialogTitle String getImportWizardTitle(Project project, ProjectImportProvider... providers) {
+    int isProject = project == null ? 0 : 1;
+    if (providers.length != 1) {
+      return JavaUiBundle.message("module.wizard.dialog.title", isProject, 0, null);
     }
-    return builder.toString();
+    return JavaUiBundle.message("module.wizard.dialog.title", isProject, 1, providers[0].getName());
   }
 
-  private void initModuleWizard(@Nullable final Project project, @Nullable final String defaultPath) {
+  private void initModuleWizard(@NotNull String defaultPath) {
     myWizardContext.addContextListener(new WizardContext.Listener() {
+      @Override
       public void buttonsUpdateRequested() {
         updateButtons();
       }
 
+      @Override
       public void nextStepRequested() {
-        doNextAction();
+        proceedToNextStep();
       }
     });
 
-    myWizardMode = new ImportMode(myImportProviders);
-    StepSequence sequence = myWizardMode.getSteps(myWizardContext, DefaultModulesProvider.createForProject(project));
-    appendSteps(sequence);
+    for (ModuleWizardStep step : myStepSequence.getAllSteps()) {
+      addStep(step);
+    }
     for (ProjectImportProvider provider : myImportProviders) {
       provider.getBuilder().setFileToImport(defaultPath);
     }
-    if (myImportProviders.length == 1) {
-      final ProjectImportBuilder builder = myImportProviders[0].getBuilder();
+    if (myImportProviders.size() == 1) {
+      var builder = myImportProviders.get(0).getBuilder();
       myWizardContext.setProjectBuilder(builder);
       builder.setUpdate(getWizardContext().getProject() != null);
     }
     init();
   }
 
-  private void appendSteps(@Nullable final StepSequence sequence) {
-    if (sequence != null) {
-      for (ModuleWizardStep step : sequence.getAllSteps()) {
-        addStep(step);
-      }
+  private static @NotNull StepSequence createStepSequence(
+    @NotNull List<ProjectImportProvider> importProviders,
+    @NotNull WizardContext context
+  ) {
+    var stepSequence = new StepSequence();
+    if (importProviders.size() > 1) {
+      stepSequence.addCommonStep(new ImportChooserStep(importProviders, stepSequence, context));
     }
+    for (ProjectImportProvider provider : importProviders) {
+      provider.addSteps(stepSequence, context, provider.getId());
+    }
+    if (importProviders.size() == 1) {
+      stepSequence.setType(importProviders.get(0).getId());
+    }
+    return stepSequence;
   }
 
   @Override
   public StepSequence getSequence() {
-    return myWizardMode.getSteps(myWizardContext, myModulesProvider);
+    return myStepSequence;
   }
 
-  @Nullable
-  public static Sdk getMostRecentSuitableSdk(final WizardContext context) {
+  public static @Nullable Sdk getMostRecentSuitableSdk(final WizardContext context) {
     if (context.getProject() == null) {
-      @Nullable final ProjectBuilder projectBuilder = context.getProjectBuilder();
-      return ProjectJdkTable.getInstance().findMostRecentSdk(
-        sdk -> projectBuilder == null || projectBuilder.isSuitableSdkType(sdk.getSdkType()));
-    }
-    return null;
-  }
+      List<Sdk> sdks = Arrays.asList(ProjectJdkTable.getInstance().getAllJdks());
 
-  @NotNull
-  public WizardContext getWizardContext() {
-    return myWizardContext;
+      ProjectBuilder builder = context.getProjectBuilder();
+      if (builder != null) {
+        sdks = ContainerUtil.filter(sdks, sdk -> builder.isSuitableSdkType(sdk.getSdkType()));
+      }
+
+      Map<SdkTypeId, List<Sdk>> sdksByType = sdks.stream().collect(groupingBy(Sdk::getSdkType, mapping(Function.identity(), toList())));
+      Map.Entry<SdkTypeId, List<Sdk>> pair = ContainerUtil.getFirstItem(sdksByType.entrySet());
+      if (pair != null) {
+        return pair.getValue().stream().max(pair.getKey().versionComparator()).orElse(null);
+      }
+    }
+
+    return null;
   }
 
   @Override
   protected String getDimensionServiceKey() {
     return "NewModule_or_Project.wizard";
-  }
-
-  /**
-   * Allows to ask current wizard to move to the desired step.
-   *
-   * @param filter  closure that allows to indicate target step - is called with each of registered steps and is expected
-   *                to return <code>true</code> for the step to go to
-   * @return        <code>true</code> if current wizard is navigated to the target step; <code>false</code> otherwise
-   */
-  public boolean navigateToStep(@NotNull Function<Step, Boolean> filter) {
-    for (int i = 0, myStepsSize = mySteps.size(); i < myStepsSize; i++) {
-      ModuleWizardStep step = mySteps.get(i);
-      if (filter.fun(step) != Boolean.TRUE) {
-        continue;
-      }
-
-      // Update current step.
-      myCurrentStep = i;
-      updateStep();
-      return true;
-    }
-    return false;
   }
 
   @TestOnly

@@ -1,10 +1,10 @@
-// "Replace Collections.singleton().stream() with Stream.of()" "true"
+// "Replace Collections.singleton().stream() with Stream.of()" "true-preview"
 
 import java.util.*;
 import java.util.stream.Stream;
 
 class CollectionSingletonArrayStream {
   Stream<String[]> stream(String[] args) {
-    return Col<caret>lections.singleton(args).stream();
+    return Collections.singleton(args).str<caret>eam();
   }
 }

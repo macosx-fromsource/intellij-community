@@ -1,37 +1,18 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch;
 
 import com.intellij.dupLocator.equivalence.EquivalenceDescriptorProvider;
-import com.intellij.idea.Bombed;
+import com.intellij.structuralsearch.groovy.GroovyStructuralSearchProfile;
 import org.jetbrains.plugins.groovy.GroovyFileType;
 
-import java.util.Calendar;
-import java.util.List;
-
-/**
- * @author Eugene.Kudelevsky
- */
 public class GroovyStructuralSearchTest extends StructuralSearchTestCase {
 
-  public void test1() throws Exception {
-    String s = "def int x = 0;\n" +
-               "def y = 0;\n" +
-               "int z = 10;\n" +
-               "def int x1";
+  public void test1() {
+    String s = """
+      def int x = 0;
+      def y = 0;
+      int z = 10;
+      def int x1""";
 
     doTest(s, "def $x$ = $value$;", 3, 1);
     doTest(s, "def $x$", 4, 3);
@@ -42,17 +23,18 @@ public class GroovyStructuralSearchTest extends StructuralSearchTestCase {
     doTest(s, "int $x$ = $value$", 2, 2);
   }
 
-  public void test2() throws Exception {
-    String s = "def void f(int x) {}\n" +
-               "def f(int x) {\n" +
-               "  System.out.println(\"hello\");\n" +
-               "}\n" +
-               "def f(def x) {}\n" +
-               "void g(x) {}\n" +
-               "public def void f(def int y) {\n" +
-               "  System.out.println(\"hello\");\n" +
-               "}\n" +
-               "def int f() {}";
+  public void test2() {
+    String s = """
+      def void f(int x) {}
+      def f(int x) {
+        System.out.println("hello");
+      }
+      def f(def x) {}
+      void g(x) {}
+      public def void f(def int y) {
+        System.out.println("hello");
+      }
+      def int f() {}""";
 
     doTest(s, "def $f$($param$)", 5, 2);
     doTest(s, "def $f$($param$) {}", 3, 1);
@@ -70,13 +52,14 @@ public class GroovyStructuralSearchTest extends StructuralSearchTestCase {
     doTest(s, "def '_T1('_T2*) {'_T3*}", 6, 1);
   }
 
-  public void test3() throws Exception {
-    String s = "public class C implements I1, I2 {\n" +
-               "  void f() {\n" +
-               "    def a = 1;\n" +
-               "    def int b = 2;\n" +
-               "  }\n" +
-               "}";
+  public void test3() {
+    String s = """
+      public class C implements I1, I2 {
+        void f() {
+          def a = 1;
+          def int b = 2;
+        }
+      }""";
 
     doTest(s, "class $name$", 1, 1);
     doTest(s, "class $name$ implements I1, I2", 1, 1);
@@ -89,64 +72,71 @@ public class GroovyStructuralSearchTest extends StructuralSearchTestCase {
     doTest(s, "def a = 1\n def b = 2", 1, 0);
   }
 
-  public void test4() throws Exception {
-    String s = "for (a in list) {\n" +
-               "  println(\"hello1\");\n" +
-               "  println(\"hello2\");\n" +
-               "}";
-    doTest(s, "for ($a$ in $b$) {\n" +
-              "  $st1$;\n" +
-              "  $st2$\n" +
-              "}", 1, 0);
-    doTest(s, "for ($a$ in $b$) {\n" +
-              "  $st1$;\n" +
-              "  $st2$;\n" +
-              "}", 1, 1);
-    doTest(s, "for ($a$ in $b$) {\n" +
-              "  $st1$\n" +
-              "  $st2$\n" +
-              "}", 1, 0);
-    doTest(s, "for ($a$ in $b$) {\n" +
-              "  $st$\n" +
-              "}", 0, 0);
-    doTest(s, "for ($a$ in $b$) {\n" +
-              "  '_T*\n" +
-              "}", 1, 0);
-    doTest(s, "for ($a$ in $b$) {\n" +
-              "  '_T+\n" +
-              "}", 1, 0);
+  public void test4() {
+    String s = """
+      for (a in list) {
+        println("hello1");
+        println("hello2");
+      }""";
+    doTest(s, """
+      for ($a$ in $b$) {
+        $st1$;
+        $st2$
+      }""", 1, 0);
+    doTest(s, """
+      for ($a$ in $b$) {
+        $st1$;
+        $st2$;
+      }""", 1, 1);
+    doTest(s, """
+      for ($a$ in $b$) {
+        $st1$
+        $st2$
+      }""", 1, 0);
+    doTest(s, """
+      for ($a$ in $b$) {
+        $st$
+      }""", 0, 0);
+    doTest(s, """
+      for ($a$ in $b$) {
+        '_T*
+      }""", 1, 0);
+    doTest(s, """
+      for ($a$ in $b$) {
+        '_T+
+      }""", 1, 0);
   }
 
   public void test5() {
-    String s = "class A {\n" +
-               "  def f = {\n" +
-               "    println('Hello1')\n" +
-               "    println('Hello2')\n" +
-               "  }\n" +
-               "  def f1 = {\n" +
-               "    println('Hello')\n" +
-               "  }\n" +
-               "}";
-    doTest(s, "def $name$ = {\n" +
-              "  '_T+\n" +
-              "}", 0, 0);
-    final String old = options.getPatternContext();
+    String s = """
+      class A {
+        def f = {
+          println('Hello1')
+          println('Hello2')
+        }
+        def f1 = {
+          println('Hello')
+        }
+      }""";
+    doTest(s, """
+      def $name$ = {
+        '_T+
+      }""", 0, 0);
+    final PatternContext old = options.getPatternContext();
     try {
       options.setPatternContext(GroovyStructuralSearchProfile.CLASS_CONTEXT);
-      doTest(s, "def $name$ = {\n" +
-                    "  '_T+\n" +
-                    "}", 2, 2);
+      doTest(s, """
+        def $name$ = {
+          '_T+
+        }""", 2, 2);
     }
     finally {
       options.setPatternContext(old);
     }
   }
 
-  private void doTest(String source,
-                      String pattern,
-                      int expectedOccurences,
-                      int expectedWithDefaultEquivalence) {
-    findAndCheck(source, pattern, expectedOccurences);
+  private void doTest(String source, String pattern, int expectedOccurrences, int expectedWithDefaultEquivalence) {
+    findAndCheck(source, pattern, expectedOccurrences);
     try {
       EquivalenceDescriptorProvider.ourUseDefaultEquivalence = true;
       findAndCheck(source, pattern, expectedWithDefaultEquivalence);
@@ -156,10 +146,7 @@ public class GroovyStructuralSearchTest extends StructuralSearchTestCase {
     }
   }
 
-  private void findAndCheck(String source, String pattern, int expectedOccurences) {
-    testMatcher.clearContext();
-    final List<MatchResult> matches =
-      findMatches(source, pattern, true, GroovyFileType.GROOVY_FILE_TYPE, null, GroovyFileType.GROOVY_FILE_TYPE, null, false);
-    assertEquals(expectedOccurences, matches.size());
+  private void findAndCheck(String source, String pattern, int expectedOccurrences) {
+    assertEquals(expectedOccurrences, findMatchesCount(source, pattern, GroovyFileType.GROOVY_FILE_TYPE));
   }
 }

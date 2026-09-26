@@ -1,28 +1,15 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.containers;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 
 /**
- * Implementation of the {@link List} interface which:
+ * Implementation of the {@link Collection} interface which:
  * <ul>
  *   <li>Stores elements using weak semantics (see {@link java.lang.ref.WeakReference})</li>
  *   <li>Automatically reclaims storage for garbage collected elements</li>
@@ -30,8 +17,17 @@ import java.util.List;
  *   <li>Is NOT RandomAccess, because garbage collector can remove element at any time</li>
  *   <li>Does NOT support null elements</li>
  * </ul>
+ * Please note that since weak references can be collected at any time, index-based methods (like get(index))
+ * or size-based methods (like size()) are dangerous, misleading, error-inducing and are not supported.
+ * Instead, please use {@link #add(T)} and {@link #iterator()}.
  */
-public class WeakList<T> extends UnsafeWeakList<T> {
+public final class WeakList<T> extends UnsafeWeakList<T> {
+  public WeakList() {
+  }
+  public WeakList(int initialCapacity) {
+    super(initialCapacity);
+  }
+
   @Override
   public boolean add(@NotNull T element) {
     synchronized (myList) {
@@ -89,8 +85,7 @@ public class WeakList<T> extends UnsafeWeakList<T> {
   }
 
   @Override
-  @NotNull
-  public Iterator<T> iterator() {
+  public @NotNull Iterator<@NotNull T> iterator() {
     final Iterator<T> iterator;
     synchronized (myList) {
       iterator = super.iterator();
@@ -119,16 +114,14 @@ public class WeakList<T> extends UnsafeWeakList<T> {
     };
   }
 
-  @NotNull
   @Override
-  public List<T> toStrongList() {
+  public @NotNull @Unmodifiable List<@NotNull T> toStrongList() {
     synchronized (myList) {
       return super.toStrongList();
     }
   }
 
-  @NotNull
-  public List<T> copyAndClear() {
+  public @NotNull @Unmodifiable List<@NotNull T> copyAndClear() {
     synchronized (myList) {
       List<T> result = toStrongList();
       clear();

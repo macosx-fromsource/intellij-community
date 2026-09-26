@@ -32,16 +32,18 @@ import org.intellij.lang.xpath.validation.inspections.quickfix.RemoveRedundantCo
 import org.intellij.lang.xpath.validation.inspections.quickfix.XPathQuickFixFactory;
 import org.intellij.lang.xpath.xslt.associations.impl.FileAssociationsConfigurable;
 import org.intellij.lang.xpath.xslt.validation.inspections.InspectionUtil;
+import org.intellij.plugins.xpathView.XPathBundle;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-public class XsltQuickFixFactory implements XPathQuickFixFactory {
+public final class XsltQuickFixFactory implements XPathQuickFixFactory {
     public static final XsltQuickFixFactory INSTANCE = new XsltQuickFixFactory();
 
     private XsltQuickFixFactory() {
     }
 
+    @Override
     public Fix<XPathExpression>[] createImplicitTypeConversionFixes(XPathExpression expression, XPathType type, boolean explicit) {
         //noinspection unchecked
         return explicit ? new Fix[]{
@@ -53,6 +55,7 @@ public class XsltQuickFixFactory implements XPathQuickFixFactory {
     }
 
 
+    @Override
     public Fix<XPathExpression>[] createRedundantTypeConversionFixes(XPathExpression expression) {
         //noinspection unchecked
         return new Fix[]{
@@ -60,6 +63,7 @@ public class XsltQuickFixFactory implements XPathQuickFixFactory {
         };
     }
 
+    @Override
     public Fix<XPathNodeTest>[] createUnknownNodeTestFixes(XPathNodeTest test) {
         //noinspection unchecked
         return new Fix[]{
@@ -67,37 +71,40 @@ public class XsltQuickFixFactory implements XPathQuickFixFactory {
         };
     }
 
-    @NotNull
-    public SuppressIntentionAction[] getSuppressActions(XPathInspection inspection) {
+    @Override
+    public SuppressIntentionAction @NotNull [] getSuppressActions(XPathInspection inspection) {
         final List<SuppressIntentionAction> actions = InspectionUtil.getSuppressActions(inspection, true);
-        return actions.toArray(new SuppressIntentionAction[actions.size()]);
+        return actions.toArray(SuppressIntentionAction.EMPTY_ARRAY);
     }
 
+    @Override
     public boolean isSuppressedFor(PsiElement element, XPathInspection inspection) {
         return InspectionUtil.isSuppressed(inspection, element);
     }
 
     private static class EditAssociationsFix extends Fix<XPathNodeTest> {
-        public EditAssociationsFix(XPathNodeTest test) {
+        EditAssociationsFix(XPathNodeTest test) {
             super(test);
         }
 
+        @Override
         public boolean startInWriteAction() {
             return false;
         }
 
+        @Override
         protected void invokeImpl(final Project project, final PsiFile file) throws IncorrectOperationException {
             FileAssociationsConfigurable.editAssociations(project, PsiTreeUtil.getContextOfType(file, XmlFile.class, false));
         }
 
-        @NotNull
-        public String getText() {
-            return "Edit File Associations";
+        @Override
+        public @NotNull String getText() {
+            return getFamilyName();
         }
 
-        @NotNull
-        public String getFamilyName() {
-            return "Edit File Associations";
+        @Override
+        public @NotNull String getFamilyName() {
+            return XPathBundle.message("intention.family.name.edit.file.associations");
         }
     }
 }

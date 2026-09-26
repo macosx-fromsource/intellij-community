@@ -1,110 +1,72 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.UriUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.tmatesoft.svn.core.SVNURL;
+import org.jetbrains.idea.svn.api.Url;
 
 import java.io.File;
 
-public class RootUrlInfo implements RootUrlPair {
+public final class RootUrlInfo implements RootUrlPair {
 
-  @NotNull private final String myRepositoryUrl;
-  @NotNull private final WorkingCopyFormat myFormat;
-  @NotNull private final Node myNode;
+  private final @NotNull WorkingCopyFormat myFormat;
+  private final @NotNull Node myNode;
   // vcs root
-  @NotNull private final VirtualFile myRoot;
-  @Nullable private volatile NestedCopyType myType;
+  private final @NotNull VirtualFile myRoot;
+  private volatile @Nullable NestedCopyType myType;
 
-  public RootUrlInfo(@NotNull final Node node, @NotNull final WorkingCopyFormat format, @NotNull final VirtualFile root) {
+  public RootUrlInfo(final @NotNull Node node, final @NotNull WorkingCopyFormat format, final @NotNull VirtualFile root) {
     this(node, format, root, null);
   }
 
-  public RootUrlInfo(@NotNull final Node node,
-                     @NotNull final WorkingCopyFormat format,
-                     @NotNull final VirtualFile root,
-                     @Nullable final NestedCopyType type) {
+  public RootUrlInfo(final @NotNull Node node,
+                     final @NotNull WorkingCopyFormat format,
+                     final @NotNull VirtualFile root,
+                     final @Nullable NestedCopyType type) {
     myNode = node;
     myFormat = format;
     myRoot = root;
-    myRepositoryUrl = UriUtil.trimTrailingSlashes(node.getRepositoryRootUrl().toString());
     myType = type;
   }
 
-  @NotNull
-  public Node getNode() {
+  public @NotNull Node getNode() {
     return myNode;
   }
 
-  @NotNull
-  public String getRepositoryUrl() {
-    return myRepositoryUrl;
-  }
-
-  @NotNull
-  public SVNURL getRepositoryUrlUrl() {
+  public @NotNull Url getRepositoryUrl() {
     return myNode.getRepositoryRootUrl();
   }
 
-  @NotNull
-  public String getAbsoluteUrl() {
-    return getAbsoluteUrlAsUrl().toString();
-  }
-
-  @NotNull
-  public SVNURL getAbsoluteUrlAsUrl() {
-    return myNode.getUrl();
-  }
-
-  @NotNull
-  public WorkingCopyFormat getFormat() {
+  public @NotNull WorkingCopyFormat getFormat() {
     return myFormat;
   }
 
-  @NotNull
-  public File getIoFile() {
+  public @NotNull File getIoFile() {
     return myNode.getIoFile();
   }
 
-  @NotNull
-  public String getPath() {
+  public @NlsSafe @NotNull String getPath() {
     return getIoFile().getAbsolutePath();
   }
 
   // vcs root
-  @NotNull
-  public VirtualFile getRoot() {
+  public @NotNull VirtualFile getRoot() {
     return myRoot;
   }
 
-  @NotNull
-  public VirtualFile getVirtualFile() {
+  @Override
+  public @NotNull VirtualFile getVirtualFile() {
     return myNode.getFile();
   }
 
-  @NotNull
-  public String getUrl() {
-    return getAbsoluteUrl();
+  @Override
+  public @NotNull Url getUrl() {
+    return myNode.getUrl();
   }
 
-  @Nullable
-  public NestedCopyType getType() {
+  public @Nullable NestedCopyType getType() {
     return myType;
   }
 

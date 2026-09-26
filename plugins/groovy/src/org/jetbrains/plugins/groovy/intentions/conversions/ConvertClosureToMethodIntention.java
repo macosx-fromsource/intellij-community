@@ -1,19 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.intentions.conversions;
 
 import com.intellij.openapi.application.ApplicationManager;
@@ -21,25 +6,27 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.PsiType;
 import com.intellij.psi.search.searches.MethodReferencesSearch;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.MethodSignature;
 import com.intellij.psi.util.MethodSignatureUtil;
 import com.intellij.refactoring.ui.ConflictsDialog;
 import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.containers.HashSet;
 import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.GroovyLanguage;
-import org.jetbrains.plugins.groovy.intentions.GroovyIntentionsBundle;
 import org.jetbrains.plugins.groovy.intentions.base.Intention;
 import org.jetbrains.plugins.groovy.intentions.base.PsiElementPredicate;
 import org.jetbrains.plugins.groovy.lang.documentation.GroovyPresentationUtil;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifier;
 import org.jetbrains.plugins.groovy.lang.psi.api.auxiliary.modifiers.GrModifierList;
-import org.jetbrains.plugins.groovy.lang.psi.api.signatures.GrSignature;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrField;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrArgumentLabel;
@@ -48,42 +35,30 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpres
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrAccessorMethod;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
-import org.jetbrains.plugins.groovy.lang.psi.impl.GrClosureType;
-import org.jetbrains.plugins.groovy.lang.psi.impl.signatures.GrClosureSignatureUtil;
+import org.jetbrains.plugins.groovy.lang.psi.impl.signatures.SignaturesKt;
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
+import org.jetbrains.plugins.groovy.lang.typing.GroovyClosureType;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 
 /**
  * @author Maxim.Medvedev
  */
-public class ConvertClosureToMethodIntention extends Intention {
+public final class ConvertClosureToMethodIntention extends Intention {
   private static final Logger LOG =
-    Logger.getInstance("#org.jetbrains.plugins.groovy.intentions.conversions.ConvertClosureToMethodIntention");
+    Logger.getInstance(ConvertClosureToMethodIntention.class);
 
-  @NotNull
   @Override
-  protected PsiElementPredicate getElementPredicate() {
+  protected @NotNull PsiElementPredicate getElementPredicate() {
     return new MyPredicate();
   }
 
   @Override
   protected void processIntention(@NotNull PsiElement element, @NotNull Project project, Editor editor) throws IncorrectOperationException {
-    final GrField field;
-    if (element.getParent() instanceof GrField) {
-      field = (GrField)element.getParent();
-    }
-    else {
-      final PsiReference ref = element.getReference();
-      LOG.assertTrue(ref != null);
-      PsiElement resolved = ref.resolve();
-      if (resolved instanceof GrAccessorMethod) {
-        resolved = ((GrAccessorMethod)resolved).getProperty();
-      }
-      LOG.assertTrue(resolved instanceof GrField);
-      field = (GrField)resolved;
-    }
+    final PsiElement parent = element.getParent();
+    if (!(parent instanceof GrField field)) return;
 
     final HashSet<PsiReference> usages = new HashSet<>();
     usages.addAll(ReferencesSearch.search(field).findAll());
@@ -97,24 +72,23 @@ public class ConvertClosureToMethodIntention extends Intention {
     }
 
     final String fieldName = field.getName();
-    LOG.assertTrue(fieldName != null);
     final Collection<PsiElement> fieldUsages = new HashSet<>();
     MultiMap<PsiElement, String> conflicts = new MultiMap<>();
     for (PsiReference usage : usages) {
       final PsiElement psiElement = usage.getElement();
       if (PsiUtil.isMethodUsage(psiElement)) continue;
       if (!GroovyLanguage.INSTANCE.equals(psiElement.getLanguage())) {
-        conflicts.putValue(psiElement, GroovyIntentionsBundle.message("closure.is.accessed.outside.of.groovy", fieldName));
+        conflicts.putValue(psiElement, GroovyBundle.message("closure.is.accessed.outside.of.groovy", fieldName));
       }
       else {
         if (psiElement instanceof GrReferenceExpression) {
           fieldUsages.add(psiElement);
           if (PsiUtil.isAccessedForWriting((GrExpression)psiElement)) {
-            conflicts.putValue(psiElement, GroovyIntentionsBundle.message("write.access.to.closure.variable", fieldName));
+            conflicts.putValue(psiElement, GroovyBundle.message("write.access.to.closure.variable", fieldName));
           }
         }
         else if (psiElement instanceof GrArgumentLabel) {
-          conflicts.putValue(psiElement, GroovyIntentionsBundle.message("field.is.used.in.argument.label", fieldName));
+          conflicts.putValue(psiElement, GroovyBundle.message("field.is.used.in.argument.label", fieldName));
         }
       }
     }
@@ -122,13 +96,14 @@ public class ConvertClosureToMethodIntention extends Intention {
     final GrExpression initializer = field.getInitializerGroovy();
     LOG.assertTrue(initializer != null);
     final PsiType type = initializer.getType();
-    LOG.assertTrue(type instanceof GrClosureType);
-    final GrSignature signature = ((GrClosureType)type).getSignature();
-    final List<MethodSignature> signatures = GrClosureSignatureUtil.generateAllMethodSignaturesBySignature(fieldName, signature);
+    LOG.assertTrue(type instanceof GroovyClosureType);
+    final List<MethodSignature> signatures = SignaturesKt.generateAllMethodSignaturesBySignature(
+      fieldName, ((GroovyClosureType)type).getSignatures()
+    );
     for (MethodSignature s : signatures) {
       final PsiMethod method = MethodSignatureUtil.findMethodBySignature(containingClass, s, true);
       if (method != null) {
-        conflicts.putValue(method, GroovyIntentionsBundle.message("method.with.signature.already.exists",
+        conflicts.putValue(method, GroovyBundle.message("method.with.signature.already.exists",
                                                                   GroovyPresentationUtil.getSignaturePresentation(s)));
       }
     }
@@ -147,7 +122,7 @@ public class ConvertClosureToMethodIntention extends Intention {
     final GrClosableBlock block = (GrClosableBlock)field.getInitializerGroovy();
 
     final GrModifierList modifierList = field.getModifierList();
-    if (modifierList.getModifiers().length > 0 || modifierList.getAnnotations().length > 0) {
+    if (modifierList.getModifiers().length > 0 || modifierList.hasAnnotations()) {
       builder.append(modifierList.getText());
     }
     else {
@@ -213,24 +188,13 @@ public class ConvertClosureToMethodIntention extends Intention {
 
   private static class MyPredicate implements PsiElementPredicate {
     @Override
-    public boolean satisfiedBy(PsiElement element) {
+    public boolean satisfiedBy(@NotNull PsiElement element) {
       if (element.getLanguage() != GroovyLanguage.INSTANCE) return false;
-      final PsiReference ref = element.getReference();
-      GrField field;
-      if (ref != null) {
-        PsiElement resolved = ref.resolve();
-        if (resolved instanceof GrAccessorMethod) {
-          resolved = ((GrAccessorMethod)resolved).getProperty();
-        }
-        if (!(resolved instanceof GrField)) return false;
-        field = (GrField)resolved;
-      }
-      else {
-        final PsiElement parent = element.getParent();
-        if (!(parent instanceof GrField)) return false;
-        field = (GrField)parent;
-        if (field.getNameIdentifierGroovy() != element) return false;
-      }
+
+      final PsiElement parent = element.getParent();
+      if (!(parent instanceof GrField field)) return false;
+
+      if (field.getNameIdentifierGroovy() != element) return false;
 
       final PsiElement varDeclaration = field.getParent();
       if (!(varDeclaration instanceof GrVariableDeclaration)) return false;

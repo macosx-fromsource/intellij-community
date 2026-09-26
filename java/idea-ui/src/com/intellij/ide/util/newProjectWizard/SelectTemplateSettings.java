@@ -1,27 +1,16 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.util.newProjectWizard;
 
-import com.intellij.openapi.components.*;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.RoamingType;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * @author Dmitry Avdeev
- *         Date: 10/9/12
  */
 @State(
   name = "SelectProjectTemplateSettings",
@@ -32,16 +21,14 @@ public class SelectTemplateSettings implements PersistentStateComponent<SelectTe
   public String LAST_TEMPLATE = null;
 
   public static SelectTemplateSettings getInstance() {
-    return ServiceManager.getService(SelectTemplateSettings.class);
+    return ApplicationManager.getApplication().getService(SelectTemplateSettings.class);
   }
 
-  @Nullable
-  public String getLastGroup() {
+  public @Nullable String getLastGroup() {
     return LAST_TEMPLATE == null ? null : LAST_TEMPLATE.split("/")[0];
   }
 
-  @Nullable
-  public String getLastTemplate() {
+  public @Nullable String getLastTemplate() {
     if (LAST_TEMPLATE == null) {
       return null;
     }
@@ -55,14 +42,13 @@ public class SelectTemplateSettings implements PersistentStateComponent<SelectTe
     LAST_TEMPLATE = group + "/" + template;
   }
 
-  @NotNull
   @Override
-  public SelectTemplateSettings getState() {
+  public @NotNull SelectTemplateSettings getState() {
     return this;
   }
 
   @Override
-  public void loadState(SelectTemplateSettings state) {
+  public void loadState(@NotNull SelectTemplateSettings state) {
     EXPERT_MODE = state.EXPERT_MODE;
     LAST_TEMPLATE = state.LAST_TEMPLATE;
   }

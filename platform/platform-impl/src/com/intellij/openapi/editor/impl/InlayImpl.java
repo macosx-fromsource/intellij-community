@@ -1,84 +1,99 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.impl;
 
+import com.intellij.diagnostic.PluginException;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.editor.CustomWrap;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorCustomElementRenderer;
+import com.intellij.openapi.editor.EditorThreading;
 import com.intellij.openapi.editor.Inlay;
-import com.intellij.openapi.editor.event.DocumentEvent;
-import com.intellij.openapi.util.Getter;
+import com.intellij.openapi.editor.InlayModel;
+import com.intellij.openapi.editor.InlayProperties;
+import com.intellij.openapi.editor.RangeMarker;
+import com.intellij.openapi.editor.VisualPosition;
+import com.intellij.openapi.editor.ex.RangeMarkerEx;
+import com.intellij.openapi.editor.ex.util.EditorUtil;
+import com.intellij.openapi.editor.markup.GutterIconRenderer;
+import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-class InlayImpl extends RangeMarkerImpl implements Inlay, Getter<InlayImpl> {
-  @NotNull
-  private final EditorImpl myEditor;
-  final int myOriginalOffset; // used for sorting of inlays, if they ever get merged into same offset after document modification
-  int myOffsetBeforeDisposal = -1;
-  private int myWidthInPixels;
-  @NotNull
-  private final EditorCustomElementRenderer myRenderer;
+import javax.swing.JComponent;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.IntSupplier;
 
-  InlayImpl(@NotNull EditorImpl editor, int offset, @NotNull EditorCustomElementRenderer renderer) {
-    super(editor.getDocument(), offset, offset, false);
+import static com.intellij.openapi.editor.impl.InlayKeys.ID_BEFORE_DISPOSAL;
+import static com.intellij.openapi.editor.impl.InlayKeys.OFFSET_BEFORE_DISPOSAL;
+
+abstract class InlayImpl<R extends EditorCustomElementRenderer, T extends InlayImpl<?, ?>>
+  extends RangeMarkerImpl implements EditorInlay<R> {
+
+  final @NotNull EditorImpl myEditor;
+  final @NotNull R myRenderer;
+  private final boolean myRelatedToPrecedingText;
+
+  int myWidthInPixels;
+
+  @SuppressWarnings("AbstractMethodCallInConstructor")
+  InlayImpl(@NotNull EditorImpl editor, int offset, boolean relatesToPrecedingText, @NotNull R renderer) {
+    super(editor.getElfDocument(), offset, offset, false, true);
     myEditor = editor;
-    myOriginalOffset = offset;
+    myRelatedToPrecedingText = relatesToPrecedingText;
     myRenderer = renderer;
-    doUpdateSize();
-    myEditor.getInlayModel().myInlayTree.addInterval(this, offset, offset, false, false, 0);
+    doUpdate();
+    //noinspection unchecked
+    getTree().addInterval((T)this, offset, offset, false, false, relatesToPrecedingText, 0);
+  }
+
+  @ApiStatus.Internal
+  public abstract RangeMarkerTree<T> getTree();
+
+  @Override
+  public @NotNull EditorImpl getEditorImpl() {
+    return myEditor;
   }
 
   @Override
-  public void updateSize() {
-    doUpdateSize();
-    myEditor.getInlayModel().notifyChanged(this);
-  }
-
-  private void doUpdateSize() {
-    myWidthInPixels = myRenderer.calcWidthInPixels(myEditor);
-    if (myWidthInPixels <= 0) {
-      throw new IllegalArgumentException("Positive width should be defined for an inline element");
-    }
+  public boolean isValid() {
+    return !myEditor.isDisposed() && super.isValid();
   }
 
   @Override
-  protected void changedUpdateImpl(@NotNull DocumentEvent e) {
-    super.changedUpdateImpl(e);
-    if (myEditor.getInlayModel().myStickToLargerOffsetsOnUpdate && isValid() && e.getOldLength() == 0 && getOffset() == e.getOffset()) {
-      int newOffset = e.getOffset() + e.getNewLength();
-      setIntervalStart(newOffset);
-      setIntervalEnd(newOffset);
-    }
+  public void setWidthInPixels(int widthInPixels) {
+    myWidthInPixels = widthInPixels;
   }
 
+  /**
+   * WARNING: for legacy reasons implements both {@link Disposable#dispose()} and {@link RangeMarker#dispose()}.
+   * These have different contracts.
+   * <p>
+   * We rely on {@link IntervalTreeImpl#fireAfterRemoved(RangeMarkerEx)} for proper {@link Disposable} disposal.
+   */
   @Override
   public void dispose() {
+    EditorImpl.assertIsDispatchThread();
     if (isValid()) {
-      myOffsetBeforeDisposal = getOffset(); // We want listeners notified after disposal, but want inlay offset to be available at that time
-      myEditor.getInlayModel().myInlayTree.removeInterval(this);
+      int offset = getOffset(); // We want listeners notified after disposal, but want inlay offset to be available at that time
+      putUserData(OFFSET_BEFORE_DISPOSAL, offset);
+      putUserData(ID_BEFORE_DISPOSAL, getId());
+      //noinspection unchecked
+      getTree().removeInterval((T)this);
       myEditor.getInlayModel().notifyRemoved(this);
     }
   }
 
   @Override
-  public int getOffset() {
-    return myOffsetBeforeDisposal == -1 ? getStartOffset() : myOffsetBeforeDisposal;
+  public boolean isRelatedToPrecedingText() {
+    return myRelatedToPrecedingText;
   }
 
-  @NotNull
   @Override
-  public EditorCustomElementRenderer getRenderer() {
+  public @NotNull R getRenderer() {
     return myRenderer;
   }
 
@@ -86,9 +101,271 @@ class InlayImpl extends RangeMarkerImpl implements Inlay, Getter<InlayImpl> {
   public int getWidthInPixels() {
     return myWidthInPixels;
   }
+}
+
+interface EditorInlay<R extends EditorCustomElementRenderer> extends Inlay<R>, RangeMarkerEx {
+  @NotNull EditorImpl getEditorImpl();
+
+  void doUpdate();
+
+  @NotNull Point getPosition();
+
+  void setWidthInPixels(int widthInPixels);
 
   @Override
-  public InlayImpl get() {
-    return this;
+  default @NotNull Editor getEditor() {
+    return getEditorImpl();
+  }
+
+  @Override
+  default int getOffset() {
+    Integer offsetBeforeDisposal = getUserData(OFFSET_BEFORE_DISPOSAL);
+    return offsetBeforeDisposal == null ? getStartOffset() : offsetBeforeDisposal;
+  }
+
+  @Override
+  default @Nullable Rectangle getBounds() {
+    if (EditorUtil.isInlayFolded(this)) return null;
+    Point position = getPosition();
+    return new Rectangle(position.x, position.y, getWidthInPixels(), getHeightInPixels());
+  }
+
+  @Override
+  default @Nullable GutterIconRenderer getGutterIconRenderer() {
+    return null;
+  }
+
+  @Override
+  default void update() {
+    EditorImpl.assertIsDispatchThread();
+    int oldWidth = getWidthInPixels();
+    int oldHeight = getHeightInPixels();
+    GutterIconRenderer oldIconRenderer = getGutterIconRenderer();
+    doUpdate();
+    int changeFlags = 0;
+    if (oldWidth != getWidthInPixels()) changeFlags |= InlayModel.ChangeFlags.WIDTH_CHANGED;
+    if (oldHeight != getHeightInPixels()) changeFlags |= InlayModel.ChangeFlags.HEIGHT_CHANGED;
+    if (!Objects.equals(oldIconRenderer, getGutterIconRenderer())) changeFlags |= InlayModel.ChangeFlags.GUTTER_ICON_PROVIDER_CHANGED;
+    if (changeFlags != 0) {
+      getEditorImpl().getInlayModel().notifyChanged(this, changeFlags);
+    }
+    else {
+      repaint();
+    }
+  }
+
+  @Override
+  default void repaint() {
+    EditorImpl editor = getEditorImpl();
+    if (isValid() && !editor.isDisposed() && !editor.getElfDocument().isInBulkUpdate() && !editor.getInlayModel().isInBatchMode()) {
+      JComponent contentComponent = editor.getContentComponent();
+      if (contentComponent.isShowing()) {
+        Rectangle bounds = getBounds();
+        if (bounds != null) {
+          if (this instanceof BlockInlay<?>) {
+            bounds.width = contentComponent.getWidth();
+          }
+          contentComponent.repaint(bounds);
+        }
+      }
+    }
+  }
+}
+
+interface InlineInlay<R extends EditorCustomElementRenderer> extends EditorInlay<R> {
+  int getPriority();
+
+  int getOrder();
+
+  @Override
+  default void doUpdate() {
+    R renderer = getRenderer();
+    int width = renderer.calcWidthInPixels(this);
+    setWidthInPixels(width);
+    if (width <= 0) {
+      throw PluginException.createByClass(
+        "Positive width should be defined for an inline element by " + renderer +
+        " (class=" + renderer.getClass().getName() + ", valid=" + isValid() + ", myWidthInPixels=" + width + ")",
+        null, renderer.getClass()
+      );
+    }
+  }
+
+  @Override
+  default @NotNull Placement getPlacement() {
+    return Placement.INLINE;
+  }
+
+  @Override
+  default @NotNull VisualPosition getVisualPosition() {
+    EditorImpl editor = getEditorImpl();
+    int offset = getOffset();
+    List<Inlay<?>> inlays = editor.getInlayModel().getInlineElementsInRange(offset, offset);
+    List<CustomWrap> customWraps = editor.getCustomWrapModel().getWrapsAtOffset(offset);
+    if (customWraps.isEmpty()) {
+      VisualPosition position = editor.offsetToVisualPosition(offset, false, false);
+      int order = inlays.indexOf(this);
+      return new VisualPosition(position.line, position.column + order, true);
+    }
+    else {
+      int firstRelatedToPrecedingIndex = ContainerUtil.indexOf(inlays, inlay -> inlay.isRelatedToPrecedingText());
+      firstRelatedToPrecedingIndex = firstRelatedToPrecedingIndex >= 0 ? firstRelatedToPrecedingIndex : inlays.size();
+      VisualPosition position = editor.offsetToVisualPosition(offset, false, isRelatedToPrecedingText());
+      int order = inlays.indexOf(this);
+      int precedingInlayCount = isRelatedToPrecedingText() ? firstRelatedToPrecedingIndex : 0;
+      return new VisualPosition(position.line, position.column + order - precedingInlayCount, true);
+    }
+  }
+
+  @Override
+  default @NotNull Point getPosition() {
+    return getEditorImpl().visualPositionToXY(getVisualPosition());
+  }
+
+  @Override
+  default int getHeightInPixels() {
+    return getEditorImpl().getLineHeight();
+  }
+
+  @Override
+  default @NotNull InlayProperties getProperties() {
+    return new InlayProperties()
+      .relatesToPrecedingText(isRelatedToPrecedingText())
+      .priority(getPriority());
+  }
+}
+
+interface AfterLineEndInlay<R extends EditorCustomElementRenderer> extends EditorInlay<R> {
+  boolean isSoftWrappable();
+
+  int getPriority();
+
+  int getOrder();
+
+  @Override
+  default void doUpdate() {
+    R renderer = getRenderer();
+    int width = renderer.calcWidthInPixels(this);
+    setWidthInPixels(width);
+    if (width <= 0) {
+      throw PluginException.createByClass("Positive width should be defined for an after-line-end element by " + renderer, null,
+                                          renderer.getClass());
+    }
+  }
+
+  @Override
+  default @NotNull Point getPosition() {
+    VisualPosition position = EditorThreading.compute(this::getVisualPosition);
+    return getEditorImpl().visualPositionToXY(position);
+  }
+
+  @Override
+  default @NotNull Placement getPlacement() {
+    return Placement.AFTER_LINE_END;
+  }
+
+  @Override
+  default @NotNull VisualPosition getVisualPosition() {
+    EditorImpl editor = getEditorImpl();
+    int offset = getOffset();
+    int logicalLine = editor.getDocument().getLineNumber(offset);
+    int lineEndOffset = editor.getDocument().getLineEndOffset(logicalLine);
+    VisualPosition position = editor.offsetToVisualPosition(lineEndOffset, true, true);
+    if (editor.getFoldingModel().isOffsetCollapsed(lineEndOffset)) return position;
+    List<Inlay<?>> inlays = editor.getInlayModel().getAfterLineEndElementsForLogicalLine(logicalLine);
+    int order = inlays.indexOf(this);
+    return new VisualPosition(position.line, position.column + 1 + order);
+  }
+
+  @Override
+  default int getHeightInPixels() {
+    return getEditorImpl().getLineHeight();
+  }
+
+  @Override
+  default @NotNull InlayProperties getProperties() {
+    return new InlayProperties()
+      .relatesToPrecedingText(isRelatedToPrecedingText())
+      .disableSoftWrapping(!isSoftWrappable())
+      .priority(getPriority());
+  }
+}
+
+interface BlockInlay<R extends EditorCustomElementRenderer> extends EditorInlay<R>, IntSupplier {
+  int getPriority();
+
+  boolean isShownAbove();
+
+  boolean isShownWhenFolded();
+
+  void setHeightInPixels(int heightInPixels);
+
+  void setGutterIconRenderer(@Nullable GutterIconRenderer gutterIconRenderer);
+
+  @Override
+  default void doUpdate() {
+    R renderer = getRenderer();
+    int width = renderer.calcWidthInPixels(this);
+    setWidthInPixels(width);
+    if (width < 0) {
+      throw PluginException.createByClass("Non-negative width should be defined for a block element by " + renderer, null,
+                                          renderer.getClass());
+    }
+    int height = renderer.calcHeightInPixels(this);
+    setHeightInPixels(height);
+    if (height < 0) {
+      throw PluginException.createByClass("Non-negative height should be defined for a block element by " + renderer, null,
+                                          renderer.getClass());
+    }
+    setGutterIconRenderer(renderer.calcGutterIconRenderer(this));
+  }
+
+  @Override
+  default @NotNull Point getPosition() {
+    EditorImpl editor = getEditorImpl();
+    int visualLine = editor.offsetToVisualLine(getOffset());
+    int[] yRange = editor.visualLineToYRange(visualLine);
+    List<Inlay<?>> allInlays = editor.getInlayModel().getBlockElementsForVisualLine(visualLine, isShownAbove());
+    int y;
+    if (isShownAbove()) {
+      y = yRange[0];
+      boolean found = false;
+      for (Inlay<?> inlay : allInlays) {
+        if (inlay == this) found = true;
+        if (found) y -= inlay.getHeightInPixels();
+      }
+    }
+    else {
+      y = yRange[1];
+      for (Inlay<?> inlay : allInlays) {
+        if (inlay == this) break;
+        y += inlay.getHeightInPixels();
+      }
+    }
+    return new Point(editor.getContentComponent().getInsets().left, y);
+  }
+
+  @Override
+  default @NotNull Placement getPlacement() {
+    return isShownAbove() ? Placement.ABOVE_LINE : Placement.BELOW_LINE;
+  }
+
+  @Override
+  default @NotNull VisualPosition getVisualPosition() {
+    return getEditorImpl().offsetToVisualPosition(getOffset());
+  }
+
+  @Override
+  default int getAsInt() {
+    return getHeightInPixels();
+  }
+
+  @Override
+  default @NotNull InlayProperties getProperties() {
+    return new InlayProperties()
+      .relatesToPrecedingText(isRelatedToPrecedingText())
+      .showAbove(isShownAbove())
+      .showWhenFolded(isShownWhenFolded())
+      .priority(getPriority());
   }
 }

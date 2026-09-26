@@ -1,24 +1,16 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.main.collectors;
 
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.struct.attr.StructLineNumberTableAttribute;
 
-import java.util.*;
+import java.util.BitSet;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 
 public class BytecodeMappingTracer {
   public static final BytecodeMappingTracer DUMMY = new BytecodeMappingTracer();
@@ -42,15 +34,13 @@ public class BytecodeMappingTracer {
   }
 
   public void addMapping(int bytecode_offset) {
-    if (!mapping.containsKey(bytecode_offset)) {
-      mapping.put(bytecode_offset, currentSourceLine);
-    }
+    mapping.putIfAbsent(bytecode_offset, currentSourceLine);
   }
 
-  public void addMapping(Set<Integer> bytecode_offsets) {
+  public void addMapping(@Nullable BitSet bytecode_offsets) {
     if (bytecode_offsets != null) {
-      for (Integer bytecode_offset : bytecode_offsets) {
-        addMapping(bytecode_offset);
+      for (int i = bytecode_offsets.nextSetBit(0); i >= 0; i = bytecode_offsets.nextSetBit(i+1)) {
+        addMapping(i);
       }
     }
   }
@@ -58,9 +48,7 @@ public class BytecodeMappingTracer {
   public void addTracer(BytecodeMappingTracer tracer) {
     if (tracer != null) {
       for (Entry<Integer, Integer> entry : tracer.mapping.entrySet()) {
-        if (!mapping.containsKey(entry.getKey())) {
-          mapping.put(entry.getKey(), entry.getValue());
-        }
+        mapping.putIfAbsent(entry.getKey(), entry.getValue());
       }
     }
   }
@@ -100,7 +88,7 @@ public class BytecodeMappingTracer {
       int originalOffset = data[i];
       int originalLine = data[i + 1];
       Integer newLine = mapping.get(originalOffset);
-      if (newLine != null) {
+      if (newLine != null && !res.containsKey(originalLine)) {
         res.put(originalLine, newLine);
       }
       else {

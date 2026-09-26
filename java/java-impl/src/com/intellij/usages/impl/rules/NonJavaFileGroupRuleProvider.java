@@ -1,30 +1,21 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.usages.impl.rules;
 
+import com.intellij.openapi.project.Project;
+import com.intellij.usages.UsageViewSettings;
 import com.intellij.usages.impl.FileStructureGroupRuleProvider;
 import com.intellij.usages.rules.UsageGroupingRule;
-import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
 
-/**
- * @author yole
- */
-public class NonJavaFileGroupRuleProvider implements FileStructureGroupRuleProvider {
+
+public final class NonJavaFileGroupRuleProvider implements FileStructureGroupRuleProvider {
   @Override
-  public UsageGroupingRule getUsageGroupingRule(final Project project) {
-    return new NonJavaFileGroupingRule(project);
+  public UsageGroupingRule getUsageGroupingRule(final @NotNull Project project) {
+    return new NonJavaFileGroupingRule(project, UsageViewSettings.getInstance().isShortFilePathEnabled());
+  }
+
+  @Override
+  public UsageGroupingRule getUsageGroupingRule(@NotNull Project project, @NotNull UsageViewSettings usageViewSettings) {
+    return new NonJavaFileGroupingRule(project, usageViewSettings.isShortFilePathEnabled());
   }
 }

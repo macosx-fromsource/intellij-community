@@ -1,10 +1,10 @@
-// "Replace Arrays.asList().stream() with Stream.of()" "true"
+// "Replace Arrays.asList().stream() with Stream.of()" "true-preview"
 
 import java.util.Arrays;
 import java.util.stream.Stream;
 
 class AsListIncompleteArgsStream {
   Stream<String> abc() {
-    return Ar<caret>rays.asList("a", , ).stream();
+    return Arrays.asList("a", , ).stre<caret>am();
   }
 }

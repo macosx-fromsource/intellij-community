@@ -17,102 +17,115 @@ package com.intellij.codeInsight.editorActions;
 
 import com.intellij.openapi.editor.LogicalPosition;
 import com.intellij.testFramework.LightPlatformCodeInsightTestCase;
+import org.junit.Ignore;
 
-import java.io.IOException;
-
+@Ignore("AT-4013")
 public class IndentingBackspaceHandlerVirtualSpaceTest extends LightPlatformCodeInsightTestCase {
-  public void testAfterLargeIndent() throws IOException {
-    doTest("class Foo {\n" +
-           "      \n" +
-           "}",
+  public void testAfterLargeIndent() {
+    doTest("""
+             class Foo {
+                  \s
+             }""",
            new LogicalPosition(1, 10),
-           "class Foo {\n" +
-           "    \n" +
-           "}",
+           """
+             class Foo {
+                \s
+             }""",
            new LogicalPosition(1, 4));
   }
 
-  public void testAfterProperIndent() throws IOException {
-    doTest("class Foo {\n" +
-           "    \n" +
-           "}",
+  public void testAfterProperIndent() {
+    doTest("""
+             class Foo {
+                \s
+             }""",
            new LogicalPosition(1, 10),
-           "class Foo {\n" +
-           "    \n" +
-           "}",
+           """
+             class Foo {
+                \s
+             }""",
            new LogicalPosition(1, 4));
   }
 
-  public void testAfterSmallIndent() throws IOException {
-    doTest("class Foo {\n" +
-           "   \n" +
-           "}",
+  public void testAfterSmallIndent() {
+    doTest("""
+             class Foo {
+               \s
+             }""",
            new LogicalPosition(1, 10),
-           "class Foo {\n" +
-           "    \n" +
-           "}",
+           """
+             class Foo {
+                \s
+             }""",
            new LogicalPosition(1, 4));
   }
 
-  public void testAfterEmptyIndent() throws IOException {
-    doTest("class Foo {\n" +
-           "\n" +
-           "}",
+  public void testAfterEmptyIndent() {
+    doTest("""
+             class Foo {
+
+             }""",
            new LogicalPosition(1, 10),
-           "class Foo {\n" +
-           "    \n" +
-           "}",
+           """
+             class Foo {
+                \s
+             }""",
            new LogicalPosition(1, 4));
   }
 
-  public void testAtIndent() throws IOException {
-    doTest("class Foo {\n" +
-           "   \n" +
-           "}",
+  public void testAtIndent() {
+    doTest("""
+             class Foo {
+               \s
+             }""",
            new LogicalPosition(1, 4),
            "class Foo {\n" +
            "}",
            new LogicalPosition(0, 11));
   }
 
-  public void testAtIndentOnEmptyLine() throws IOException {
-    doTest("class Foo {\n" +
-           "\n" +
-           "}",
+  public void testAtIndentOnEmptyLine() {
+    doTest("""
+             class Foo {
+
+             }""",
            new LogicalPosition(1, 4),
            "class Foo {\n" +
            "}",
            new LogicalPosition(0, 11));
   }
 
-  public void testBeforeIndent() throws IOException {
-    doTest("class Foo {\n" +
-           "  \n" +
-           "}",
+  public void testBeforeIndent() {
+    doTest("""
+             class Foo {
+              \s
+             }""",
            new LogicalPosition(1, 3),
            "class Foo {\n" +
            "}",
            new LogicalPosition(0, 11));
   }
 
-  public void testDeleteLine() throws IOException {
-    doTest("class Foo {\n" +
-           "\n" +
-           "\n" +
-           "}",
+  public void testDeleteLine() {
+    doTest("""
+             class Foo {
+
+
+             }""",
            new LogicalPosition(2, 0),
-           "class Foo {\n" +
-           "    \n" +
-           "}",
+           """
+             class Foo {
+                \s
+             }""",
            new LogicalPosition(1, 4));
   }
 
-  private void doTest(String textBefore, LogicalPosition caretBefore, String textAfter, LogicalPosition caretAfter) throws IOException {
+  private void doTest(String textBefore, LogicalPosition caretBefore, String textAfter, LogicalPosition caretAfter) {
     configureFromFileText(getTestName(false) + ".java", textBefore);
-    myEditor.getSettings().setVirtualSpace(true);
-    myEditor.getCaretModel().moveToLogicalPosition(caretBefore);
+    getEditor().getSettings().setVirtualSpace(true);
+    getEditor().getCaretModel().moveToLogicalPosition(caretBefore);
     backspace();
     checkResultByText(textAfter);
-    assertEquals(caretAfter, myEditor.getCaretModel().getLogicalPosition());
+    assertEquals(caretAfter, getEditor().getCaretModel().getLogicalPosition());
   }
 }

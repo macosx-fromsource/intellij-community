@@ -1,37 +1,39 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.diff.tools.util;
 
+import com.intellij.diff.util.DiffUtil;
+import com.intellij.diff.util.LineRange;
+import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.UndoConfirmationPolicy;
+import com.intellij.openapi.editor.actionSystem.DocCommandGroupId;
+import com.intellij.openapi.editor.ex.DocumentEx;
 import com.intellij.openapi.editor.ex.EditorEx;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.List;
 
 public abstract class PrevNextDifferenceIterableBase<T> implements PrevNextDifferenceIterable {
-  @NotNull
-  protected abstract List<? extends T> getChanges();
+  protected abstract @NotNull @Unmodifiable List<? extends T> getChanges();
 
-  @NotNull
-  protected abstract EditorEx getEditor();
+  protected abstract @NotNull EditorEx getEditor();
 
   protected abstract int getStartLine(@NotNull T change);
 
   protected abstract int getEndLine(@NotNull T change);
 
-  protected abstract void scrollToChange(@NotNull T change);
+  protected void scrollToChange(@NotNull T change) {
+    DiffUtil.scrollEditor(getEditor(), getStartLine(change), true);
+  }
+
+  protected void scrollToChangeUnderCommand(@NotNull T change) {
+    EditorEx editor = getEditor();
+    DocumentEx document = editor.getDocument();
+    CommandProcessor.getInstance().executeCommand(editor.getProject(), () -> {
+      scrollToChange(change);
+    }, "", DocCommandGroupId.noneGroupId(document), UndoConfirmationPolicy.DEFAULT, document);
+  }
 
   @Override
   public boolean canGoNext() {
@@ -40,7 +42,7 @@ public abstract class PrevNextDifferenceIterableBase<T> implements PrevNextDiffe
 
     EditorEx editor = getEditor();
     int line = editor.getCaretModel().getLogicalPosition().line;
-    if (line == editor.getDocument().getLineCount() - 1) return false;
+    if (line == DiffUtil.getLineCount(editor.getDocument()) - 1) return false;
 
     T lastChange = changes.get(changes.size() - 1);
     if (getStartLine(lastChange) <= line) return false;
@@ -54,8 +56,7 @@ public abstract class PrevNextDifferenceIterableBase<T> implements PrevNextDiffe
     int line = getEditor().getCaretModel().getLogicalPosition().line;
 
     T next = null;
-    for (int i = 0; i < changes.size(); i++) {
-      T change = changes.get(i);
+    for (T change : changes) {
       if (getStartLine(change) <= line) continue;
 
       next = change;
@@ -63,7 +64,7 @@ public abstract class PrevNextDifferenceIterableBase<T> implements PrevNextDiffe
     }
 
     assert next != null;
-    scrollToChange(next);
+    scrollToChangeUnderCommand(next);
   }
 
   @Override
@@ -98,6 +99,23 @@ public abstract class PrevNextDifferenceIterableBase<T> implements PrevNextDiffe
     }
 
     assert prev != null;
-    scrollToChange(prev);
+    scrollToChangeUnderCommand(prev);
+  }
+
+  public @Nullable LineRange getCurrentLineRangeByLine(int line) {
+    for (T change : getChanges()) {
+      int start = getStartLine(change);
+      int end = getEndLine(change);
+      if (start <= line && end > line) {
+        return new LineRange(start, end);
+      }
+      if (start > line) return null;
+    }
+    return null;
+  }
+
+  public @Nullable LineRange getCurrentLineRange() {
+    int line = getEditor().getCaretModel().getLogicalPosition().line;
+    return getCurrentLineRangeByLine(line);
   }
 }

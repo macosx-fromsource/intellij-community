@@ -1,9 +1,9 @@
-// "Move initializer to setUp method" "true"
+// "Move initializer to setUp method" "true-preview"
 public class X {
   <caret>int i;
 
     @org.testng.annotations.BeforeMethod
-    public void setUp() throws Exception {
+    public void setUp() {
         i = 7;
     }
 

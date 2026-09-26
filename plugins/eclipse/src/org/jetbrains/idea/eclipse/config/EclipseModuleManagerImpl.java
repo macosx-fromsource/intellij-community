@@ -1,27 +1,15 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.eclipse.config;
 
-import com.intellij.openapi.components.*;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.StateStorageChooserEx;
+import com.intellij.openapi.components.StateStorageOperation;
+import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.module.ModuleServiceManager;
 import com.intellij.openapi.roots.impl.storage.ClassPathStorageUtil;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.ArrayUtil;
+import com.intellij.util.ArrayUtilRt;
 import org.jdom.Element;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -35,38 +23,38 @@ import java.util.Map;
 import java.util.Set;
 
 @State(name = "EclipseModuleManager")
-public class EclipseModuleManagerImpl implements EclipseModuleManager, PersistentStateComponent<Element>, StateStorageChooserEx {
-  @NonNls private static final String VALUE_ATTR = "value";
-  @NonNls private static final String VARELEMENT = "varelement";
-  @NonNls private static final String VAR_ATTRIBUTE = "var";
-  @NonNls private static final String CONELEMENT = "conelement";
-  @NonNls private static final String FORCED_JDK = "forced_jdk";
-  @NonNls private static final String SRC_DESCRIPTION = "src_description";
-  @NonNls private static final String EXPECTED_POSITION = "expected_position";
-  @NonNls private static final String SRC_FOLDER = "src_folder";
+public final class EclipseModuleManagerImpl implements EclipseModuleManager, PersistentStateComponent<Element>, StateStorageChooserEx {
+  static final @NonNls String VALUE_ATTR = "value";
+  static final @NonNls String VARELEMENT = "varelement";
+  static final @NonNls String VAR_ATTRIBUTE = "var";
+  static final @NonNls String CONELEMENT = "conelement";
+  static final @NonNls String FORCED_JDK = "forced_jdk";
+  static final @NonNls String SRC_DESCRIPTION = "src_description";
+  static final @NonNls String EXPECTED_POSITION = "expected_position";
+  static final @NonNls String SRC_FOLDER = "src_folder";
   private CachedXmlDocumentSet myDocumentSet;
   private final Map<String, String> myEclipseVariablePaths = new LinkedHashMap<>();
   private final Set<String> myEclipseUrls = new LinkedHashSet<>();
   private final Set<String> myUnknownCons = new LinkedHashSet<>();
   private boolean myForceConfigureJDK;
-  @NonNls private static final String SRC_PREFIX = "src:";
-  @NonNls private static final String SRC_LINK_PREFIX = "linksrc:";
-  @NonNls private static final String LINK_PREFIX = "link:";
-  @NonNls private static final String PREFIX_ATTR = "kind";
+  static final @NonNls String SRC_PREFIX = "src:";
+  static final @NonNls String SRC_LINK_PREFIX = "linksrc:";
+  static final @NonNls String LINK_PREFIX = "link:";
+  static final @NonNls String PREFIX_ATTR = "kind";
   private final Module myModule;
-  @NonNls private static final String LIBELEMENT = "libelement";
+  static final @NonNls String LIBELEMENT = "libelement";
   private int myExpectedModuleSourcePlace;
-  private Map<String, Integer> mySrcPlace = new LinkedHashMap<>();
+  private final Map<String, Integer> mySrcPlace = new LinkedHashMap<>();
   private String myInvalidJdk;
 
-  private Set<String> myKnownCons = new LinkedHashSet<>();
+  private final Set<String> myKnownCons = new LinkedHashSet<>();
 
   public EclipseModuleManagerImpl(Module module) {
     myModule = module;
   }
 
   public static EclipseModuleManagerImpl getInstance(Module module) {
-    return ModuleServiceManager.getService(module, EclipseModuleManagerImpl.class);
+    return module.getService(EclipseModuleManagerImpl.class);
   }
 
   public static boolean isEclipseStorage(@NotNull Module module) {
@@ -90,11 +78,10 @@ public class EclipseModuleManagerImpl implements EclipseModuleManager, Persisten
 
   @Override
   public String[] getUsedCons() {
-    return ArrayUtil.toStringArray(myKnownCons);
+    return ArrayUtilRt.toStringArray(myKnownCons);
   }
 
-  @Nullable
-  public CachedXmlDocumentSet getDocumentSet() {
+  public @Nullable CachedXmlDocumentSet getDocumentSet() {
     return myDocumentSet;
   }
 
@@ -147,9 +134,8 @@ public class EclipseModuleManagerImpl implements EclipseModuleManager, Persisten
     myUnknownCons.add(con);
   }
 
-  @NotNull
   @Override
-  public Set<String> getUnknownCons() {
+  public @NotNull Set<String> getUnknownCons() {
     return myUnknownCons;
   }
 
@@ -174,9 +160,8 @@ public class EclipseModuleManagerImpl implements EclipseModuleManager, Persisten
     return myEclipseUrls.contains(url);
   }
 
-  @NotNull
   @Override
-  public Resolution getResolution(@NotNull Storage storage, @NotNull StateStorageOperation operation) {
+  public @NotNull Resolution getResolution(@NotNull Storage storage, @NotNull StateStorageOperation operation) {
     if (operation == StateStorageOperation.READ) {
       return Resolution.DO;
     }
@@ -240,7 +225,7 @@ public class EclipseModuleManagerImpl implements EclipseModuleManager, Persisten
   }
 
   @Override
-  public void loadState(Element state) {
+  public void loadState(@NotNull Element state) {
     myEclipseUrls.clear();
     myEclipseVariablePaths.clear();
     myUnknownCons.clear();

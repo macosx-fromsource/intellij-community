@@ -1,36 +1,25 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.ui.popup;
 
-import com.intellij.codeInsight.completion.CompletionUtil;
 import com.intellij.codeInsight.documentation.DocumentationManager;
-import com.intellij.codeInsight.lookup.*;
-import com.intellij.ide.util.gotoByName.ChooseByNameBase;
+import com.intellij.codeInsight.lookup.Lookup;
+import com.intellij.codeInsight.lookup.LookupElement;
+import com.intellij.codeInsight.lookup.LookupEvent;
+import com.intellij.codeInsight.lookup.LookupListener;
+import com.intellij.codeInsight.lookup.LookupManager;
+import com.intellij.ide.util.gotoByName.QuickSearchComponent;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.LightweightWindowEvent;
 import com.intellij.openapi.wm.ex.WindowManagerEx;
 import com.intellij.psi.PsiElement;
+import com.intellij.ui.ComponentUtil;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import java.awt.Component;
 
-/**
- * @author yole
- */
+
 public abstract class PopupUpdateProcessor extends PopupUpdateProcessorBase {
 
   private final Project myProject;
@@ -40,19 +29,17 @@ public abstract class PopupUpdateProcessor extends PopupUpdateProcessorBase {
   }
 
   @Override
-  public void beforeShown(final LightweightWindowEvent windowEvent) {
+  public void beforeShown(final @NotNull LightweightWindowEvent windowEvent) {
     final Lookup activeLookup = LookupManager.getInstance(myProject).getActiveLookup();
     if (activeLookup != null) {
-      activeLookup.addLookupListener(new LookupAdapter() {
+      activeLookup.addLookupListener(new LookupListener() {
         @Override
-        public void currentItemChanged(LookupEvent event) {
+        public void currentItemChanged(@NotNull LookupEvent event) {
           if (windowEvent.asPopup().isVisible()) { //was not canceled yet
             final LookupElement item = event.getItem();
             if (item != null) {
-              PsiElement targetElement = CompletionUtil.getTargetElement(item);
-              if (targetElement == null) {
-                targetElement = DocumentationManager.getInstance(myProject).getElementFromLookup(activeLookup.getEditor(), activeLookup.getPsiFile());
-              }
+              PsiElement targetElement =
+                DocumentationManager.getInstance(myProject).getElementFromLookup(activeLookup.getEditor(), activeLookup.getPsiFile());
 
               updatePopup(targetElement); //open next
             }
@@ -64,15 +51,18 @@ public abstract class PopupUpdateProcessor extends PopupUpdateProcessorBase {
     }
     else {
       final Component focusedComponent = WindowManagerEx.getInstanceEx().getFocusedComponent(myProject);
-      boolean fromQuickSearch = focusedComponent != null && focusedComponent.getParent() instanceof ChooseByNameBase.JPanelProvider;
-      if (fromQuickSearch) {
-        ChooseByNameBase.JPanelProvider panelProvider = (ChooseByNameBase.JPanelProvider)focusedComponent.getParent();
-        panelProvider.registerHint(windowEvent.asPopup());
+      QuickSearchComponent quickSearch = findQuickSearchComponent(focusedComponent);
+      if (quickSearch != null) {
+        quickSearch.registerHint(windowEvent.asPopup());
       }
       else if (focusedComponent instanceof JComponent) {
         HintUpdateSupply supply = HintUpdateSupply.getSupply((JComponent)focusedComponent);
         if (supply != null) supply.registerHint(windowEvent.asPopup());
       }
     }
+  }
+
+  private static QuickSearchComponent findQuickSearchComponent(Component c) {
+    return ComponentUtil.getParentOfType(QuickSearchComponent.class, c);
   }
 }

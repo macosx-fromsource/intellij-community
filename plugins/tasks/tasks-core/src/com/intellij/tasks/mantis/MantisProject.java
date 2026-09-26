@@ -1,3 +1,4 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.tasks.mantis;
 
 import com.intellij.tasks.mantis.model.ProjectData;
@@ -9,10 +10,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * User: evgeny.zakrevsky
- * Date: 9/24/12
- */
 public final class MantisProject {
   // Used for "All projects" option in settings
   public static final int UNSPECIFIED_PROJECT_ID = 0;
@@ -24,7 +21,7 @@ public final class MantisProject {
   private List<MantisFilter> myFilters = new ArrayList<>();
 
   private int myId;
-  private String myName;
+  private String myName = "";
 
   @SuppressWarnings({"UnusedDeclaration"})
   public MantisProject() {
@@ -51,8 +48,7 @@ public final class MantisProject {
   }
 
   @Attribute("name")
-  @NotNull
-  public String getName() {
+  public @NotNull String getName() {
     return myName;
   }
 
@@ -61,21 +57,20 @@ public final class MantisProject {
   }
 
 
-  public final boolean isUnspecified() {
+  public boolean isUnspecified() {
     return getId() == UNSPECIFIED_PROJECT_ID;
   }
 
   //@OptionTag(tag = "filters", nameAttribute = "")
-  //@AbstractCollection(surroundWithTag = false)
+  //@XCollection
 
   /**
    * Filters here are used only to simplify combo boxes management and are refreshed every time when settings
    * are opened or user hit "Login" button. Thus they are not persisted in settings.
    */
   @Transient
-  @NotNull
-  public List<MantisFilter> getFilters() {
-    return myFilters == null? Collections.<MantisFilter>emptyList() : myFilters;
+  public @NotNull List<MantisFilter> getFilters() {
+    return myFilters == null ? Collections.emptyList() : myFilters;
   }
 
   public void setFilters(@NotNull List<MantisFilter> filters) {
@@ -84,7 +79,7 @@ public final class MantisProject {
 
 
   @Override
-  public final boolean equals(Object o) {
+  public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
 
@@ -96,7 +91,7 @@ public final class MantisProject {
   }
 
   @Override
-  public final int hashCode() {
+  public int hashCode() {
     return myId;
   }
 

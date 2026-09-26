@@ -1,62 +1,58 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.smartPointers;
 
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
-import com.intellij.psi.impl.PsiSubstitutorImpl;
-import com.intellij.psi.impl.source.PsiClassReferenceType;
+import com.intellij.pom.java.LanguageLevel;
+import com.intellij.psi.ClassTypePointerFactory;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiArrayType;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiDisjunctionType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeParameter;
+import com.intellij.psi.PsiTypeVisitor;
+import com.intellij.psi.PsiWildcardType;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
+import com.intellij.psi.SmartTypePointer;
+import com.intellij.psi.SmartTypePointerManager;
 import com.intellij.psi.impl.source.PsiImmediateClassType;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.util.Function;
-import com.intellij.util.NullableFunction;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.HashMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
 
-/**
- * @author max
- */
-public class SmartTypePointerManagerImpl extends SmartTypePointerManager {
-  private static final SmartTypePointer NULL_POINTER = new SmartTypePointer() {
-    @Override
-    public PsiType getType() { return null; }
-  };
+public final class SmartTypePointerManagerImpl extends SmartTypePointerManager {
+  private static final SmartTypePointer NULL_POINTER = () -> null;
 
   private final SmartPointerManager myPsiPointerManager;
   private final Project myProject;
 
-  public SmartTypePointerManagerImpl(final SmartPointerManager psiPointerManager, final Project project) {
-    myPsiPointerManager = psiPointerManager;
+  public SmartTypePointerManagerImpl(Project project) {
+    myPsiPointerManager = SmartPointerManager.getInstance(project);
     myProject = project;
   }
 
   @Override
-  @NotNull
-  public SmartTypePointer createSmartTypePointer(@NotNull PsiType type) {
-    final SmartTypePointer pointer = type.accept(new SmartTypeCreatingVisitor());
+  public @NotNull SmartTypePointer createSmartTypePointer(@NotNull PsiType type) {
+    final SmartTypePointer pointer = DumbService.getInstance(myProject).computeWithAlternativeResolveEnabled(() -> type.accept(new SmartTypeCreatingVisitor()));
     return pointer != null ? pointer : NULL_POINTER;
   }
 
-  private static class SimpleTypePointer implements SmartTypePointer {
+  private static final class SimpleTypePointer implements SmartTypePointer {
     private final PsiType myType;
 
     private SimpleTypePointer(@NotNull PsiType type) {
@@ -72,14 +68,13 @@ public class SmartTypePointerManagerImpl extends SmartTypePointerManager {
   private static class ArrayTypePointer extends TypePointerBase<PsiArrayType> {
     private final SmartTypePointer myComponentTypePointer;
 
-    public ArrayTypePointer(@NotNull PsiArrayType type, @NotNull SmartTypePointer componentTypePointer) {
+    ArrayTypePointer(@NotNull PsiArrayType type, @NotNull SmartTypePointer componentTypePointer) {
       super(type);
       myComponentTypePointer = componentTypePointer;
     }
 
-    @Nullable
     @Override
-    protected PsiArrayType calcType() {
+    protected @Nullable PsiArrayType calcType() {
       final PsiType type = myComponentTypePointer.getType();
       return type == null ? null : new PsiArrayType(type);
     }
@@ -90,7 +85,7 @@ public class SmartTypePointerManagerImpl extends SmartTypePointerManager {
     private final SmartTypePointer myBoundPointer;
     private final boolean myIsExtending;
 
-    public WildcardTypePointer(@NotNull PsiWildcardType type, @Nullable SmartTypePointer boundPointer) {
+    WildcardTypePointer(@NotNull PsiWildcardType type, @Nullable SmartTypePointer boundPointer) {
       super(type);
       myManager = type.getManager();
       myBoundPointer = boundPointer;
@@ -104,7 +99,7 @@ public class SmartTypePointerManagerImpl extends SmartTypePointerManager {
       }
       else {
         final PsiType type = myBoundPointer.getType();
-        assert type != null : myBoundPointer;
+        if (type == null) return null;
         if (myIsExtending) {
           return PsiWildcardType.createExtends(myManager, type);
         }
@@ -114,26 +109,34 @@ public class SmartTypePointerManagerImpl extends SmartTypePointerManager {
   }
 
   private static class ClassTypePointer extends TypePointerBase<PsiClassType> {
-    private final SmartPsiElementPointer myClass;
-    private final Map<SmartPsiElementPointer, SmartTypePointer> myMap;
+    private final SmartPsiElementPointer<?> myClass;
+    private final LanguageLevel myLevel;
+    private final Map<SmartPsiElementPointer<PsiTypeParameter>, SmartTypePointer> myMap;
+    private final SmartPsiElementPointer<?>[] myAnnotations;
 
-    public ClassTypePointer(@NotNull PsiClassType type, @NotNull SmartPsiElementPointer aClass, @NotNull Map<SmartPsiElementPointer, SmartTypePointer> map) {
+    ClassTypePointer(@NotNull PsiClassType type,
+                     @NotNull SmartPsiElementPointer<?> aClass,
+                     @NotNull LanguageLevel languageLevel,
+                     @NotNull Map<SmartPsiElementPointer<PsiTypeParameter>, SmartTypePointer> map,
+                     SmartPsiElementPointer<?> @NotNull [] annotations) {
       super(type);
       myClass = aClass;
+      myLevel = languageLevel;
       myMap = map;
+      myAnnotations = annotations;
     }
 
     @Override
     protected PsiClassType calcType() {
       final PsiElement classElement = myClass.getElement();
       if (!(classElement instanceof PsiClass)) return null;
-      Map<PsiTypeParameter, PsiType> resurrected = new HashMap<PsiTypeParameter, PsiType>();
-      final Set<Map.Entry<SmartPsiElementPointer, SmartTypePointer>> set = myMap.entrySet();
-      for (Map.Entry<SmartPsiElementPointer, SmartTypePointer> entry : set) {
-        PsiElement element = entry.getKey().getElement();
-        if (element instanceof PsiTypeParameter) {
+      Map<PsiTypeParameter, PsiType> resurrected = new HashMap<>();
+      final Set<Map.Entry<SmartPsiElementPointer<PsiTypeParameter>, SmartTypePointer>> set = myMap.entrySet();
+      for (Map.Entry<SmartPsiElementPointer<PsiTypeParameter>, SmartTypePointer> entry : set) {
+        PsiTypeParameter element = entry.getKey().getElement();
+        if (element != null) {
           SmartTypePointer typePointer = entry.getValue();
-          resurrected.put((PsiTypeParameter)element, typePointer == null ? null : typePointer.getType());
+          resurrected.put(element, typePointer == null ? null : typePointer.getType());
         }
       }
       for (PsiTypeParameter typeParameter : PsiUtil.typeParametersIterable((PsiClass)classElement)) {
@@ -141,83 +144,94 @@ public class SmartTypePointerManagerImpl extends SmartTypePointerManager {
           resurrected.put(typeParameter, null);
         }
       }
-      final PsiSubstitutor resurrectedSubstitutor = PsiSubstitutorImpl.createSubstitutor(resurrected);
-      return new PsiImmediateClassType((PsiClass)classElement, resurrectedSubstitutor);
+      final PsiSubstitutor resurrectedSubstitutor = PsiSubstitutor.createSubstitutor(resurrected);
+
+      PsiAnnotation[] resurrectedAnnotations = Stream.of(myAnnotations).map(SmartPsiElementPointer::getElement).filter(Objects::nonNull).toArray(PsiAnnotation[]::new);
+      return new PsiImmediateClassType((PsiClass)classElement, resurrectedSubstitutor, myLevel, resurrectedAnnotations);
     }
   }
 
-  private class DisjunctionTypePointer extends TypePointerBase<PsiDisjunctionType> {
+  private final class DisjunctionTypePointer extends TypePointerBase<PsiDisjunctionType> {
     private final List<SmartTypePointer> myPointers;
 
     private DisjunctionTypePointer(@NotNull PsiDisjunctionType type) {
       super(type);
-      myPointers = ContainerUtil.map(type.getDisjunctions(), new Function<PsiType, SmartTypePointer>() {
-        @Override
-        public SmartTypePointer fun(PsiType psiType) {
-          return createSmartTypePointer(psiType);
-        }
-      });
+      myPointers = ContainerUtil.map(type.getDisjunctions(), SmartTypePointerManagerImpl.this::createSmartTypePointer);
     }
 
     @Override
     protected PsiDisjunctionType calcType() {
-      final List<PsiType> types = ContainerUtil.map(myPointers, new NullableFunction<SmartTypePointer, PsiType>() {
-        @Override public PsiType fun(SmartTypePointer typePointer) { return typePointer.getType(); }
-      });
+      final List<PsiType> types = ContainerUtil.map(myPointers, SmartTypePointer::getType);
       return new PsiDisjunctionType(types, PsiManager.getInstance(myProject));
     }
   }
 
   private class SmartTypeCreatingVisitor extends PsiTypeVisitor<SmartTypePointer> {
     @Override
-    public SmartTypePointer visitPrimitiveType(PsiPrimitiveType primitiveType) {
+    public SmartTypePointer visitPrimitiveType(@NotNull PsiPrimitiveType primitiveType) {
       return new SimpleTypePointer(primitiveType);
     }
 
     @Override
-    public SmartTypePointer visitArrayType(PsiArrayType arrayType) {
+    public SmartTypePointer visitArrayType(@NotNull PsiArrayType arrayType) {
       final SmartTypePointer componentTypePointer = arrayType.getComponentType().accept(this);
       return componentTypePointer != null ? new ArrayTypePointer(arrayType, componentTypePointer) : null;
     }
 
     @Override
-    public SmartTypePointer visitWildcardType(PsiWildcardType wildcardType) {
+    public SmartTypePointer visitWildcardType(@NotNull PsiWildcardType wildcardType) {
       final PsiType bound = wildcardType.getBound();
       final SmartTypePointer boundPointer = bound == null ? null : bound.accept(this);
       return new WildcardTypePointer(wildcardType, boundPointer);
     }
 
     @Override
-    public SmartTypePointer visitClassType(PsiClassType classType) {
+    public SmartTypePointer visitClassType(@NotNull PsiClassType classType) {
       final PsiClassType.ClassResolveResult resolveResult = classType.resolveGenerics();
       final PsiClass aClass = resolveResult.getElement();
       if (aClass == null) {
         return createClassReferenceTypePointer(classType);
       }
-      if (classType instanceof PsiClassReferenceType) {
-        classType = ((PsiClassReferenceType)classType).createImmediateCopy();
-      }
       final PsiSubstitutor substitutor = resolveResult.getSubstitutor();
-      final HashMap<SmartPsiElementPointer, SmartTypePointer> map = new HashMap<SmartPsiElementPointer, SmartTypePointer>();
+      final HashMap<SmartPsiElementPointer<PsiTypeParameter>, SmartTypePointer> pointerMap = new HashMap<>();
+      final Map<PsiTypeParameter, PsiType> map = new HashMap<>();
       for (PsiTypeParameter typeParameter : PsiUtil.typeParametersIterable(aClass)) {
         final PsiType substitutionResult = substitutor.substitute(typeParameter);
         if (substitutionResult != null) {
-          final SmartPsiElementPointer pointer = myPsiPointerManager.createSmartPsiElementPointer(typeParameter);
-          map.put(pointer, substitutionResult.accept(this));
+          final SmartPsiElementPointer<PsiTypeParameter> pointer = myPsiPointerManager.createSmartPsiElementPointer(typeParameter);
+          SmartTypePointer typePointer = substitutionResult.accept(this);
+          pointerMap.put(pointer, typePointer);
+          map.put(typeParameter, typePointer.getType());
+        } else {
+          map.put(typeParameter, null);
         }
       }
-      return new ClassTypePointer(classType, myPsiPointerManager.createSmartPsiElementPointer(aClass), map);
+
+      SmartPsiElementPointer<?>[] annotationPointers =
+        Stream
+          .of(classType.getAnnotations())
+          .map(myPsiPointerManager::createSmartPsiElementPointer)
+          .toArray(SmartPsiElementPointer<?>[]::new);
+
+      LanguageLevel languageLevel = classType.getLanguageLevel();
+      return new ClassTypePointer(new PsiImmediateClassType(aClass,
+                                                            PsiSubstitutor.createSubstitutor(map),
+                                                            languageLevel,
+                                                            classType.getAnnotations()),
+                                  myPsiPointerManager.createSmartPsiElementPointer(aClass),
+                                  languageLevel,
+                                  pointerMap,
+                                  annotationPointers);
     }
 
     @Override
-    public SmartTypePointer visitDisjunctionType(PsiDisjunctionType disjunctionType) {
+    public SmartTypePointer visitDisjunctionType(@NotNull PsiDisjunctionType disjunctionType) {
       return new DisjunctionTypePointer(disjunctionType);
     }
   }
 
-  @NotNull
-  private SmartTypePointer createClassReferenceTypePointer(@NotNull PsiClassType classType) {
-    for (ClassTypePointerFactory factory : ClassTypePointerFactory.EP_NAME.getExtensions()) {
+  private @NotNull SmartTypePointer createClassReferenceTypePointer(@NotNull PsiClassType classType) {
+    for (ClassTypePointerFactory factory : ClassTypePointerFactory.EP_NAME.getExtensionList()) {
       SmartTypePointer pointer = factory.createClassTypePointer(classType, myProject);
       if (pointer != null) {
         return pointer;

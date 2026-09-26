@@ -30,39 +30,41 @@ public class LogicalPositionCacheStressTest extends AbstractEditorTest {
   private static final int ITERATIONS = 10000;
   private static final Long SEED_OVERRIDE = null; // set non-null value to run with a specific seed
 
-  private static final List<? extends Action> ourActions = Arrays.asList(new AddText(),
-                                                                         new RemoveText(),
-                                                                         new ReplaceText(),
-                                                                         new MoveText());
-
   private final Random myRandom = new Random() {{
     //noinspection ConstantConditions
-    setSeed(mySeed = (SEED_OVERRIDE == null ? nextLong() : SEED_OVERRIDE));
+    setSeed(mySeed = SEED_OVERRIDE == null ? nextLong() : SEED_OVERRIDE);
   }};
   private long mySeed;
 
   public void testRandomActions() {
-    System.out.println("Seed is " + mySeed);
+    List<? extends Action> actions = Arrays.asList(new AddText(),
+                                                     new RemoveText(),
+                                                     new ReplaceText(),
+                                                     new MoveText());
+    LOG.debug("Seed is " + mySeed);
     int i = 0;
     try {
       initText("");
       for (i = 1; i <= ITERATIONS; i++) {
-        doRandomAction();
-        checkConsistency(myEditor);
+        doRandomAction(actions);
+        checkConsistency(getEditor());
       }
     }
     catch (Throwable t) {
       String message = "Failed when run with seed=" + mySeed + " in iteration " + i;
-      System.out.println(message);
+      System.err.println(message);
       throw new RuntimeException(message, t);
     }
   }
 
-  private void doRandomAction() {
-    ourActions.get(myRandom.nextInt(ourActions.size())).perform(myEditor, myRandom);
+  private void doRandomAction(List<? extends Action> actions) {
+    actions.get(myRandom.nextInt(Arrays.asList(new AddText(),
+                                               new RemoveText(),
+                                               new ReplaceText(),
+                                               new MoveText()).size())).perform(getEditor(), myRandom);
   }
 
-  protected void checkConsistency(Editor editor) {
+  private static void checkConsistency(Editor editor) {
     checkLogicalPositionCache(editor);
   }
 
@@ -74,20 +76,21 @@ public class LogicalPositionCacheStressTest extends AbstractEditorTest {
     int textLength = random.nextInt(10);
     StringBuilder b = new StringBuilder();
     for (int i = 0; i < textLength; i++) {
-      switch (random.nextInt(5)) {
-        case 0: b.append('\t'); break;
-        case 1: b.append('\n'); break;
-        default: b.append(' ');
-      }
+      b.append(switch (random.nextInt(5)) {
+        case 0 -> '\t';
+        case 1 -> '\n';
+        default -> ' ';
+      });
     }
     return b;
   }
   
+  @FunctionalInterface
   interface Action {
     void perform(Editor editor, Random random);
   }
   
-  private static class AddText implements Action {
+  private class AddText implements Action {
     @Override
     public void perform(Editor editor, Random random) {
       Document document = editor.getDocument();
@@ -97,7 +100,7 @@ public class LogicalPositionCacheStressTest extends AbstractEditorTest {
     }
   }
 
-  private static class RemoveText implements Action {
+  private class RemoveText implements Action {
     @Override
     public void perform(Editor editor, Random random) {
       Document document = editor.getDocument();
@@ -109,7 +112,7 @@ public class LogicalPositionCacheStressTest extends AbstractEditorTest {
     }
   }
 
-  private static class ReplaceText implements Action {
+  private class ReplaceText implements Action {
     @Override
     public void perform(Editor editor, Random random) {
       Document document = editor.getDocument();
@@ -122,13 +125,13 @@ public class LogicalPositionCacheStressTest extends AbstractEditorTest {
     }
   }
 
-  private static class MoveText implements Action {
+  private class MoveText implements Action {
     @Override
     public void perform(Editor editor, Random random) {
       Document document = editor.getDocument();
       int textLength = document.getTextLength();
       if (textLength <= 0) return;
-      int[] offsets = new int[] {random.nextInt(textLength + 1), random.nextInt(textLength + 1), random.nextInt(textLength + 1)};
+      int[] offsets = {random.nextInt(textLength + 1), random.nextInt(textLength + 1), random.nextInt(textLength + 1)};
       Arrays.sort(offsets);
       if (offsets[0] == offsets[1] || offsets[1] == offsets[2]) return;
       WriteCommandAction.runWriteCommandAction(getProject(), () -> {

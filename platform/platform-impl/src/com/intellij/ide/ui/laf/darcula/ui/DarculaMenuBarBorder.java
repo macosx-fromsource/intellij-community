@@ -1,46 +1,36 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.ui.laf.darcula.ui;
 
+import com.intellij.ui.Gray;
+import com.intellij.ui.JBColor;
+import com.intellij.ui.mac.MacMenuSettings;
 import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.JBValue;
 
-import javax.swing.*;
 import javax.swing.border.Border;
 import javax.swing.plaf.UIResource;
-import java.awt.*;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Graphics;
+import java.awt.Insets;
 
 /**
  * @author Konstantin Bulenkov
  */
-public class DarculaMenuBarBorder implements Border, UIResource {
+public final class DarculaMenuBarBorder implements Border, UIResource {
+  private static final Color BORDER_COLOR = JBColor.namedColor("MenuBar.borderColor", new JBColor(Gray.xCD, Gray.x51));
+  private static final JBValue BW = new JBValue.Float(1);
+
   @Override
   public void paintBorder(Component c, Graphics g, int x, int y, int w, int h) {
-    g.translate(x, y);
-    w--;h--;
-    g.setColor(UIManager.getColor("MenuBar.darcula.borderColor"));
-    g.drawLine(0, h, w, h);
-    h--;
-    g.setColor(UIManager.getColor("MenuBar.darcula.borderShadowColor"));
-    g.drawLine(0, h, w, h);
-    g.translate(-x, -y);
+    g.setColor(BORDER_COLOR);
+    g.fillRect(x, y + h - BW.get(), w, BW.get());
   }
 
   @Override
   public Insets getBorderInsets(Component c) {
-    return JBUI.insetsBottom(2).asUIResource();
+    int height = MacMenuSettings.isJbSystemMenu ? 0 : 1;
+    return JBUI.insetsBottom(height).asUIResource();
   }
 
   @Override

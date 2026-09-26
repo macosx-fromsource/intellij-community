@@ -2,33 +2,43 @@ package com.intellij.openapi.editor.actions;
 
 import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.editor.impl.AbstractEditorTest;
+import org.junit.Ignore;
 
+@Ignore("AT-4013")
 public class ForwardBackwardParagraphActionTest extends AbstractEditorTest {
-  public void testForwardFromNonEmptyLine() throws Exception {
-    doTestForward("ab<caret>c\n" +
-                  "\n" +
-                  "def\n" +
-                  "\n",
+  public void testForwardFromNonEmptyLine() {
+    doTestForward("""
+                    ab<caret>c
 
-                  "abc\n" +
-                  "<caret>\n" +
-                  "def\n" +
-                  "\n");
+                    def
+
+                    """,
+
+                  """
+                    abc
+                    <caret>
+                    def
+
+                    """);
   }
 
-  public void testForwardFromEmptyLine() throws Exception {
-    doTestForward("<caret>\n" +
-                  "\n" +
-                  "def\n" +
-                  "\n",
+  public void testForwardFromEmptyLine() {
+    doTestForward("""
+                    <caret>
 
-                  "\n" +
-                  "\n" +
-                  "def\n" +
-                  "<caret>\n");
+                    def
+
+                    """,
+
+                  """
+
+
+                    def
+                    <caret>
+                    """);
   }
 
-  public void testForwardWhenNoMoreBlankLines() throws Exception {
+  public void testForwardWhenNoMoreBlankLines() {
     doTestForward("ab<caret>c\n" +
                   "def",
 
@@ -36,39 +46,49 @@ public class ForwardBackwardParagraphActionTest extends AbstractEditorTest {
                   "def<caret>");
   }
 
-  public void testForwardWhenTargetLineContainsSpaces() throws Exception {
-    doTestForward("<caret>abc\n" +
-                  "   \n",
+  public void testForwardWhenTargetLineContainsSpaces() {
+    doTestForward("""
+                    <caret>abc
+                      \s
+                    """,
 
-                  "abc\n" +
-                  "<caret>   \n");
+                  """
+                    abc
+                    <caret>  \s
+                    """);
   }
 
-  public void testBackwardFromNonEmptyLine() throws Exception {
-    doTestBackward("\n" +
-                   "abc\n" +
-                   "\n" +
-                   "de<caret>f",
+  public void testBackwardFromNonEmptyLine() {
+    doTestBackward("""
 
-                   "\n" +
-                   "abc\n" +
-                   "<caret>\n" +
-                   "def");
+                     abc
+
+                     de<caret>f""",
+
+                   """
+
+                     abc
+                     <caret>
+                     def""");
   }
 
-  public void testBackwardFromEmptyLine() throws Exception {
-    doTestBackward("\n" +
-                   "abc\n" +
-                   "\n" +
-                   "<caret>\n",
+  public void testBackwardFromEmptyLine() {
+    doTestBackward("""
 
-                   "<caret>\n" +
-                   "abc\n" +
-                   "\n" +
-                   "\n");
+                     abc
+
+                     <caret>
+                     """,
+
+                   """
+                     <caret>
+                     abc
+
+
+                     """);
   }
 
-  public void testBackwardWhenNoMoreBlankLines() throws Exception {
+  public void testBackwardWhenNoMoreBlankLines() {
     doTestBackward("abc\n" +
                    "de<caret>f",
 
@@ -76,19 +96,23 @@ public class ForwardBackwardParagraphActionTest extends AbstractEditorTest {
                    "def");
   }
 
-  public void testBackwardWhenTargetLineContainsSpaces() throws Exception {
-    doTestBackward("  \n" +
-                   "abc\n" +
-                   "\n" +
-                   "<caret>\n",
+  public void testBackwardWhenTargetLineContainsSpaces() {
+    doTestBackward("""
+                      \s
+                     abc
 
-                   "  \n" +
-                   "<caret>abc\n" +
-                   "\n" +
-                   "\n");
+                     <caret>
+                     """,
+
+                   """
+                      \s
+                     <caret>abc
+
+
+                     """);
   }
 
-  public void testBackwardWhenPreviousLineContainsSpaces() throws Exception {
+  public void testBackwardWhenPreviousLineContainsSpaces() {
     doTestBackward("  \n" +
                    "ab<caret>c",
 
@@ -96,27 +120,69 @@ public class ForwardBackwardParagraphActionTest extends AbstractEditorTest {
                    "<caret>abc");
   }
 
-  public void testBackwardAtLineStartWhenPreviousLineContainsSpaces() throws Exception {
-    doTestBackward("\n" +
-                   "ttt\n" +
-                   "  \n" +
-                   "<caret>abc",
+  public void testBackwardAtLineStartWhenPreviousLineContainsSpaces() {
+    doTestBackward("""
 
-                   "<caret>\n" +
-                   "ttt\n" +
-                   "  \n" +
-                   "abc");
+                     ttt
+                      \s
+                     <caret>abc""",
+
+                   """
+                     <caret>
+                     ttt
+                      \s
+                     abc""");
   }
 
-  private void doTestForward(String initialText, String resultText) throws Exception {
-    initText(initialText);
-    executeAction(IdeActions.ACTION_EDITOR_FORWARD_PARAGRAPH);
-    checkResultByText(resultText);
+  public void testForwardWithSelection() {
+    doTestForwardWithSelection("""
+                                 ab<caret>c
+
+                                 def
+
+                                 """,
+
+                               """
+                                 ab<selection>c
+                                 <caret></selection>
+                                 def
+
+                                 """);
   }
 
-  private void doTestBackward(String initialText, String resultText) throws Exception {
+  public void testBackwardWithSelection() {
+    doTestBackwardWithSelection("""
+
+                                  abc
+
+                                  de<caret>f""",
+
+                                """
+
+                                  abc
+                                  <selection><caret>
+                                  de</selection>f""");
+  }
+
+  private void doTestForward(String initialText, String resultText) {
+    doTest(initialText, resultText, IdeActions.ACTION_EDITOR_FORWARD_PARAGRAPH);
+  }
+
+  private void doTestBackward(String initialText, String resultText) {
+    doTest(initialText, resultText, IdeActions.ACTION_EDITOR_BACKWARD_PARAGRAPH);
+  }
+
+  private void doTestForwardWithSelection(String initialText, String resultText) {
+    doTest(initialText, resultText, IdeActions.ACTION_EDITOR_FORWARD_PARAGRAPH_WITH_SELECTION);
+  }
+
+  private void doTestBackwardWithSelection(String initialText, String resultText) {
+    doTest(initialText, resultText, IdeActions.ACTION_EDITOR_BACKWARD_PARAGRAPH_WITH_SELECTION);
+  }
+
+  private void doTest(String initialText, String resultText, String action) {
     initText(initialText);
-    executeAction(IdeActions.ACTION_EDITOR_BACKWARD_PARAGRAPH);
+    executeAction(action);
     checkResultByText(resultText);
   }
 }

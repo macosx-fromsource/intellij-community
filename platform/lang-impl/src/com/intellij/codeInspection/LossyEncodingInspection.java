@@ -1,89 +1,60 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection;
 
 import com.intellij.ide.DataManager;
+import com.intellij.lang.LangBundle;
 import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.lang.properties.charset.Native2AsciiCharset;
 import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.actionSystem.DataContext;
-import com.intellij.openapi.actionSystem.PlatformDataKeys;
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
+import com.intellij.openapi.fileTypes.CharsetUtil;
+import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.ListPopup;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.encoding.ChangeFileEncodingAction;
+import com.intellij.openapi.vfs.encoding.EncodingProjectManager;
 import com.intellij.openapi.vfs.encoding.EncodingUtil;
 import com.intellij.psi.FileViewProvider;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.util.PsiUtilBase;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.SmartList;
+import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
-import java.io.File;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
-public class LossyEncodingInspection extends LocalInspectionTool {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.LossyEncodingInspection");
-
-  private static final LocalQuickFix CHANGE_ENCODING_FIX = new ChangeEncodingFix();
-  private static final LocalQuickFix RELOAD_ENCODING_FIX = new ReloadInAnotherEncodingFix();
-
+@ApiStatus.Internal
+public final class LossyEncodingInspection extends LocalInspectionTool implements DumbAware {
   @Override
-  @Nls
-  @NotNull
-  public String getGroupDisplayName() {
+  public @Nls @NotNull String getGroupDisplayName() {
     return InspectionsBundle.message("group.names.internationalization.issues");
   }
 
   @Override
-  @Nls
-  @NotNull
-  public String getDisplayName() {
-    return InspectionsBundle.message("lossy.encoding");
-  }
-
-  @Override
-  @NonNls
-  @NotNull
-  public String getShortName() {
+  public @NonNls @NotNull String getShortName() {
     return "LossyEncoding";
   }
 
   @Override
-  @Nullable
-  public ProblemDescriptor[] checkFile(@NotNull PsiFile file, @NotNull InspectionManager manager, boolean isOnTheFly) {
+  public ProblemDescriptor @Nullable [] checkFile(@NotNull PsiFile file, @NotNull InspectionManager manager, boolean isOnTheFly) {
     if (InjectedLanguageManager.getInstance(file.getProject()).isInjectedFragment(file)) return null;
     if (!file.isPhysical()) return null;
     FileViewProvider viewProvider = file.getViewProvider();
@@ -103,7 +74,7 @@ public class LossyEncodingInspection extends LocalInspectionTool {
       checkIfCharactersWillBeLostAfterSave(file, manager, isOnTheFly, text, charset, descriptors);
     }
 
-    return descriptors.toArray(new ProblemDescriptor[descriptors.size()]);
+    return descriptors.toArray(ProblemDescriptor.EMPTY_ARRAY);
   }
 
   private static boolean checkFileLoadedInWrongEncoding(@NotNull PsiFile file,
@@ -111,18 +82,64 @@ public class LossyEncodingInspection extends LocalInspectionTool {
                                                         boolean isOnTheFly,
                                                         @NotNull VirtualFile virtualFile,
                                                         @NotNull Charset charset,
-                                                        @NotNull List<ProblemDescriptor> descriptors) {
+                                                        @NotNull List<? super ProblemDescriptor> descriptors) {
     if (FileDocumentManager.getInstance().isFileModified(virtualFile) // when file is modified, it's too late to reload it
-        || EncodingUtil.checkCanReload(virtualFile).second != null // can't reload in another encoding, no point trying
+        || !EncodingUtil.canReload(virtualFile) // can't reload in another encoding, no point trying
       ) {
       return true;
     }
     if (!isGoodCharset(virtualFile, charset)) {
-      descriptors.add(manager.createProblemDescriptor(file, "File was loaded in the wrong encoding: '"+charset+"'",
-                                                      RELOAD_ENCODING_FIX, ProblemHighlightType.GENERIC_ERROR, isOnTheFly));
+      LocalQuickFix[] fixes = getFixes(file, virtualFile, charset);
+      descriptors.add(manager.createProblemDescriptor(file, LangBundle.message("inspection.lossy.encoding.description", charset), true,
+                                                      ProblemHighlightType.GENERIC_ERROR, isOnTheFly, fixes));
       return false;
     }
     return true;
+  }
+
+  private static LocalQuickFix @NotNull [] getFixes(@NotNull PsiFile file,
+                                                    @NotNull VirtualFile virtualFile,
+                                                    @NotNull Charset wrongCharset) {
+    Set<Charset> suspects = ContainerUtil.newHashSet(CharsetToolkit.getDefaultSystemCharset(), CharsetToolkit.getPlatformCharset());
+    suspects.remove(wrongCharset);
+    List<Charset> goodCharsets = ContainerUtil.filter(suspects, c -> isGoodCharset(virtualFile, c));
+    List<LocalQuickFix> fixes = new ArrayList<>();
+    if (!goodCharsets.isEmpty()) {
+      Charset goodCharset = goodCharsets.get(0);
+      fixes.add(new LocalQuickFix() {
+        @Override
+        public @Nls @NotNull String getFamilyName() {
+          return InspectionsBundle.message("reload.file.encoding.family.name", goodCharset.displayName());
+        }
+
+        @Override
+        public boolean startInWriteAction() {
+          return false;
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+          Document document = PsiDocumentManager.getInstance(project).getDocument(file);
+          if (document == null) {
+            return;
+          }
+          ChangeFileEncodingAction.changeTo(project, document, null, virtualFile, goodCharset, EncodingUtil.Magic8.ABSOLUTELY, EncodingUtil.Magic8.ABSOLUTELY);
+        }
+      });
+      fixes.add(new LocalQuickFix() {
+        @Override
+        public @Nls @NotNull String getFamilyName() {
+          return InspectionsBundle.message("set.project.encoding.family.name", goodCharset.displayName());
+        }
+
+        @Override
+        public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
+          EncodingProjectManager.getInstance(project).setDefaultCharsetName(goodCharset.name());
+        }
+      });
+    }
+    fixes.add(new ReloadInAnotherEncodingFix(file));
+    return fixes.toArray(LocalQuickFix.EMPTY_ARRAY);
   }
 
   // check if file was loaded in correct encoding
@@ -140,24 +157,16 @@ public class LossyEncodingInspection extends LocalInspectionTool {
     catch (Exception e) {
       return true;
     }
+    if (loadedBytes.length == 0 && bytesToSave.length == 0) {
+      // hold on, file was just created, no content was written yet
+      return true;
+    }
     byte[] bom = virtualFile.getBOM();
     if (bom != null && !ArrayUtil.startsWith(bytesToSave, bom)) {
       bytesToSave = ArrayUtil.mergeArrays(bom, bytesToSave); // for 2-byte encodings String.getBytes(Charset) adds BOM automatically
     }
 
-    boolean equals = Arrays.equals(bytesToSave, loadedBytes);
-    if (!equals && LOG.isDebugEnabled()) {
-      try {
-        String tempDir = FileUtil.getTempDirectory();
-        FileUtil.writeToFile(new File(tempDir, "lossy-bytes-to-save"), bytesToSave);
-        FileUtil.writeToFile(new File(tempDir, "lossy-loaded-bytes"), loadedBytes);
-        LOG.debug("lossy bytes dumped into " + tempDir);
-      }
-      catch (IOException e) {
-        throw new RuntimeException(e);
-      }
-    }
-    return equals;
+    return Arrays.equals(bytesToSave, loadedBytes);
   }
 
   private static void checkIfCharactersWillBeLostAfterSave(@NotNull PsiFile file,
@@ -166,85 +175,89 @@ public class LossyEncodingInspection extends LocalInspectionTool {
                                                            @NotNull CharSequence text,
                                                            @NotNull Charset charset,
                                                            @NotNull List<ProblemDescriptor> descriptors) {
-    int errorCount = 0;
-    int start = -1;
-    CharBuffer buffer = CharBuffer.wrap(text); // temp buffer for encoding/decoding back a char or a surrogate pair.
-    for (int i = 0; i <= text.length(); i++) {
-      char c = i >= text.length() ? 0 : text.charAt(i);
-      int end = Character.isHighSurrogate(c) && i<text.length()-1 ? i + 2 : i+1;
-      if (i == text.length() || isRepresentable(buffer, i, end, charset)) {
-        if (start != -1) {
-          TextRange range = new TextRange(start, i);
-          String message = InspectionsBundle.message("unsupported.character.for.the.charset", charset);
-          ProblemDescriptor descriptor =
-            manager.createProblemDescriptor(file, range, message, ProblemHighlightType.GENERIC_ERROR_OR_WARNING, isOnTheFly, CHANGE_ENCODING_FIX);
-          descriptors.add(descriptor);
-          start = -1;
-          //do not report too many errors
-          if (errorCount++ > 200) break;
-        }
+    //do not report too many errors
+    for (int pos = 0, errorCount = 0; pos < text.length() && errorCount < 200; errorCount++) {
+      TextRange errRange = CharsetUtil.findUnmappableCharacters(text.subSequence(pos, text.length()), charset);
+      if (errRange == null) break;
+      errRange = errRange.shiftRight(pos);
+
+      ProblemDescriptor lastDescriptor = ContainerUtil.getLastItem(descriptors);
+      if (lastDescriptor != null && lastDescriptor.getTextRangeInElement().getEndOffset() == errRange.getStartOffset()) {
+        // combine two adjacent descriptors
+        errRange = lastDescriptor.getTextRangeInElement().union(errRange);
+        descriptors.remove(descriptors.size() - 1);
       }
-      else if (start == -1) {
-        start = i;
-      }
-      if (end != i+1) {
-        i++; // skip surrogate low
-      }
+      String message = InspectionsBundle.message("unsupported.character.for.the.charset", charset);
+      ProblemDescriptor descriptor =
+            manager.createProblemDescriptor(file, errRange, message, ProblemHighlightType.GENERIC_ERROR_OR_WARNING, isOnTheFly,
+                                            new ChangeEncodingFix(file));
+      descriptors.add(descriptor);
+      pos = errRange.getEndOffset();
     }
   }
 
-  private static boolean isRepresentable(@NotNull CharBuffer srcBuffer,
-                                         int start,
-                                         int end,
-                                         @NotNull Charset charset) {
-    srcBuffer.position(start);
-    srcBuffer.limit(end);
-    ByteBuffer out = charset.encode(srcBuffer);
-    CharBuffer buffer = charset.decode(out);
-    srcBuffer.position(start);
-    return buffer.equals(srcBuffer);
-  }
-
-  private static class ReloadInAnotherEncodingFix extends ChangeEncodingFix {
-    @NotNull
-    @Override
-    public String getName() {
-      return "Reload in another encoding";
+  private static final class ReloadInAnotherEncodingFix extends ChangeEncodingFix {
+    ReloadInAnotherEncodingFix(@NotNull PsiFile file) {
+      super(file);
     }
 
     @Override
-    public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-      if (FileDocumentManager.getInstance().isFileModified(descriptor.getPsiElement().getContainingFile().getVirtualFile())) return;
-      super.applyFix(project, descriptor);
+    public @NotNull String getText() {
+      return InspectionsBundle.message("reload.in.another.encoding.text");
+    }
+
+    @Override
+    public void invoke(@NotNull Project project,
+                       @NotNull PsiFile psiFile,
+                       @Nullable Editor editor,
+                       @NotNull PsiElement startElement,
+                       @NotNull PsiElement endElement) {
+      if (FileDocumentManager.getInstance().isFileModified(psiFile.getVirtualFile())) return;
+      super.invoke(project, psiFile, editor, startElement, endElement);
     }
   }
 
-  private static class ChangeEncodingFix implements LocalQuickFix {
-    @NotNull
-    @Override
-    public String getFamilyName() {
-      return "Change file encoding";
+  private static class ChangeEncodingFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+    ChangeEncodingFix(@NotNull PsiFile file) {
+      super(file);
     }
 
     @Override
-    public void applyFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) {
-      PsiFile psiFile = descriptor.getPsiElement().getContainingFile();
+    public boolean startInWriteAction() {
+      return false;
+    }
+
+    @Override
+    public @NotNull String getText() {
+      return getFamilyName();
+    }
+
+    @Override
+    public @NotNull String getFamilyName() {
+      return InspectionsBundle.message("change.encoding.fix.family.name");
+    }
+
+    @Override
+    public void invoke(@NotNull Project project,
+                       @NotNull PsiFile psiFile,
+                       @Nullable Editor editor,
+                       @NotNull PsiElement startElement,
+                       @NotNull PsiElement endElement) {
       VirtualFile virtualFile = psiFile.getVirtualFile();
-
-      Editor editor = PsiUtilBase.findEditor(psiFile);
-      DataContext dataContext = createDataContext(editor, editor == null ? null : editor.getComponent(), virtualFile, project);
-      ListPopup popup = new ChangeFileEncodingAction().createPopup(dataContext);
+      DataContext dataContext = createDataContext(project, editor, virtualFile);
+      ListPopup popup = new ChangeFileEncodingAction().createPopup(dataContext, null);
       if (popup != null) {
         popup.showInBestPositionFor(dataContext);
       }
     }
 
-    @NotNull
-    static DataContext createDataContext(Editor editor, Component component, VirtualFile selectedFile, Project project) {
-      DataContext parent = DataManager.getInstance().getDataContext(component);
-      DataContext context = SimpleDataContext.getSimpleContext(PlatformDataKeys.CONTEXT_COMPONENT.getName(), editor == null ? null : editor.getComponent(), parent);
-      DataContext projectContext = SimpleDataContext.getSimpleContext(CommonDataKeys.PROJECT.getName(), project, context);
-      return SimpleDataContext.getSimpleContext(CommonDataKeys.VIRTUAL_FILE.getName(), selectedFile, projectContext);
+    static @NotNull DataContext createDataContext(@NotNull Project project, @Nullable Editor editor, @Nullable VirtualFile selectedFile) {
+      DataContext parent = editor == null ? null : DataManager.getInstance().getDataContext(editor.getContentComponent());
+      return SimpleDataContext.builder()
+        .setParent(parent)
+        .add(CommonDataKeys.PROJECT, project)
+        .add(CommonDataKeys.VIRTUAL_FILE, selectedFile)
+        .build();
     }
   }
 }

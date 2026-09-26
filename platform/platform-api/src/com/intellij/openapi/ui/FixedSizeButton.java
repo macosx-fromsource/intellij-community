@@ -1,27 +1,17 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.ui;
 
 import com.intellij.icons.AllIcons;
-import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.JBInsets;
+import com.intellij.util.ui.StartupUiUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.Icon;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JTextField;
+import java.awt.Dimension;
 
 /**
  * This class represents non-resizable, non-focusable button with the
@@ -37,28 +27,22 @@ public class FixedSizeButton extends JButton {
 
   private FixedSizeButton(int size, JComponent component) {
     Icon icon = AllIcons.General.Ellipsis;
-    if (icon != null) {
-      // loading may fail at design time
-      setIcon(icon);
-    }
-    else {
-      setText(".");
-    }
+    setIcon(icon);
     mySize = size;
     myComponent = component;
-    setMargin(JBUI.emptyInsets());
+    setMargin(JBInsets.emptyInsets());
     setDefaultCapable(false);
     setFocusable(false);
-    if (((UIUtil.isUnderAquaLookAndFeel()) && size == -1) || UIUtil.isUnderIntelliJLaF() || UIUtil.isUnderDarcula()) {
+    if (UIUtil.isUnderIntelliJLaF() || StartupUiUtil.isUnderDarcula()) {
       putClientProperty("JButton.buttonType", "square");
     }
   }
 
   /**
-   * Creates the <code>FixedSizeButton</code> with specified size.
+   * Creates the {@code FixedSizeButton} with specified size.
    *
    * @throws IllegalArgumentException
-   *          if <code>size</code> isn't
+   *          if {@code size} isn't
    *          positive integer number.
    */
   public FixedSizeButton(int size) {
@@ -69,37 +53,38 @@ public class FixedSizeButton extends JButton {
   }
 
   /**
-   * Creates the <code>FixedSizeButton</code> which size is equals to
-   * <code>component.getPreferredSize().height</code>. It is very convenient
+   * Creates the {@code FixedSizeButton} which size is equals to
+   * {@code component.getPreferredSize().height}. It is very convenient
    * way to create "browse" like button near the text fields.
    */
   public FixedSizeButton(@NotNull JComponent component) {
     this(-1, component);
   }
 
+  @Override
   public Dimension getMinimumSize() {
     return getPreferredSize();
   }
 
+  @Override
   public Dimension getMaximumSize() {
     return getPreferredSize();
   }
 
+  @Override
   public Dimension getPreferredSize() {
-    if (myComponent != null) {
-      int size = myComponent.getPreferredSize().height;
-      if (myComponent instanceof JComboBox && (UIUtil.isUnderIntelliJLaF() || UIUtil.isUnderDarcula())) {
-        // JComboBox's preferred height is 2px greater than JTextField's one, because
-        // javax.swing.DefaultListCellRenderer#getNoFocusBorder returns (1,1,1,1) border.
-        // Decrement to have equal sizes for pretty look when stacked vertically
-        size -= 2;
-      }
-      return new Dimension(size, size);
-    }
     if (mySize != -1) {
       return new Dimension(mySize, mySize);
     }
-    return super.getPreferredSize();
+
+    Dimension d = super.getPreferredSize();
+    int base = new JTextField().getPreferredSize().height;
+    if (base %2 == 1) base++;
+    d.width = Math.max(d.height, base);
+    int width = mySize == -1 ? d.width : mySize;
+    int height = myComponent != null ? myComponent.getPreferredSize().height : mySize != -1 ? mySize : base;
+
+    return new Dimension(width, height);
   }
 
   public void setAttachedComponent(JComponent component) {
@@ -112,20 +97,5 @@ public class FixedSizeButton extends JButton {
 
   public void setSize(int size) {
     mySize = size;
-  }
-
-  @Override
-  public void setBounds(int x, int y, int width, int height) {
-    int size = Math.min(width, height);
-    super.setBounds(x, y, size, size);
-  }
-
-  @Override
-  public void setBounds(Rectangle r) {
-    if (r.width != r.height) {
-      int size = Math.min(r.width, r.height);
-      r = new Rectangle(r.x, r.y, size, size);
-    }
-    super.setBounds(r);
   }
 }

@@ -1,41 +1,48 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.roots.ui.configuration.artifacts;
 
 import com.intellij.CommonBundle;
+import com.intellij.ide.JavaUiBundle;
+import com.intellij.java.JavaBundle;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
-import com.intellij.openapi.application.Result;
 import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.extensions.ExtensionPointListener;
+import com.intellij.openapi.extensions.PluginDescriptor;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.options.ConfigurationException;
-import com.intellij.openapi.project.*;
+import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.openapi.roots.impl.libraries.LibraryTableImplUtil;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
 import com.intellij.openapi.roots.ui.configuration.ModuleEditor;
+import com.intellij.openapi.roots.ui.configuration.ProjectStructureConfigurable;
 import com.intellij.openapi.roots.ui.configuration.libraryEditor.LibraryEditorListener;
-import com.intellij.openapi.roots.ui.configuration.projectRoot.*;
+import com.intellij.openapi.roots.ui.configuration.projectRoot.BaseStructureConfigurable;
+import com.intellij.openapi.roots.ui.configuration.projectRoot.GlobalLibrariesConfigurable;
+import com.intellij.openapi.roots.ui.configuration.projectRoot.ModuleStructureConfigurable;
+import com.intellij.openapi.roots.ui.configuration.projectRoot.ProjectLibrariesConfigurable;
+import com.intellij.openapi.roots.ui.configuration.projectRoot.RemoveConfigurableHandler;
+import com.intellij.openapi.roots.ui.configuration.projectRoot.StructureConfigurableContext;
 import com.intellij.openapi.roots.ui.configuration.projectRoot.daemon.ProjectStructureElement;
 import com.intellij.openapi.ui.MasterDetailsState;
+import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.ui.NamedConfigurable;
+import com.intellij.openapi.ui.NonEmptyInputValidator;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.packaging.artifacts.*;
+import com.intellij.openapi.util.NlsActions;
+import com.intellij.packaging.artifacts.Artifact;
+import com.intellij.packaging.artifacts.ArtifactListener;
+import com.intellij.packaging.artifacts.ArtifactTemplate;
+import com.intellij.packaging.artifacts.ArtifactType;
+import com.intellij.packaging.artifacts.ModifiableArtifact;
+import com.intellij.packaging.artifacts.ModifiableArtifactModel;
+import com.intellij.packaging.elements.ComplexPackagingElementType;
+import com.intellij.packaging.elements.CompositePackagingElement;
+import com.intellij.packaging.elements.PackagingElementType;
 import com.intellij.packaging.impl.artifacts.ArtifactUtil;
 import com.intellij.packaging.impl.artifacts.InvalidArtifact;
 import com.intellij.packaging.impl.artifacts.PackagingElementPath;
@@ -46,21 +53,28 @@ import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.Icon;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * @author nik
- */
-public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
+public final class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
   private ArtifactsStructureConfigurableContextImpl myPackagingEditorContext;
   private final ArtifactEditorSettings myDefaultSettings = new ArtifactEditorSettings();
 
-  public ArtifactsStructureConfigurable(@NotNull Project project) {
-    super(project, new ArtifactStructureConfigurableState());
+  public ArtifactsStructureConfigurable(@NotNull ProjectStructureConfigurable projectStructureConfigurable) {
+    super(projectStructureConfigurable, new ArtifactStructureConfigurableState());
+    PackagingElementType.EP_NAME.addExtensionPointListener(new ExtensionPointListener<>() {
+      @Override
+      public void extensionRemoved(@NotNull PackagingElementType extension, @NotNull PluginDescriptor pluginDescriptor) {
+        if (extension instanceof ComplexPackagingElementType && myDefaultSettings.getTypesToShowContent().contains(extension)) {
+          List<ComplexPackagingElementType<?>> updated = new ArrayList<>(myDefaultSettings.getTypesToShowContent());
+          updated.remove(extension);
+          myDefaultSettings.setTypesToShowContent(updated);
+        }
+      }
+    }, this);
   }
 
   @Override
@@ -71,7 +85,7 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
   public void init(StructureConfigurableContext context, ModuleStructureConfigurable moduleStructureConfigurable,
                    ProjectLibrariesConfigurable projectLibrariesConfig, GlobalLibrariesConfigurable globalLibrariesConfig) {
     super.init(context);
-    myPackagingEditorContext = new ArtifactsStructureConfigurableContextImpl(myContext, myProject, myDefaultSettings, new ArtifactAdapter() {
+    myPackagingEditorContext = new ArtifactsStructureConfigurableContextImpl(myContext, myProject, myDefaultSettings, new ArtifactListener() {
       @Override
       public void artifactAdded(@NotNull Artifact artifact) {
         final MyNode node = addArtifactNode(artifact);
@@ -83,9 +97,7 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
     context.getModulesConfigurator().addAllModuleChangeListener(new ModuleEditor.ChangeListener() {
       @Override
       public void moduleStateChanged(ModifiableRootModel moduleRootModel) {
-        for (ProjectStructureElement element : getProjectStructureElements()) {
-          myContext.getDaemonAnalyzer().queueUpdate(element);
-        }
+        myContext.getDaemonAnalyzer().queueUpdates(getProjectStructureElements());
       }
     });
 
@@ -95,10 +107,6 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
         if (deletedItem instanceof Library || deletedItem instanceof Module) {
           onElementDeleted();
         }
-      }
-
-      @Override
-      public void itemsExternallyChanged() {
       }
     };
     moduleStructureConfigurable.addItemsChangeListener(listener);
@@ -119,7 +127,7 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
 
   private void updateLibraryElements(final Artifact artifact, final Library library, final String oldName, final String newName) {
     if (ArtifactUtil.processPackagingElements(myPackagingEditorContext.getRootElement(artifact), LibraryElementType.LIBRARY_ELEMENT_TYPE,
-                                              new PackagingElementProcessor<LibraryPackagingElement>() {
+                                              new PackagingElementProcessor<>() {
                                                 @Override
                                                 public boolean process(@NotNull LibraryPackagingElement element,
                                                                        @NotNull PackagingElementPath path) {
@@ -130,7 +138,7 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
     }
     myPackagingEditorContext.editLayout(artifact, () -> {
       final ModifiableArtifact modifiableArtifact = myPackagingEditorContext.getOrCreateModifiableArtifactModel().getOrCreateModifiableArtifact(artifact);
-      ArtifactUtil.processPackagingElements(modifiableArtifact, LibraryElementType.LIBRARY_ELEMENT_TYPE, new PackagingElementProcessor<LibraryPackagingElement>() {
+      ArtifactUtil.processPackagingElements(modifiableArtifact, LibraryElementType.LIBRARY_ELEMENT_TYPE, new PackagingElementProcessor<>() {
         @Override
         public boolean process(@NotNull LibraryPackagingElement element, @NotNull PackagingElementPath path) {
           if (isResolvedToLibrary(element, library, oldName)) {
@@ -150,7 +158,7 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
     if (!element.getLibraryName().equals(name)) {
       return false;
     }
-    
+
     final LibraryTable table = library.getTable();
     if (table != null) {
       return table.getTableLevel().equals(element.getLevel());
@@ -178,9 +186,8 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
   }
 
   @Override
-  @Nls
-  public String getDisplayName() {
-    return ProjectBundle.message("display.name.artifacts");
+  public @Nls String getDisplayName() {
+    return JavaUiBundle.message("display.name.artifacts");
   }
 
   @Override
@@ -192,9 +199,8 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
     }
   }
 
-  @NotNull
   @Override
-  protected Collection<? extends ProjectStructureElement> getProjectStructureElements() {
+  protected @NotNull Collection<? extends ProjectStructureElement> getProjectStructureElements() {
     final List<ProjectStructureElement> elements = new ArrayList<>();
     for (Artifact artifact : myPackagingEditorContext.getArtifactModel().getAllArtifactsIncludingInvalid()) {
       elements.add(myPackagingEditorContext.getOrCreateArtifactElement(artifact));
@@ -240,27 +246,26 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
   }
 
   @Override
-  protected AbstractAddGroup createAddAction() {
-    return new AbstractAddGroup(ProjectBundle.message("add.new.header.text")) {
-      @NotNull
+  protected AbstractAddGroup createAddAction(boolean fromPopup) {
+    return new AbstractAddGroup(JavaUiBundle.message("add.new.header.text")) {
       @Override
-      public AnAction[] getChildren(@Nullable AnActionEvent e) {
-        final ArtifactType[] types = ArtifactType.getAllTypes();
-        final AnAction[] actions = new AnAction[types.length];
-        for (int i = 0; i < types.length; i++) {
-          actions[i] = createAddArtifactAction(types[i]);
+      public AnAction @NotNull [] getChildren(@Nullable AnActionEvent e) {
+        List<ArtifactType> types = ArtifactType.getAllTypes();
+        final AnAction[] actions = new AnAction[types.size()];
+        for (int i = 0; i < types.size(); i++) {
+          actions[i] = createAddArtifactAction(types.get(i));
         }
         return actions;
       }
     };
   }
 
-  private AnAction createAddArtifactAction(@NotNull final ArtifactType type) {
+  private AnAction createAddArtifactAction(final @NotNull ArtifactType type) {
     final List<? extends ArtifactTemplate> templates = type.getNewArtifactTemplates(myPackagingEditorContext);
     final ArtifactTemplate emptyTemplate = new ArtifactTemplate() {
       @Override
-      public String getPresentableName() {
-        return "Empty";
+      public @Nls(capitalization = Nls.Capitalization.Title) String getPresentableName() {
+        return JavaBundle.message("empty.title");
       }
 
       @Override
@@ -273,7 +278,7 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
     if (templates.isEmpty()) {
       return new AddArtifactAction(type, emptyTemplate, type.getPresentableName(), type.getIcon());
     }
-    final DefaultActionGroup group = new DefaultActionGroup(type.getPresentableName(), true);
+    final DefaultActionGroup group = DefaultActionGroup.createPopupGroup(() -> type.getPresentableName());
     group.getTemplatePresentation().setIcon(type.getIcon());
     group.add(new AddArtifactAction(type, emptyTemplate, emptyTemplate.getPresentableName(), null));
     group.addSeparator();
@@ -289,32 +294,33 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
   }
 
   @Override
+  protected @NotNull List<? extends AnAction> createCopyActions(boolean fromPopup) {
+    final ArrayList<AnAction> actions = new ArrayList<>();
+    actions.add(new CopyArtifactAction());
+    return actions;
+  }
+
+  @Override
   public void apply() throws ConfigurationException {
     myPackagingEditorContext.saveEditorSettings();
-    checkForEmptyAndDuplicatedNames("Artifact", CommonBundle.getErrorTitle(), ArtifactConfigurableBase.class);
+    checkForEmptyAndDuplicatedNames(JavaUiBundle.message("configurable.artifact.prefix"), CommonBundle.getErrorTitle(), ArtifactConfigurableBase.class);
     super.apply();
 
     myPackagingEditorContext.getManifestFilesInfo().saveManifestFiles();
     final ModifiableArtifactModel modifiableModel = myPackagingEditorContext.getActualModifiableModel();
     if (modifiableModel != null) {
-      new WriteAction() {
-        @Override
-        protected void run(@NotNull final Result result) {
-          modifiableModel.commit();
-        }
-      }.execute();
-      myPackagingEditorContext.resetModifiableModel();
+      WriteAction.run(() -> modifiableModel.commit());
     }
-
-
-    reset(); // TODO: fix to not reset on apply!
+    myPackagingEditorContext.resetModifiableModel();
+    reloadTreeNodes();
+    restoreLastSelection();
   }
 
   @Override
   public void disposeUIResources() {
     myPackagingEditorContext.saveEditorSettings();
     super.disposeUIResources();
-    myPackagingEditorContext.disposeUIResources();
+    myPackagingEditorContext.resetModifiableModel();
   }
 
   @Override
@@ -347,17 +353,7 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
   }
 
   @Override
-  protected void processRemovedItems() {
-  }
-
-  @Override
-  protected boolean wasObjectStored(Object editableObject) {
-    return false;
-  }
-
-  @Override
-  @NotNull
-  public String getId() {
+  public @NotNull String getId() {
     return "project.artifacts";
   }
 
@@ -366,12 +362,12 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
   }
 
   private class ArtifactRemoveHandler extends RemoveConfigurableHandler<Artifact> {
-    public ArtifactRemoveHandler() {
+    ArtifactRemoveHandler() {
       super(ArtifactConfigurableBase.class);
     }
 
     @Override
-    public boolean remove(@NotNull Collection<Artifact> artifacts) {
+    public boolean remove(@NotNull Collection<? extends Artifact> artifacts) {
       for (Artifact artifact : artifacts) {
         myPackagingEditorContext.getOrCreateModifiableArtifactModel().removeArtifact(artifact);
         myContext.getDaemonAnalyzer().removeElement(myPackagingEditorContext.getOrCreateArtifactElement(artifact));
@@ -384,7 +380,7 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
     private final ArtifactType myType;
     private final ArtifactTemplate myArtifactTemplate;
 
-    public AddArtifactAction(@NotNull ArtifactType type, @NotNull ArtifactTemplate artifactTemplate, final @NotNull String actionText,
+    AddArtifactAction(@NotNull ArtifactType type, @NotNull ArtifactTemplate artifactTemplate, final @NotNull @NlsActions.ActionText String actionText,
                              final Icon icon) {
       super(actionText, null, icon);
       myType = type;
@@ -392,8 +388,47 @@ public class ArtifactsStructureConfigurable extends BaseStructureConfigurable {
     }
 
     @Override
-    public void actionPerformed(AnActionEvent e) {
+    public void actionPerformed(@NotNull AnActionEvent e) {
       addArtifact(myType, myArtifactTemplate);
+    }
+  }
+
+  private final class CopyArtifactAction extends AnAction {
+   private CopyArtifactAction() {
+      super(CommonBundle.messagePointer("button.copy"), CommonBundle.messagePointer("button.copy"), COPY_ICON);
+    }
+
+    @Override
+    public void actionPerformed(final @NotNull AnActionEvent e) {
+      final Object o = getSelectedObject();
+      if (o instanceof Artifact selected) {
+        ModifiableArtifactModel artifactModel = myPackagingEditorContext.getOrCreateModifiableArtifactModel();
+        String suggestedName = ArtifactUtil.generateUniqueArtifactName(selected.getName(), artifactModel);
+        final String newName = Messages.showInputDialog(JavaUiBundle.message("label.enter.artifact.name"),
+                                                        JavaUiBundle.message("dialog.title.copy.artifact"),
+                                                        COPY_ICON,
+                                                        suggestedName,
+                                                        new NonEmptyInputValidator());
+        if (newName == null) return;
+
+        CompositePackagingElement<?> rootCopy = ArtifactUtil.copyFromRoot(selected.getRootElement(), myProject);
+        artifactModel.addArtifact(newName, selected.getArtifactType(), rootCopy);
+      }
+    }
+
+    @Override
+    public void update(final @NotNull AnActionEvent e) {
+      if (myTree.getSelectionPaths() == null || myTree.getSelectionPaths().length != 1) {
+        e.getPresentation().setEnabled(false);
+      }
+      else {
+        e.getPresentation().setEnabled(getSelectedObject() instanceof Artifact);
+      }
+    }
+
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
     }
   }
 }

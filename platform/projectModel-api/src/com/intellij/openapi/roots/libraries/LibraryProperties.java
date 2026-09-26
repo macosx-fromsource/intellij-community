@@ -18,7 +18,8 @@ package com.intellij.openapi.roots.libraries;
 import com.intellij.openapi.components.PersistentStateComponent;
 
 /**
- * @author nik
+ * Represents additional properties of a library. Use {@link com.intellij.openapi.roots.libraries.DummyLibraryProperties} if libraries of
+ * a custom type don't have any additional properties.
  */
 public abstract class LibraryProperties<T> implements PersistentStateComponent<T> {
   @Override

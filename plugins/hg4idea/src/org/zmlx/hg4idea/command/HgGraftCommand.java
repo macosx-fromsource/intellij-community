@@ -17,6 +17,8 @@ import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.zmlx.hg4idea.HgActivity;
+import org.zmlx.hg4idea.HgBundle;
 import org.zmlx.hg4idea.execution.HgCommandExecutor;
 import org.zmlx.hg4idea.execution.HgCommandResult;
 import org.zmlx.hg4idea.repo.HgRepository;
@@ -27,39 +29,32 @@ import java.util.List;
 
 public class HgGraftCommand {
 
-  @NotNull private final Project myProject;
-  @NotNull private final HgRepository myRepository;
+  private final @NotNull Project myProject;
+  private final @NotNull HgRepository myRepository;
 
   public HgGraftCommand(@NotNull Project project, @NotNull HgRepository repo) {
     myProject = project;
     myRepository = repo;
   }
 
-  @Nullable
-  public HgCommandResult startGrafting(List<String> hashes) {
+  public @Nullable HgCommandResult startGrafting(List<String> hashes) {
     return graft(hashes);
   }
 
-  @Nullable
-  public HgCommandResult continueGrafting() {
+  public @Nullable HgCommandResult continueGrafting() {
     return graft(Collections.singletonList("--continue"));
   }
 
-  @Nullable
-  private HgCommandResult graft(@NotNull List<String> params) {
+  private @Nullable HgCommandResult graft(@NotNull List<String> params) {
     List<String> args = new ArrayList<>();
     args.add("--log");
     args.addAll(params);
-    AccessToken token = DvcsUtil.workingTreeChangeStarted(myProject);
-    try {
+    try (AccessToken ignore = DvcsUtil.workingTreeChangeStarted(myProject, HgBundle.message("activity.name.graft"), HgActivity.Graft)) {
       HgCommandResult result =
         new HgCommandExecutor(myProject)
           .executeInCurrentThread(myRepository.getRoot(), "graft", args);
       myRepository.update();
       return result;
-    }
-    finally {
-      DvcsUtil.workingTreeChangeFinished(myProject, token);
     }
   }
 }

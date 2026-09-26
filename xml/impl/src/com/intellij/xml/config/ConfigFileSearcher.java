@@ -1,3 +1,4 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.xml.config;
 
 import com.intellij.openapi.module.Module;
@@ -11,6 +12,8 @@ import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 public abstract class ConfigFileSearcher {
@@ -19,7 +22,7 @@ public abstract class ConfigFileSearcher {
   private final MultiMap<VirtualFile, PsiFile> myJars = new MultiMap<>();
   private final MultiMap<VirtualFile, PsiFile> myVirtualFiles = new MultiMap<>();
   private final @Nullable Module myModule;
-  @NotNull private final Project myProject;
+  private final @NotNull Project myProject;
 
   public ConfigFileSearcher(@Nullable Module module, @NotNull Project project) {
     myModule = module;
@@ -27,11 +30,17 @@ public abstract class ConfigFileSearcher {
   }
 
   public void search() {
+    searchWithFiles();
+  }
+
+  public List<PsiFile> searchWithFiles() {
     myFiles.clear();
     myJars.clear();
 
     PsiManager psiManager = PsiManager.getInstance(myProject);
+    List<PsiFile> files = new ArrayList<>();
     for (PsiFile file : search(myModule, myProject)) {
+      files.add(file);
       VirtualFile jar = JarFileSystem.getInstance().getVirtualFileForJar(file.getVirtualFile());
       if (jar != null) {
         myJars.putValue(jar, file);
@@ -47,6 +56,7 @@ public abstract class ConfigFileSearcher {
         }
       }
     }
+    return files;
   }
 
   public abstract Set<PsiFile> search(@Nullable Module module, @NotNull Project project);

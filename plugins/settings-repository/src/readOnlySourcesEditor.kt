@@ -1,40 +1,33 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.settingsRepository
 
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.runAndLogException
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.ConfigurableUi
-import com.intellij.openapi.progress.runModalTask
-import com.intellij.openapi.ui.DialogBuilder
-import com.intellij.openapi.ui.TextBrowseFolderListener
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
-import com.intellij.openapi.util.text.StringUtil
-import com.intellij.ui.DocumentAdapter
+import com.intellij.openapi.ui.ValidationInfo
+import com.intellij.platform.ide.progress.ModalTaskOwner
+import com.intellij.platform.ide.progress.runWithModalProgressBlocking
+import com.intellij.platform.util.progress.reportRawProgress
+import com.intellij.ui.components.dialog
+import com.intellij.ui.dsl.builder.COLUMNS_LARGE
+import com.intellij.ui.dsl.builder.columns
+import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.Function
+import com.intellij.util.containers.CollectionFactory
 import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.io.delete
-import com.intellij.util.io.exists
 import com.intellij.util.text.nullize
-import com.intellij.util.ui.FormBuilder
+import com.intellij.util.text.trimMiddle
 import com.intellij.util.ui.table.TableModelEditor
-import gnu.trove.THashSet
-import org.jetbrains.settingsRepository.git.asProgressMonitor
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
+import org.jetbrains.settingsRepository.git.JGitCoroutineProgressMonitor
 import org.jetbrains.settingsRepository.git.cloneBare
-import javax.swing.JTextField
-import javax.swing.event.DocumentEvent
+import kotlin.io.path.exists
+import kotlin.properties.Delegates.notNull
 
 private val COLUMNS = arrayOf(object : TableModelEditor.EditableColumnInfo<ReadonlySource, Boolean>() {
   override fun getColumnClass() = Boolean::class.java
@@ -59,20 +52,26 @@ internal fun createReadOnlySourcesEditor(): ConfigurableUi<IcsSettings> {
 
     override fun getItemClass() = ReadonlySource::class.java
 
-    override fun edit(item: ReadonlySource, mutator: Function<ReadonlySource, ReadonlySource>, isAdd: Boolean) {
-      val dialogBuilder = DialogBuilder()
-      val urlField = TextFieldWithBrowseButton(JTextField(20))
-      urlField.addBrowseFolderListener(TextBrowseFolderListener(FileChooserDescriptorFactory.createSingleFolderDescriptor()))
-      urlField.textField.document.addDocumentListener(object : DocumentAdapter() {
-        override fun textChanged(event: DocumentEvent) {
-          dialogBuilder.setOkActionEnabled(checkUrl(urlField.text.nullize()))
+    override fun edit(item: ReadonlySource, mutator: Function<in ReadonlySource, out ReadonlySource>, isAdd: Boolean) {
+      var urlField: TextFieldWithBrowseButton by notNull()
+      val panel = panel {
+        row(IcsBundle.message("readonly.sources.configuration.url.label")) {
+          urlField = textFieldWithBrowseButton(FileChooserDescriptorFactory.createSingleFolderDescriptor().withTitle(IcsBundle.message("readonly.sources.configuration.repository.chooser")))
+            .columns(COLUMNS_LARGE)
+            .component
         }
-      })
-
-      dialogBuilder.title("Add read-only source").resizable(false).centerPanel(FormBuilder.createFormBuilder().addLabeledComponent("URL:", urlField).panel).setPreferredFocusComponent(urlField)
-      if (dialogBuilder.showAndGet()) {
-        mutator.`fun`(item).url = urlField.text
       }
+
+      dialog(title = IcsBundle.message("readonly.sources.configuration.add.source"), panel = panel, focusedComponent = urlField) {
+        val url = urlField.text.nullize(true)
+        validateUrl(url, null)?.let {
+          return@dialog listOf(ValidationInfo(it))
+        }
+
+        mutator.`fun`(item).url = url
+        return@dialog null
+      }
+        .show()
     }
 
     override fun applyEdited(oldItem: ReadonlySource, newItem: ReadonlySource) {
@@ -82,19 +81,19 @@ internal fun createReadOnlySourcesEditor(): ConfigurableUi<IcsSettings> {
     override fun isUseDialogToAdd() = true
   }
 
-  val editor = TableModelEditor(COLUMNS, itemEditor, "No sources configured")
-  editor.reset(icsManager.settings.readOnlySources)
+  val editor = TableModelEditor(COLUMNS, itemEditor, IcsBundle.message("readonly.sources.configuration.no.sources.configured"))
+  editor.reset(if (ApplicationManager.getApplication().isUnitTestMode) emptyList() else icsManager.settings.readOnlySources)
   return object : ConfigurableUi<IcsSettings> {
     override fun isModified(settings: IcsSettings) = editor.isModified
 
     override fun apply(settings: IcsSettings) {
       val oldList = settings.readOnlySources
-      val toDelete = THashSet<String>(oldList.size)
+      val toDelete = CollectionFactory.createSmallMemoryFootprintSet<String>(oldList.size)
       for (oldSource in oldList) {
         ContainerUtil.addIfNotNull(toDelete, oldSource.path)
       }
 
-      val toCheckout = THashSet<ReadonlySource>()
+      val toCheckout = CollectionFactory.createSmallMemoryFootprintSet<ReadonlySource>()
 
       val newList = editor.apply()
       for (newSource in newList) {
@@ -104,47 +103,47 @@ internal fun createReadOnlySourcesEditor(): ConfigurableUi<IcsSettings> {
         }
       }
 
-      if (toDelete.isEmpty && toCheckout.isEmpty) {
+      if (toDelete.isEmpty() && toCheckout.isEmpty()) {
         return
       }
 
-      runModalTask(icsMessage("task.sync.title")) { indicator ->
-        indicator.isIndeterminate = true
+      runWithModalProgressBlocking(ModalTaskOwner.guess(), icsMessage("task.sync.title")) {
+        reportRawProgress { reporter ->
+          val root = icsManager.readOnlySourcesManager.rootDir
 
-        val root = icsManager.readOnlySourcesManager.rootDir
-
-        if (toDelete.isNotEmpty()) {
-          indicator.text = "Deleting old repositories"
-          for (path in toDelete) {
-            indicator.checkCanceled()
-            try {
-              indicator.text2 = path
-              root.resolve(path).delete()
-            }
-            catch (e: Exception) {
-              LOG.error(e)
-            }
-          }
-        }
-
-        if (toCheckout.isNotEmpty()) {
-          for (source in toCheckout) {
-            indicator.checkCanceled()
-            try {
-              indicator.text = "Cloning ${StringUtil.trimMiddle(source.url!!, 255)}"
-              val dir = root.resolve(source.path!!)
-              if (dir.exists()) {
-                dir.delete()
+          if (toDelete.isNotEmpty()) {
+            reporter.text(icsMessage("progress.deleting.old.repositories"))
+            for (path in toDelete) {
+              ensureActive()
+              LOG.runAndLogException {
+                reporter.details(path)
+                root.resolve(path).delete()
               }
-              cloneBare(source.url!!, dir, icsManager.credentialsStore, indicator.asProgressMonitor()).close()
-            }
-            catch (e: Exception) {
-              LOG.error(e)
             }
           }
-        }
 
-        icsManager.readOnlySourcesManager.setSources(newList)
+          if (toCheckout.isNotEmpty()) {
+            for (source in toCheckout) {
+              ensureActive()
+              LOG.runAndLogException {
+                reporter.text(icsMessage("progress.cloning.repository", source.url!!.trimMiddle(255)))
+                val dir = root.resolve(source.path!!)
+                if (dir.exists()) {
+                  dir.delete()
+                }
+                val progressMonitor = JGitCoroutineProgressMonitor(currentCoroutineContext().job, reporter)
+                cloneBare(source.url!!, dir, icsManager.credentialsStore, progressMonitor).close()
+              }
+            }
+          }
+
+          icsManager.readOnlySourcesManager.setSources(newList)
+
+          // blindly reload all
+          icsManager.schemeManagerFactory.value.process {
+            it.reload()
+          }
+        }
       }
     }
 

@@ -14,17 +14,10 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: dsl
- * Date: 09.07.2002
- * Time: 14:58:46
- * To change template for new class use 
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.refactoring.classMembers;
 
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 
 
@@ -50,5 +43,5 @@ public interface MemberInfoModel<T extends PsiElement, M extends MemberInfoBase<
 
   int checkForProblems(@NotNull M member);
 
-  String getTooltipText(M member);
+  @Nls String getTooltipText(M member);
 }

@@ -22,8 +22,6 @@ import org.jetbrains.annotations.NotNull;
 /**
  * This interface should be implemented by all PsiJavaCodeReference implementations
  * in source.
- * 
- * @author dsl
  */
 public interface SourceJavaCodeReference {
   /**
@@ -34,7 +32,7 @@ public interface SourceJavaCodeReference {
 
   /**
    * Helper method for ReferenceAdjuster. Tries to qualify this reference as if
-   * it references <code>targetClass</code>. Does not check that it indeed references
+   * it references {@code targetClass}. Does not check that it indeed references
    * targetClass
    */
   void fullyQualify(@NotNull PsiClass targetClass);

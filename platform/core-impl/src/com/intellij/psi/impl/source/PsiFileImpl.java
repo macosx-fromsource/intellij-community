@@ -1,84 +1,146 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.source;
 
-import com.intellij.extapi.psi.StubBasedPsiElementBase;
 import com.intellij.ide.util.PsiNavigationSupport;
-import com.intellij.lang.*;
+import com.intellij.lang.ASTFactory;
+import com.intellij.lang.ASTNode;
+import com.intellij.lang.FileASTNode;
+import com.intellij.lang.Language;
+import com.intellij.lang.LanguageParserDefinitions;
+import com.intellij.lang.ParserDefinition;
 import com.intellij.navigation.ItemPresentation;
+import com.intellij.openapi.application.AppUIExecutor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Queryable;
-import com.intellij.openapi.util.Factory;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileWithId;
-import com.intellij.psi.*;
-import com.intellij.psi.impl.*;
+import com.intellij.psi.AbstractFileViewProvider;
+import com.intellij.psi.FileViewProvider;
+import com.intellij.psi.PsiConsistencyAssertions;
+import com.intellij.psi.PsiDirectory;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiFileSystemItem;
+import com.intellij.psi.PsiInvalidElementAccessException;
+import com.intellij.psi.PsiLock;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.ResolveState;
+import com.intellij.psi.impl.BlockSupportImpl;
+import com.intellij.psi.impl.CheckUtil;
+import com.intellij.psi.impl.DebugUtil;
+import com.intellij.psi.impl.ElementBase;
+import com.intellij.psi.impl.FreeThreadedFileViewProvider;
+import com.intellij.psi.impl.PsiDocumentManagerEx;
+import com.intellij.psi.impl.PsiFileEx;
+import com.intellij.psi.impl.PsiManagerEx;
+import com.intellij.psi.impl.ResolveScopeManager;
+import com.intellij.psi.impl.SharedPsiElementImplUtil;
 import com.intellij.psi.impl.file.PsiFileImplUtil;
+import com.intellij.psi.impl.file.impl.FileManagerEx;
 import com.intellij.psi.impl.file.impl.FileManagerImpl;
 import com.intellij.psi.impl.source.codeStyle.CodeEditUtil;
 import com.intellij.psi.impl.source.resolve.FileContextUtil;
-import com.intellij.psi.impl.source.text.BlockSupportImpl;
-import com.intellij.psi.impl.source.tree.*;
+import com.intellij.psi.impl.source.tree.AstSpine;
+import com.intellij.psi.impl.source.tree.ChangeUtil;
+import com.intellij.psi.impl.source.tree.CompositeElement;
+import com.intellij.psi.impl.source.tree.FileElement;
+import com.intellij.psi.impl.source.tree.SharedImplUtil;
+import com.intellij.psi.impl.source.tree.TreeElement;
+import com.intellij.psi.impl.source.tree.mvcc.InternalPsiVersioning;
+import com.intellij.psi.impl.source.tree.mvcc.VersionedPsiConsistencyException;
+import com.intellij.psi.impl.source.tree.mvcc.VersionedPsiReference;
 import com.intellij.psi.scope.PsiScopeProcessor;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.PsiElementProcessor;
 import com.intellij.psi.search.SearchScope;
-import com.intellij.psi.stubs.*;
-import com.intellij.psi.tree.*;
+import com.intellij.psi.stubs.LanguageStubDescriptor;
+import com.intellij.psi.stubs.ObjectStubTree;
+import com.intellij.psi.stubs.PsiFileStub;
+import com.intellij.psi.stubs.PsiFileStubImpl;
+import com.intellij.psi.stubs.StubBase;
+import com.intellij.psi.stubs.StubElement;
+import com.intellij.psi.stubs.StubElementRegistryService;
+import com.intellij.psi.stubs.StubTree;
+import com.intellij.psi.stubs.StubTreeBuilder;
+import com.intellij.psi.stubs.StubTreeLoader;
+import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.tree.IFileElementType;
+import com.intellij.psi.tree.ILazyParseableElementType;
+import com.intellij.psi.tree.IStubFileElementType;
+import com.intellij.psi.tree.TokenSet;
 import com.intellij.psi.util.PsiUtilCore;
 import com.intellij.reference.SoftReference;
-import com.intellij.util.*;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.testFramework.ReadOnlyLightVirtualFile;
+import com.intellij.util.ArrayUtil;
+import com.intellij.util.AstLoadingFilter;
+import com.intellij.util.CharTable;
+import com.intellij.util.FileContentUtilCore;
+import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.PatchedWeakReference;
+import com.intellij.util.indexing.IndexingDataKeys;
 import com.intellij.util.text.CharArrayUtil;
+import com.intellij.util.text.CharSequenceSubSequence;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.lang.ref.Reference;
-import java.lang.reflect.Array;
-import java.util.*;
+import javax.swing.Icon;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
-public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiFileWithStubSupport, Queryable {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.psi.impl.source.PsiFileImpl");
-  public static final String STUB_PSI_MISMATCH = "stub-psi mismatch";
+import static com.intellij.util.ObjectUtils.tryCast;
+
+public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiFileWithStubSupport, Queryable, Cloneable {
+  private static final CharTable NON_INTERNING_CHAR_TABLE = new CharTable() {
+    @Override
+    public @NotNull CharSequence intern(@NotNull CharSequence text) {
+      return text;
+    }
+
+    @Override
+    public @NotNull CharSequence intern(@NotNull CharSequence baseText, int startOffset, int endOffset) {
+      return new CharSequenceSubSequence(baseText, startOffset, endOffset);
+    }
+  };
+  private static final Logger LOG = Logger.getInstance(PsiFileImpl.class);
+  static final @NonNls String STUB_PSI_MISMATCH = "stub-psi mismatch";
 
   private IElementType myElementType;
   protected IElementType myContentElementType;
   private long myModificationStamp;
 
   protected PsiFile myOriginalFile;
-  private final FileViewProvider myViewProvider;
-  private volatile Reference<StubTree> myStub;
-  private volatile Reference<StubTree> myGreenStub;
-  private boolean myInvalidated;
-  private volatile boolean myAstLoaded;
-  private volatile boolean myUseStrongRefs;
-  private AstPathPsiMap myRefToPsi;
-  private final ThreadLocal<FileElement> myFileElementBeingLoaded = new ThreadLocal<FileElement>();
+  private final AbstractFileViewProvider myViewProvider;
+  private volatile FileTrees myTrees;
+  // We are attempting to avoid the logic with resurrection of PsiFiles in versioned environment.
+  // For this reason, invalidation of psi files in versioned env is tracked without the involvement of `myPossiblyInvalidated`
+  // because `myPossiblyInvalidated` can change from `true` to `false`
+  private final VersionedPsiReference<Object> versionedInvalidationTrace = new VersionedPsiReference<>();
+  private volatile boolean myPossiblyInvalidated;
   protected final PsiManagerEx myManager;
-  private volatile Getter<FileElement> myTreeElementPointer; // SoftReference/WeakReference to ASTNode or a strong reference to a tree if the file is a DummyHolder
-  public static final Key<Boolean> BUILDING_STUB = new Key<Boolean>("Don't use stubs mark!");
+  public static final Key<Boolean> BUILDING_STUB = new Key<>("Don't use stubs mark!");
+  private final PsiLock myPsiLock;
+  private volatile boolean myLoadingAst;
 
   protected PsiFileImpl(@NotNull IElementType elementType, IElementType contentElementType, @NotNull FileViewProvider provider) {
     this(provider);
@@ -87,11 +149,12 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
 
   protected PsiFileImpl(@NotNull FileViewProvider provider ) {
     myManager = (PsiManagerEx)provider.getManager();
-    myViewProvider = provider;
-    myRefToPsi = new AstPathPsiMap(getProject());
+    myViewProvider = (AbstractFileViewProvider)provider;
+    myTrees = FileTrees.noStub(null, this, provider);
+    myPsiLock = myViewProvider.getFilePsiLock();
   }
 
-  public void setContentElementType(final IElementType contentElementType) {
+  public void setContentElementType(@NotNull IElementType contentElementType) {
     LOG.assertTrue(contentElementType instanceof ILazyParseableElementType, contentElementType);
     myContentElementType = contentElementType;
   }
@@ -100,7 +163,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
     return myContentElementType;
   }
 
-  protected void init(@NotNull final IElementType elementType, final IElementType contentElementType) {
+  protected void init(@NotNull IElementType elementType, @NotNull IElementType contentElementType) {
     myElementType = elementType;
     setContentElementType(contentElementType);
   }
@@ -117,29 +180,30 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
     return false;
   }
 
-  @Nullable
-  public FileElement getTreeElement() {
+  public @Nullable FileElement getTreeElement() {
     FileElement node = derefTreeElement();
     if (node != null) return node;
 
-    if (!getViewProvider().isPhysical()) {
+    if (!getViewProvider().correspondsToRealFile()) {
       return loadTreeElement();
     }
 
     return null;
   }
 
-  private FileElement derefTreeElement() {
-    return SoftReference.deref(myTreeElementPointer);
+  FileElement derefTreeElement() {
+    return myTrees.derefTreeElement();
   }
 
   @Override
   public VirtualFile getVirtualFile() {
-    return getViewProvider().isEventSystemEnabled() ? getViewProvider().getVirtualFile() : null;
+    VirtualFile indexingFile = IndexingDataKeys.VIRTUAL_FILE.get(this);
+    if (indexingFile != null) return indexingFile;
+    return getViewProvider().supportsSendingPsiEvents() ? getViewProvider().getVirtualFile() : null;
   }
 
   @Override
-  public boolean processChildren(final PsiElementProcessor<PsiFileSystemItem> processor) {
+  public boolean processChildren(@NotNull PsiElementProcessor<? super PsiFileSystemItem> processor) {
     return true;
   }
 
@@ -150,18 +214,40 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
       // but there's temporary disposed project in tests, which doesn't actually dispose its components :(
       return false;
     }
+    if (InternalPsiVersioning.isInsideVersioningButNotLocks()) {
+      // todo: rework after lazy validation happens in a dumb task: IJPL-250756
+      return true;
+      // in versioned environment, we would like to not touch VFS, so we don't evalute the validity of virtual file.
+      // We do not allow resurrection of PsiFiles (this is a questionable logic, and we try to not rely on it),
+      // so resurrection is not invoked.
+      // Instead, we track invalidation in a versioned reference.
+      // So once a file is invalidated, it cannot become valid anymore.
+      //Object trace = versionedInvalidationTrace.get();
+      //return trace == null;
+    }
+
     if (!myViewProvider.getVirtualFile().isValid()) {
       // PSI listeners receive VFS deletion events and do markInvalidated
       // but some VFS listeners receive the same events before that and ask PsiFile.isValid
       return false;
     }
-    return !myInvalidated;
+
+    if (!myPossiblyInvalidated) return true;
+
+    // synchronized by read-write action
+    if (((FileManagerEx)myManager.getFileManager()).evaluateValidity(this)) {
+      myPossiblyInvalidated = false;
+      PsiInvalidElementAccessException.setInvalidationTrace(this, null);
+      return true;
+    }
+    return false;
   }
 
   @Override
-  public void markInvalidated() {
-    myInvalidated = true;
-    DebugUtil.onInvalidated(this);
+  public final void markInvalidated() {
+    myPossiblyInvalidated = true;
+    Object invalidation = DebugUtil.onInvalidated(this);
+    versionedInvalidationTrace.set(invalidation == null ? new Throwable("unknown reason") : invalidation);
   }
 
   @Override
@@ -169,204 +255,136 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
     return derefTreeElement() != null;
   }
 
-  @NotNull
-  private FileElement loadTreeElement() {
-    ApplicationManager.getApplication().assertReadAccessAllowed();
+  protected void assertReadAccessAllowed() {
+    VirtualFile virtualFile = myViewProvider.getVirtualFile();
+    if (virtualFile instanceof ReadOnlyLightVirtualFile) return;
+    InternalPsiVersioning.assertReadAccessOrVersionedEnvironment();
+  }
 
-    final FileViewProvider viewProvider = getViewProvider();
-    if (viewProvider.isPhysical() && myManager.isAssertOnFileLoading(viewProvider.getVirtualFile())) {
-      LOG.error("Access to tree elements not allowed in tests. path='" + viewProvider.getVirtualFile().getPresentableUrl()+"'");
+  private @NotNull FileElement loadTreeElement() {
+    assertReadAccessAllowed();
+
+    if (myPossiblyInvalidated) {
+      PsiUtilCore.ensureValid(this); // for invalidation trace diagnostics
     }
 
-    Document cachedDocument = FileDocumentManager.getInstance().getCachedDocument(getViewProvider().getVirtualFile());
-
-    FileElement treeElement = createFileElement(viewProvider.getContents());
-    treeElement.setPsi(this);
-
-    myFileElementBeingLoaded.set(treeElement);
-    try {
-      while (true) {
-        StubTree stub = derefStub();
-        List<Pair<StubBasedPsiElementBase, AstPath>> bindings = calcStubAstBindings(treeElement, cachedDocument, stub);
-
-        FileElement savedTree = ensureTreeElement(viewProvider, treeElement, stub, bindings);
-        if (savedTree != null) {
-          return savedTree;
-        }
+    FileViewProvider viewProvider = getViewProvider();
+    if (viewProvider.correspondsToRealFile()) {
+      VirtualFile vFile = viewProvider.getVirtualFile();
+      AstLoadingFilter.assertTreeLoadingAllowed(vFile);
+      if (myManager.isAssertOnFileLoading(vFile)) {
+        reportProhibitedAstAccess(vFile);
       }
     }
-    finally {
-      myFileElementBeingLoaded.remove();
+
+    try {
+      synchronized (myPsiLock) {
+        FileElement treeElement = derefTreeElement();
+        if (treeElement != null) {
+          if (InternalPsiVersioning.isVersionedSyntaxTreeEnabled() && viewProvider.correspondsToRealFile() && !treeElement.isVersioned()) {
+            VersionedPsiConsistencyException exception = new VersionedPsiConsistencyException.ViewProvider("Illegal state: attempted to attach a versioned=" + treeElement.isVersioned() + " tree to a physical=" + viewProvider.correspondsToRealFile() + " file.");
+            LOG.error(exception);
+          }
+          return treeElement;
+        }
+
+        boolean shouldNodeBeVersioned = shouldNodeBeVersioned(viewProvider);
+
+        treeElement = InternalPsiVersioning.inVersionedEnvironment(shouldNodeBeVersioned, () -> {
+          if (shouldNodeBeVersioned) {
+            FileElement fileElement = InternalPsiVersioning.runModificationOfVersionedPsi(() -> createFileElement(viewProvider.getContents()));
+            return fileElement;
+          } else {
+            return createFileElement(viewProvider.getContents());
+          }
+        });
+        treeElement.setPsi(this);
+
+        myLoadingAst = true;
+        try {
+          updateTrees(myTrees.withAst(createTreeElementPointer(treeElement)));
+        }
+        finally {
+          myLoadingAst = false;
+        }
+
+        if (LOG.isDebugEnabled() && viewProvider.correspondsToRealFile()) {
+          LOG.debug("Loaded text for file " + viewProvider.getVirtualFile().getPresentableUrl());
+        }
+
+        return treeElement;
+      }
+    }
+    catch (StubTreeLoader.StubTreeAndIndexUnmatchCoarseException e) {
+      throw e.createCompleteException();
     }
   }
 
-  @Nullable
-  private FileElement ensureTreeElement(@NotNull FileViewProvider viewProvider,
-                                        @NotNull FileElement treeElement,
-                                        @Nullable StubTree stub,
-                                        @NotNull List<Pair<StubBasedPsiElementBase, AstPath>> bindings) {
-    synchronized (PsiLock.LOCK) {
-      FileElement existing = derefTreeElement();
-      if (existing != null) {
-        return existing;
-      }
-
-      if (stub != derefStub()) {
-        return null; // stub has been just loaded by another thread, it needs to be bound to AST
-      }
-
-      if (stub != null) {
-        myGreenStub = new SoftReference<StubTree>(stub);
-        putUserData(ObjectStubTree.LAST_STUB_TREE_HASH, stub.hashCode());
-      }
-
-      switchFromStubToAst(bindings);
-      myStub = null;
-      myTreeElementPointer = createTreeElementPointer(treeElement);
-      myAstLoaded = true;
-
-      if (LOG.isDebugEnabled() && viewProvider.isPhysical()) {
-        LOG.debug("Loaded text for file " + viewProvider.getVirtualFile().getPresentableUrl());
-      }
-
-      return treeElement;
-    }
+  /**
+   * Reports unexpected AST loading in tests.<p></p>
+   *
+   * AST loading is expensive and should be avoided for files that aren't already opened in the editor.
+   * Resolving references during editor highlighting should be done via stubs (see {@link com.intellij.extapi.psi.StubBasedPsiElementBase})
+   * or other indices, otherwise highlighting can become quite slow and memory-hungry due to parsing a lot of
+   * other files and building their ASTs.<p></p>
+   *
+   * To help prevent this performance issue, there's a mode in tests when AST loading for non-opened files is prohibited.
+   * To fix it, find in the stack trace where an AST-requiring API is called and consider using stubs or other indices instead.
+   * In a rare case when loading AST is actually OK (e.g. during reference search for "unused symbol" highlighting),
+   * you can switch off this check, e.g. via {@link com.intellij.testFramework.fixtures.CodeInsightTestFixture#allowTreeAccessForFile}.
+   * <p></p>
+   *
+   * Note that this failure can be nondeterministic due to garbage collector which might or might not have collected previously loaded AST.
+   * To make debugging simpler in this case, you can increase the chance of failure by starting the test with a smaller Xmx.
+   */
+  private static void reportProhibitedAstAccess(VirtualFile vFile) {
+    LOG.error("Access to tree elements not allowed for '" + vFile.getPresentableUrl() + "'.\n" +
+              "Try using stub-based PSI API to avoid expensive AST loading for files that aren't already opened in the editor.\n" +
+              "Consult this method's javadoc for more details.");
   }
 
   @Override
-  public ASTNode findTreeForStub(StubTree tree, StubElement<?> stub) {
-    final Iterator<StubElement<?>> stubs = tree.getPlainList().iterator();
-    final StubElement<?> root = stubs.next();
-    final CompositeElement ast = calcTreeElement();
-    if (root == stub) return ast;
-
-    return findTreeForStub(ast, stubs, stub);
-  }
-
-  @Nullable
-  private static ASTNode findTreeForStub(ASTNode tree, final Iterator<StubElement<?>> stubs, final StubElement stub) {
-    final IElementType type = tree.getElementType();
-
-    if (type instanceof IStubElementType && ((IStubElementType) type).shouldCreateStub(tree)) {
-      final StubElement curStub = stubs.next();
-      if (curStub == stub) return tree;
-    }
-
-    for (ASTNode node : tree.getChildren(null)) {
-      final ASTNode treeForStub = findTreeForStub(node, stubs, stub);
-      if (treeForStub != null) return treeForStub;
-    }
-
-    return null;
-  }
-
-  private void switchFromStubToAst(List<Pair<StubBasedPsiElementBase, AstPath>> bindings) {
-    if (!bindings.isEmpty() && myUseStrongRefs) {
-      List<String> psiStrings = ContainerUtil.map(bindings, new Function<Pair<StubBasedPsiElementBase, AstPath>, String>() {
-        @Override
-        public String fun(Pair<StubBasedPsiElementBase, AstPath> pair) {
-          return pair.first.getClass().getName();
-        }
-      });
-      LOG.error(this + " of " + getClass() + "; " + psiStrings);
-    }
-
-    for (int i = 0; i < bindings.size(); i++) {
-      Pair<StubBasedPsiElementBase, AstPath> pair = bindings.get(i);
-      StubBasedPsiElementBase psi = pair.first;
-      AstPath path = pair.second;
-      path.getNode().setPsi(psi);
-      myRefToPsi.cachePsi(path, psi);
-      psi.setStubIndex(i + 1);
-    }
-  }
-
-  private List<Pair<StubBasedPsiElementBase, AstPath>> calcStubAstBindings(@NotNull FileElement root,
-                                                                           @Nullable final Document cachedDocument,
-                                                                           @Nullable final StubTree stubTree) {
-    if (stubTree == null) {
-      return Collections.emptyList();
-    }
-
-    final Iterator<StubElement<?>> stubs = stubTree.getPlainList().iterator();
-    stubs.next(); // Skip file stub;
-    final List<Pair<StubElement, AstPath>> result = ContainerUtil.newArrayList();
-    final IStubFileElementType elementType = getElementTypeForStubBuilder();
-    assert elementType != null;
-    final StubBuilder builder = elementType.getBuilder();
-
-    root.acceptTree(new RecursiveTreeElementWalkingVisitor() {
-      @Override
-      protected void visitNode(TreeElement node) {
-        CompositeElement parent = node.getTreeParent();
-        if (parent != null && builder.skipChildProcessingWhenBuildingStubs(parent, node)) {
-          return;
-        }
-
-
-        IElementType type = node.getElementType();
-        if (type instanceof IStubElementType && ((IStubElementType)type).shouldCreateStub(node)) {
-          if (!stubs.hasNext()) {
-            reportStubAstMismatch("Stub list is less than AST, last AST element: " + node.getElementType() + " " + node, stubTree, cachedDocument);
+  public @NotNull StubbedSpine getStubbedSpine() {
+    return withGreenStubTreeOrAst(
+      stubTree -> stubTree.getSpine(),
+      ast -> {
+        AstSpine astSpine = ast.getStubbedSpine();
+        if (!myTrees.useSpineRefs()) {
+          synchronized (myPsiLock) {
+            updateTrees(myTrees.switchToSpineRefs(FileTrees.getAllSpinePsi(astSpine)));
           }
-
-          final StubElement stub = stubs.next();
-          if (stub.getStubType() != node.getElementType()) {
-            reportStubAstMismatch("Stub and PSI element type mismatch in " + getName() + ": stub " + stub + ", AST " +
-                                  node.getElementType() + "; " + node, stubTree, cachedDocument);
-          }
-
-          AstPath path = AstPath.getNodePath((CompositeElement)node);
-          assert path != null;
-          result.add(Pair.create(stub, path));
         }
-
-        super.visitNode(node);
+        return astSpine;
       }
-    });
-    if (stubs.hasNext()) {
-      reportStubAstMismatch("Stub list in " + getName() + " has more elements than PSI", stubTree, cachedDocument);
-    }
-    synchronized (PsiLock.LOCK) {
-      return ContainerUtil.map(result, new Function<Pair<StubElement, AstPath>, Pair<StubBasedPsiElementBase, AstPath>>() {
-        @Override
-        public Pair<StubBasedPsiElementBase, AstPath> fun(Pair<StubElement, AstPath> pair) {
-          StubElement stub = pair.first;
-          PsiElement psi = stub.getPsi();
-          assert psi != null : "Stub " + stub + " (" + stub.getClass() + ") has returned null PSI";
-          return Pair.create((StubBasedPsiElementBase)psi, pair.second);
-        }
-      });
-    }
+    );
   }
 
-  @Nullable
-  public IStubFileElementType getElementTypeForStubBuilder() {
+  /**
+   * @deprecated use {@link #getStubDescriptor()} instead
+   */
+  @Deprecated
+  public @Nullable IStubFileElementType<?> getElementTypeForStubBuilder() {
     ParserDefinition definition = LanguageParserDefinitions.INSTANCE.forLanguage(getLanguage());
     IFileElementType type = definition == null ? null : definition.getFileNodeType();
-    return type instanceof IStubFileElementType ? (IStubFileElementType)type : null;
+    return type instanceof IStubFileElementType ? (IStubFileElementType<?>)type : null;
   }
 
-  void reportStubAstMismatch(String message, StubTree stubTree, Document cachedDocument) {
-    rebuildStub();
-    clearStub(STUB_PSI_MISMATCH);
-
-    throw new AssertionError(message
-                             + StubTreeLoader.getInstance().getStubAstMismatchDiagnostics(getViewProvider().getVirtualFile(), this,
-                                                                                          stubTree, cachedDocument)
-                             + "\n------------\n");
+  public @Nullable LanguageStubDescriptor getStubDescriptor() {
+    return StubElementRegistryService.getInstance().getStubDescriptor(getLanguage());
   }
 
-  @NotNull
-  protected FileElement createFileElement(CharSequence docText) {
-    final FileElement treeElement;
-    final TreeElement contentLeaf = createContentLeafElement(docText);
+  protected @NotNull FileElement createFileElement(CharSequence docText) {
+    FileElement treeElement;
+    TreeElement contentLeaf = createContentLeafElement(docText);
 
     if (contentLeaf instanceof FileElement) {
       treeElement = (FileElement)contentLeaf;
+      if (isIndexingFileCopy()) {
+        treeElement.setCharTable(NON_INTERNING_CHAR_TABLE);
+      }
     }
     else {
-      final CompositeElement xxx = ASTFactory.composite(myElementType);
+      CompositeElement xxx = ASTFactory.composite(myElementType);
       assert xxx instanceof FileElement : "BUMM";
       treeElement = (FileElement)xxx;
       treeElement.rawAddChildrenWithoutNotifications(contentLeaf);
@@ -375,41 +393,34 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
     return treeElement;
   }
 
-  private void clearStub(@NotNull String reason) {
-    StubTree stubHolder = SoftReference.dereference(myStub);
-    if (stubHolder != null) {
-      ((PsiFileStubImpl<?>)stubHolder.getRoot()).clearPsi(reason);
-    }
-    myStub = null;
-    myGreenStub = null;
-  }
-
+  @Override
   public void clearCaches() {
-    myModificationStamp ++;
+    myModificationStamp++;
   }
 
   @Override
   public String getText() {
-    final ASTNode tree = derefTreeElement();
+    ASTNode tree = derefTreeElement();
     if (!isValid()) {
+      ProgressManager.checkCanceled();
+
       // even invalid PSI can calculate its text by concatenating its children
-      if (tree != null) return tree.getText();
+      if (tree != null) {
+        return tree.getText();
+      }
 
       throw new PsiInvalidElementAccessException(this);
     }
     String string = getViewProvider().getContents().toString();
     if (tree != null && string.length() != tree.getTextLength()) {
-      throw new AssertionError("File text mismatch: tree.length=" + tree.getTextLength() +
-                               "; psi.length=" + string.length() +
-                               "; this=" + this +
-                               "; vp=" + getViewProvider());
+      PsiConsistencyAssertions.assertNoFileTextMismatch(this, tree, string);
     }
     return string;
   }
 
   @Override
   public int getTextLength() {
-    final ASTNode tree = derefTreeElement();
+    ASTNode tree = derefTreeElement();
     if (tree != null) return tree.getTextLength();
 
     PsiUtilCore.ensureValid(this);
@@ -434,50 +445,54 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   @Override
   public long getModificationStamp() {
     PsiElement context = getContext();
-    PsiFile contextFile = context == null ? null : context.getContainingFile();
+    PsiFile contextFile = context == null || !context.isValid() ? null : context.getContainingFile();
     long contextStamp = contextFile == null ? 0 : contextFile.getModificationStamp();
     return myModificationStamp + contextStamp;
   }
 
   @Override
   public void subtreeChanged() {
-    doClearCaches("subtreeChanged");
-    getViewProvider().rootChanged(this);
-  }
-
-  private void doClearCaches(String reason) {
-    final FileElement tree = getTreeElement();
+    FileElement tree = getTreeElement();
     if (tree != null) {
       tree.clearCaches();
     }
 
-    synchronized (PsiLock.LOCK) {
-      clearStub(reason);
+    synchronized (myPsiLock) {
+      if (myTrees.useSpineRefs()) {
+        LOG.error("Somebody has requested stubbed spine during PSI operations; not only is this expensive, but will also cause stub PSI invalidation");
+      }
+      updateTrees(myTrees.clearStub("subtreeChanged"));
     }
     clearCaches();
+    getViewProvider().rootChanged(this);
   }
 
   @Override
-  @SuppressWarnings({"CloneDoesntDeclareCloneNotSupportedException", "CloneDoesntCallSuperClone"})
+  @SuppressWarnings("CloneDoesntCallSuperClone")
   protected PsiFileImpl clone() {
     FileViewProvider viewProvider = getViewProvider();
     FileViewProvider providerCopy = viewProvider.clone();
-    final Language language = getLanguage();
+    Language language = getLanguage();
     if (providerCopy == null) {
       throw new AssertionError("Unable to clone the view provider: " + viewProvider + "; " + language);
     }
     PsiFileImpl clone = BlockSupportImpl.getFileCopy(this, providerCopy);
     copyCopyableDataTo(clone);
 
-    clone.myRefToPsi = new AstPathPsiMap(getProject());
     if (getTreeElement() != null) {
+      // this is basically always collapsed environment, as by contract `providerCopy` is not physical
+      // alternatively, for a non-physical view provider, we could have a persistent tree
+      boolean runInVersionedEnv = providerCopy.correspondsToRealFile() || InternalPsiVersioning.isVersionedComputation();
+      FileElement treeClone = InternalPsiVersioning.inVersionedEnvironment(runInVersionedEnv, () -> (FileElement)calcTreeElement().clone());
       // not set by provider in clone
-      final FileElement treeClone = (FileElement)calcTreeElement().clone();
       clone.setTreeElementPointer(treeClone); // should not use setTreeElement here because cloned file still have VirtualFile (SCR17963)
       treeClone.setPsi(clone);
     }
+    else {
+      clone.setTreeElementPointer(null);
+    }
 
-    if (viewProvider.isEventSystemEnabled()) {
+    if (viewProvider.supportsSendingPsiEvents()) {
       clone.myOriginalFile = this;
     }
     else if (myOriginalFile != null) {
@@ -490,20 +505,19 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   @Override
-  @NotNull public String getName() {
+  public @NotNull String getName() {
     return getViewProvider().getVirtualFile().getName();
   }
 
   @Override
   public PsiElement setName(@NotNull String name) throws IncorrectOperationException {
     checkSetName(name);
-    doClearCaches("setName");
     return PsiFileImplUtil.setName(this, name);
   }
 
   @Override
-  public void checkSetName(String name) throws IncorrectOperationException {
-    if (!getViewProvider().isEventSystemEnabled()) return;
+  public void checkSetName(String name) {
+    if (!getViewProvider().supportsSendingPsiEvents()) return;
     PsiFileImplUtil.checkSetName(this, name);
   }
 
@@ -518,10 +532,9 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   @Override
-  @Nullable
-  public PsiDirectory getContainingDirectory() {
+  public @Nullable PsiDirectory getContainingDirectory() {
     VirtualFile file = getViewProvider().getVirtualFile();
-    final VirtualFile parentFile = file.getParent();
+    VirtualFile parentFile = file.getParent();
     if (parentFile == null) return null;
     if (!parentFile.isValid()) {
       LOG.error("Invalid parent: " + parentFile + " of file " + file + ", file.valid=" + file.isValid());
@@ -531,8 +544,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   @Override
-  @NotNull
-  public PsiFile getContainingFile() {
+  public @NotNull PsiFile getContainingFile() {
     return this;
   }
 
@@ -544,29 +556,31 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
 
   @Override
   public void checkDelete() throws IncorrectOperationException {
-    if (!getViewProvider().isEventSystemEnabled()) {
+    if (!getViewProvider().supportsSendingPsiEvents()) {
+      if (PsiFileImplUtil.canDeleteNonPhysicalFile(this)) return;
       throw new IncorrectOperationException();
     }
     CheckUtil.checkWritable(this);
   }
 
   @Override
-  @NotNull
-  public PsiFile getOriginalFile() {
+  public @NotNull PsiFile getOriginalFile() {
     return myOriginalFile == null ? this : myOriginalFile;
   }
 
-  public void setOriginalFile(@NotNull final PsiFile originalFile) {
+  public void setOriginalFile(@NotNull PsiFile originalFile) {
     myOriginalFile = originalFile.getOriginalFile();
+
+    FileViewProvider original = myOriginalFile.getViewProvider();
+    ((AbstractFileViewProvider)original).registerAsCopy(myViewProvider);
   }
 
   @Override
-  @NotNull
-  public PsiFile[] getPsiRoots() {
-    final FileViewProvider viewProvider = getViewProvider();
-    final Set<Language> languages = viewProvider.getLanguages();
+  public PsiFile @NotNull [] getPsiRoots() {
+    FileViewProvider viewProvider = getViewProvider();
+    Set<Language> languages = viewProvider.getLanguages();
 
-    final PsiFile[] roots = new PsiFile[languages.size()];
+    PsiFile[] roots = new PsiFile[languages.size()];
     int i = 0;
     for (Language language : languages) {
       PsiFile psi = viewProvider.getPsi(language);
@@ -580,34 +594,53 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
     }
     return roots;
   }
-  private static final Comparator<PsiFile> FILE_BY_LANGUAGE_ID = new Comparator<PsiFile>() {
-    @Override
-    public int compare(@NotNull PsiFile o1, @NotNull PsiFile o2) {
-      return o1.getLanguage().getID().compareTo(o2.getLanguage().getID());
-    }
-  };
+  private static final Comparator<PsiFile> FILE_BY_LANGUAGE_ID = Comparator.comparing(o -> o.getLanguage().getID());
 
   @Override
   public boolean isPhysical() {
-    // TODO[ik] remove this shit with dummy file system
-    return getViewProvider().isEventSystemEnabled();
+    return getViewProvider().supportsSendingPsiEvents();
   }
 
   @Override
-  @NotNull
-  public Language getLanguage() {
+  public @NotNull Language getLanguage() {
     return myElementType.getLanguage();
   }
 
   @Override
-  @NotNull
-  public FileViewProvider getViewProvider() {
+  public @Nullable IFileElementType getFileElementType() {
+    return myElementType instanceof IFileElementType ? (IFileElementType)myElementType
+                                                     : tryCast(myContentElementType, IFileElementType.class);
+  }
+
+  @Override
+  public @NotNull FileViewProvider getViewProvider() {
     return myViewProvider;
   }
 
+  @Override
+  public final @NotNull Document getFileDocument() {
+    return PsiFileEx.super.getFileDocument();
+  }
+
+  /**
+   * Drops stubs and installs {@code element} as the single source of truth for the tree structure of this file.
+   */
   public void setTreeElementPointer(@Nullable FileElement element) {
-    myTreeElementPointer = element;
-    myAstLoaded = myUseStrongRefs = false;
+    FileTrees updatedTree;
+    if (element == null) {
+      updatedTree = myTrees.dropStubAndFileElement();
+    } else {
+      try {
+        updatedTree = myTrees.dropStubAndFileElement().withAst(createTreeElementPointer(element));
+      }
+      catch (StubTreeLoader.StubTreeAndIndexUnmatchCoarseException e) {
+        // we need to catch this exception syntactically because it is checked
+        // but it is not possible -- we are dropping the stub prior to installing a new tree pointer,
+        // so no validation against stub and PSI actually happens
+        throw new RuntimeException(e);
+      }
+    }
+    updateTrees(updatedTree);
   }
 
   @Override
@@ -621,26 +654,27 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   @Override
-  @NotNull
-  public char[] textToCharArray() {
+  public char @NotNull [] textToCharArray() {
     return CharArrayUtil.fromSequence(getViewProvider().getContents());
   }
 
-  @SuppressWarnings("unchecked")
-  @NotNull
-  public <T> T[] findChildrenByClass(Class<T> aClass) {
-    List<T> result = new ArrayList<T>();
+  public <T> T @NotNull [] findChildrenByClass(Class<T> aClass) {
+    List<T> result = new ArrayList<>();
     for (PsiElement child : getChildren()) {
-      if (aClass.isInstance(child)) result.add((T)child);
+      if (aClass.isInstance(child)) {
+        //noinspection unchecked
+        result.add((T)child);
+      }
     }
-    return result.toArray((T[]) Array.newInstance(aClass, result.size()));
+    return result.toArray(ArrayUtil.newArray(aClass, result.size()));
   }
 
-  @SuppressWarnings("unchecked")
-  @Nullable
-  public <T> T findChildByClass(Class<T> aClass) {
+  public @Nullable <T> T findChildByClass(Class<T> aClass) {
     for (PsiElement child : getChildren()) {
-      if (aClass.isInstance(child)) return (T)child;
+      if (aClass.isInstance(child)) {
+        //noinspection unchecked
+        return (T)child;
+      }
     }
     return null;
   }
@@ -658,29 +692,28 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   public void onContentReload() {
     ApplicationManager.getApplication().assertWriteAccessAllowed();
 
-    DebugUtil.startPsiModification("onContentReload");
-    try {
-      myRefToPsi.invalidatePsi();
+    clearContent("onContentReload");
+  }
 
-      FileElement treeElement = derefTreeElement();
-      if (treeElement != null) {
+  final void clearContent(String reason) {
+    DebugUtil.performPsiModification(reason, () -> {
+      synchronized (myPsiLock) {
+        FileElement treeElement = derefTreeElement();
+        if (treeElement != null) {
+          treeElement.detachFromFile();
+          DebugUtil.onInvalidated(treeElement);
+        }
+        updateTrees(myTrees.clearStub(reason));
         setTreeElementPointer(null);
-        treeElement.detachFromFile();
-        DebugUtil.onInvalidated(treeElement);
       }
-      clearStub("onContentReload");
-    }
-    finally {
-      DebugUtil.finishPsiModification();
-    }
+    });
     clearCaches();
   }
 
   /**
    * @return a root stub of {@link #getStubTree()}, or null if the file is not stub-based or AST has been loaded.
    */
-  @Nullable
-  public StubElement getStub() {
+  public @Nullable StubElement<?> getStub() {
     StubTree stubHolder = getStubTree();
     return stubHolder != null ? stubHolder.getRoot() : null;
   }
@@ -689,116 +722,234 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
    * A green stub is a stub object that can co-exist with tree (AST). So, contrary to {@link #getStub()}, can be non-null
    * even if the AST has been loaded in this file. It can be used in cases when retrieving information from a stub is cheaper
    * than from AST.
+   * <p>
+   * Implementation note: green stub is erased in the files that are changed after they had been switched to AST mode.
+   * So it is recommended to cache long computations performed in AST mode.
+   *
    * @return a stub object corresponding to the file's content, or null if it's not available (e.g. has been garbage-collected)
    * @see #getStub()
    * @see #getStubTree()
+   *
+   * @deprecated Use {@link #withGreenStubOrAst} to avoid race condition. Race condition can happen when AST is attached to
+   *             the {@code PsiFile} when stub is being retrieved from the file system. In such case {@code getGreenStub} may
+   *             return {@code null}. Between call to {@code getGreenStub} and access to the AST, the AST may be GC-ed, as it
+   *             is only softly referenced. This will result in file reparse, which leads to performance degradation
+   *             and especially to the hard-to-locate flakiness of tests.
    */
-  @Nullable
-  public final StubElement getGreenStub() {
-    StubTree stubHolder = getStubTree();
-    if (stubHolder == null) stubHolder = getGreenStubTree();
+  @Deprecated
+  public final @Nullable StubElement<?> getGreenStub() {
+    StubTree stubHolder = getGreenStubTree();
     return stubHolder != null ? stubHolder.getRoot() : null;
   }
 
+  /**
+   * @return a stub tree object having {@link #getGreenStub()} as a root, or null if there's no green stub available
+   * @deprecated Use {@link #getStubTreeOrFileElement()} or {@link #withGreenStubTreeOrAst(Function, Function)}.
+   *             See deprecation note of {@link #getGreenStub()}
+   */
+  @Deprecated
+  public final @Nullable StubTree getGreenStubTree() {
+    if (InternalPsiVersioning.isInsideVersioningButNotLocks()) {
+      // as of now, we do not allow working with stubs inside versioned environment, as stubs are not represented as a versioned structure
+      // so the green stub functionality is disabled.
+      return null;
+    }
+    assertReadAccessAllowed();
+
+    StubTree deref = derefStub();
+    if (deref != null) {
+      return deref;
+    }
+    return getStubTreeOrFileElement().first;
+  }
+
+  /**
+   * @see #getGreenStub() documentation
+   */
+  public final <T> T withGreenStubOrAst(
+    Function<PsiFileStub<?>, T> stubProcessor,
+    Function<FileElement, T> astProcessor
+  ) {
+    //noinspection rawtypes,unchecked
+    return withGreenStubOrAst((Class<PsiFileStub<?>>)(Class)PsiFileStub.class, stubProcessor, astProcessor);
+  }
+
+  /**
+   * @see #getGreenStub() documentation
+   */
+  public final <T, S extends PsiFileStub<?>> T withGreenStubOrAst(
+    Class<S> stubClass,
+    Function<S, T> stubProcessor,
+    Function<FileElement, T> astProcessor
+  ) {
+    Pair<@Nullable StubTree, @Nullable FileElement> result = getStubTreeOrFileElement();
+    StubElement<?> stubElement = result.first != null && !InternalPsiVersioning.isInsideVersioningButNotLocks() ? result.first.getRoot() : null;
+    if (stubElement != null && !stubClass.isAssignableFrom(stubElement.getClass())) {
+      LanguageStubDescriptor descriptor = getStubDescriptor();
+      String elementTypeName = descriptor != null ? descriptor.getFileElementSerializer().getExternalId() : null;
+      Logger.getInstance(PsiFileImpl.class).error("stub: " + stubElement.getClass().getName() + "; file: " + elementTypeName);
+      stubElement = null;
+    }
+    if (stubElement != null) {
+      //noinspection unchecked
+      return stubProcessor.apply((S)stubElement);
+    }
+    FileElement fileElement = result.second;
+    if (fileElement == null) {
+      fileElement = calcTreeElement();
+    }
+    return astProcessor.apply(fileElement);
+  }
+
+  public final <T> T withGreenStubTreeOrAst(
+    Function<StubTree, T> stubProcessor,
+    Function<FileElement, T> astProcessor
+  ) {
+    Pair<@Nullable StubTree, @Nullable FileElement> result = getStubTreeOrFileElement();
+    if (result.first != null && !InternalPsiVersioning.isInsideVersioningButNotLocks()) {
+      return stubProcessor.apply(result.first);
+    }
+    FileElement fileElement = result.second;
+    if (fileElement == null) {
+      fileElement = calcTreeElement();
+    }
+    return astProcessor.apply(fileElement);
+  }
+
+
+  /**
+   * @return a stub tree, if this file has it, and only if AST isn't loaded
+   * @implNote for non-physical files, this method can still load AST even if it's not yet loaded
+   */
   @Override
-  @Nullable
-  public StubTree getStubTree() {
-    ApplicationManager.getApplication().assertReadAccessAllowed();
+  public @Nullable StubTree getStubTree() {
+    assertReadAccessAllowed();
 
-    if (Boolean.TRUE.equals(getUserData(BUILDING_STUB))) return null;
+    StubTree deref = derefStub();
+    FileElement treeElement = getTreeElement();
+    if (treeElement!=null) {
+      return null;
+    }
+    if (deref != null) {
+      return deref;
+    }
+    Pair<StubTree, FileElement> result = getStubTreeOrFileElement();
+    return result.second == null ? result.first : null;
+  }
 
-    final StubTree derefd = derefStub();
-    if (derefd != null) return derefd;
-    if (myAstLoaded) return null;
+  public @NotNull Pair<@Nullable StubTree, @Nullable FileElement> getStubTreeOrFileElement() {
+    assertReadAccessAllowed();
 
-    if (getElementTypeForStubBuilder() == null) return null;
+    StubTree deref = derefStub();
+    FileElement treeElement = getTreeElement();
+    if (deref != null || treeElement != null) {
+      return Pair.create(deref, treeElement);
+    }
 
-    final VirtualFile vFile = getVirtualFile();
-    if (!(vFile instanceof VirtualFileWithId)) return null;
+    if (Boolean.TRUE.equals(getUserData(BUILDING_STUB)) || myLoadingAst || getStubDescriptor() == null) {
+      return Pair.empty();
+    }
 
-    ObjectStubTree tree = StubTreeLoader.getInstance().readOrBuild(getProject(), vFile, this);
-    if (!(tree instanceof StubTree)) return null;
-    StubTree stubHolder = (StubTree)tree;
-    final FileViewProvider viewProvider = getViewProvider();
-    final List<Pair<IStubFileElementType, PsiFile>> roots = StubTreeBuilder.getStubbedRoots(viewProvider);
+    VirtualFile vFile = getVirtualFile();
 
-    synchronized (PsiLock.LOCK) {
-      if (getTreeElement() != null) return null;
+    ObjectStubTree<?> tree = InternalPsiVersioning.isInsideVersioningButNotLocks() ? null : StubTreeLoader.getInstance().readOrBuild(getProject(), vFile, this);
+    if (!(tree instanceof StubTree)) return Pair.empty();
+    FileViewProvider viewProvider = getViewProvider();
+    List<Pair<LanguageStubDescriptor, PsiFile>> roots = StubTreeBuilder.getStubbedRootDescriptors(viewProvider);
 
-      final StubTree derefdOnLock = derefStub();
-      if (derefdOnLock != null) return derefdOnLock;
-
-      final PsiFileStub baseRoot = stubHolder.getRoot();
-      if (baseRoot instanceof PsiFileStubImpl && !((PsiFileStubImpl)baseRoot).rootsAreSet()) {
-        LOG.error("Stub roots must be set when stub tree was read or built with StubTreeLoader");
-        return stubHolder;
-      }
-      final PsiFileStub[] stubRoots = baseRoot.getStubRoots();
-      if (stubRoots.length != roots.size()) {
-        final Function<PsiFileStub, String> stubToString = new Function<PsiFileStub, String>() {
-          @Override
-          public String fun(PsiFileStub stub) {
-            return stub.getClass().getSimpleName();
-          }
-        };
-        LOG.error("readOrBuilt roots = " + StringUtil.join(stubRoots, stubToString, ", ") + "; " +
-                  StubTreeLoader.getFileViewProviderMismatchDiagnostics(viewProvider));
-        rebuildStub();
-        return stubHolder;
-      }
-      // set all stub trees to avoid reading file when stub tree for another psi root is accessed
-      int matchingRoot = 0;
-      for (Pair<IStubFileElementType, PsiFile> root : roots) {
-        final PsiFileStub matchingStub = stubRoots[matchingRoot++];
-        PsiFileImpl eachPsiRoot = (PsiFileImpl)root.second;
-        //noinspection unchecked
-        ((StubBase)matchingStub).setPsi(eachPsiRoot);
-        final StubTree stubTree = new StubTree(matchingStub);
-        FileElement fileElement = eachPsiRoot.getTreeElement();
-        if (fileElement != null) {
-          stubTree.setDebugInfo("created in getStubTree(), with AST");
-
-          // Set references from these stubs to AST, because:
-          // Stub index might call getStubTree on main PSI file, but then use getPlainListFromAllRoots and return stubs from another file.
-          // Even if that file already has AST, stub.getPsi() should be the same as in AST
-          TreeUtil.bindStubsToTree(eachPsiRoot, stubTree, fileElement);
-        } else {
-          stubTree.setDebugInfo("created in getStubTree(), no AST");
-          if (eachPsiRoot == this) stubHolder = stubTree;
-          eachPsiRoot.myStub = new SoftReference<StubTree>(stubTree);
+    try {
+      synchronized (myPsiLock) {
+        FileElement treeElementOnLock = getTreeElement();
+        StubTree dereferencedOnLock = derefStub();
+        if (dereferencedOnLock != null || treeElementOnLock != null) {
+          return Pair.create(dereferencedOnLock, treeElementOnLock);
         }
-        eachPsiRoot.putUserData(ObjectStubTree.LAST_STUB_TREE_HASH, null);
+
+        PsiFileStubImpl<?> baseRoot = (PsiFileStubImpl<?>)((StubTree)tree).getRoot();
+        if (!baseRoot.rootsAreSet()) {
+          LOG.error("Stub roots must be set when stub tree was read or built with StubTreeLoader");
+          return Pair.empty();
+        }
+        PsiFileStub<?>[] stubRoots = baseRoot.getStubRoots();
+        if (stubRoots.length != roots.size()) {
+          com.intellij.util.Function<PsiFileStub<?>, String> stubToString =
+            stub -> "{" + stub.getClass().getSimpleName() + " " + stub.getFileElementType().getLanguage() + "}";
+          LOG.error("readOrBuilt roots = " + StringUtil.join(stubRoots, stubToString, ", ") + "; " +
+                    StubTreeLoader.getFileViewProviderMismatchDiagnostics(viewProvider));
+          rebuildStub();
+          return Pair.empty();
+        }
+
+        StubTree result = null;
+        for (int i = 0; i < roots.size(); i++) {
+          PsiFileImpl eachPsiRoot = (PsiFileImpl)roots.get(i).second;
+          if (eachPsiRoot.derefStub() == null) {
+            StubTree stubTree = eachPsiRoot.setStubTree(stubRoots[i]);
+            if (eachPsiRoot == this) {
+              result = stubTree;
+            }
+          }
+        }
+
+        assert result != null : "Current file not in root list: " + roots + ", vp=" + viewProvider;
+        return Pair.create(result, null);
       }
-      assert derefStub() == stubHolder : "Current file not in root list: " + roots + ", vp=" + viewProvider;
-      return stubHolder;
+    }
+    catch (StubTreeLoader.StubTreeAndIndexUnmatchCoarseException e) {
+      throw e.createCompleteException();
     }
   }
 
-  @Nullable
-  private StubTree derefStub() {
-    return SoftReference.dereference(myStub);
+  private @NotNull StubTree setStubTree(PsiFileStub<?> root) throws StubTreeLoader.StubTreeAndIndexUnmatchCoarseException {
+    //noinspection unchecked
+    ((StubBase<PsiFile>)root).setPsi(this);
+    StubTree stubTree = new StubTree(root);
+    FileElement fileElement = getTreeElement();
+    stubTree.setDebugInfo("created in getStubTree(), with AST = " + (fileElement != null));
+    updateTrees(myTrees.withStub(stubTree, fileElement));
+    return stubTree;
+  }
+
+  @ApiStatus.Internal
+  public final @Nullable StubTree derefStub() {
+    return myTrees.derefStub();
+  }
+
+  private void updateTrees(@NotNull FileTrees trees) {
+    TreeElement treeElement = trees.derefTreeElement();
+    if (InternalPsiVersioning.isVersionedSyntaxTreeEnabled() && treeElement != null && getViewProvider().correspondsToRealFile() && !treeElement.isVersioned()) {
+      VersionedPsiConsistencyException exception = new VersionedPsiConsistencyException.ViewProvider("Attempt to set non-versioned tree to a physical view provider");
+      LOG.error(exception);
+    }
+    updateTreesDirectly(trees);
+  }
+
+  // this function exists only for cloneImpl
+  private void updateTreesDirectly(@NotNull FileTrees trees) {
+    trees.assertConsistency(this);
+    myTrees = trees;
   }
 
   protected PsiFileImpl cloneImpl(FileElement treeElementClone) {
     PsiFileImpl clone = (PsiFileImpl)super.clone();
-    clone.myRefToPsi = new AstPathPsiMap(getProject());
-    clone.setTreeElementPointer(treeElementClone); // should not use setTreeElement here because cloned file still have VirtualFile (SCR17963)
+    // we need to update trees without assertion about collapsed tree in a physical FileViewProvider, as clients usually clone PsiFile and only then set the cloned viewProvider there.
+    clone.updateTreesDirectly(FileTrees.noStub(treeElementClone, clone, clone.getViewProvider())); // should not use setTreeElement here because the cloned file still has VirtualFile (SCR17963)
     treeElementClone.setPsi(clone);
+
     return clone;
   }
 
   private boolean isKeepTreeElementByHardReference() {
-    return !getViewProvider().isEventSystemEnabled();
+    return !getViewProvider().supportsSendingPsiEvents();
   }
 
-  @NotNull
-  private Getter<FileElement> createTreeElementPointer(@NotNull FileElement treeElement) {
+  private @NotNull Supplier<FileElement> createTreeElementPointer(@NotNull FileElement treeElement) {
     if (isKeepTreeElementByHardReference()) {
-      return treeElement;
+      return () -> treeElement;
     }
     return myManager.isBatchFilesProcessingMode()
-                 ? new PatchedWeakReference<FileElement>(treeElement)
-                 : new SoftReference<FileElement>(treeElement);
+                 ? new PatchedWeakReference<>(treeElement)
+                 : new SoftReference<>(treeElement);
   }
 
   @Override
@@ -816,22 +967,14 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
     return getOriginalFile();
   }
 
-  @NotNull
-  public final FileElement calcTreeElement() {
-    // Attempt to find (loaded) tree element without taking lock first.
+  public final @NotNull FileElement calcTreeElement() {
     FileElement treeElement = getTreeElement();
-    if (treeElement != null) return treeElement;
-
-    treeElement = myFileElementBeingLoaded.get();
-    if (treeElement != null) return treeElement;
-
-    return loadTreeElement();
+    return treeElement != null ? treeElement : loadTreeElement();
   }
 
   @Override
-  @NotNull
-  public PsiElement[] getChildren() {
-    return calcTreeElement().getChildrenAsPsiElements((TokenSet)null, PsiElement.ARRAY_FACTORY);
+  public PsiElement @NotNull [] getChildren() {
+    return calcTreeElement().getChildrenAsPsiElements((TokenSet)null, ARRAY_FACTORY);
   }
 
   @Override
@@ -851,12 +994,12 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
 
   @Override
   public int getStartOffsetInParent() {
-    return calcTreeElement().getStartOffsetInParent();
+    return 0;
   }
 
   @Override
   public int getTextOffset() {
-    return calcTreeElement().getTextOffset();
+    return 0;
   }
 
   @Override
@@ -907,7 +1050,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   @Override
-  public final void checkAdd(@NotNull PsiElement element) throws IncorrectOperationException {
+  public final void checkAdd(@NotNull PsiElement element) {
     CheckUtil.checkWritable(this);
   }
 
@@ -955,8 +1098,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   @Override
-  @NotNull
-  public PsiReference[] getReferences() {
+  public PsiReference @NotNull [] getReferences() {
     return SharedPsiElementImplUtil.getReferences(this);
   }
 
@@ -969,14 +1111,12 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   @Override
-  @NotNull
-  public GlobalSearchScope getResolveScope() {
+  public @NotNull GlobalSearchScope getResolveScope() {
     return ResolveScopeManager.getElementResolveScope(this);
   }
 
   @Override
-  @NotNull
-  public SearchScope getUseScope() {
+  public @NotNull SearchScope getUseScope() {
     return ResolveScopeManager.getElementUseScope(this);
   }
 
@@ -990,15 +1130,15 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
 
       @Override
       public String getLocationString() {
-        final PsiDirectory psiDirectory = getParent();
-        if (psiDirectory != null) {
-          return psiDirectory.getVirtualFile().getPresentableUrl();
+        VirtualFile file = getViewProvider().getVirtualFile().getParent();
+        if (file != null && file.isValid() && file.isDirectory()) {
+          return file.getPresentableUrl();
         }
         return null;
       }
 
       @Override
-      public Icon getIcon(final boolean open) {
+      public Icon getIcon(boolean open) {
         return PsiFileImpl.this.getIcon(0);
       }
     };
@@ -1006,7 +1146,7 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
 
   @Override
   public void navigate(boolean requestFocus) {
-    assert canNavigate() : this;
+    assert canNavigate() : "Couldn't navigate to "+this+": isValid="+isValid()+"; getVirtualFile()="+getVirtualFile()+"; getOriginalFile()="+getOriginalFile();
     //noinspection ConstantConditions
     PsiNavigationSupport.getInstance().getDescriptor(this).navigate(requestFocus);
   }
@@ -1022,107 +1162,95 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   @Override
-  @NotNull
-  public final Project getProject() {
+  public final @NotNull Project getProject() {
     return getManager().getProject();
   }
 
-  @NotNull
   @Override
-  public FileASTNode getNode() {
+  public @NotNull FileASTNode getNode() {
     return calcTreeElement();
   }
 
+  /**
+   * @implNote for non-physical files, this method can still load AST even if it's not yet loaded
+   */
+  public @Nullable FileASTNode getNodeIfLoaded() {
+    return getTreeElement();
+  }
+
   @Override
-  public boolean isEquivalentTo(final PsiElement another) {
+  public boolean isEquivalentTo(PsiElement another) {
     return this == another;
   }
 
-  private final Object myStubFromTreeLock = new Object();
-
-  /**
-   * @return a stub tree object having {@link #getGreenStub()} as a root, or null if there's no green stub available
-   */
-  @Nullable
-  public final StubTree getGreenStubTree() {
-    return SoftReference.dereference(myGreenStub);
-  }
-
-  @NotNull
-  public StubTree calcStubTree() {
-    StubTree tree = SoftReference.dereference(myGreenStub);
+  public @NotNull StubTree calcStubTree() {
+    StubTree tree = derefStub();
     if (tree != null) {
       return tree;
     }
     FileElement fileElement = calcTreeElement();
-    synchronized (myStubFromTreeLock) {
-      tree = SoftReference.dereference(myGreenStub);
+    try {
+      synchronized (myPsiLock) {
+        tree = derefStub();
 
-      if (tree == null) {
-        ApplicationManager.getApplication().assertReadAccessAllowed();
-        IStubFileElementType contentElementType = getElementTypeForStubBuilder();
-        if (contentElementType == null) {
-          VirtualFile vFile = getVirtualFile();
-          String message = "ContentElementType: " + getContentElementType() + "; file: " + this +
-                           "\n\t" + "Boolean.TRUE.equals(getUserData(BUILDING_STUB)) = " + Boolean.TRUE.equals(getUserData(BUILDING_STUB)) +
-                           "\n\t" + "getTreeElement() = " + getTreeElement() +
-                           "\n\t" + "vFile instanceof VirtualFileWithId = " + (vFile instanceof VirtualFileWithId) +
-                           "\n\t" + "StubUpdatingIndex.canHaveStub(vFile) = " + StubTreeLoader.getInstance().canHaveStub(vFile);
-          rebuildStub();
-          throw new AssertionError(message);
+        if (tree == null) {
+          assertReadAccessAllowed();
+          LanguageStubDescriptor stubDescriptor = getStubDescriptor();
+          if (stubDescriptor == null) {
+            VirtualFile vFile = getVirtualFile();
+            String message = "ContentElementType: " + getContentElementType() +
+                             "; file: " + this + (vFile.isValid() ? "" : " (" + vFile + " invalid)") +
+                             "\n\t" + "Boolean.TRUE.equals(getUserData(BUILDING_STUB)) = " + Boolean.TRUE.equals(getUserData(BUILDING_STUB)) +
+                             "\n\t" + "getTreeElement() = " + getTreeElement() +
+                             "\n\t" + "vFile instanceof VirtualFileWithId = " + (vFile instanceof VirtualFileWithId) +
+                             "\n\t" + "StubUpdatingIndex.canHaveStub(vFile) = " + StubTreeLoader.getInstance().canHaveStub(vFile);
+            rebuildStub();
+            throw new AssertionError(message);
+          }
+
+          StubElement<?> currentStubTree = stubDescriptor.getStubDefinition().getBuilder().buildStubTree(this);
+          if (currentStubTree == null) {
+            throw new AssertionError("Stub tree wasn't built for " + stubDescriptor + "; file: " + this);
+          }
+
+          tree = new StubTree((PsiFileStub<?>)currentStubTree);
+          tree.setDebugInfo("created in calcStubTree");
+          updateTrees(myTrees.withStub(tree, fileElement));
         }
 
-        StubElement currentStubTree = contentElementType.getBuilder().buildStubTree(this);
-        if (currentStubTree == null) {
-          throw new AssertionError("Stub tree wasn't built for " + contentElementType + "; file: " + this);
-        }
-
-        tree = new StubTree((PsiFileStub)currentStubTree);
-        tree.setDebugInfo("created in calcStubTree");
-        try {
-          TreeUtil.bindStubsToTree(this, tree, fileElement);
-        }
-        catch (TreeUtil.StubBindingException e) {
-          rebuildStub();
-          throw new RuntimeException("Stub and PSI element type mismatch in " + getName(), e);
-        }
-
-        myGreenStub = new SoftReference<StubTree>(tree);
+        return tree;
       }
-
-      return tree;
+    }
+    catch (StubTreeLoader.StubTreeAndIndexUnmatchCoarseException e) {
+      throw e.createCompleteException();
     }
   }
 
-  private void rebuildStub() {
-    ApplicationManager.getApplication().invokeLater(new Runnable() {
-      @Override
-      public void run() {
-        if (!myManager.isDisposed()) {
-          myManager.dropResolveCaches();
-          ((PsiModificationTrackerImpl)myManager.getModificationTracker()).incCounter();
-        }
-
-        final VirtualFile vFile = getVirtualFile();
-        if (vFile != null && vFile.isValid()) {
-          final Document doc = FileDocumentManager.getInstance().getCachedDocument(vFile);
-          if (doc != null) {
-            FileDocumentManager.getInstance().saveDocument(doc);
-          }
-
-          FileContentUtilCore.reparseFiles(vFile);
-          StubTreeLoader.getInstance().rebuildStubTree(vFile);
-        }
+  final void rebuildStub() {
+    AppUIExecutor.onWriteThread(ModalityState.nonModal()).later().submit(() -> {
+      if (!myManager.isDisposed()) {
+        myManager.dropPsiCaches();
       }
-    }, ModalityState.NON_MODAL);
+
+      VirtualFile vFile = getVirtualFile();
+      if (vFile != null && vFile.isValid()) {
+        Document doc = FileDocumentManager.getInstance().getCachedDocument(vFile);
+        if (doc != null) {
+          FileDocumentManager.getInstance().saveDocument(doc);
+        }
+
+        FileContentUtilCore.reparseFiles(vFile);
+        StubTreeLoader.getInstance().rebuildStubTree(vFile);
+      }
+    });
   }
 
   @Override
-  public void putInfo(@NotNull Map<String, String> info) {
+  public void putInfo(@NotNull Map<? super String, ? super String> info) {
     putInfo(this, info);
   }
 
-  public static void putInfo(PsiFile psiFile, Map<String, String> info) {
+  public static void putInfo(@NotNull PsiFile psiFile, @NotNull Map<? super String, ? super String> info) {
     info.put("fileName", psiFile.getName());
     info.put("fileType", psiFile.getFileType().toString());
   }
@@ -1133,43 +1261,36 @@ public abstract class PsiFileImpl extends ElementBase implements PsiFileEx, PsiF
   }
 
   public final void beforeAstChange() {
-    if (!useStrongRefs()) {
-      myUseStrongRefs = true;
-      myRefToPsi.switchToStrongRefs();
-
-      FileElement element = getTreeElement();
-      if (element != null) {
-        AstPath.invalidatePaths(element);
-      } else {
-        LOG.error("No AST; " + derefStub() + "; " + this + " of " + getClass() + "; " + getViewProvider() + " of " + getViewProvider().getClass());
+    checkWritable();
+    synchronized (myPsiLock) {
+      FileTrees updated = myTrees.switchToStrongRefs();
+      if (updated != myTrees) {
+        updateTrees(updated);
       }
     }
   }
 
-  @Nullable
-  public StubBasedPsiElementBase<?> obtainPsi(@NotNull AstPath path, @NotNull Factory<StubBasedPsiElementBase<?>> creator) {
-    if (useStrongRefs()) {
-      return null;
-    }
-
-    StubBasedPsiElementBase<?> psi = myRefToPsi.getCachedPsi(path);
-    if (psi != null) return psi;
-
-    synchronized (PsiLock.LOCK) {
-      psi = myRefToPsi.getCachedPsi(path);
-      return psi != null ? psi : myRefToPsi.cachePsi(path, creator.create());
+  private void checkWritable() {
+    PsiDocumentManager docManager = PsiDocumentManager.getInstance(getProject());
+    if (docManager instanceof PsiDocumentManagerEx &&
+        !((PsiDocumentManagerEx)docManager).isCommitInProgress() &&
+        !(myViewProvider instanceof FreeThreadedFileViewProvider)) {
+      CheckUtil.checkWritable(this);
     }
   }
 
-  final AstPathPsiMap getRefToPsi() {
-    return myRefToPsi;
+  @ApiStatus.Internal
+  public boolean isIndexingFileCopy() {
+    return getUserData(IndexingDataKeys.VIRTUAL_FILE) != null;
   }
 
-  public boolean useStrongRefs() {
-    return myUseStrongRefs;
-  }
-
-  public boolean mayCacheAst() {
-    return myFileElementBeingLoaded.get() == null;
+  @ApiStatus.Internal
+  public static boolean shouldNodeBeVersioned(@NotNull FileViewProvider viewProvider) {
+    // We create persistent trees for real physical files.
+    // also, if we are operating in a versioned environment, the created tree should also be versioned,
+    // because they will likely be used for real physical files later, like in document commit.
+    // This is the case for write action for example
+    // but if there is an explicit non-versioned environment, then we create a collapsed tree no matter what.
+    return InternalPsiVersioning.isVersionedComputation() || viewProvider.isPhysical();
   }
 }

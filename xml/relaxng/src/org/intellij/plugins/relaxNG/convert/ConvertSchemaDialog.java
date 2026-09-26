@@ -16,35 +16,34 @@
 
 package org.intellij.plugins.relaxNG.convert;
 
+import com.intellij.CommonBundle;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.vfs.VirtualFile;
+import org.intellij.plugins.relaxNG.RelaxngBundle;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.AbstractAction;
+import javax.swing.Action;
+import javax.swing.JComponent;
 import java.awt.event.ActionEvent;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 
-/*
-* Created by IntelliJ IDEA.
-* User: sweinreuter
-* Date: 16.11.2007
-*/
 public class ConvertSchemaDialog extends DialogWrapper implements PropertyChangeListener {
   private final ConvertSchemaSettingsImpl mySettings;
   private final AbstractAction myAdvancedAction;
 
   protected ConvertSchemaDialog(Project project, SchemaType input, VirtualFile firstFile) {
     super(project, false);
-    setTitle("Convert Schema File");
+    setTitle(RelaxngBundle.message("relaxng.convert-schema.dialog.title"));
 
     mySettings = new ConvertSchemaSettingsImpl(project, input, firstFile);
     mySettings.addPropertyChangeListener(ConvertSchemaSettingsImpl.OUTPUT_TYPE, this);
     mySettings.addPropertyChangeListener(ConvertSchemaSettingsImpl.OUTPUT_PATH, this);
 
-    myAdvancedAction = new AbstractAction("Advanced...") {
+    myAdvancedAction = new AbstractAction(CommonBundle.message("action.text.advanced.ellipsis")) {
       @Override
       public void actionPerformed(ActionEvent e) {
         mySettings.showAdvancedSettings();
@@ -54,12 +53,11 @@ public class ConvertSchemaDialog extends DialogWrapper implements PropertyChange
 
     init();
 
-    getOKAction().setEnabled(mySettings.getOutputDestination().trim().length() > 0);
+    getOKAction().setEnabled(!mySettings.getOutputDestination().trim().isEmpty());
   }
 
-  @NotNull
   @Override
-  protected Action[] createLeftSideActions() {
+  protected Action @NotNull [] createLeftSideActions() {
     return new Action[]{
             myAdvancedAction
     };
@@ -71,8 +69,7 @@ public class ConvertSchemaDialog extends DialogWrapper implements PropertyChange
   }
 
   @Override
-  @Nullable
-  protected JComponent createCenterPanel() {
+  protected @Nullable JComponent createCenterPanel() {
     return mySettings.getRoot();
   }
 
@@ -85,7 +82,7 @@ public class ConvertSchemaDialog extends DialogWrapper implements PropertyChange
     if (ConvertSchemaSettingsImpl.OUTPUT_TYPE.equals(evt.getPropertyName())) {
       myAdvancedAction.setEnabled(mySettings.hasAdvancedSettings());
     } else if (ConvertSchemaSettingsImpl.OUTPUT_PATH.equals(evt.getPropertyName())) {
-      getOKAction().setEnabled(((String)evt.getNewValue()).trim().length() > 0);
+      getOKAction().setEnabled(!((String)evt.getNewValue()).trim().isEmpty());
     }
   }
 }

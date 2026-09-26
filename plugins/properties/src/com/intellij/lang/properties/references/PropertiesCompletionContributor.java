@@ -1,22 +1,16 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.properties.references;
 
-import com.intellij.codeInsight.completion.*;
-import com.intellij.codeInsight.lookup.*;
+import com.intellij.codeInsight.completion.CompletionContributor;
+import com.intellij.codeInsight.completion.CompletionInitializationContext;
+import com.intellij.codeInsight.completion.CompletionParameters;
+import com.intellij.codeInsight.completion.CompletionProvider;
+import com.intellij.codeInsight.completion.CompletionResultSet;
+import com.intellij.codeInsight.completion.CompletionUtil;
+import com.intellij.codeInsight.lookup.LookupElement;
+import com.intellij.codeInsight.lookup.LookupElementBuilder;
+import com.intellij.codeInsight.lookup.LookupElementPresentation;
+import com.intellij.codeInsight.lookup.LookupElementRenderer;
 import com.intellij.icons.AllIcons;
 import com.intellij.lang.properties.EmptyResourceBundle;
 import com.intellij.lang.properties.IProperty;
@@ -28,9 +22,9 @@ import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiLanguageInjectionHost;
 import com.intellij.psi.PsiReference;
 import com.intellij.util.ArrayUtil;
-import com.intellij.util.NullableFunction;
 import com.intellij.util.PlatformIcons;
 import com.intellij.util.ProcessingContext;
 import com.intellij.util.containers.ContainerUtil;
@@ -38,20 +32,17 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
-import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import static com.intellij.patterns.PlatformPatterns.psiElement;
 
-/**
- * @author peter
- */
 public class PropertiesCompletionContributor extends CompletionContributor {
   public PropertiesCompletionContributor() {
-    extend(null, psiElement(), new CompletionProvider<CompletionParameters>() {
+    extend(null, psiElement(), new CompletionProvider<>() {
       @Override
       protected void addCompletions(@NotNull CompletionParameters parameters,
-                                    ProcessingContext context,
+                                    @NotNull ProcessingContext context,
                                     @NotNull CompletionResultSet result) {
         doAdd(parameters, result);
       }
@@ -60,7 +51,16 @@ public class PropertiesCompletionContributor extends CompletionContributor {
 
   private static void doAdd(CompletionParameters parameters, final CompletionResultSet result) {
     PsiElement position = parameters.getPosition();
-    PsiReference[] references = ArrayUtil.mergeArrays(position.getReferences(), position.getParent().getReferences());
+    PsiElement parent = position.getParent();
+    PsiElement gParent = parent != null ? parent.getParent() : null;
+    PsiReference[] references = parent == null ? position.getReferences() : ArrayUtil.mergeArrays(position.getReferences(), parent.getReferences());
+    if (gParent instanceof PsiLanguageInjectionHost && references.length == 0) {
+      //kotlin
+      PsiReference[] gParentReferences = gParent.getReferences();
+      if (gParentReferences.length > 0) {
+        references = ArrayUtil.mergeArrays(references, gParentReferences);
+      }
+    }
     PropertyReference propertyReference = ContainerUtil.findInstance(references, PropertyReference.class);
     if (propertyReference != null && !hasMoreImportantReference(references, propertyReference)) {
       final int startOffset = parameters.getOffset();
@@ -76,13 +76,13 @@ public class PropertiesCompletionContributor extends CompletionContributor {
     }
   }
 
-  public static boolean hasMoreImportantReference(@NotNull PsiReference[] references, @NotNull PropertyReference propertyReference) {
+  public static boolean hasMoreImportantReference(PsiReference @NotNull [] references, @NotNull PropertyReference propertyReference) {
     return propertyReference.isSoft() && ContainerUtil.or(references, reference -> !reference.isSoft());
   }
 
-  public static final LookupElementRenderer<LookupElement> LOOKUP_ELEMENT_RENDERER = new LookupElementRenderer<LookupElement>() {
+  public static final LookupElementRenderer<LookupElement> LOOKUP_ELEMENT_RENDERER = new LookupElementRenderer<>() {
     @Override
-    public void renderElement(LookupElement element, LookupElementPresentation presentation) {
+    public void renderElement(@NotNull LookupElement element, @NotNull LookupElementPresentation presentation) {
       IProperty property = (IProperty)element.getObject();
       presentation.setIcon(PlatformIcons.PROPERTY_ICON);
       String key = StringUtil.notNullize(property.getUnescapedKey());
@@ -94,9 +94,11 @@ public class PropertiesCompletionContributor extends CompletionContributor {
       boolean hasBundle = resourceBundle != EmptyResourceBundle.getInstance();
       if (hasBundle) {
         PropertiesFile defaultPropertiesFile = resourceBundle.getDefaultPropertiesFile();
-        IProperty defaultProperty = defaultPropertiesFile.findPropertyByKey(key);
-        if (defaultProperty != null) {
-          value = defaultProperty.getValue();
+        if (defaultPropertiesFile.getContainingFile() != propertiesFile.getContainingFile()) {
+          IProperty defaultProperty = defaultPropertiesFile.findPropertyByKey(key);
+          if (defaultProperty != null) {
+            value = defaultProperty.getValue();
+          }
         }
       }
 
@@ -104,41 +106,25 @@ public class PropertiesCompletionContributor extends CompletionContributor {
         presentation.setTypeText(resourceBundle.getBaseName(), AllIcons.FileTypes.Properties);
       }
 
-      if (presentation instanceof RealLookupElementPresentation && value != null) {
-        value = "=" + value;
-        int limit = 1000;
-        if (value.length() > limit || !((RealLookupElementPresentation)presentation).hasEnoughSpaceFor(value, false)) {
-          if (value.length() > limit) {
-            value = value.substring(0, limit);
-          }
-          while (value.length() > 0 && !((RealLookupElementPresentation)presentation).hasEnoughSpaceFor(value + "...", false)) {
-            value = value.substring(0, value.length() - 1);
-          }
-          value += "...";
-        }
-      }
-
-      TextAttributes attrs = EditorColorsManager.getInstance().getGlobalScheme().getAttributes(PropertiesHighlighter.PROPERTY_VALUE);
-      presentation.setTailText(value, attrs.getForegroundColor());
+      TextAttributes attrs = EditorColorsManager.getInstance().getGlobalScheme()
+        .getAttributes(PropertiesHighlighter.PropertiesComponent.PROPERTY_VALUE.getTextAttributesKey());
+      presentation.setTailText("=" + value, attrs.getForegroundColor());
     }
   };
 
-  @NotNull
-  public static LookupElement[] getVariants(final PropertyReferenceBase propertyReference) {
+  public static LookupElement @NotNull [] getVariants(final PropertyReferenceBase propertyReference) {
     final Set<Object> variants = PropertiesPsiCompletionUtil.getPropertiesKeys(propertyReference);
     return getVariants(variants);
   }
 
   public static LookupElement[] getVariants(Set<Object> variants) {
-    List<LookupElement> elements = ContainerUtil.mapNotNull(variants, (NullableFunction<Object, LookupElement>)o -> {
-      if (o instanceof String) return LookupElementBuilder.create((String)o).withIcon(PlatformIcons.PROPERTY_ICON);
-      return createVariant((IProperty)o);
-    });
-    return elements.toArray(new LookupElement[elements.size()]);
+    return variants.stream().map(o -> o instanceof String
+           ? LookupElementBuilder.create((String)o).withIcon(PlatformIcons.PROPERTY_ICON)
+           : createVariant((IProperty)o))
+      .filter(Objects::nonNull).toArray(LookupElement[]::new);
   }
 
-  @Nullable
-  public static LookupElement createVariant(IProperty property) {
+  public static @Nullable LookupElement createVariant(IProperty property) {
     String key = property.getKey();
     return key == null ? null : LookupElementBuilder.create(property, key).withRenderer(LOOKUP_ELEMENT_RENDERER);
   }

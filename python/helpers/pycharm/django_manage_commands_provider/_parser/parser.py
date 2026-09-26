@@ -97,8 +97,20 @@ def _is_django_10():
     :return: is Django >= 1.10
     """
     try:
-        from distutils.version import StrictVersion
         import django
-        return StrictVersion(django.get_version()) >= StrictVersion("1.10")
-    except (ImportError, AttributeError):
+    except ImportError:
+        return False
+    try:
+        django_version = django.get_version()
+    except AttributeError:
+        return False
+    try:
+        from distutils.version import StrictVersion, LooseVersion
+        try:
+            return StrictVersion(django_version) >= StrictVersion("1.10")
+        except ValueError:
+            return LooseVersion(django_version) >= LooseVersion("1.10")
+    except ImportError:
+        if sys.version_info[:2] >= (3, 12):
+            return django_version.split('.') >= ['1', '10']
         return False

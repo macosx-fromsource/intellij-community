@@ -1,26 +1,27 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.roots.ui.configuration;
 
-import com.intellij.facet.impl.DefaultFacetsProvider;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.impl.ModuleConfigurationStateImpl;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
+import com.intellij.openapi.project.ProjectBundle;
 import com.intellij.openapi.roots.ContentEntry;
 import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.openapi.roots.ModuleRootManager;
-import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.roots.ModuleRootModel;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.jps.model.module.JpsModuleSourceRootType;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import java.awt.BorderLayout;
 import java.util.List;
 
-/**
- * @author yole
- */
-public class PlatformContentEntriesConfigurable implements Configurable {
+
+public final class PlatformContentEntriesConfigurable implements Configurable {
   private final Module myModule;
   private final JpsModuleSourceRootType<?>[] myRootTypes;
   private final JPanel myTopPanel = new JPanel(new BorderLayout());
@@ -34,7 +35,7 @@ public class PlatformContentEntriesConfigurable implements Configurable {
 
   @Override
   public String getDisplayName() {
-    return "Project Structure";
+    return ProjectBundle.message("configurable.PlatformContentEntriesConfigurable.display.name");
   }
 
   @Override
@@ -49,39 +50,31 @@ public class PlatformContentEntriesConfigurable implements Configurable {
   }
 
   private void createEditor() {
-    myModifiableModel = ApplicationManager.getApplication().runReadAction(new Computable<ModifiableRootModel>() {
-      @Override
-      public ModifiableRootModel compute() {
-        return ModuleRootManager.getInstance(myModule).getModifiableModel();
-      }
-    });
+    myModifiableModel = ReadAction.computeBlocking(
+      () -> ModuleRootManager.getInstance(myModule).getModifiableModel()
+    );
 
     final ModuleConfigurationStateImpl moduleConfigurationState =
       new ModuleConfigurationStateImpl(myModule.getProject(), new DefaultModulesProvider(myModule.getProject())) {
         @Override
-        public ModifiableRootModel getRootModel() {
+        public ModifiableRootModel getModifiableRootModel() {
           return myModifiableModel;
         }
 
         @Override
-        public FacetsProvider getFacetsProvider() {
-          return DefaultFacetsProvider.INSTANCE;
+        public ModuleRootModel getCurrentRootModel() {
+          return myModifiableModel;
         }
       };
-    myEditor = new CommonContentEntriesEditor(myModule.getName(), moduleConfigurationState, myRootTypes) {
+    myEditor = new CommonContentEntriesEditor(myModule.getName(), moduleConfigurationState, true, myRootTypes) {
       @Override
       protected List<ContentEntry> addContentEntries(VirtualFile[] files) {
         List<ContentEntry> entries = super.addContentEntries(files);
-        addContentEntryPanels(entries.toArray(new ContentEntry[entries.size()]));
+        addContentEntryPanels(entries.toArray(new ContentEntry[0]));
         return entries;
       }
     };
-    JComponent component = ApplicationManager.getApplication().runReadAction(new Computable<JComponent>() {
-      @Override
-      public JComponent compute() {
-        return myEditor.createComponent();
-      }
-    });
+    JComponent component = ReadAction.computeBlocking(() -> myEditor.createComponent());
     myTopPanel.add(component, BorderLayout.CENTER);
   }
 

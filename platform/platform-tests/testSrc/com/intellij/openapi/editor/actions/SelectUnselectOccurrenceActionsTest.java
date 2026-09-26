@@ -18,15 +18,23 @@ package com.intellij.openapi.editor.actions;
 import com.intellij.codeInsight.hint.EditorHintListener;
 import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.FoldRegion;
 import com.intellij.openapi.editor.FoldingModel;
+import com.intellij.openapi.editor.VisualPosition;
 import com.intellij.openapi.fileTypes.FileTypes;
-import com.intellij.openapi.project.Project;
-import com.intellij.testFramework.fixtures.LightPlatformCodeInsightFixtureTestCase;
+import com.intellij.testFramework.EditorTestUtil;
+import com.intellij.testFramework.fixtures.BasePlatformTestCase;
+import com.intellij.ui.HintHint;
 import com.intellij.ui.LightweightHint;
+import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.NotNull;
 
-public class SelectUnselectOccurrenceActionsTest extends LightPlatformCodeInsightFixtureTestCase {
+import java.util.Arrays;
+
+public class SelectUnselectOccurrenceActionsTest extends BasePlatformTestCase {
   private int hintCount;
 
   @Override
@@ -34,65 +42,74 @@ public class SelectUnselectOccurrenceActionsTest extends LightPlatformCodeInsigh
     super.setUp();
     EditorHintListener listener = new EditorHintListener() {
       @Override
-      public void hintShown(Project project, LightweightHint hint, int flags) {
+      public void hintShown(@NotNull Editor editor, @NotNull LightweightHint hint, int flags, @NotNull HintHint hintInfo) {
         hintCount++;
       }
     };
-    ApplicationManager.getApplication().getMessageBus().connect(getTestRootDisposable()).subscribe(EditorHintListener.TOPIC, listener);
+    ApplicationManager.getApplication().getMessageBus().connect(myFixture.getTestRootDisposable()).subscribe(EditorHintListener.TOPIC, listener);
   }
 
-  public void testAllWithoutInitialSelection() throws Exception {
-    init("some t<caret>ext\n" +
-         "some texts\n" +
-         "another text here"
+  public void testAllWithoutInitialSelection() {
+    init("""
+           some t<caret>ext
+           some texts
+           another text here"""
     );
     executeSelectAllAction();
-    checkResult("some <selection>t<caret>ext</selection>\n" +
-                "some texts\n" +
-                "another <selection>t<caret>ext</selection> here");
+    checkResult("""
+                  some <selection>t<caret>ext</selection>
+                  some texts
+                  another <selection>t<caret>ext</selection> here""");
   }
 
-  public void testAllWithInitialWholeWordSelection() throws Exception {
-    init("some <selection>t<caret>ext</selection>\n" +
-         "some texts\n" +
-         "some texts\n" +
-         "another text here");
+  public void testAllWithInitialWholeWordSelection() {
+    init("""
+           some <selection>t<caret>ext</selection>
+           some texts
+           some texts
+           another text here""");
     executeSelectAllAction();
-    checkResult("some <selection>t<caret>ext</selection>\n" +
-                "some <selection>t<caret>ext</selection>s\n" +
-                "some <selection>t<caret>ext</selection>s\n" +
-                "another <selection>t<caret>ext</selection> here");
+    checkResult("""
+                  some <selection>t<caret>ext</selection>
+                  some <selection>t<caret>ext</selection>s
+                  some <selection>t<caret>ext</selection>s
+                  another <selection>t<caret>ext</selection> here""");
     assertEquals(0, hintCount);
   }
 
-  public void testNoInitialSelection() throws Exception {
-    init("some t<caret>ext\n" +
-         "some texts\n" +
-         "another text here"
+  public void testNoInitialSelection() {
+    init("""
+           some t<caret>ext
+           some texts
+           another text here"""
     );
     executeAction();
-    checkResult("some <selection>t<caret>ext</selection>\n" +
-                "some texts\n" +
-                "another text here");
+    checkResult("""
+                  some <selection>t<caret>ext</selection>
+                  some texts
+                  another text here""");
     executeAction();
-    checkResult("some <selection>t<caret>ext</selection>\n" +
-                "some texts\n" +
-                "another <selection>t<caret>ext</selection> here");
+    checkResult("""
+                  some <selection>t<caret>ext</selection>
+                  some texts
+                  another <selection>t<caret>ext</selection> here""");
     assertEquals(0, hintCount);
   }
 
-  public void testInitialWholeWordSelection() throws Exception {
-    init("some <selection>t<caret>ext</selection>\n" +
-         "some texts\n" +
-         "another text here");
+  public void testInitialWholeWordSelection() {
+    init("""
+           some <selection>t<caret>ext</selection>
+           some texts
+           another text here""");
     executeAction();
-    checkResult("some <selection>t<caret>ext</selection>\n" +
-                "some <selection>t<caret>ext</selection>s\n" +
-                "another text here");
+    checkResult("""
+                  some <selection>t<caret>ext</selection>
+                  some <selection>t<caret>ext</selection>s
+                  another text here""");
     assertEquals(0, hintCount);
   }
 
-  public void testShowingHint() throws Exception {
+  public void testShowingHint() {
     init("some <selection>t<caret>ext</selection>\n" +
          "another <selection>t<caret>ext</selection> here");
     executeAction();
@@ -105,7 +122,7 @@ public class SelectUnselectOccurrenceActionsTest extends LightPlatformCodeInsigh
                 "another <selection>t<caret>ext</selection> here");
   }
 
-  public void testRevert() throws Exception {
+  public void testRevert() {
     init("some <selection>t<caret>ext</selection>\n" +
          "another <selection>t<caret>ext</selection> here");
     executeReverseAction();
@@ -114,49 +131,57 @@ public class SelectUnselectOccurrenceActionsTest extends LightPlatformCodeInsigh
     assertEquals(0, hintCount);
   }
 
-  public void testRevertSingleSelection() throws Exception {
-    init("some <selection>t<caret>ext</selection>\n" +
-         "some texts\n" +
-         "another text here");
+  public void testRevertSingleSelection() {
+    init("""
+           some <selection>t<caret>ext</selection>
+           some texts
+           another text here""");
     executeReverseAction();
-    checkResult("some t<caret>ext\n" +
-                "some texts\n" +
-                "another text here");
+    checkResult("""
+                  some t<caret>ext
+                  some texts
+                  another text here""");
     assertEquals(0, hintCount);
   }
 
-  public void testSelectAfterHint() throws Exception {
-    init("some text\n" +
-         "some texts\n" +
-         "another <selection>t<caret>ext</selection> here");
+  public void testSelectAfterHint() {
+    init("""
+           some text
+           some texts
+           another <selection>t<caret>ext</selection> here""");
     executeAction();
-    checkResult("some text\n" +
-                "some texts\n" +
-                "another <selection>t<caret>ext</selection> here");
+    checkResult("""
+                  some text
+                  some texts
+                  another <selection>t<caret>ext</selection> here""");
     assertEquals(1, hintCount);
     executeAction();
-    checkResult("some <selection>t<caret>ext</selection>\n" +
-                "some texts\n" +
-                "another <selection>t<caret>ext</selection> here");
+    checkResult("""
+                  some <selection>t<caret>ext</selection>
+                  some texts
+                  another <selection>t<caret>ext</selection> here""");
     assertEquals(1, hintCount);
   }
 
-  public void testInitialNonWholeWordSelection() throws Exception {
-    init("some <selection>t<caret>ex</selection>t\n" +
-         "some texts\n" +
-         "another text here");
+  public void testInitialNonWholeWordSelection() {
+    init("""
+           some <selection>t<caret>ex</selection>t
+           some texts
+           another text here""");
     executeAction();
-    checkResult("some <selection>t<caret>ex</selection>t\n" +
-                "some <selection>t<caret>ex</selection>ts\n" +
-                "another text here");
+    checkResult("""
+                  some <selection>t<caret>ex</selection>t
+                  some <selection>t<caret>ex</selection>ts
+                  another text here""");
     executeAction();
-    checkResult("some <selection>t<caret>ex</selection>t\n" +
-                "some <selection>t<caret>ex</selection>ts\n" +
-                "another <selection>t<caret>ex</selection>t here");
+    checkResult("""
+                  some <selection>t<caret>ex</selection>t
+                  some <selection>t<caret>ex</selection>ts
+                  another <selection>t<caret>ex</selection>t here""");
     assertEquals(0, hintCount);
   }
 
-  public void testOccurrenceInCollapsedRegion() throws Exception {
+  public void testOccurrenceInCollapsedRegion() {
     init("normal <selection><caret>line</selection>\n" +
          "collapsed line");
     final FoldingModel foldingModel = myFixture.getEditor().getFoldingModel();
@@ -174,7 +199,7 @@ public class SelectUnselectOccurrenceActionsTest extends LightPlatformCodeInsigh
     assertTrue(foldRegions[0].isExpanded());
   }
 
-  public void testSelectAfterNotFoundAndUnselect() throws Exception {
+  public void testSelectAfterNotFoundAndUnselect() {
     init("text <selection><caret>text</selection> <selection><caret>text</selection>");
     executeAction();
     executeReverseAction();
@@ -182,7 +207,7 @@ public class SelectUnselectOccurrenceActionsTest extends LightPlatformCodeInsigh
     checkResult("text <selection><caret>text</selection> <selection><caret>text</selection>");
   }
 
-  public void testEscapeReturnsToInitialPosition() throws Exception {
+  public void testEscapeReturnsToInitialPosition() {
     init("l<caret>ine\n" +
          "another line");
     executeAction();
@@ -191,51 +216,56 @@ public class SelectUnselectOccurrenceActionsTest extends LightPlatformCodeInsigh
                 "another line");
   }
 
-  public void testSelectingAdjacentFragments() throws Exception {
+  public void testSelectingAdjacentFragments() {
     init("fragment<selection>fragment<caret></selection>");
     executeAction();
     executeAction();
     checkResult("<selection>fragment<caret></selection><selection>fragment<caret></selection>");
   }
 
-  public void testSkippingOccurrence() throws Exception {
-    init("fr<caret>uit\n" +
-         "fruits\n" +
-         "fruit\n" +
-         "fruits\n" +
-         "fruit");
+  public void testSkippingOccurrence() {
+    init("""
+           fr<caret>uit
+           fruits
+           fruit
+           fruits
+           fruit""");
     executeAction();
     executeAction();
     executeFindNext();
-    checkResult("<selection>fr<caret>uit</selection>\n" +
-                "fruits\n" +
-                "fruit\n" +
-                "fruits\n" +
-                "<selection>fr<caret>uit</selection>");
+    checkResult("""
+                  <selection>fr<caret>uit</selection>
+                  fruits
+                  fruit
+                  fruits
+                  <selection>fr<caret>uit</selection>""");
   }
 
-  public void testMovingSelectionBackAndForth() throws Exception {
-    init("fr<caret>uit\n" +
-         "fruits\n" +
-         "fruit\n" +
-         "fruits\n" +
-         "fruit");
+  public void testMovingSelectionBackAndForth() {
+    init("""
+           fr<caret>uit
+           fruits
+           fruit
+           fruits
+           fruit""");
     executeAction();
     executeAction();
     executeFindNext();
     executeFindPrevious();
     executeAction();
-    checkResult("<selection>fr<caret>uit</selection>\n" +
-                "fruits\n" +
-                "<selection>fr<caret>uit</selection>\n" +
-                "fruits\n" +
-                "<selection>fr<caret>uit</selection>");
+    checkResult("""
+                  <selection>fr<caret>uit</selection>
+                  fruits
+                  <selection>fr<caret>uit</selection>
+                  fruits
+                  <selection>fr<caret>uit</selection>""");
   }
 
-  public void testSkipDoesNotRemovePreviousSelections() throws Exception {
-    init("<caret>fruit\n" +
-         "fruit\n" +
-         "fruit");
+  public void testSkipDoesNotRemovePreviousSelections() {
+    init("""
+           <caret>fruit
+           fruit
+           fruit""");
     executeAction();
     executeAction();
     executeFindNext();
@@ -243,9 +273,23 @@ public class SelectUnselectOccurrenceActionsTest extends LightPlatformCodeInsigh
     assertEquals(1, hintCount);
     executeFindNext();
     assertEquals(1, hintCount);
-    checkResult("<selection><caret>fruit</selection>\n" +
-                "fruit\n" +
-                "<selection><caret>fruit</selection>");
+    checkResult("""
+                  <selection><caret>fruit</selection>
+                  fruit
+                  <selection><caret>fruit</selection>""");
+  }
+
+  public void testNearInlays() {
+    init("cat cat");
+    EditorTestUtil.addInlay(myFixture.getEditor(), 0);
+    EditorTestUtil.addInlay(myFixture.getEditor(), 4);
+    myFixture.getEditor().getCaretModel().moveToVisualPosition(new VisualPosition(0, 1));
+    executeAction();
+    executeAction();
+    checkResult("<selection><caret>cat</selection> <selection><caret>cat</selection>");
+    assertEquals(Arrays.asList(new VisualPosition(0, 1),
+                               new VisualPosition(0, 6)),
+                 ContainerUtil.map(myFixture.getEditor().getCaretModel().getAllCarets(), Caret::getVisualPosition));
   }
 
   private void init(String text) {

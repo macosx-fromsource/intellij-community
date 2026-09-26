@@ -1,3 +1,4 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.webcore.packaging;
 
 import com.intellij.util.CatchingConsumer;
@@ -6,22 +7,21 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 
-/**
- * @author Sergey Simonchik
- */
 public abstract class PackageManagementServiceEx extends PackageManagementService {
 
   public abstract void updatePackage(@NotNull InstalledPackage installedPackage,
                                      @Nullable String version,
                                      @NotNull Listener listener);
 
-  public abstract boolean shouldFetchLatestVersionsForOnlyInstalledPackages();
+  public boolean shouldFetchLatestVersionsForOnlyInstalledPackages() {
+    return true;
+  }
 
-  public abstract void fetchLatestVersion(@NotNull InstalledPackage pkg, @NotNull final CatchingConsumer<String, Exception> consumer);
+  public abstract void fetchLatestVersion(@NotNull InstalledPackage pkg, final @NotNull CatchingConsumer<? super String, ? super Exception> consumer);
 
   public void installPackage(final RepoPackage repoPackage,
-                             @Nullable final String version,
+                             final @Nullable String version,
                              @Nullable String extraOptions,
                              final Listener listener,
-                             @NotNull final File workingDir) {}
+                             final @NotNull File workingDir) {}
 }

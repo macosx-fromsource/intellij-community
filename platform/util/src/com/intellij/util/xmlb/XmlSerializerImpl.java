@@ -1,59 +1,144 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.xmlb;
 
 import com.intellij.openapi.util.JDOMExternalizableStringList;
-import com.intellij.openapi.util.Pair;
+import com.intellij.serialization.ClassUtil;
+import com.intellij.serialization.MutableAccessor;
+import com.intellij.serialization.SerializationException;
 import com.intellij.util.xmlb.annotations.CollectionBean;
+import com.intellij.util.xmlb.annotations.MapAnnotation;
+import com.intellij.util.xmlb.annotations.XMap;
 import org.jdom.Content;
 import org.jdom.Element;
 import org.jdom.Text;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.lang.reflect.TypeVariable;
-import java.lang.reflect.WildcardType;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
-class XmlSerializerImpl {
-  private static Reference<Map<Pair<Type, MutableAccessor>, Binding>> ourBindings;
+import static com.intellij.util.xmlb.CollectionBindingKt.createCollectionBinding;
 
-  @NotNull
-  static Element serialize(@NotNull Object object, @NotNull SerializationFilter filter) throws XmlSerializationException {
+@ApiStatus.Internal
+public final class XmlSerializerImpl {
+  public abstract static class XmlSerializerBase implements Serializer {
+    @Override
+    public final @Nullable Binding getBinding(@NotNull Class<?> aClass, @NotNull Type type) {
+      return ClassUtil.isPrimitive(aClass) ? null : getRootBinding(aClass, type);
+    }
+  }
+
+  public static @Nullable Binding createClassBinding(
+    @NotNull Class<?> aClass,
+    @Nullable MutableAccessor accessor,
+    @NotNull Type originalType,
+    @NotNull Serializer serializer
+  ) {
+    if (aClass.isArray()) {
+      if (Element.class.isAssignableFrom(aClass.getComponentType())) {
+        assert accessor != null;
+        return new JDOMElementBinding(accessor);
+      }
+      else {
+        return createCollectionBinding(serializer, aClass.getComponentType(), accessor, true);
+      }
+    }
+    else if (Collection.class.isAssignableFrom(aClass) && originalType instanceof ParameterizedType) {
+      if (accessor != null) {
+        CollectionBean listBean = accessor.getAnnotation(CollectionBean.class);
+        if (listBean != null) {
+          return new CompactCollectionBinding(accessor);
+        }
+      }
+
+      return createCollectionBinding(serializer, ClassUtil.typeToClass((((ParameterizedType)originalType).getActualTypeArguments()[0])), accessor, false);
+    }
+    else if (Map.class.isAssignableFrom(aClass) && originalType instanceof ParameterizedType) {
+      XMap newAnnotation = null;
+      MapAnnotation oldAnnotation = null;
+      if (accessor != null) {
+        newAnnotation = accessor.getAnnotation(XMap.class);
+        oldAnnotation = newAnnotation == null ? accessor.getAnnotation(MapAnnotation.class) : null;
+      }
+
+      boolean isSurroundWithTag = newAnnotation == null && (oldAnnotation == null || oldAnnotation.surroundWithTag());
+      //noinspection unchecked
+      return new MapBinding(oldAnnotation, newAnnotation, (Class<? extends Map<?, ?>>)aClass, isSurroundWithTag);
+    }
+    else if (accessor != null) {
+      if (Element.class.isAssignableFrom(aClass)) {
+        return new JDOMElementBinding(accessor);
+      }
+      //noinspection deprecation
+      if (aClass == JDOMExternalizableStringList.class) {
+        return new CompactCollectionBinding(accessor);
+      }
+    }
+    return null;
+  }
+
+  static final class XmlSerializer extends XmlSerializerBase {
+    private Reference<Map<Type, Binding>> bindings;
+
+    private @NotNull Map<Type, Binding> getBindingCacheMap() {
+      Map<Type, Binding> map = bindings == null ? null : bindings.get();
+      if (map == null) {
+        map = new ConcurrentHashMap<>();
+        bindings = new SoftReference<>(map);
+      }
+      return map;
+    }
+
+    @Override
+    public synchronized @NotNull Binding getRootBinding(@NotNull Class<?> aClass, @NotNull Type originalType) {
+      Map<Type, Binding> map = getBindingCacheMap();
+      Binding binding = map.get(originalType);
+      if (binding == null) {
+        binding = createClassBinding(aClass, null, originalType, this);
+        if (binding == null) {
+          binding = new BeanBinding(aClass);
+        }
+
+        map.put(originalType, binding);
+        try {
+          binding.init(originalType, this);
+        }
+        catch (RuntimeException | Error e) {
+          map.remove(originalType);
+          throw e;
+        }
+      }
+      return binding;
+    }
+  }
+
+  static final XmlSerializer serializer = new XmlSerializer();
+
+  static @NotNull Element serialize(@NotNull Object object, @Nullable SerializationFilter filter) throws SerializationException {
     try {
       Class<?> aClass = object.getClass();
-      Binding binding = getClassBinding(aClass, aClass, null);
+      Binding binding = serializer.getRootBinding(aClass, aClass);
       if (binding instanceof BeanBinding) {
-        // top level expects not null (null indicates error, empty element will be omitted)
-        return ((BeanBinding)binding).serialize(object, true, filter);
+        // top level expects not null (null indicates error, an empty element will be omitted)
+        return Objects.requireNonNull(((BeanBinding)binding).serialize(object, true, filter));
       }
       else {
         //noinspection ConstantConditions
-        return (Element)binding.serialize(object, null, filter);
+        return ((RootBinding)binding).serialize(object, filter);
       }
     }
-    catch (XmlSerializationException e) {
+    catch (SerializationException e) {
       throw e;
     }
     catch (Exception e) {
@@ -61,120 +146,7 @@ class XmlSerializerImpl {
     }
   }
 
-  @Nullable
-  static Element serializeIfNotDefault(@NotNull Object object, @NotNull SerializationFilter filter) {
-    Class<?> aClass = object.getClass();
-    Binding binding = getClassBinding(aClass, aClass, null);
-    assert binding != null;
-    return (Element)binding.serialize(object, null, filter);
-  }
-
-  @Nullable
-  static Binding getBinding(@NotNull Type type) {
-    return getClassBinding(typeToClass(type), type, null);
-  }
-
-  @Nullable
-  static Binding getBinding(@NotNull MutableAccessor accessor) {
-    Type type = accessor.getGenericType();
-    return getClassBinding(typeToClass(type), type, accessor);
-  }
-
-  @NotNull
-  static Class<?> typeToClass(@NotNull Type type) {
-    if (type instanceof Class) {
-      return (Class<?>)type;
-    }
-    else if (type instanceof TypeVariable) {
-      Type bound = ((TypeVariable)type).getBounds()[0];
-      return bound instanceof Class ? (Class)bound : (Class<?>)((ParameterizedType)bound).getRawType();
-    }
-    else if (type instanceof WildcardType) {
-      return (Class<?>)((WildcardType) type).getUpperBounds()[0];
-    }
-    else {
-      return (Class<?>)((ParameterizedType)type).getRawType();
-    }
-  }
-
-  @Nullable
-  static synchronized Binding getClassBinding(@NotNull Class<?> aClass, @NotNull Type originalType, @Nullable MutableAccessor accessor) {
-    if (aClass.isPrimitive() ||
-        aClass == String.class ||
-        aClass == Integer.class ||
-        aClass == Long.class ||
-        aClass == Boolean.class ||
-        aClass == Double.class ||
-        aClass == Float.class ||
-        aClass.isEnum() ||
-        Date.class.isAssignableFrom(aClass)) {
-      return null;
-    }
-
-    Pair<Type, MutableAccessor> key = Pair.create(originalType, accessor);
-    Map<Pair<Type, MutableAccessor>, Binding> map = getBindingCacheMap();
-    Binding binding = map.get(key);
-    if (binding == null) {
-      binding = getNonCachedClassBinding(aClass, accessor, originalType);
-      map.put(key, binding);
-      try {
-        binding.init(originalType);
-      }
-      catch (XmlSerializationException e) {
-        map.remove(key);
-        throw e;
-      }
-    }
-    return binding;
-  }
-
-  @NotNull
-  private static Map<Pair<Type, MutableAccessor>, Binding> getBindingCacheMap() {
-    Map<Pair<Type, MutableAccessor>, Binding> map = com.intellij.reference.SoftReference.dereference(ourBindings);
-    if (map == null) {
-      map = new ConcurrentHashMap<Pair<Type, MutableAccessor>, Binding>();
-      ourBindings = new SoftReference<Map<Pair<Type, MutableAccessor>, Binding>>(map);
-    }
-    return map;
-  }
-
-  @NotNull
-  private static Binding getNonCachedClassBinding(@NotNull Class<?> aClass, @Nullable MutableAccessor accessor, @NotNull Type originalType) {
-    if (aClass.isArray()) {
-      if (Element.class.isAssignableFrom(aClass.getComponentType())) {
-        assert accessor != null;
-        return new JDOMElementBinding(accessor);
-      }
-      else {
-        return new ArrayBinding(aClass, accessor);
-      }
-    }
-    if (Collection.class.isAssignableFrom(aClass) && originalType instanceof ParameterizedType) {
-      if (accessor != null) {
-        CollectionBean listBean = accessor.getAnnotation(CollectionBean.class);
-        if (listBean != null) {
-          return new CompactCollectionBinding(accessor);
-        }
-      }
-      return new CollectionBinding((ParameterizedType)originalType, accessor);
-    }
-    if (accessor != null) {
-      if (Map.class.isAssignableFrom(aClass) && originalType instanceof ParameterizedType) {
-        return new MapBinding(accessor);
-      }
-      if (Element.class.isAssignableFrom(aClass)) {
-        return new JDOMElementBinding(accessor);
-      }
-      //noinspection deprecation
-      if (JDOMExternalizableStringList.class == aClass) {
-        return new CompactCollectionBinding(accessor);
-      }
-    }
-    return new BeanBinding(aClass, accessor);
-  }
-
-  @Nullable
-  static Object convert(@Nullable String value, @NotNull Class<?> valueClass) {
+  static @Nullable Object convert(@Nullable String value, @NotNull Class<?> valueClass) {
     if (value == null) {
       return null;
     }
@@ -243,13 +215,8 @@ class XmlSerializerImpl {
       accessor.setShort(host, Short.parseShort(value));
     }
     else if (valueClass.isEnum()) {
-      Object deserializedValue = null;
-      for (Object enumConstant : valueClass.getEnumConstants()) {
-        if (enumConstant.toString().equals(value)) {
-          deserializedValue = enumConstant;
-        }
-      }
-      accessor.set(host, deserializedValue);
+      //noinspection unchecked
+      accessor.set(host, ClassUtil.stringToEnum(value, (Class<? extends Enum<?>>)valueClass, false));
     }
     else if (Date.class.isAssignableFrom(valueClass)) {
       try {
@@ -279,12 +246,42 @@ class XmlSerializerImpl {
       else if (valueClass == Float.class) {
         deserializedValue = Float.parseFloat(value);
       }
+      else if (callFromStringIfDefined(host, value, accessor, valueClass)) {
+        return;
+      }
+
       accessor.set(host, deserializedValue);
     }
   }
 
-  @NotNull
-  static String convertToString(@NotNull Object value) {
+  private static boolean callFromStringIfDefined(@NotNull Object host,
+                                                 @NotNull String value,
+                                                 @NotNull MutableAccessor accessor,
+                                                 @NotNull Class<?> valueClass) {
+    Method fromText;
+    try {
+      fromText = valueClass.getMethod("fromText", String.class);
+    }
+    catch (NoSuchMethodException ignored) {
+      return false;
+    }
+
+    try {
+      fromText.setAccessible(true);
+    }
+    catch (SecurityException ignored) {
+    }
+
+    try {
+      accessor.set(host, fromText.invoke(null, value));
+      return true;
+    }
+    catch (IllegalAccessException | InvocationTargetException ignored) {
+    }
+    return false;
+  }
+
+  static @NotNull String convertToString(@NotNull Object value) {
     if (value instanceof Date) {
       return Long.toString(((Date)value).getTime());
     }
@@ -293,8 +290,7 @@ class XmlSerializerImpl {
     }
   }
 
-  @NotNull
-  static String getTextValue(@NotNull Element element, @NotNull String defaultText) {
+  static @NotNull String getTextValue(@NotNull Element element, @NotNull String defaultText) {
     List<Content> content = element.getContent();
     int size = content.size();
     StringBuilder builder = null;

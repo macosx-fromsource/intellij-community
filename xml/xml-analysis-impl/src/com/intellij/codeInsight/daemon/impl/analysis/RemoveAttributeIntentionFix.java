@@ -1,73 +1,96 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+
 package com.intellij.codeInsight.daemon.impl.analysis;
 
-import com.intellij.codeInsight.daemon.XmlErrorMessages;
-import com.intellij.codeInspection.LocalQuickFixAndIntentionActionOnPsiElement;
+import com.intellij.codeInsight.intention.PriorityAction;
+import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
+import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiFile;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.xml.XmlAttribute;
+import com.intellij.util.IncorrectOperationException;
+import com.intellij.xml.analysis.XmlAnalysisBundle;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * @author Maxim.Mossienko
- */
-public class RemoveAttributeIntentionFix extends LocalQuickFixAndIntentionActionOnPsiElement {
+public class RemoveAttributeIntentionFix extends PsiElementBaseIntentionAction implements LocalQuickFix, PriorityAction {
   private final String myLocalName;
 
-  public RemoveAttributeIntentionFix(final String localName, @NotNull final XmlAttribute attribute) {
-    super(attribute);
+  public RemoveAttributeIntentionFix(final String localName) {
     myLocalName = localName;
   }
 
-  @Override
-  @NotNull
-  public String getText() {
-    return XmlErrorMessages.message("remove.attribute.quickfix.text", myLocalName);
+  @SuppressWarnings("unused") // to instantiate via extension
+  public RemoveAttributeIntentionFix() {
+    this(null);
   }
 
   @Override
-  @NotNull
-  public String getFamilyName() {
-    return XmlErrorMessages.message("remove.attribute.quickfix.family");
+  public @NotNull String getName() {
+    return XmlAnalysisBundle.message("xml.quickfix.remove.attribute.text", myLocalName);
   }
 
   @Override
-  public void invoke(@NotNull Project project,
-                     @NotNull PsiFile file,
-                     @Nullable("is null when called from inspection") Editor editor,
-                     @NotNull PsiElement startElement,
-                     @NotNull PsiElement endElement) {
-    PsiElement next = findNextAttribute((XmlAttribute)startElement);
-    startElement.delete();
+  public @Nls(capitalization = Nls.Capitalization.Sentence) @NotNull String getText() {
+    return myLocalName != null ? getName() : getFamilyName();
+  }
+
+  @Override
+  public @NotNull String getFamilyName() {
+    return XmlAnalysisBundle.message("xml.quickfix.remove.attribute.family");
+  }
+
+  @Override
+  public @NotNull Priority getPriority() {
+    return myLocalName != null ? Priority.LOW : Priority.NORMAL;
+  }
+
+  @Override
+  public boolean isAvailable(@NotNull Project project, Editor editor, @NotNull PsiElement element) {
+    return getAttribute(element, editor) != null;
+  }
+
+  @Override
+  public void invoke(@NotNull Project project, Editor editor, @NotNull PsiElement element) throws IncorrectOperationException {
+    removeAttribute(getAttribute(element, editor), editor);
+  }
+
+  @Override
+  public void applyFix(final @NotNull Project project, final @NotNull ProblemDescriptor descriptor) {
+    PsiElement e = descriptor.getPsiElement();
+    removeAttribute(e, null);
+  }
+
+  protected void removeAttribute(PsiElement e, Editor editor) {
+    final XmlAttribute myAttribute = PsiTreeUtil.getParentOfType(e, XmlAttribute.class, false);
+    if (myAttribute == null) return;
+
+    PsiElement next = findNextAttribute(myAttribute);
+    myAttribute.delete();
 
     if (next != null && editor != null) {
       editor.getCaretModel().moveToOffset(next.getTextRange().getStartOffset());
     }
   }
 
-  @Nullable
-  private static PsiElement findNextAttribute(final XmlAttribute attribute) {
+  private static @Nullable PsiElement findNextAttribute(final XmlAttribute attribute) {
     PsiElement nextSibling = attribute.getNextSibling();
     while (nextSibling != null) {
       if (nextSibling instanceof XmlAttribute) return nextSibling;
-      nextSibling =  nextSibling.getNextSibling();
+      nextSibling = nextSibling.getNextSibling();
+    }
+    return null;
+  }
+
+  private static XmlAttribute getAttribute(PsiElement element, Editor editor) {
+    var result = PsiTreeUtil.getParentOfType(element, XmlAttribute.class);
+    if (result != null) return result;
+    if (element.getTextRange().getStartOffset() == editor.getCaretModel().getOffset()) {
+      return PsiTreeUtil.getParentOfType(PsiTreeUtil.prevLeaf(element), XmlAttribute.class);
     }
     return null;
   }

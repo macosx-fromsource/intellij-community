@@ -14,14 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: mike
- * Date: Jul 31, 2002
- * Time: 9:03:01 PM
- * To change template for new class use 
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.psi.impl.source.xml;
 
 import com.intellij.psi.PsiElement;
@@ -29,7 +21,10 @@ import com.intellij.psi.PsiElementVisitor;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.XmlElementVisitor;
 import com.intellij.psi.impl.source.resolve.reference.ReferenceProvidersRegistry;
-import com.intellij.psi.xml.*;
+import com.intellij.psi.xml.XmlElementType;
+import com.intellij.psi.xml.XmlProcessingInstruction;
+import com.intellij.psi.xml.XmlTag;
+import com.intellij.psi.xml.XmlTagChild;
 import org.jetbrains.annotations.NotNull;
 
 public class XmlProcessingInstructionImpl extends XmlElementImpl implements XmlProcessingInstruction {
@@ -68,9 +63,8 @@ public class XmlProcessingInstructionImpl extends XmlElementImpl implements XmlP
     return null;
   }
 
-  @NotNull
   @Override
-  public PsiReference[] getReferences() {
-    return ReferenceProvidersRegistry.getReferencesFromProviders(this, XmlProcessingInstruction.class);
+  public PsiReference @NotNull [] getReferences() {
+    return ReferenceProvidersRegistry.getReferencesFromProviders(this);
   }
 }

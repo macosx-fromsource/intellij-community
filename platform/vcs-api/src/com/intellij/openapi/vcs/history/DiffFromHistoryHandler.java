@@ -23,7 +23,7 @@ import org.jetbrains.annotations.NotNull;
 /**
  * This handler is called when the user selects one or two revisions in the file history and invokes "Show Diff",
  * or selected one revision and invokes "Show Diff with Local"
- * Default handler is implemented in {@code vcs-impl}.
+ * Default handler is implemented in {@code intellij.platform.vcs.impl}.
  * Custom handlers should be returned via {@link VcsHistoryProvider#getHistoryDiffHandler()}.
  */
 public interface DiffFromHistoryHandler {
@@ -32,7 +32,7 @@ public interface DiffFromHistoryHandler {
    * Show diff when a single revision is selected in the file history panel.
    * @param e                AnActionEvent which happened, when user invoked "Show Diff".
    * @param filePath         the file which history is shown.
-   * @param previousRevision the previous revision in the list displayed file history panel, may be {@link com.intellij.openapi.vcs.history.VcsFileRevision#NULL}.
+   * @param previousRevision the previous revision in the list displayed file history panel, may be {@link VcsFileRevision#NULL}.
    * @param revision         the revision selected in the file history panel.
    */
   void showDiffForOne(@NotNull AnActionEvent e,

@@ -16,33 +16,42 @@
 package org.intellij.lang.regexp.psi;
 
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
- * Represents a simple or escaped character
+ * Represents a simple, escaped, encoded or named character
  */
-public interface RegExpChar extends RegExpAtom, RegExpClassElement, RegExpCharRange.Endpoint {
-    /**
-     * Character type enumeration. Represents either a plain character ("a"),
-     * a hex encoded character value ("\x61"),
-     * an octal encoded character value ("\0141"), or
-     * a unicode escape character ("\u0061")
-     */
+public interface RegExpChar extends RegExpAtom, RegExpClassElement {
+    /** Character type */
     enum Type {
-        CHAR, HEX, OCT, UNICODE, INVALID
+        /** A plain character, e.g.: a */
+        CHAR,
+
+        /** A hex encoded character value, e.g.: \x61 */
+        HEX,
+
+        /** An octal encoded character value, e.g.: \0141 */
+        OCT,
+
+        /** A Unicode escape character, e.g.: \uFFFD */
+        UNICODE,
+
+        /** A named character, e.g.: \N{LATIN SMALL LETTER A} */
+        NAMED,
+
+        /** A control character, e.g.: \c@ */
+        CONTROL,
+
+        /** An escape character e.g. \n */
+        ESCAPE,
     }
 
     /**
      * Returns the type of this character.
-     * @see org.intellij.lang.regexp.psi.RegExpChar.Type
+     * @see Type
      */
     @NotNull
     Type getType();
 
-    /**
-     * Returns possibly unescaped character-value.
-     * Null if escape sequence is invalid.
-     */
-    @Nullable
-    Character getValue();
+    /** Returns the character code point value, -1 if the escape sequence is invalid. */
+    int getValue();
 }

@@ -16,18 +16,16 @@
 package org.jetbrains.jps.incremental.groovy;
 
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.jps.incremental.CompileContext;
 
 import java.io.File;
 import java.util.Collection;
 
-/**
- * @author peter
- */
 public interface GroovycFlavor {
   @Nullable
   GroovycContinuation runGroovyc(Collection<String> compilationClassPath,
                                  boolean stubs,
-                                 JpsGroovySettings settings,
+                                 CompileContext context,
                                  File tempFile,
-                                 GroovycOutputParser parser) throws Exception;
+                                 GroovycOutputParser parser, String byteCodeTargetLevel) throws Exception;
 }

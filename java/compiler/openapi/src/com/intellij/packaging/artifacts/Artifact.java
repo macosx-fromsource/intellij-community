@@ -15,30 +15,35 @@
  */
 package com.intellij.packaging.artifacts;
 
+import com.intellij.openapi.roots.ProjectModelBuildableElement;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.UserDataHolder;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.packaging.elements.CompositePackagingElement;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 
 /**
- * @author nik
+ * Describes an artifact configuration. Use {@link ArtifactManager} to create new and get existing artifacts.
  */
-public interface Artifact extends UserDataHolder {
+public interface Artifact extends UserDataHolder, ProjectModelBuildableElement {
   @NotNull
   ArtifactType getArtifactType();
 
-  String getName();
+  @NotNull @NlsSafe String getName();
 
   boolean isBuildOnMake();
 
+  /**
+   * @return the root element in the artifact's output layout tree
+   */
   @NotNull
   CompositePackagingElement<?> getRootElement();
 
-  @Nullable
-  String getOutputPath();
+  @Nullable @NonNls String getOutputPath();
 
   Collection<? extends ArtifactPropertiesProvider> getPropertiesProviders();
 
@@ -47,6 +52,5 @@ public interface Artifact extends UserDataHolder {
   @Nullable
   VirtualFile getOutputFile();
 
-  @Nullable
-  String getOutputFilePath();
+  @Nullable @NonNls String getOutputFilePath();
 }

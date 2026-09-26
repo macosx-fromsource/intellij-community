@@ -1,22 +1,29 @@
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.impl.source.resolve.graphInference.constraints;
 
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.psi.*;
+import com.intellij.core.JavaPsiBundle;
+import com.intellij.psi.LambdaUtil;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiLambdaExpression;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypes;
 import com.intellij.psi.impl.source.resolve.graphInference.FunctionalInterfaceParameterizationUtil;
 import com.intellij.psi.impl.source.resolve.graphInference.InferenceSession;
 import com.intellij.psi.impl.source.resolve.graphInference.InferenceVariable;
 import com.intellij.psi.impl.source.resolve.graphInference.PsiPolyExpressionUtil;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.psi.util.TypeConversionUtil;
-import com.intellij.util.Function;
 
 import java.util.List;
 
-/**
- * User: anna
- */
 public class LambdaExpressionCompatibilityConstraint implements ConstraintFormula {
-  private static final Logger LOG = Logger.getInstance("#" + LambdaExpressionCompatibilityConstraint.class.getName());
   private final PsiLambdaExpression myExpression;
   private PsiType myT;
 
@@ -26,9 +33,10 @@ public class LambdaExpressionCompatibilityConstraint implements ConstraintFormul
   }
 
   @Override
-  public boolean reduce(InferenceSession session, List<ConstraintFormula> constraints) {
+  public boolean reduce(InferenceSession session, List<? super ConstraintFormula> constraints) {
     if (!LambdaUtil.isFunctionalType(myT)) {
-      session.registerIncompatibleErrorMessage(session.getPresentableText(myT) + " is not a functional interface");
+      session.registerIncompatibleErrorMessage(
+        JavaPsiBundle.message("error.incompatible.type.not.a.functional.interface", session.getPresentableText(myT)));
       return false;
     }
 
@@ -36,7 +44,8 @@ public class LambdaExpressionCompatibilityConstraint implements ConstraintFormul
     final PsiClassType.ClassResolveResult resolveResult = PsiUtil.resolveGenericsClassInType(groundTargetType);
     final PsiMethod interfaceMethod = LambdaUtil.getFunctionalInterfaceMethod(resolveResult);
     if (interfaceMethod == null) {
-      session.registerIncompatibleErrorMessage("No valid function type can be found for " + session.getPresentableText(myT));
+      session.registerIncompatibleErrorMessage(
+        JavaPsiBundle.message("error.incompatible.type.no.valid.function.type.found", session.getPresentableText(myT)));
       return false;
     }
     final PsiSubstitutor substitutor = LambdaUtil.getSubstitutor(interfaceMethod, resolveResult);
@@ -44,7 +53,7 @@ public class LambdaExpressionCompatibilityConstraint implements ConstraintFormul
 
     final PsiParameter[] lambdaParameters = myExpression.getParameterList().getParameters();
     if (lambdaParameters.length != parameters.length) {
-      session.registerIncompatibleErrorMessage("Incompatible parameter types in lambda expression");
+      session.registerIncompatibleErrorMessage(JavaPsiBundle.message("error.incompatible.type.incompatible.parameter.types.in.lambda", parameters.length, lambdaParameters.length));
       return false;
     }
     if (myExpression.hasFormalParameterTypes()) {
@@ -67,29 +76,28 @@ public class LambdaExpressionCompatibilityConstraint implements ConstraintFormul
     if (returnType != null) {
       final List<PsiExpression> returnExpressions = LambdaUtil.getReturnExpressions(myExpression);
       final PsiElement lambdaBody = myExpression.getBody();
-      if (returnType.equals(PsiType.VOID)) {
+      if (returnType.equals(PsiTypes.voidType())) {
         if (!(lambdaBody instanceof PsiCodeBlock && myExpression.isVoidCompatible()) && !LambdaUtil.isExpressionStatementExpression(lambdaBody)) {
-          session.registerIncompatibleErrorMessage("Incompatible types: expected void but the lambda body is neither a statement expression nor a void-compatible block");
+          session.registerIncompatibleErrorMessage(JavaPsiBundle.message("error.incompatible.type.incompatible.types.expected.void.lambda"));
           return false;
         }
       }
       else {
         if (lambdaBody instanceof PsiCodeBlock && !myExpression.isValueCompatible()) {
-          session.registerIncompatibleErrorMessage("Incompatible types: expected not void but the lambda body is a block that is not value-compatible");
+          session.registerIncompatibleErrorMessage(JavaPsiBundle.message("error.incompatible.type.expected.value.lambda"));
           return false;
         }
         final PsiSubstitutor nestedSubstitutor = session.getInferenceSessionContainer().findNestedSubstitutor(myExpression, session.getInferenceSubstitution());
         returnType = nestedSubstitutor.substitute(substitutor.substitute(returnType));
-        boolean isProperType = InferenceSession.collectDependencies(returnType, null, new Function<PsiClassType, InferenceVariable>() {
-          @Override
-          public InferenceVariable fun(PsiClassType type) {
-            final PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(type);
-            return psiClass instanceof InferenceVariable && nestedSubstitutor.getSubstitutionMap().containsValue(type) ? (InferenceVariable)psiClass : null;
-          }
+        boolean isProperType = InferenceSession.collectDependencies(returnType, null, type -> {
+          final PsiClass psiClass = PsiUtil.resolveClassInClassTypeOnly(type);
+          return psiClass instanceof InferenceVariable && nestedSubstitutor.getSubstitutionMap().containsValue(type) ? (InferenceVariable)psiClass : null;
         });
-        if (!isProperType) {
+        if (!isProperType || myExpression.hasFormalParameterTypes()) {
           for (PsiExpression returnExpression : returnExpressions) {
-            constraints.add(new ExpressionCompatibilityConstraint(returnExpression, returnType));
+            if (!InferenceSession.ignoreLambdaConstraintTree(returnExpression)) {
+              constraints.add(new ExpressionCompatibilityConstraint(returnExpression, returnType));
+            }
           }
         }
         else {
@@ -98,10 +106,12 @@ public class LambdaExpressionCompatibilityConstraint implements ConstraintFormul
               if (!TypeConversionUtil.areTypesAssignmentCompatible(returnType, returnExpression)) {
                 final PsiType type = returnExpression.getType();
                 if (type != null) {
-                  session.registerIncompatibleErrorMessage("Bad return type in lambda expression: " + session.getPresentableText(type) + " cannot be converted to " + session.getPresentableText(returnType));
+                  session.registerIncompatibleErrorMessage(
+                    JavaPsiBundle.message("error.incompatible.type.bad.lambda.return.type", session.getPresentableText(type), session.getPresentableText(returnType)));
                 }
                 else {
-                  session.registerIncompatibleErrorMessage(returnExpression.getText() + " is not compatible with " + session.getPresentableText(returnType));
+                  session.registerIncompatibleErrorMessage(
+                    JavaPsiBundle.message("error.incompatible.type", returnExpression.getText(), session.getPresentableText(returnType)));
                 }
                 return false;
               }

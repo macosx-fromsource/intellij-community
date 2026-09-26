@@ -1,24 +1,14 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.impl.matcher.predicates;
 
 import com.intellij.notification.NotificationGroup;
+import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.project.Project;
-import com.intellij.structuralsearch.SSRBundle;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.structuralsearch.plugin.ui.UIUtil;
+
+import static com.intellij.structuralsearch.impl.matcher.predicates.ScriptSupport.UUID;
 
 /**
  * @author Bas Leijdekkers
@@ -27,7 +17,6 @@ public class ScriptLog {
 
   public static final String SCRIPT_LOG_VAR_NAME = "__log__";
 
-  private static final NotificationGroup myEventLog = NotificationGroup.logOnlyGroup(SSRBundle.message("structural.search.title"));
   private final Project myProject;
 
   public ScriptLog(Project project) {
@@ -52,10 +41,13 @@ public class ScriptLog {
     for (StackTraceElement e : stackTrace) {
       final String methodName = e.getMethodName();
       if ("run".equals(methodName)) {
-        location = "(" + e.getFileName() + ":" + e.getLineNumber() + ") ";
+        final String fileName = e.getFileName();
+        assert fileName != null;
+        location = "(" + StringUtil.replace(fileName, UUID + ".groovy", "") + ":" + e.getLineNumber() + ") ";
         break;
       }
     }
-    myEventLog.createNotification(location + String.valueOf(message), type).notify(myProject);
+    final NotificationGroup notificationGroup = NotificationGroupManager.getInstance().getNotificationGroup(UIUtil.SSR_NOTIFICATION_GROUP_ID);
+    notificationGroup.createNotification(location + message, type).notify(myProject);
   }
 }

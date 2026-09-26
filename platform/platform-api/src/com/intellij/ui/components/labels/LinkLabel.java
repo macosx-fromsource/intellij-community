@@ -1,44 +1,56 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ui.components.labels;
 
+import com.intellij.diagnostic.LoadingState;
 import com.intellij.icons.AllIcons;
+import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.wm.StatusBar;
 import com.intellij.ui.ScreenUtil;
-import com.intellij.ui.UI;
+import com.intellij.ui.paint.RectanglePainter;
+import com.intellij.util.SlowOperations;
 import com.intellij.util.ui.JBRectangle;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.accessibility.ScreenReader;
-import gnu.trove.THashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.accessibility.AccessibleAction;
 import javax.accessibility.AccessibleContext;
 import javax.accessibility.AccessibleRole;
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.*;
+import javax.swing.Icon;
+import javax.swing.JLabel;
+import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Insets;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionListener;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
+ * A {@link JLabel}-based link that does not support mnemonics.
+ * Prefer using {@link com.intellij.ui.components.ActionLink} instead.
  * @author kir
+ * @see <a href="https://jetbrains.github.io/ui/controls/link/">IJ Platform UI Guidelines | Link</a>
  */
 public class LinkLabel<T> extends JLabel {
   protected boolean myUnderline;
@@ -46,48 +58,73 @@ public class LinkLabel<T> extends JLabel {
   private LinkListener<T> myLinkListener;
   private T myLinkData;
 
-  private static final Set<String> ourVisitedLinks = new THashSet<>();
+  private static final Set<String> ourVisitedLinks = new HashSet<>();
 
   private boolean myIsLinkActive;
 
-  private String myVisitedLinksKey;
+  private final String myVisitedLinksKey;
   private Icon myHoveringIcon;
   private Icon myInactiveIcon;
 
   private boolean myClickIsBeingProcessed;
   protected boolean myPaintUnderline = true;
 
+  /**
+   * Creates a {@link JLabel}-based link that does not support mnemonics.
+   * Prefer using {@link com.intellij.ui.components.ActionLink} instead.
+   * Note that this constructor sets inappropriate icon.
+   * @see <a href="https://jetbrains.github.io/ui/controls/link/">UI Guidelines</a>
+   */
   public LinkLabel() {
     this("", AllIcons.Ide.Link);
   }
 
-  public LinkLabel(String text, @Nullable Icon icon) {
+  /**
+   * Creates a {@link JLabel}-based link that does not support mnemonics.
+   * Prefer using {@link com.intellij.ui.components.ActionLink} instead.
+   * @see <a href="https://jetbrains.github.io/ui/controls/link/">UI Guidelines</a>
+   */
+  public LinkLabel(@NlsContexts.LinkLabel String text, @Nullable Icon icon) {
     this(text, icon, null, null, null);
   }
 
-  public LinkLabel(String text, @Nullable Icon icon, @Nullable LinkListener<T> aListener) {
+  /**
+   * Creates a {@link JLabel}-based link that does not support mnemonics.
+   * Prefer using {@link com.intellij.ui.components.ActionLink} instead.
+   * @see <a href="https://jetbrains.github.io/ui/controls/link/">UI Guidelines</a>
+   */
+  public LinkLabel(@NlsContexts.LinkLabel String text, @Nullable Icon icon, @Nullable LinkListener<T> aListener) {
     this(text, icon, aListener, null, null);
   }
 
-  @NotNull
-  public static LinkLabel<?> create(@Nullable String text, @Nullable Runnable action) {
-    return new LinkLabel<>(text, null, action == null ? null : new LinkListener<Object>() {
-      @Override
-      public void linkSelected(LinkLabel source, Object linkData) {
-        action.run();
-      }
-    }, null, null);
+  /**
+   * @see <a href="https://jetbrains.github.io/ui/controls/link/">UI Guidelines</a>
+   * @deprecated use {@link com.intellij.ui.components.ActionLink} instead
+   */
+  @Deprecated
+  public static @NotNull LinkLabel<?> create(@Nullable @NlsContexts.LinkLabel String text, @Nullable Runnable action) {
+    return new LinkLabel<>(text, null, action == null ? null : (_, _) -> action.run(), null, null);
   }
 
-  public LinkLabel(String text, @Nullable Icon icon, @Nullable LinkListener<T> aListener, @Nullable T aLinkData) {
+  /**
+   * Creates a {@link JLabel}-based link that does not support mnemonics.
+   * Prefer using {@link com.intellij.ui.components.ActionLink} instead.
+   * @see <a href="https://jetbrains.github.io/ui/controls/link/">UI Guidelines</a>
+   */
+  public LinkLabel(@NlsContexts.LinkLabel String text, @Nullable Icon icon, @Nullable LinkListener<T> aListener, @Nullable T aLinkData) {
     this(text, icon, aListener, aLinkData, null);
   }
 
-  public LinkLabel(String text,
-                   @Nullable Icon icon,
-                   @Nullable LinkListener<T> aListener,
-                   @Nullable T aLinkData,
-                   @Nullable String aVisitedLinksKey) {
+  /**
+   * @see <a href="https://jetbrains.github.io/ui/controls/link/">UI Guidelines</a>
+   * @deprecated use {@link com.intellij.ui.components.ActionLink} instead
+   */
+  @Deprecated(forRemoval = true)
+  private LinkLabel(@NlsContexts.LinkLabel String text,
+                    @Nullable Icon icon,
+                    @Nullable LinkListener<T> aListener,
+                    @Nullable T aLinkData,
+                    @Nullable String aVisitedLinksKey) {
     super(text, icon, SwingConstants.LEFT);
     setOpaque(false);
     // Note: Ideally, we should be focusable by default in all cases, however,
@@ -169,64 +206,64 @@ public class LinkLabel<T> extends JLabel {
     return myVisitedLinksKey != null && ourVisitedLinks.contains(myVisitedLinksKey);
   }
 
+  @Override
   protected void paintComponent(Graphics g) {
     setForeground(getTextColor());
     super.paintComponent(g);
 
     if (getText() != null) {
-      g.setColor(getTextColor());
+      Color underlineColor = getUnderlineColor();
 
-      if (myUnderline && myPaintUnderline) {
+      if (underlineColor != null) {
+        g.setColor(underlineColor);
         Rectangle bounds = getTextBounds();
-        int lineY = getUI().getBaseline(this, getWidth(), getHeight()) + 1;
+        int lineY = getUI().getBaseline(this, getWidth(), getHeight()) + getUnderlineShift();
         g.drawLine(bounds.x, lineY, bounds.x + bounds.width, lineY);
       }
 
-      if (isFocusOwner()){
-        g.setColor(UIUtil.getTreeSelectionBorderColor());
+      g.setColor(getTextColor());
+
+      if (g instanceof Graphics2D && isFocusOwner()) {
+        g.setColor(JBUI.CurrentTheme.Link.FOCUSED_BORDER_COLOR);
         Rectangle bounds = getTextBounds();
-        // JLabel draws the text relative to the baseline. So, we must ensure
-        // we draw the dotted rectangle relative to that same baseline.
-        FontMetrics fm = getFontMetrics(getFont());
-        int baseLine = getUI().getBaseline(this, getWidth(), getHeight());
-        int textY = baseLine - fm.getLeading() - fm.getAscent();
-        int textHeight = fm.getHeight();
-        UIUtil.drawDottedRectangle(g, bounds.x, textY, bounds.x + bounds.width - 1, textY + textHeight - 1);
+        int round = Registry.intValue("ide.link.button.focus.round.arc", 4);
+        RectanglePainter.DRAW.paint((Graphics2D)g, bounds.x, bounds.y, bounds.width, bounds.height, JBUI.scale(round));
       }
     }
   }
 
-  @NotNull
-  protected Rectangle getTextBounds() {
-    final Dimension size = getPreferredSize();
-    Icon icon = getIcon();
-    final Point point = new Point(0, 0);
-    final Insets insets = getInsets();
-    if (icon != null) {
-      point.x += getIconTextGap();
-      point.x += icon.getIconWidth();
+  protected @NotNull Rectangle getTextBounds() {
+    if (textR.isEmpty()) {
+      updateLayoutRectangles();
     }
-    point.x += insets.left;
-    point.y += insets.top;
-    size.width -= point.x;
-    size.width -= insets.right;
-    size.height -= insets.bottom;
-
-    return new Rectangle(point, size);
+    return textR;
   }
 
   protected Color getTextColor() {
-    return myIsLinkActive ? getActive() : isVisited() ? getVisited() : getNormal();
+    return myIsLinkActive ? getActive() :
+           myUnderline ? getHover() :
+           isVisited() ? getVisited() : getNormal();
+  }
+
+  protected @Nullable Color getUnderlineColor() {
+    if (myUnderline && myPaintUnderline) return getTextColor();
+    else return null;
+  }
+
+  protected int getUnderlineShift() {
+    return 1;
   }
 
   public void setPaintUnderline(boolean paintUnderline) {
     myPaintUnderline = paintUnderline;
   }
 
+  @Override
   public void removeNotify() {
     super.removeNotify();
-    if (ScreenUtil.isStandardAddRemoveNotify(this))
+    if (ScreenUtil.isStandardAddRemoveNotify(this)) {
       disableUnderline();
+    }
   }
 
   private void setActive(boolean isActive) {
@@ -243,6 +280,17 @@ public class LinkLabel<T> extends JLabel {
   private final JBRectangle viewR = new JBRectangle();
 
   protected boolean isInClickableArea(Point pt) {
+    updateLayoutRectangles();
+    if (getIcon() != null) {
+      iconR.width += getIconTextGap(); //todo[kb] icon at right?
+      if (iconR.contains(pt)) {
+        return true;
+      }
+    }
+    return textR.contains(pt);
+  }
+
+  private void updateLayoutRectangles() {
     iconR.clear();
     textR.clear();
     final Insets insets = getInsets(null);
@@ -262,17 +310,16 @@ public class LinkLabel<T> extends JLabel {
                                        iconR,
                                        textR,
                                        getIconTextGap());
-    if (getIcon() != null) {
-      iconR.width += getIconTextGap(); //todo[kb] icon at right?
-      if (iconR.contains(pt)) {
-        return true;
-      }
-    }
-    return textR.contains(pt);
+  }
+
+  //for GUI tests
+  public Point getTextRectangleCenter() {
+    isInClickableArea(new Point(0, 0)); //to update textR before clicking
+    return new Point(textR.x + textR.width / 2, textR.y + textR.height / 2);
   }
 
   private void enableUnderline() {
-    setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+    UIUtil.setCursor(this, Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
     myUnderline = true;
     if (myHoveringIcon != null) {
       super.setIcon(myHoveringIcon);
@@ -281,40 +328,40 @@ public class LinkLabel<T> extends JLabel {
     repaint();
   }
 
-  protected String getStatusBarText() {
+  protected @NlsContexts.StatusBarText String getStatusBarText() {
     return getToolTipText();
   }
 
   private void disableUnderline() {
-    setCursor(Cursor.getDefaultCursor());
+    UIUtil.setCursor(this, Cursor.getDefaultCursor());
     myUnderline = false;
     super.setIcon(myInactiveIcon);
     setStatusBarText(null);
     setActive(false);
   }
 
-  private static void setStatusBarText(String statusBarText) {
-    if (ApplicationManager.getApplication() == null) return; // makes this component work in UIDesigner preview.
+  private static void setStatusBarText(@NlsContexts.StatusBarText String statusBarText) {
+    if (ApplicationManager.getApplication() == null || !LoadingState.COMPONENTS_REGISTERED.isOccurred()) return; // makes this component work in UIDesigner preview.
     final Project[] projects = ProjectManager.getInstance().getOpenProjects();
     for (Project project : projects) {
       StatusBar.Info.set(statusBarText, project);
     }
   }
 
-  public static void clearVisitedHistory() {
-    ourVisitedLinks.clear();
-  }
-
   protected Color getVisited() {
-    return UI.getColor("link.visited.foreground");
+    return JBUI.CurrentTheme.Link.Foreground.VISITED;
   }
 
   protected Color getActive() {
-    return UI.getColor("link.pressed.foreground");
+    return JBUI.CurrentTheme.Link.Foreground.PRESSED;
   }
 
   protected Color getNormal() {
-    return UI.getColor("link.foreground");
+    return JBUI.CurrentTheme.Link.Foreground.ENABLED;
+  }
+
+  protected Color getHover() {
+    return JBUI.CurrentTheme.Link.Foreground.HOVERED;
   }
 
   public void entered(MouseEvent e) {
@@ -325,26 +372,31 @@ public class LinkLabel<T> extends JLabel {
     disableUnderline();
   }
 
-  public void pressed(MouseEvent e) {
-    doClick(e);
-  }
-
   private class MyMouseHandler extends MouseAdapter implements MouseMotionListener {
+    @Override
     public void mousePressed(MouseEvent e) {
-      if (isInClickableArea(e.getPoint())) {
+      if (isEnabled() && isInClickableArea(e.getPoint())) {
         setActive(true);
+        e.consume();
       }
     }
 
+    @Override
     public void mouseReleased(MouseEvent e) {
-      if (myIsLinkActive && isInClickableArea(e.getPoint())) {
-        doClick(e);
+      if (isEnabled() && myIsLinkActive && isInClickableArea(e.getPoint())) {
+        try (AccessToken ignore = SlowOperations.startSection(SlowOperations.ACTION_PERFORM)) {
+          doClick(e);
+        }
+        finally {
+          e.consume();
+        }
       }
       setActive(false);
     }
 
+    @Override
     public void mouseMoved(MouseEvent e) {
-      if (isInClickableArea(e.getPoint())) {
+      if (isEnabled() && isInClickableArea(e.getPoint())) {
         enableUnderline();
       }
       else {
@@ -352,10 +404,12 @@ public class LinkLabel<T> extends JLabel {
       }
     }
 
+    @Override
     public void mouseExited(MouseEvent e) {
       disableUnderline();
     }
 
+    @Override
     public void mouseDragged(MouseEvent e) {
     }
   }
@@ -379,6 +433,11 @@ public class LinkLabel<T> extends JLabel {
     }
 
     @Override
+    public AccessibleAction getAccessibleAction() {
+      return this;
+    }
+
+    @Override
     public int getAccessibleActionCount() {
       return 1;
     }
@@ -398,7 +457,8 @@ public class LinkLabel<T> extends JLabel {
       if (i == 0) {
         doClick();
         return true;
-      } else {
+      }
+      else {
         return false;
       }
     }

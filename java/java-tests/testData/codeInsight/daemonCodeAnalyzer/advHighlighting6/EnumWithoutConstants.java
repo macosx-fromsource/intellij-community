@@ -1,4 +1,9 @@
-<error descr="Enum declaration without enum constants cannot have abstract methods">enum MyEnumTest</error> {
+enum MyEnumTest {
   ;
+  public <error descr="Abstract method in non-abstract class">abstract</error> void m();
+}
+
+enum WithoutConstantInitializer {
+  <error descr="Enum constant 'FIRST' must implement abstract method 'm()' in 'WithoutConstantInitializer'">FIRST</error>;
   public abstract void m();
 }

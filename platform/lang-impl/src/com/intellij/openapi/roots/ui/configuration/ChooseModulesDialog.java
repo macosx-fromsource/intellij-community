@@ -14,40 +14,42 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: Anna.Kozlova
- * Date: 14-Aug-2006
- * Time: 12:13:18
- */
 package com.intellij.openapi.roots.ui.configuration;
 
 import com.intellij.ide.util.ChooseElementsDialog;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleType;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NlsContexts;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.Icon;
+import java.awt.Component;
 import java.util.List;
 
 public class ChooseModulesDialog extends ChooseElementsDialog<Module> {
+  private boolean myAllowEmptySelection = true;
 
-  public ChooseModulesDialog(Component parent, final List<Module> items, final String title) {
+  public ChooseModulesDialog(Component parent, final List<? extends Module> items, final @NlsContexts.DialogTitle String title) {
     super(parent, items, title, null, true);
   }
 
-  public ChooseModulesDialog(Component parent, List<Module> items, String title, @Nullable String description) {
+  public ChooseModulesDialog(Component parent, List<? extends Module> items, @NlsContexts.DialogTitle String title, @Nullable @NlsContexts.Label String description) {
     super(parent, items, title, description, true);
   }
 
-  public ChooseModulesDialog(final Project project, final List<? extends Module> items, final String title, final String description) {
+  public ChooseModulesDialog(Project project, List<? extends Module> items, @NlsContexts.DialogTitle String title, @Nullable @NlsContexts.Label String description) {
     super(project, items, title, description, true);
   }
 
   public void setSingleSelectionMode() {
     myChooser.setSingleSelectionMode();
+    myAllowEmptySelection = false;
+  }
+
+  @Override
+  public boolean isOKActionEnabled() {
+    return myAllowEmptySelection || !getChosenElements().isEmpty();
   }
 
   @Override

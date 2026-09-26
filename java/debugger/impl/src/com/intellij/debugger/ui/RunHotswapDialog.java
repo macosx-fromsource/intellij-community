@@ -1,44 +1,29 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.ui;
 
-import com.intellij.CommonBundle;
-import com.intellij.debugger.DebuggerBundle;
+import com.intellij.debugger.JavaDebuggerBundle;
 import com.intellij.debugger.impl.DebuggerSession;
 import com.intellij.debugger.settings.DebuggerSettings;
 import com.intellij.ide.util.ElementsChooser;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MultiLineLabelUI;
-import com.intellij.ui.IdeBorderFactory;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.OptionsDialog;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Unmodifiable;
 
-import javax.swing.*;
-import java.awt.*;
-import java.util.*;
+import javax.swing.Action;
+import javax.swing.Icon;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import java.awt.BorderLayout;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
-
-/**
- * User: lex
- * Date: Oct 6, 2003
- * Time: 5:58:17 PM
- */
-
-
 
 public class RunHotswapDialog extends OptionsDialog {
   private final JPanel myPanel;
@@ -55,28 +40,29 @@ public class RunHotswapDialog extends OptionsDialog {
     }
     items.sort(Comparator.comparing(debuggerSession -> debuggerSession.getSession().getSessionName()));
     myElementsChooser = new ElementsChooser<>(items, true);
-    myPanel.setBorder(IdeBorderFactory.createEmptyBorder(10, 0, 5, 0));
+    myPanel.setBorder(JBUI.Borders.empty(10, 0, 5, 0));
     //myElementsChooser.setBorder(IdeBorderFactory.createEmptyBorder(5, 0, 0, 0));
-    if (sessions.size() > 0) {
+    if (!sessions.isEmpty()) {
       myElementsChooser.selectElements(items.subList(0, 1));
     }
     myPanel.add(myElementsChooser, BorderLayout.CENTER);
     //myPanel.add(new JLabel("Choose debug sessions to reload classes:"), BorderLayout.NORTH);
-    if(sessions.size() == 1) {
-      setTitle(DebuggerBundle.message("hotswap.dialog.title.with.session", sessions.get(0).getSessionName()));
+    if (sessions.size() == 1) {
+      setTitle(JavaDebuggerBundle.message("hotswap.dialog.title.with.session", sessions.getFirst().getSessionName()));
       myPanel.setVisible(false);
     }
     else {
-      setTitle(DebuggerBundle.message("hotswap.dialog.title"));
+      setTitle(JavaDebuggerBundle.message("hotswap.dialog.title"));
     }
-    setButtonsAlignment(SwingConstants.CENTER);
     this.init();
   }
 
+  @Override
   protected boolean isToBeShown() {
     return DebuggerSettings.RUN_HOTSWAP_ASK.equals(DebuggerSettings.getInstance().RUN_HOTSWAP_AFTER_COMPILE);
   }
 
+  @Override
   protected void setToBeShown(boolean value, boolean onOk) {
     if (value) {
       DebuggerSettings.getInstance().RUN_HOTSWAP_AFTER_COMPILE = DebuggerSettings.RUN_HOTSWAP_ASK;
@@ -91,49 +77,47 @@ public class RunHotswapDialog extends OptionsDialog {
     }
   }
 
+  @Override
   protected boolean shouldSaveOptionsOnCancel() {
     return true;
   }
 
-  @NotNull
-  protected Action[] createActions(){
-    setOKButtonText(CommonBundle.getYesButtonText());
-    setCancelButtonText(CommonBundle.getNoButtonText());
+  @Override
+  protected Action @NotNull [] createActions() {
+    setOKButtonText(JavaDebuggerBundle.message("hotswap.dialog.reload.action.text"));
     return new Action[]{getOKAction(), getCancelAction()};
   }
 
+  @Override
   protected JComponent createNorthPanel() {
-    JLabel label = new JLabel(DebuggerBundle.message("hotswap.dialog.run.prompt"));
+    JLabel label = new JLabel(JavaDebuggerBundle.message("hotswap.dialog.run.prompt"));
     JPanel panel = new JPanel(new BorderLayout());
     panel.add(label, BorderLayout.CENTER);
     Icon icon = UIUtil.getQuestionIcon();
     label.setIcon(icon);
     label.setIconTextGap(7);
     if (myDisplayHangWarning) {
-      final JLabel warningLabel = new JLabel("WARNING! " + DebuggerBundle.message("hotswap.dialog.hang.warning"));
+      final JLabel warningLabel = new JLabel(
+        JavaDebuggerBundle.message("warning.0", JavaDebuggerBundle.message("hotswap.dialog.hang.warning")));
       warningLabel.setUI(new MultiLineLabelUI());
       panel.add(warningLabel, BorderLayout.SOUTH);
     }
     return panel;
   }
 
+  @Override
   protected JComponent createCenterPanel() {
     return myPanel;
   }
 
-  public Collection<DebuggerSession> getSessionsToReload() {
-    final List<SessionItem> markedElements = myElementsChooser.getMarkedElements();
-    final List<DebuggerSession>  sessions = new ArrayList<>(markedElements.size());
-    for (SessionItem item : markedElements) {
-      sessions.add(item.getSession());
-    }
-    return sessions;
+  public @Unmodifiable Collection<DebuggerSession> getSessionsToReload() {
+    return ContainerUtil.map(myElementsChooser.getMarkedElements(), SessionItem::getSession);
   }
 
   private static class SessionItem {
     private final DebuggerSession mySession;
 
-    public SessionItem(DebuggerSession session) {
+    SessionItem(DebuggerSession session) {
       mySession = session;
     }
 
@@ -141,6 +125,7 @@ public class RunHotswapDialog extends OptionsDialog {
       return mySession;
     }
 
+    @Override
     public String toString() {
       return mySession.getSessionName();
     }

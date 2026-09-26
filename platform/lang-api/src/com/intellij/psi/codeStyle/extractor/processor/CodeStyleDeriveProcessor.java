@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.codeStyle.extractor.processor;
 
 import com.intellij.lang.Language;
@@ -27,46 +13,48 @@ import com.intellij.psi.codeStyle.extractor.differ.LangCodeStyleExtractor;
 import com.intellij.psi.codeStyle.extractor.values.ClassSerializer;
 import com.intellij.psi.codeStyle.extractor.values.Value;
 import com.intellij.psi.codeStyle.extractor.values.ValuesExtractionResult;
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Field;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-/**
- * @author Roman.Shein
- * @since 04.08.2015.
- */
 public abstract class CodeStyleDeriveProcessor {
-
   protected final LangCodeStyleExtractor myLangExtractor;
 
-  protected CodeStyleDeriveProcessor(LangCodeStyleExtractor langExtractor) {
+  protected CodeStyleDeriveProcessor(@NotNull LangCodeStyleExtractor langExtractor) {
     myLangExtractor = langExtractor;
   }
 
-  public abstract ValuesExtractionResult runWithProgress(Project project, CodeStyleSettings settings, PsiFile file,
-                                    ProgressIndicator indicator);
+  public abstract ValuesExtractionResult runWithProgress(
+    Project project,
+    CodeStyleSettings settings,
+    PsiFile file,
+    ProgressIndicator indicator);
 
-  public Map<Value, Object> backupValues(CodeStyleSettings settings, Language language) {
+  public @NotNull Map<Value, Object> backupValues(@NotNull CodeStyleSettings settings, @NotNull Language language) {
     List<Value> baseValues = getFormattingValues(settings, language);
-    Map<Value, Object> res = ContainerUtil.newHashMap();
-    for (Value baseValue: baseValues) {
+    Map<Value, Object> res = new HashMap<>();
+    for (Value baseValue : baseValues) {
       res.put(baseValue, baseValue.value);
     }
     return res;
   }
 
-  @NotNull
-  private Collection<Value.VAR_KIND> getVarKinds() {
+  private @NotNull Collection<Value.VAR_KIND> getVarKinds() {
     List<Value.VAR_KIND> varKinds = new LinkedList<>();
     varKinds.addAll(myLangExtractor.getCustomVarKinds());
     varKinds.addAll(Arrays.asList(Value.VAR_KIND.defaultKinds));
     return varKinds;
   }
 
-  @NotNull
-  private Value.VAR_KIND getVarKind(@NotNull String name,  @NotNull Object value) {
+  private @NotNull Value.VAR_KIND getVarKind(@NotNull String name, @NotNull Object value) {
     for (Value.VAR_KIND varKind : getVarKinds()) {
       if (varKind.accepts(name, value)) {
         return varKind;
@@ -75,12 +63,11 @@ public abstract class CodeStyleDeriveProcessor {
     return Value.VAR_KIND.NOTHING;
   }
 
-  @NotNull
-  private List<Value> readAll(@NotNull String instanceName, @NotNull Object instance) {
+  private @NotNull List<Value> readAll(@NotNull String instanceName, @NotNull Object instance) {
     Class<?> cls = instance.getClass();
     List<Value> ret = new ArrayList<>();
     ClassSerializer serializer = new ClassSerializer(instanceName, instance);
-    for (Field field : cls.getDeclaredFields()) {
+    for (Field field : cls.getFields()) {
       field = ClassSerializer.getPreparedField(field);
       if (field == null || field.getName().endsWith("_FORCE")) continue;
       try {
@@ -93,19 +80,16 @@ public abstract class CodeStyleDeriveProcessor {
     return ret;
   }
 
-  @NotNull
-  private Value buildFValue(@NotNull Field field,
-                             @NotNull Object instance,
-                             @NotNull ClassSerializer serializer) throws IllegalAccessException {
+  private @NotNull Value buildFValue(@NotNull Field field,
+                                     @NotNull Object instance,
+                                     @NotNull ClassSerializer serializer) throws IllegalAccessException {
     String name = field.getName();
     Object value = field.get(instance);
     Value.VAR_KIND varKind = getVarKind(name, value);
     return new Value(name, value, serializer, varKind);
   }
 
-  @NotNull
-  protected List<Value> getFormattingValues(CodeStyleSettings settings, Language language) {
-
+  protected @NotNull List<Value> getFormattingValues(CodeStyleSettings settings, Language language) {
     final CommonCodeStyleSettings commonSettings = settings.getCommonSettings(language);
     CommonCodeStyleSettings.IndentOptions indentOptions = commonSettings.getIndentOptions();
     if (indentOptions == null) {
@@ -116,7 +100,7 @@ public abstract class CodeStyleDeriveProcessor {
 
     List<Value> values = readAll("commonSettings", commonSettings);
     if (languageSettings != null) {
-      values.addAll(readAll("ocSettings", languageSettings));
+      values.addAll(readAll("languageSettings", languageSettings));
     }
     final LanguageCodeStyleSettingsProvider provider = LanguageCodeStyleSettingsProvider.forLanguage(language);
     if (provider != null) {
@@ -130,14 +114,10 @@ public abstract class CodeStyleDeriveProcessor {
       values = cvalues;
     }
 
-    if (indentOptions != null) {
-      List<Value> valuesOrder = readAll("indentOptions", indentOptions);
-      valuesOrder.addAll(values);
-      return valuesOrder;
-    } else {
-      Utils.logError("Not indent options detected.");
-      return values;
-    }
+    List<Value> valuesOrder = readAll("indentOptions", indentOptions);
+    valuesOrder.addAll(values);
+    return valuesOrder;
   }
 
+  public abstract @NotNull String getHTMLReport();
 }

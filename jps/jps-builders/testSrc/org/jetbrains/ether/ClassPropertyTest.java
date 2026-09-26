@@ -1,66 +1,79 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.ether;
 
-/**
- * @author: db
- * Date: 09.08.11
- */
+import org.jetbrains.jps.builders.java.JavaBuilderUtil;
+import org.jetbrains.jps.model.JpsModuleRootModificationUtil;
+import org.jetbrains.jps.model.module.JpsModule;
+
+import java.util.Set;
+
 public class ClassPropertyTest extends IncrementalTestCase {
-  public ClassPropertyTest() throws Exception {
+  private static final Set<String> GRAPH_ONLY_TESTS = Set.of("addImplementsPatternMatching");
+
+  public ClassPropertyTest() {
     super("classProperties");
   }
 
-  public void testAddExtends() throws Exception {
+  @Override
+  protected boolean shouldRunTest() {
+    if (JavaBuilderUtil.isDepGraphEnabled()) {
+      return super.shouldRunTest();
+    }
+    return !GRAPH_ONLY_TESTS.contains(getTestName(true));
+  }
+
+  public void testAddExtends() {
     doTest();
   }
 
-  public void testAddImplements() throws Exception {
+  public void testAddImplements() {
     doTest();
   }
 
-  public void testChangeExtends() throws Exception {
+  public void testAddImplementsPatternMatching() {
     doTest();
   }
 
-  public void testRemoveExtends() throws Exception {
+  public void testChangeExtends() {
     doTest();
   }
 
-  public void testRemoveExtendsAffectsFieldAccess() throws Exception {
+  public void testRemoveExtends() {
     doTest();
   }
 
-  public void testRemoveExtendsAffectsMethodAccess() throws Exception {
+  public void testRemoveExtendsAffectsFieldAccess() {
     doTest();
   }
 
-  public void testRemoveImplements() throws Exception {
+  public void testRemoveExtendsAffectsMethodAccess() {
     doTest();
   }
 
-  public void testRemoveImplements2() throws Exception {
+  public void testRemoveImplements() {
     doTest();
   }
 
-  public void testRemoveImplements3() throws Exception {
+  public void testRemoveImplements2() {
     doTest();
   }
 
-  public void testChangeExtends2() throws Exception {
+  public void testRemoveImplements3() {
+    doTest();
+  }
+
+  public void testChangeExtends2() {
       doTest();
+  }
+
+  public void testConvertToCheckedException() {
+      doTest();
+  }
+  
+  public void testConvertToCheckedExceptionMultiModule() {
+    JpsModule module1 = addModule("module1", "module1/src");
+    JpsModule module2 = addModule("module2", "module2/src");
+    JpsModuleRootModificationUtil.addDependency(module2, module1);
+    doTestBuild(1).assertSuccessful();
   }
 }

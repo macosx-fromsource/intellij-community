@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.plugins.groovy.highlighter;
 
@@ -38,14 +24,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static com.intellij.openapi.editor.colors.TextAttributesKey.createTextAttributesKey;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.STRING_DQ;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.STRING_SQ;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.STRING_TDQ;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.STRING_TSQ;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyTokenSets.ASSIGNMENTS;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyTokenSets.BINARY_OPERATORS;
 
-/**
- * @author ilyas
- */
 public class GroovySyntaxHighlighter extends SyntaxHighlighterBase {
 
   public static final TextAttributesKey LINE_COMMENT = createTextAttributesKey("Line comment", DefaultLanguageHighlighterColors.LINE_COMMENT);
   public static final TextAttributesKey ANNOTATION = createTextAttributesKey("Annotation", JavaHighlightingColors.ANNOTATION_NAME_ATTRIBUTES);
+  public static final TextAttributesKey ANNOTATION_ATTRIBUTE_NAME = createTextAttributesKey("Anotation attribute name", JavaHighlightingColors.ANNOTATION_ATTRIBUTE_NAME_ATTRIBUTES);
   public static final TextAttributesKey LOCAL_VARIABLE = createTextAttributesKey("Groovy var", JavaHighlightingColors.LOCAL_VARIABLE_ATTRIBUTES);
   public static final TextAttributesKey REASSIGNED_LOCAL_VARIABLE = createTextAttributesKey("Groovy reassigned var", JavaHighlightingColors.REASSIGNED_LOCAL_VARIABLE_ATTRIBUTES);
   public static final TextAttributesKey PARAMETER = createTextAttributesKey("Groovy parameter", JavaHighlightingColors.PARAMETER_ATTRIBUTES);
@@ -60,7 +50,13 @@ public class GroovySyntaxHighlighter extends SyntaxHighlighterBase {
   public static final TextAttributesKey BLOCK_COMMENT = createTextAttributesKey("Block comment", JavaHighlightingColors.JAVA_BLOCK_COMMENT);
   public static final TextAttributesKey DOC_COMMENT_CONTENT = createTextAttributesKey("Groovydoc comment", JavaHighlightingColors.DOC_COMMENT);
   public static final TextAttributesKey DOC_COMMENT_TAG = createTextAttributesKey("Groovydoc tag", JavaHighlightingColors.DOC_COMMENT_TAG);
-  public static final TextAttributesKey CLASS_REFERENCE = createTextAttributesKey("Class", DefaultLanguageHighlighterColors.CLASS_REFERENCE);
+
+  public static final TextAttributesKey CLASS_REFERENCE = createTextAttributesKey("Class", JavaHighlightingColors.CLASS_NAME_ATTRIBUTES);
+  public static final TextAttributesKey ABSTRACT_CLASS_NAME = createTextAttributesKey("Abstract class name", CLASS_REFERENCE);
+  public static final TextAttributesKey ANONYMOUS_CLASS_NAME = createTextAttributesKey("Anonymous class name", CLASS_REFERENCE);
+  public static final TextAttributesKey INTERFACE_NAME = createTextAttributesKey("Interface name", JavaHighlightingColors.INTERFACE_NAME_ATTRIBUTES);
+  public static final TextAttributesKey TRAIT_NAME = createTextAttributesKey("Trait name", INTERFACE_NAME);
+  public static final TextAttributesKey ENUM_NAME = createTextAttributesKey("Enum name", CLASS_REFERENCE);
   public static final TextAttributesKey TYPE_PARAMETER = createTextAttributesKey("Type parameter", JavaHighlightingColors.TYPE_PARAMETER_NAME_ATTRIBUTES);
 
   public static final TextAttributesKey INSTANCE_PROPERTY_REFERENCE = createTextAttributesKey("Instance property reference ID", JavaHighlightingColors.INSTANCE_FIELD_ATTRIBUTES);
@@ -71,6 +67,8 @@ public class GroovySyntaxHighlighter extends SyntaxHighlighterBase {
   public static final TextAttributesKey GSTRING = createTextAttributesKey("GString", JavaHighlightingColors.STRING);
   public static final TextAttributesKey STRING = createTextAttributesKey("String", JavaHighlightingColors.STRING);
   public static final TextAttributesKey BRACES = createTextAttributesKey("Braces", JavaHighlightingColors.BRACES);
+  public static final TextAttributesKey CLOSURE_ARROW_AND_BRACES = createTextAttributesKey("Closure braces", BRACES);
+  public static final TextAttributesKey LAMBDA_ARROW_AND_BRACES = createTextAttributesKey("Lambda braces", BRACES);
   public static final TextAttributesKey BRACKETS = createTextAttributesKey("Brackets", JavaHighlightingColors.BRACKETS);
   public static final TextAttributesKey PARENTHESES = createTextAttributesKey("Parentheses", JavaHighlightingColors.PARENTHESES);
   public static final TextAttributesKey OPERATION_SIGN = createTextAttributesKey("Operation sign", JavaHighlightingColors.OPERATION_SIGN);
@@ -105,11 +103,13 @@ public class GroovySyntaxHighlighter extends SyntaxHighlighterBase {
     GroovyTokenTypes.mGSTRING_BEGIN,
     GroovyTokenTypes.mGSTRING_CONTENT,
     GroovyTokenTypes.mGSTRING_END,
-    GroovyTokenTypes.mGSTRING_LITERAL
+    STRING_DQ,
+    STRING_TDQ
   );
 
   static final TokenSet tSTRINGS = TokenSet.create(
-    GroovyTokenTypes.mSTRING_LITERAL
+    STRING_SQ,
+    STRING_TSQ
   );
 
   static final TokenSet tBRACES = TokenSet.create(
@@ -125,7 +125,7 @@ public class GroovySyntaxHighlighter extends SyntaxHighlighterBase {
     GroovyTokenTypes.mRBRACK
   );
 
-  static final TokenSet tOperators = TokenSet.orSet(TokenSets.BINARY_OP_SET, TokenSets.UNARY_OP_SET, TokenSets.ASSIGN_OP_SET);
+  static final TokenSet tOperators = TokenSet.orSet(BINARY_OPERATORS, TokenSets.UNARY_OP_SET, ASSIGNMENTS);
 
   static {
     fillMap(ATTRIBUTES, tLINE_COMMENTS, LINE_COMMENT);
@@ -144,6 +144,7 @@ public class GroovySyntaxHighlighter extends SyntaxHighlighterBase {
     fillMap(ATTRIBUTES, VALID_STRING_ESCAPE, StringEscapesTokenTypes.VALID_STRING_ESCAPE_TOKEN);
     fillMap(ATTRIBUTES, INVALID_STRING_ESCAPE, StringEscapesTokenTypes.INVALID_CHARACTER_ESCAPE_TOKEN);
     fillMap(ATTRIBUTES, INVALID_STRING_ESCAPE, StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN);
+    fillMap(ATTRIBUTES, TokenSets.KEYWORDS, KEYWORD);
   }
 
   static {
@@ -166,18 +167,21 @@ public class GroovySyntaxHighlighter extends SyntaxHighlighterBase {
   }
 
   @Override
-  @NotNull
-  public Lexer getHighlightingLexer() {
+  public @NotNull Lexer getHighlightingLexer() {
     return new GroovyHighlightingLexer();
   }
 
-  private static class GroovyHighlightingLexer extends LayeredLexer {
+  private static final class GroovyHighlightingLexer extends LayeredLexer {
     private GroovyHighlightingLexer() {
       super(new GroovyLexer());
-      registerSelfStoppingLayer(new StringLiteralLexer(StringLiteralLexer.NO_QUOTE_CHAR, GroovyTokenTypes.mSTRING_LITERAL, true, "$"),
-                                new IElementType[]{GroovyTokenTypes.mSTRING_LITERAL}, IElementType.EMPTY_ARRAY);
-      registerSelfStoppingLayer(new StringLiteralLexer(StringLiteralLexer.NO_QUOTE_CHAR, GroovyTokenTypes.mGSTRING_LITERAL, true, "$"),
-                                new IElementType[]{GroovyTokenTypes.mGSTRING_LITERAL}, IElementType.EMPTY_ARRAY);
+      registerSelfStoppingLayer(new StringLiteralLexer(StringLiteralLexer.NO_QUOTE_CHAR, STRING_SQ, true, "$"),
+                                new IElementType[]{STRING_SQ}, IElementType.EMPTY_ARRAY);
+      registerSelfStoppingLayer(new StringLiteralLexer(StringLiteralLexer.NO_QUOTE_CHAR, STRING_TSQ, true, "$"),
+                                new IElementType[]{STRING_TSQ}, IElementType.EMPTY_ARRAY);
+      registerSelfStoppingLayer(new StringLiteralLexer(StringLiteralLexer.NO_QUOTE_CHAR, STRING_DQ, true, "$"),
+                                new IElementType[]{STRING_DQ}, IElementType.EMPTY_ARRAY);
+      registerSelfStoppingLayer(new StringLiteralLexer(StringLiteralLexer.NO_QUOTE_CHAR, STRING_TDQ, true, "$"),
+                                new IElementType[]{STRING_TDQ}, IElementType.EMPTY_ARRAY);
       registerSelfStoppingLayer(new StringLiteralLexer(StringLiteralLexer.NO_QUOTE_CHAR, GroovyTokenTypes.mGSTRING_CONTENT, true, "$"),
                                 new IElementType[]{GroovyTokenTypes.mGSTRING_CONTENT}, IElementType.EMPTY_ARRAY);
       registerSelfStoppingLayer(new GroovySlashyStringLexer(), new IElementType[]{GroovyTokenTypes.mREGEX_CONTENT}, IElementType.EMPTY_ARRAY);
@@ -186,8 +190,7 @@ public class GroovySyntaxHighlighter extends SyntaxHighlighterBase {
   }
 
   @Override
-  @NotNull
-  public TextAttributesKey[] getTokenHighlights(IElementType tokenType) {
+  public @NotNull TextAttributesKey @NotNull [] getTokenHighlights(@NotNull IElementType tokenType) {
     return pack(PowerSaveMode.isEnabled() ? POWER_SAVE_MODE_ATTRIBUTES.get(tokenType) : ATTRIBUTES.get(tokenType));
   }
 }

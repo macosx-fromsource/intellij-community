@@ -1,24 +1,9 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.remoteServer.util;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.MessageType;
-import com.intellij.openapi.util.Computable;
 import com.intellij.remoteServer.ServerType;
 import com.intellij.remoteServer.agent.util.CloudAgentLoggingHandler;
 import com.intellij.remoteServer.runtime.Deployment;
@@ -30,7 +15,7 @@ import org.jetbrains.annotations.Nullable;
 
 public abstract class CloudApplicationRuntime extends DeploymentRuntime {
 
-  private static final Logger LOG = Logger.getInstance("#" + CloudApplicationRuntime.class.getName());
+  private static final Logger LOG = Logger.getInstance(CloudApplicationRuntime.class);
 
 
   private final String myApplicationName;
@@ -44,13 +29,11 @@ public abstract class CloudApplicationRuntime extends DeploymentRuntime {
     return myApplicationName;
   }
 
-  @Nullable
-  public DeploymentStatus getStatus() {
+  public @Nullable DeploymentStatus getStatus() {
     return null;
   }
 
-  @Nullable
-  public String getStatusText() {
+  public @Nullable String getStatusText() {
     return null;
   }
 
@@ -58,7 +41,7 @@ public abstract class CloudApplicationRuntime extends DeploymentRuntime {
     myDeployment = deployment;
   }
 
-  protected Deployment getDeploymentModel() {
+  public Deployment getDeploymentModel() {
     return myDeployment;
   }
 
@@ -84,11 +67,11 @@ public abstract class CloudApplicationRuntime extends DeploymentRuntime {
                 ? null
                 : new CloudLoggingHandlerImpl(deployment.getOrCreateLogManager(project)) {
 
-                  @Override
-                  public void println(String message) {
-                    LOG.info(message);
-                  }
-                };
+                @Override
+                public void println(String message) {
+                  LOG.info(message);
+                }
+              };
             this.run(loggingHandler);
             return null;
           });

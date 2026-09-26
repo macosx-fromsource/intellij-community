@@ -25,16 +25,11 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrBlockStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrIfStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrStatement;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 04.07.2008
- */
 public class GrMissingIfStatement extends SmartEnterProcessorWithFixers.Fixer<GroovySmartEnterProcessor> {
   @Override
   public void apply(@NotNull Editor editor, @NotNull GroovySmartEnterProcessor processor, @NotNull PsiElement psiElement) {
-    if (!(psiElement instanceof GrIfStatement)) return;
+    if (!(psiElement instanceof GrIfStatement ifStatement)) return;
 
-    GrIfStatement ifStatement = (GrIfStatement) psiElement;
     final Document document = editor.getDocument();
     final GrStatement elseBranch = ifStatement.getElseBranch();
     final PsiElement elseElement = ifStatement.getElseKeyword();

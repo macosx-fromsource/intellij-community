@@ -1,25 +1,11 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.engine.evaluation;
 
+import com.intellij.ide.highlighter.JavaFileType;
+import com.intellij.lang.Language;
 import com.intellij.lang.LanguageUtil;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.FileTypeManager;
-import com.intellij.openapi.fileTypes.StdFileTypes;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Trinity;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.JavaCodeFragment;
@@ -29,10 +15,13 @@ import com.intellij.psi.PsiFile;
 import com.intellij.xdebugger.XExpression;
 import com.intellij.xdebugger.evaluation.EvaluationMode;
 import com.intellij.xdebugger.impl.breakpoints.XExpressionImpl;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public final class TextWithImportsImpl implements TextWithImports{
+import java.util.Objects;
+
+public final class TextWithImportsImpl implements TextWithImports {
 
   private final CodeFragmentKind myKind;
   private String myText;
@@ -45,10 +34,10 @@ public final class TextWithImportsImpl implements TextWithImports{
     myKind = CodeFragmentKind.EXPRESSION;
     final String text = expression.getText();
     PsiFile containingFile = expression.getContainingFile();
-    if(containingFile instanceof PsiExpressionCodeFragment) {
+    if (containingFile instanceof PsiExpressionCodeFragment) {
       myText = text;
       myImports = ((JavaCodeFragment)containingFile).importsToString();
-      myFileType = StdFileTypes.JAVA;
+      myFileType = JavaFileType.INSTANCE;
     }
     else {
       Trinity<String, String, FileType> trinity = parseExternalForm(text);
@@ -58,7 +47,7 @@ public final class TextWithImportsImpl implements TextWithImports{
     }
   }
 
-  public TextWithImportsImpl (CodeFragmentKind kind, @NotNull String text, @NotNull String imports, @Nullable FileType fileType) {
+  public TextWithImportsImpl(CodeFragmentKind kind, @NotNull String text, @NotNull String imports, @Nullable FileType fileType) {
     myKind = kind;
     myText = text;
     myImports = imports;
@@ -93,14 +82,12 @@ public final class TextWithImportsImpl implements TextWithImports{
     return myImports;
   }
 
+  @Override
   public boolean equals(Object object) {
-    if(!(object instanceof TextWithImportsImpl)) {
-      return false;
-    }
-    TextWithImportsImpl item = ((TextWithImportsImpl)object);
-    return Comparing.equal(item.myText, myText) && Comparing.equal(item.myImports, myImports);
+    return object instanceof TextWithImportsImpl item && Objects.equals(item.myText, myText) && Objects.equals(item.myImports, myImports);
   }
 
+  @Override
   public String toString() {
     return getText();
   }
@@ -117,6 +104,7 @@ public final class TextWithImportsImpl implements TextWithImports{
     return result;
   }
 
+  @Override
   public int hashCode() {
     return myText.hashCode();
   }
@@ -136,31 +124,29 @@ public final class TextWithImportsImpl implements TextWithImports{
     return myFileType;
   }
 
-  @Nullable
-  public static XExpression toXExpression(@Nullable TextWithImports text) {
+  public static @Nullable XExpression toXExpression(@Nullable TextWithImports text) {
     if (text != null && !text.getText().isEmpty()) {
+      FileType fileType = text.getFileType();
       return new XExpressionImpl(text.getText(),
-                                 LanguageUtil.getFileTypeLanguage(text.getFileType()),
+                                 fileType == null ? null : LanguageUtil.getFileTypeLanguage(fileType),
                                  StringUtil.nullize(text.getImports()),
                                  getMode(text.getKind()));
     }
     return null;
   }
 
-  private static EvaluationMode getMode(CodeFragmentKind kind) {
-    switch (kind) {
-      case EXPRESSION: return EvaluationMode.EXPRESSION;
-      case CODE_BLOCK: return EvaluationMode.CODE_FRAGMENT;
-    }
-    throw new IllegalStateException("Unknown kind " + kind);
+  private static @NotNull EvaluationMode getMode(@NotNull CodeFragmentKind kind) {
+    return switch (kind) {
+      case EXPRESSION -> EvaluationMode.EXPRESSION;
+      case CODE_BLOCK -> EvaluationMode.CODE_FRAGMENT;
+    };
   }
 
-  private static CodeFragmentKind getKind(EvaluationMode mode) {
-    switch (mode) {
-      case EXPRESSION: return CodeFragmentKind.EXPRESSION;
-      case CODE_FRAGMENT: return CodeFragmentKind.CODE_BLOCK;
-    }
-    throw new IllegalStateException("Unknown mode " + mode);
+  private static @NotNull CodeFragmentKind getKind(@NotNull EvaluationMode mode) {
+    return switch (mode) {
+      case EXPRESSION -> CodeFragmentKind.EXPRESSION;
+      case CODE_FRAGMENT -> CodeFragmentKind.CODE_BLOCK;
+    };
   }
 
   public static TextWithImports fromXExpression(@Nullable XExpression expression) {
@@ -175,5 +161,11 @@ public final class TextWithImportsImpl implements TextWithImports{
                                      StringUtil.notNullize(expression.getCustomInfo()),
                                      LanguageUtil.getLanguageFileType(expression.getLanguage()));
     }
+  }
+
+  @ApiStatus.Internal
+  public static TextWithImports convertToLanguage(PsiElement psiExpression, @NotNull Language language) {
+    var converter = DebuggerEvaluationExpressionConverter.forLanguage(language);
+    return (converter != null) ? converter.convert(psiExpression) : new TextWithImportsImpl(psiExpression);
   }
 }

@@ -32,12 +32,13 @@ public class RegExpPatternImpl extends RegExpElementImpl implements RegExpPatter
         super(astNode);
     }
 
+    @Override
     public void accept(RegExpElementVisitor visitor) {
         visitor.visitRegExpPattern(this);
     }
 
-    @NotNull
-    public RegExpBranch[] getBranches() {
+    @Override
+    public RegExpBranch @NotNull [] getBranches() {
         final ASTNode[] nodes = getNode().getChildren(BRANCH);
         final RegExpBranch[] branches = new RegExpBranch[nodes.length];
         for (int i = 0; i < branches.length; i++) {
@@ -46,9 +47,8 @@ public class RegExpPatternImpl extends RegExpElementImpl implements RegExpPatter
         return branches;
     }
 
-  @NotNull
   @Override
-  public PsiReference[] getReferences() {
-    return ReferenceProvidersRegistry.getReferencesFromProviders(this, RegExpPattern.class);
+  public PsiReference @NotNull [] getReferences() {
+    return ReferenceProvidersRegistry.getReferencesFromProviders(this);
   }
 }

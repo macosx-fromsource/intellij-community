@@ -1,55 +1,57 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.structureView.customRegions;
 
 import com.intellij.ide.structureView.StructureViewTreeElement;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.Language;
-import com.intellij.lang.folding.*;
+import com.intellij.lang.folding.CustomFoldingBuilder;
+import com.intellij.lang.folding.CustomFoldingProvider;
+import com.intellij.lang.folding.FoldingBuilder;
+import com.intellij.lang.folding.LanguageFolding;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiComment;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiWhiteSpace;
+import com.intellij.psi.StubBasedPsiElement;
+import com.intellij.psi.SyntaxTraverser;
+import com.intellij.psi.impl.PsiFileEx;
+import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 
-/**
- * @author Rustam Vishnyakov
- */
-public class CustomRegionStructureUtil {
+@ApiStatus.Internal
+public final class CustomRegionStructureUtil {
 
   public static Collection<StructureViewTreeElement> groupByCustomRegions(@NotNull PsiElement rootElement,
                                                                           @NotNull Collection<StructureViewTreeElement> originalElements) {
-    if (rootElement instanceof StubBasedPsiElement &&
-        ((StubBasedPsiElement)rootElement).getStub() != null) {
+    if (rootElement instanceof PsiFileEx file && !file.isContentsLoaded() ||
+        rootElement instanceof StubBasedPsiElement<?> stubElement && stubElement.getStub() != null) {
       return originalElements;
     }
-    Set<TextRange> childrenRanges = ContainerUtil.map2SetNotNull(originalElements, element -> {
-      Object value = element.getValue();
-      return value instanceof PsiElement ? getTextRange((PsiElement)value) : null;
-    });
+    List<StructureViewTreeElement> physicalElements =
+      ContainerUtil.filter(originalElements, element -> !(element.getValue() instanceof StubBasedPsiElement<?> e) || e.getStub() == null);
+    Set<TextRange> childrenRanges =
+      ContainerUtil.map2SetNotNull(physicalElements, element -> element.getValue() instanceof PsiElement e ? getTextRange(e) : null);
     Collection<CustomRegionTreeElement> customRegions = collectCustomRegions(rootElement, childrenRanges);
-    if (customRegions.size() > 0) {
-      List<StructureViewTreeElement> result = new ArrayList<>();
-      result.addAll(customRegions);
-      for (StructureViewTreeElement element : originalElements) {
+    if (!customRegions.isEmpty()) {
+      List<StructureViewTreeElement> result = physicalElements.isEmpty() ? new ArrayList<>(customRegions) : new ArrayList<>();
+      for (StructureViewTreeElement element : physicalElements) {
+        ProgressManager.checkCanceled();
         boolean isInCustomRegion = false;
         for (CustomRegionTreeElement customRegion : customRegions) {
           if (customRegion.containsElement(element)) {
+            if (result.isEmpty() || result.getLast() != customRegion) result.add(customRegion);
             customRegion.addChild(element);
             isInCustomRegion = true;
             break;
@@ -67,7 +69,7 @@ public class CustomRegionStructureUtil {
    */
   private static TextRange getTextRange(@NotNull PsiElement element) {
     PsiElement first = element.getFirstChild();
-    if (first instanceof PsiComment && !first.textContains('\n')) {
+    if (!(element instanceof PsiFile) && first instanceof PsiComment && !first.textContains('\n')) {
       PsiElement next = first.getNextSibling();
       if (next instanceof PsiWhiteSpace) next = next.getNextSibling();
       if (next != null) {
@@ -77,15 +79,19 @@ public class CustomRegionStructureUtil {
     return element.getTextRange();
   }
 
-  private static Collection<CustomRegionTreeElement> collectCustomRegions(@NotNull PsiElement rootElement, @NotNull Set<TextRange> ranges) {
+  private static Collection<CustomRegionTreeElement> collectCustomRegions(@NotNull PsiElement rootElement, @NotNull @Unmodifiable Set<? extends TextRange> ranges) {
+    TextRange rootRange = getTextRange(rootElement);
     Iterator<PsiElement> iterator = SyntaxTraverser.psiTraverser(rootElement)
-      .filter(element -> isCustomRegionCommentCandidate(element) && !isInsideRanges(element, ranges))
+      .filter(element -> isCustomRegionCommentCandidate(element) &&
+                         rootRange.contains(element.getTextRange()) &&
+                         !isInsideRanges(element, ranges))
       .iterator();
 
-    List<CustomRegionTreeElement> customRegions = ContainerUtil.newSmartList();
+    List<CustomRegionTreeElement> customRegions = new SmartList<>();
     CustomRegionTreeElement currRegionElement = null;
     CustomFoldingProvider provider = null;
     while (iterator.hasNext()) {
+      ProgressManager.checkCanceled();
       PsiElement child = iterator.next();
       if (provider == null) provider = getProvider(child);
       if (provider != null) {
@@ -107,8 +113,7 @@ public class CustomRegionStructureUtil {
     return customRegions;
   }
 
-  @Nullable
-  static CustomFoldingProvider getProvider(@NotNull PsiElement element) {
+  static @Nullable CustomFoldingProvider getProvider(@NotNull PsiElement element) {
     ASTNode node = element.getNode();
     if (node != null) {
       for (CustomFoldingProvider provider : CustomFoldingProvider.getAllProviders()) {
@@ -120,7 +125,7 @@ public class CustomRegionStructureUtil {
     return null;
   }
 
-  private static boolean isInsideRanges(@NotNull PsiElement element, @NotNull Set<TextRange> ranges) {
+  private static boolean isInsideRanges(@NotNull PsiElement element, @NotNull Set<? extends TextRange> ranges) {
     for (TextRange range : ranges) {
       TextRange elementRange = element.getTextRange();
       if (range.contains(elementRange.getStartOffset()) || range.contains(elementRange.getEndOffset())) {
@@ -133,17 +138,9 @@ public class CustomRegionStructureUtil {
   private static boolean isCustomRegionCommentCandidate(@NotNull PsiElement element) {
     Language language = element.getLanguage();
     if (!Language.ANY.is(language)) {
-      final FoldingBuilder foldingBuilder = LanguageFolding.INSTANCE.forLanguage(language);
-      if (foldingBuilder instanceof CustomFoldingBuilder) {
-        return ((CustomFoldingBuilder)foldingBuilder).isCustomFoldingCandidate(element);
-      }
-      else if (foldingBuilder instanceof CompositeFoldingBuilder) {
-        for (FoldingBuilder simpleBuilder : ((CompositeFoldingBuilder)foldingBuilder).getAllBuilders()) {
-          if (simpleBuilder instanceof CustomFoldingBuilder) {
-            if (((CustomFoldingBuilder)simpleBuilder).isCustomFoldingCandidate(element)) {
-              return true;
-            }
-          }
+      for (FoldingBuilder builder : LanguageFolding.INSTANCE.allForLanguage(language)) {
+        if (builder instanceof CustomFoldingBuilder foldingBuilder) {
+          return foldingBuilder.isCustomFoldingCandidate(element);
         }
       }
     }

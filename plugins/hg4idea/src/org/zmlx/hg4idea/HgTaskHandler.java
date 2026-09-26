@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.zmlx.hg4idea;
 
 import com.intellij.dvcs.branch.DvcsTaskHandler;
@@ -22,7 +8,6 @@ import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.VcsNotifier;
 import com.intellij.openapi.vcs.update.UpdatedFiles;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -41,25 +26,27 @@ import org.zmlx.hg4idea.util.HgUtil;
 import java.util.Collections;
 import java.util.List;
 
+import static org.zmlx.hg4idea.HgNotificationIdsHolder.EXCEPTION_DURING_MERGE_COMMIT;
+import static org.zmlx.hg4idea.HgNotificationIdsHolder.MERGE_ERROR;
+
 public class HgTaskHandler extends DvcsTaskHandler<HgRepository> {
+  private final HgReferenceValidator myNameValidator;
 
-  private HgReferenceValidator myNameValidator;
+  public HgTaskHandler(@NotNull Project project) {
+    super(project.getService(HgRepositoryManager.class), project, "bookmark");
 
-  public HgTaskHandler(@NotNull HgRepositoryManager repositoryManager,
-                       @NotNull Project project) {
-    super(repositoryManager, project, "bookmark");
     myNameValidator = HgReferenceValidator.getInstance();
   }
 
   @Override
-  protected void checkout(@NotNull String taskName, @NotNull List<HgRepository> repos, @Nullable Runnable callInAwtLater) {
+  protected void checkout(@NotNull String taskName, @NotNull List<? extends HgRepository> repos, @Nullable Runnable callInAwtLater) {
     HgUpdateCommand.updateTo(
       !HgBranchUtil.getCommonBookmarks(repos).contains(taskName) ? "head() and not bookmark() and branch(\"" + taskName + "\")" : taskName,
       repos, callInAwtLater);
   }
 
   @Override
-  protected void checkoutAsNewBranch(@NotNull String name, @NotNull List<HgRepository> repositories) {
+  protected void checkoutAsNewBranch(@NotNull String name, @NotNull List<? extends HgRepository> repositories) {
     HgBookmarkCommand.createBookmarkAsynchronously(repositories, name, true);
   }
 
@@ -69,43 +56,33 @@ public class HgTaskHandler extends DvcsTaskHandler<HgRepository> {
     return bookmark == null ? repository.getCurrentBranch() : bookmark;
   }
 
-  @NotNull
   @Override
-  protected Iterable<TaskInfo> getAllBranches(@NotNull HgRepository repository) {
+  protected @NotNull Iterable<TaskInfo> getAllBranches(@NotNull HgRepository repository) {
     //be careful with equality names of branches/bookmarks =(
     Iterable<String> names =
       ContainerUtil.concat(HgUtil.getSortedNamesWithoutHashes(repository.getBookmarks()), repository.getOpenedBranches());
-    return ContainerUtil.map(names, new Function<String, TaskInfo>() {
-      @Override
-      public TaskInfo fun(String s) {
-        return new TaskInfo(s, Collections.singleton(repository.getPresentableUrl()));
-      }
-    });
+    return ContainerUtil.map(names, s -> new TaskInfo(s, Collections.singleton(repository.getPresentableUrl())));
   }
 
   @Override
-  protected void mergeAndClose(@NotNull final String branch, @NotNull final List<HgRepository> repositories) {
+  protected void mergeAndClose(final @NotNull String branch, final @NotNull List<? extends HgRepository> repositories) {
     String bookmarkRevisionArg = "bookmark(\"" + branch + "\")";
     FileDocumentManager.getInstance().saveAllDocuments();
     final UpdatedFiles updatedFiles = UpdatedFiles.create();
     for (final HgRepository repository : repositories) {
-      HgMergeCommand.mergeWith(repository, bookmarkRevisionArg, updatedFiles, new Runnable() {
-
-        @Override
-        public void run() {
-          Project project = repository.getProject();
-          VirtualFile repositoryRoot = repository.getRoot();
-          try {
-            new HgCommitCommand(project, repository, "Automated merge with " + branch).executeInCurrentThread();
-            HgBookmarkCommand.deleteBookmarkSynchronously(project, repositoryRoot, branch);
-          }
-          catch (HgCommandException e) {
-              HgErrorUtil.handleException(project, e);
-          }
-          catch (VcsException e) {
-            VcsNotifier.getInstance(project)
-              .notifyError("Exception during merge commit with " + branch, e.getMessage());
-          }
+      HgMergeCommand.mergeWith(repository, bookmarkRevisionArg, updatedFiles, () -> {
+        Project project = repository.getProject();
+        VirtualFile repositoryRoot = repository.getRoot();
+        try {
+          new HgCommitCommand(project, repository, "Automated merge with " + branch).executeInCurrentThread(); //NON-NLS
+          HgBookmarkCommand.deleteBookmarkSynchronously(project, repositoryRoot, branch);
+        }
+        catch (HgCommandException e) {
+            HgErrorUtil.handleException(project, MERGE_ERROR, e);
+        }
+        catch (VcsException e) {
+          VcsNotifier.getInstance(project)
+            .notifyError(EXCEPTION_DURING_MERGE_COMMIT, HgBundle.message("hg4idea.commit.merge.error", branch), e.getMessage());
         }
       });
     }
@@ -121,9 +98,8 @@ public class HgTaskHandler extends DvcsTaskHandler<HgRepository> {
     return myNameValidator.checkInput(branchName);
   }
 
-  @NotNull
   @Override
-  public String cleanUpBranchName(@NotNull String suggestedName) {
+  public @NotNull String cleanUpBranchName(@NotNull String suggestedName) {
     return myNameValidator.cleanUpBranchName(suggestedName);
   }
 }

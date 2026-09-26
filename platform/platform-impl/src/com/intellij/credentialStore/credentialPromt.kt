@@ -1,31 +1,25 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 @file:JvmName("CredentialPromptDialog")
 package com.intellij.credentialStore
 
-import com.intellij.CommonBundle
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.application.invokeAndWaitIfNeed
+import com.intellij.openapi.application.invokeAndWaitIfNeeded
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.NlsContexts
+import com.intellij.openapi.util.NlsContexts.Tooltip
+import com.intellij.ui.AppIcon
+import com.intellij.ui.UIBundle
 import com.intellij.ui.components.CheckBox
 import com.intellij.ui.components.dialog
-import com.intellij.ui.layout.*
+import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.text.nullize
+import javax.swing.JCheckBox
 import javax.swing.JPasswordField
+import javax.swing.text.BadLocationException
+import javax.swing.text.Segment
 
 /**
  * @param project The context project (might be null)
@@ -37,47 +31,121 @@ import javax.swing.JPasswordField
  */
 @JvmOverloads
 fun askPassword(project: Project?,
-                dialogTitle: String,
-                passwordFieldLabel: String,
+                @NlsContexts.DialogTitle dialogTitle: String,
+                @NlsContexts.Label passwordFieldLabel: String,
                 attributes: CredentialAttributes,
                 resetPassword: Boolean = false,
-                error: String? = null): String? {
-  val store = PasswordSafe.getInstance()
-  if (resetPassword) {
+                @NlsContexts.DialogMessage error: String? = null): String? {
+  return askCredentials(project, dialogTitle, passwordFieldLabel, attributes,
+                        isResetPassword = resetPassword,
+                        error = error,
+                        isCheckExistingBeforeDialog = true)?.credentials?.getPasswordAsString()?.nullize()
+}
+
+@JvmOverloads
+fun askCredentials(project: Project?,
+                   @NlsContexts.DialogTitle dialogTitle: String,
+                   @NlsContexts.Label passwordFieldLabel: String,
+                   attributes: CredentialAttributes,
+                   isSaveOnOk: Boolean = true,
+                   isCheckExistingBeforeDialog: Boolean = false,
+                   isResetPassword: Boolean = false,
+                   @NlsContexts.DialogMessage error: String? = null): CredentialRequestResult? {
+  val store = PasswordSafe.instance
+  if (isResetPassword) {
     store.set(attributes, null)
   }
-  else {
-    store.get(attributes)?.getPasswordAsString()?.nullize()?.let {
-      return it
+  else if (isCheckExistingBeforeDialog) {
+    store.get(attributes)?.let {
+      return CredentialRequestResult(it, false)
     }
   }
 
-  return invokeAndWaitIfNeed(ModalityState.any()) {
+  return invokeAndWaitIfNeeded(ModalityState.any()) {
     val passwordField = JPasswordField()
-    val rememberCheckBox = if (store.isMemoryOnly) {
-      null
-    }
-    else {
-      CheckBox(CommonBundle.message("checkbox.remember.password"),
-               selected = true,
-               toolTip = "The password will be stored between application sessions.")
-    }
+    val rememberCheckBox = RememberCheckBoxState.createCheckBox(toolTip = "The password will be stored between application sessions.")
 
     val panel = panel {
-      row { label(if (passwordFieldLabel.endsWith(":")) passwordFieldLabel else "$passwordFieldLabel:") }
-      row { passwordField() }
-      rememberCheckBox?.let {
-        row { it() }
+      row {
+        label(if (passwordFieldLabel.endsWith(":")) passwordFieldLabel else "$passwordFieldLabel:")
       }
+      row {
+        cell(passwordField).resizableColumn().align(AlignX.FILL)
+      }
+      row { cell(rememberCheckBox) }
     }
 
-    if (dialog(dialogTitle, project = project, panel = panel, focusedComponent = passwordField, errorText = error).showAndGet()) {
-      val credentials = Credentials(attributes.userName, passwordField.password.nullize())
-      store.set(attributes, credentials, store.isMemoryOnly || rememberCheckBox!!.isSelected)
+    AppIcon.getInstance().requestAttention(project, true)
+    if (!dialog(dialogTitle, project = project, panel = panel, focusedComponent = passwordField, errorText = error).showAndGet()) {
+      return@invokeAndWaitIfNeeded null
+    }
+
+    RememberCheckBoxState.update(rememberCheckBox)
+
+    val credentials = Credentials(attributes.userName, passwordField.getTrimmedChars())
+    if (isSaveOnOk && rememberCheckBox.isSelected) {
+      ProgressManager.getInstance().runProcessWithProgressSynchronously({ store.set(attributes, credentials) }, dialogTitle, false, project)
       credentials.getPasswordAsString()
     }
-    else {
-      null
-    }
+
+    // for memory only store isRemember is true, because false doesn't matter
+    return@invokeAndWaitIfNeeded CredentialRequestResult(credentials, isRemember = rememberCheckBox.isSelected)
   }
+}
+
+object RememberCheckBoxState {
+  val isSelected: Boolean
+    get() = PasswordSafe.instance.isRememberPasswordByDefault
+
+  @JvmStatic
+  fun update(component: JCheckBox) {
+    PasswordSafe.instance.isRememberPasswordByDefault = component.isSelected
+  }
+
+  fun createCheckBox(@Tooltip toolTip: String?): JCheckBox {
+    return CheckBox(
+      UIBundle.message("auth.remember.cb"),
+      selected = isSelected,
+      toolTip = toolTip
+    )
+  }
+}
+
+// do not trim trailing whitespace
+fun JPasswordField.getTrimmedChars(): CharArray? {
+  val doc = document
+  val size = doc.length
+  if (size == 0) {
+     return null
+  }
+
+  val segment = Segment()
+  try {
+    doc.getText(0, size, segment)
+  }
+  catch (e: BadLocationException) {
+    return null
+  }
+
+  val chars = segment.array
+  var startOffset = segment.offset
+  while (Character.isWhitespace(chars[startOffset])) {
+    startOffset++
+  }
+  // exclusive
+  var endIndex = segment.count
+  while (endIndex > startOffset && Character.isWhitespace(chars[endIndex - 1])) {
+    endIndex--
+  }
+
+  if (startOffset >= endIndex) {
+    return null
+  }
+  else if (startOffset == 0 && endIndex == chars.size) {
+    return chars
+  }
+
+  val result = chars.copyOfRange(startOffset, endIndex)
+  chars.fill(0.toChar(), segment.offset, segment.count)
+  return result
 }

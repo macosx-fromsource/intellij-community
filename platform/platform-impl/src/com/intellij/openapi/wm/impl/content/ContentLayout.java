@@ -1,62 +1,41 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.wm.impl.content;
 
+import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.ui.popup.ListPopup;
-import com.intellij.ui.Gray;
-import com.intellij.ui.awt.RelativeRectangle;
+import com.intellij.openapi.util.NlsActions.ActionText;
+import com.intellij.ui.ClientProperty;
+import com.intellij.ui.ComponentUtil;
+import com.intellij.ui.ExperimentalUI;
 import com.intellij.ui.content.Content;
+import com.intellij.ui.content.ContentManager;
 import com.intellij.ui.content.ContentManagerEvent;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.JBUI;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import java.awt.*;
+import javax.swing.border.Border;
+import java.awt.Component;
+import java.awt.Graphics;
+import java.util.Objects;
 
-abstract class ContentLayout {
+@ApiStatus.Internal
+public abstract class ContentLayout {
+  ToolWindowContentUi ui;
+  BaseLabel idLabel;
 
-  static final Color TAB_BORDER_ACTIVE_WINDOW = new Color(38, 63, 106);
-  static final Color TAB_BORDER_PASSIVE_WINDOW = new Color(130, 120, 111);
-
-  static final Color TAB_BG_ACTIVE_WND_SELECTED_FROM = Gray._111;
-  static final Color TAB_BG_ACTIVE_WND_SELECTED_TO = Gray._164;
-  static final Color TAB_BG_ACTIVE_WND_UNSELECTED_FROM = Gray._130;
-  static final Color TAB_BG_ACTIVE_WND_UNSELECTED_TO = Gray._85;
-  static final Color TAB_BG_PASSIVE_WND_FROM = new Color(152, 143, 134);
-  static final Color TAB_BG_PASSIVE_WND_TO = new Color(165, 157, 149);
-
-  static final int TAB_ARC = 2;
-  static final int TAB_SHIFT = 2;
-
-  ToolWindowContentUi myUi;
-  BaseLabel myIdLabel;
-
-  ContentLayout(ToolWindowContentUi ui) {
-    myUi = ui;
+  ContentLayout(@NotNull ToolWindowContentUi ui) {
+    this.ui = ui;
   }
 
-  public abstract void init();
+  public abstract void init(@NotNull ContentManager contentManager);
 
   public abstract void reset();
 
   public abstract void layout();
 
-  public abstract void paintComponent(Graphics g);
-
-  public abstract void paintChildren(Graphics g);
+  public void paintComponent(Graphics g) {
+  }
 
   public abstract void update();
 
@@ -64,62 +43,77 @@ abstract class ContentLayout {
 
   public abstract int getMinimumWidth();
 
-  public abstract void contentAdded(ContentManagerEvent event);
+  public void contentAdded(@NotNull ContentManagerEvent event) {
+  }
 
-  public abstract void contentRemoved(ContentManagerEvent event);
+  public void contentRemoved(@NotNull ContentManagerEvent event) {
+  }
 
-  public abstract boolean shouldDrawDecorations();
-  
   protected void updateIdLabel(BaseLabel label) {
-    label.setText(myUi.myWindow.getStripeTitle() + (shouldDrawDecorations() ? ":" : ""));
-    label.setBorder(new EmptyBorder(0, 2, 0, 8));
+    String title = ui.window.getStripeTitle();
 
-    if (myUi.myManager.getContentCount() == 1) {
-      final String text = myUi.myManager.getContent(0).getDisplayName();
-      if (text != null && text.trim().length() > 0) {
-        label.setText(label.getText() + " ");
-        label.setBorder(new EmptyBorder(0, 2, 0, 0));
-      }
+    String suffix = getTitleSuffix();
+    if (ExperimentalUI.isNewUI()) suffix = null;
+    if (suffix != null) title += suffix;
+
+    label.setText(title);
+    Border border = JBUI.Borders.empty(0, 2, 0, 7);
+    if (ExperimentalUI.isNewUI()) {
+      border = shouldShowId()
+               ? JBUI.Borders.empty(JBUI.CurrentTheme.ToolWindow.headerLabelLeftRightInsets())
+               : JBUI.Borders.empty(JBUI.CurrentTheme.ToolWindow.headerTabLeftRightInsets());
     }
-
+    Border oldBorder = label.getBorder();
+    // Don't update component border (with following revalidation and repainting) if existing border is exactly the same we're going to set
+    if (oldBorder == null || !Objects.equals(oldBorder.getClass(), border.getClass())
+        || !oldBorder.getBorderInsets(label).equals(border.getBorderInsets(label))) {
+      label.setBorder(border);
+    }
     label.setVisible(shouldShowId());
   }
 
-  protected void fillTabShape(Graphics2D g2d, Shape shape, boolean isSelected, Rectangle bounds) {
-    if (myUi.myWindow.isActive()) {
-      if (isSelected) {
-        g2d.setPaint(UIUtil.getGradientPaint(bounds.x, bounds.y, TAB_BG_ACTIVE_WND_SELECTED_FROM, bounds.x, (float)bounds.getMaxY(),
-                                             TAB_BG_ACTIVE_WND_SELECTED_TO));
-      }
-      else {
-        g2d.setPaint(UIUtil.getGradientPaint(bounds.x, bounds.y, TAB_BG_ACTIVE_WND_UNSELECTED_FROM, bounds.x, (float)bounds.getMaxY(), TAB_BG_ACTIVE_WND_UNSELECTED_TO));
-      }
-    }
-    else {
-      g2d.setPaint(
-        UIUtil.getGradientPaint(bounds.x, bounds.y, TAB_BG_PASSIVE_WND_FROM, bounds.x, (float)bounds.getMaxY(), TAB_BG_PASSIVE_WND_TO));
-    }
+  /**
+   * Returns the preferred width of the tab toolbar if present, otherwise 0.
+   */
+  protected int getTabToolbarPreferredWidth() {
+    ActionToolbar tabToolbar = ui.getTabToolbar();
+    return tabToolbar == null ? 0 : tabToolbar.getComponent().getPreferredSize().width;
+  }
 
-    g2d.fill(shape);
+  private String getTitleSuffix() {
+    ContentManager manager = ui.getContentManager();
+    return switch (manager.getContentCount()) {
+      case 0 -> null;
+      case 1 -> {
+        Content content = manager.getContent(0);
+        if (content == null) yield null;
+        final String text = content.getDisplayName();
+        if (text != null && !text.trim().isEmpty() && manager.canCloseContents()) {
+          yield ":";
+        }
+        yield null;
+      }
+      default -> ":";
+    };
   }
 
   public abstract void showContentPopup(ListPopup listPopup);
 
-  public abstract RelativeRectangle getRectangleFor(Content content);
+  public abstract @ActionText String getCloseActionName();
 
-  public abstract Component getComponentFor(Content content);
+  public abstract @ActionText String getCloseAllButThisActionName();
 
-  public abstract String getCloseActionName();
-  public abstract String getCloseAllButThisActionName();
-  public abstract String getPreviousContentActionName();
-  public abstract String getNextContentActionName();
+  public abstract @ActionText String getPreviousContentActionName();
+
+  public abstract @ActionText String getNextContentActionName();
 
   protected boolean shouldShowId() {
-    final JComponent component = myUi.myWindow.getComponent();
-    return component != null && !"true".equals(component.getClientProperty(ToolWindowContentUi.HIDE_ID_LABEL));
+    Component component =
+      ComponentUtil.findParentByCondition(ui.getComponent(), c -> ClientProperty.get(c, ToolWindowContentUi.HIDE_ID_LABEL) != null);
+    return component == null || !"true".equals(ClientProperty.get(component, ToolWindowContentUi.HIDE_ID_LABEL));
   }
 
-  boolean isIdVisible() {
-    return myIdLabel.isVisible();
+  public boolean isIdVisible() {
+    return idLabel.isVisible();
   }
 }

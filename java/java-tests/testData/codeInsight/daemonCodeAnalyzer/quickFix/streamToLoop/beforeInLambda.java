@@ -1,4 +1,4 @@
-// "Replace Stream API chain with loop" "true"
+// "Replace Stream API chain with loop" "true-preview"
 
 import java.util.Objects;
 import java.util.function.DoubleSupplier;
@@ -7,7 +7,9 @@ import java.util.stream.Stream;
 
 public class Main {
   public void test(String... list) {
-    DoubleSupplier s = () -> Stream.of(list).filter(Objects::nonNull).co<caret>llect(Collectors.averagingLong(String::length));
+    DoubleSupplier s = () -> Stream.of(list)
+                               .filter(Objects::nonNull)
+                               .co<caret>llect(Collectors.averagingLong(String::length));
     System.out.println(s.getAsDouble());
   }
 

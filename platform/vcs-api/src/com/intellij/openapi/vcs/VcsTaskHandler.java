@@ -1,24 +1,9 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs;
 
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Condition;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,13 +17,8 @@ public abstract class VcsTaskHandler {
 
   public static VcsTaskHandler[] getAllHandlers(final Project project) {
     VcsTaskHandler[] extensions = EXTENSION_POINT_NAME.getExtensions(project);
-    List<VcsTaskHandler> handlers = ContainerUtil.filter(extensions, new Condition<VcsTaskHandler>() {
-      @Override
-      public boolean value(VcsTaskHandler handler) {
-        return handler.isEnabled();
-      }
-    });
-    return handlers.toArray(new VcsTaskHandler[handlers.size()]);
+    List<VcsTaskHandler> handlers = ContainerUtil.filter(extensions, handler -> handler.isEnabled());
+    return handlers.toArray(new VcsTaskHandler[0]);
   }
 
   public static class TaskInfo implements Comparable<TaskInfo> {
@@ -101,7 +81,7 @@ public abstract class VcsTaskHandler {
 
   public abstract TaskInfo startNewTask(@NotNull String taskName);
 
-  public abstract void switchToTask(TaskInfo taskInfo, @Nullable Runnable invokeAfter);
+  public abstract boolean switchToTask(TaskInfo taskInfo, @Nullable Runnable invokeAfter);
 
   public abstract void closeTask(@NotNull TaskInfo taskInfo, @NotNull TaskInfo original);
 
@@ -110,8 +90,7 @@ public abstract class VcsTaskHandler {
   /**
    * @return currently active (checked out) tasks (branches)
    */
-  @NotNull
-  public abstract TaskInfo[] getCurrentTasks();
+  public abstract TaskInfo @NotNull [] getCurrentTasks();
 
   /**
    * @return all existing tasks (branches)
@@ -134,8 +113,7 @@ public abstract class VcsTaskHandler {
    * @param suggestedName suggested name
    * @return new valid branchName
    */
-  @NotNull
-  public String cleanUpBranchName(@NotNull String suggestedName) {
+  public @NotNull String cleanUpBranchName(@NotNull String suggestedName) {
     return suggestedName.replaceAll(DEFAULT_PROHIBITED_SYMBOLS, "-");
   }
 }

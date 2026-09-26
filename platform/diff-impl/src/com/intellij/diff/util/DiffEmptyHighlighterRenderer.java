@@ -1,29 +1,22 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.diff.util;
 
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ex.MarkupModelEx;
+import com.intellij.openapi.editor.ex.RangeHighlighterEx;
 import com.intellij.openapi.editor.markup.CustomHighlighterRenderer;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
+import com.intellij.ui.scale.JBUIScale;
+import com.intellij.util.CommonProcessors;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
-import java.awt.*;
+import java.awt.Graphics;
+import java.awt.Point;
 
+@ApiStatus.Internal
 public class DiffEmptyHighlighterRenderer implements CustomHighlighterRenderer {
-  @NotNull private final TextDiffType myDiffType;
+  private final @NotNull TextDiffType myDiffType;
 
   public DiffEmptyHighlighterRenderer(@NotNull TextDiffType diffType) {
     myDiffType = diffType;
@@ -31,10 +24,21 @@ public class DiffEmptyHighlighterRenderer implements CustomHighlighterRenderer {
 
   @Override
   public void paint(@NotNull Editor editor, @NotNull RangeHighlighter highlighter, @NotNull Graphics g) {
+    if (DiffUtil.isUserDataFlagSet(DiffDrawUtil.EDITOR_WITH_HIGH_PRIORITY_RENDERER, editor)) {
+      MarkupModelEx markupModel = (MarkupModelEx)editor.getMarkupModel();
+      CommonProcessors.FindProcessor<RangeHighlighterEx> processor = new CommonProcessors.FindProcessor<>() {
+        @Override
+        protected boolean accept(RangeHighlighterEx ex) {
+          return ex.getLayer() > highlighter.getLayer() &&
+                 ex.getCustomRenderer() instanceof DiffDrawUtil.DiffLayeredRendererMarker;
+        }
+      };
+      markupModel.processRangeHighlightersOverlappingWith(highlighter.getStartOffset(), highlighter.getEndOffset(), processor);
+      if (processor.isFound()) return; // range with higher layerPriority found
+    }
+
     g.setColor(myDiffType.getColor(editor));
     Point point = editor.logicalPositionToXY(editor.offsetToLogicalPosition(highlighter.getStartOffset()));
-    int endy = point.y + editor.getLineHeight() - 1;
-    g.drawLine(point.x, point.y, point.x, endy);
-    g.drawLine(point.x - 1, point.y, point.x - 1, endy);
+    g.fillRect(point.x - JBUIScale.scale(1), point.y, JBUIScale.scale(2), editor.getLineHeight());
   }
 }

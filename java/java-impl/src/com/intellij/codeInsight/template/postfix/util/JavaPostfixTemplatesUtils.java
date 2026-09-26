@@ -1,81 +1,80 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.template.postfix.util;
 
-import com.intellij.codeInsight.CodeInsightServicesUtil;
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateExpressionSelector;
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateExpressionSelectorBase;
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplatePsiInfo;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.DumbService;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Condition;
-import com.intellij.openapi.util.Conditions;
-import com.intellij.psi.*;
+import com.intellij.pom.java.LanguageLevel;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiArrayType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementFactory;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiExpressionStatement;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypes;
+import com.intellij.psi.impl.source.PsiCodeFragmentImpl;
+import com.intellij.psi.impl.source.tree.JavaElementType;
 import com.intellij.psi.util.InheritanceUtil;
 import com.intellij.psi.util.PsiExpressionTrimRenderer;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.refactoring.introduceVariable.IntroduceVariableBase;
+import com.intellij.util.CommonJavaRefactoringUtil;
 import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
+import com.siyeh.ig.psiutils.BoolUtils;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import static com.intellij.openapi.util.Conditions.and;
 
-public abstract class JavaPostfixTemplatesUtils {
+public final class JavaPostfixTemplatesUtils {
   private JavaPostfixTemplatesUtils() {
   }
 
   public static PostfixTemplateExpressionSelector atLeastJava8Selector(final PostfixTemplateExpressionSelector selector) {
+    return minimalLanguageLevelSelector(selector, LanguageLevel.JDK_1_8);
+  }
+
+  public static PostfixTemplateExpressionSelector minimalLanguageLevelSelector(@NotNull PostfixTemplateExpressionSelector selector,
+                                                                               @NotNull LanguageLevel minimalLevel) {
     return new PostfixTemplateExpressionSelector() {
       @Override
       public boolean hasExpression(@NotNull PsiElement context, @NotNull Document copyDocument, int newOffset) {
-        return PsiUtil.isLanguageLevel8OrHigher(context) && selector.hasExpression(context, copyDocument, newOffset);
+        return PsiUtil.getLanguageLevel(context).isAtLeast(minimalLevel) && selector.hasExpression(context, copyDocument, newOffset);
       }
 
-      @NotNull
       @Override
-      public List<PsiElement> getExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
-        return PsiUtil.isLanguageLevel8OrHigher(context)
+      public @NotNull List<PsiElement> getExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
+        return PsiUtil.getLanguageLevel(context).isAtLeast(minimalLevel)
                ? selector.getExpressions(context, document, offset)
-               : Collections.<PsiElement>emptyList();
+               : Collections.emptyList();
       }
 
-      @NotNull
       @Override
-      public Function<PsiElement, String> getRenderer() {
+      public @NotNull Function<PsiElement, String> getRenderer() {
         return selector.getRenderer();
       }
     };
   }
-  
-  public static PostfixTemplateExpressionSelector selectorTopmost() {
-    return selectorTopmost(Conditions.<PsiElement>alwaysTrue());
-  }
 
-  public static PostfixTemplateExpressionSelector selectorTopmost(Condition<PsiElement> additionalFilter) {
+  public static PostfixTemplateExpressionSelector selectorTopmost(Condition<? super PsiElement> additionalFilter) {
     return new PostfixTemplateExpressionSelectorBase(additionalFilter) {
       @Override
-      protected List<PsiElement> getNonFilteredExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
-        return ContainerUtil.<PsiElement>createMaybeSingletonList(getTopmostExpression(context));
+      protected @Unmodifiable List<PsiElement> getNonFilteredExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
+        return ContainerUtil.createMaybeSingletonList(getTopmostExpression(context));
       }
 
       @Override
@@ -83,99 +82,76 @@ public abstract class JavaPostfixTemplatesUtils {
         return and(super.getFilters(offset), getPsiErrorFilter());
       }
 
-      @NotNull
       @Override
-      public Function<PsiElement, String> getRenderer() {
+      public @NotNull Function<PsiElement, String> getRenderer() {
         return JavaPostfixTemplatesUtils.getRenderer();
       }
     };
   }
 
-  public static PostfixTemplateExpressionSelector selectorAllExpressionsWithCurrentOffset() {
-    return selectorAllExpressionsWithCurrentOffset(Conditions.<PsiElement>alwaysTrue());
-  }
-
-  public static PostfixTemplateExpressionSelector selectorAllExpressionsWithCurrentOffset(final Condition<PsiElement> additionalFilter) {
+  public static @NotNull PostfixTemplateExpressionSelector selectorAllExpressionsWithCurrentOffset(@Nullable Condition<? super PsiElement> additionalFilter) {
     return new PostfixTemplateExpressionSelectorBase(additionalFilter) {
       @Override
       protected List<PsiElement> getNonFilteredExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
-        return ContainerUtil.<PsiElement>newArrayList(IntroduceVariableBase.collectExpressions(context.getContainingFile(), document,
-                                                                                               Math.max(offset - 1, 0), false));
+        return new ArrayList<>(CommonJavaRefactoringUtil.collectExpressions(context.getContainingFile(), document,
+                                                                            Math.max(offset - 1, 0), false));
       }
 
-      @NotNull
       @Override
-      public List<PsiElement> getExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
-        if (DumbService.getInstance(context.getProject()).isDumb()) return Collections.emptyList();
-        
+      public @Unmodifiable @NotNull List<PsiElement> getExpressions(@NotNull PsiElement context, @NotNull Document document, int offset) {
         List<PsiElement> expressions = super.getExpressions(context, document, offset);
         if (!expressions.isEmpty()) return expressions;
 
         return ContainerUtil.filter(ContainerUtil.<PsiElement>createMaybeSingletonList(getTopmostExpression(context)), getFilters(offset));
       }
 
-      @NotNull
       @Override
-      public Function<PsiElement, String> getRenderer() {
+      public @NotNull Function<PsiElement, String> getRenderer() {
         return JavaPostfixTemplatesUtils.getRenderer();
       }
     };
   }
 
   public static final PostfixTemplatePsiInfo JAVA_PSI_INFO = new PostfixTemplatePsiInfo() {
-    @NotNull
     @Override
-    public PsiElement createExpression(@NotNull PsiElement context,
-                                       @NotNull String prefix,
-                                       @NotNull String suffix) {
-      PsiElementFactory factory = JavaPsiFacade.getInstance(context.getProject()).getElementFactory();
+    public @NotNull PsiElement createExpression(@NotNull PsiElement context,
+                                                @NotNull String prefix,
+                                                @NotNull String suffix) {
+      PsiElementFactory factory = JavaPsiFacade.getElementFactory(context.getProject());
       return factory.createExpressionFromText(prefix + context.getText() + suffix, context);
     }
 
-    @NotNull
     @Override
-    public PsiExpression getNegatedExpression(@NotNull PsiElement element) {
-      assert element instanceof PsiExpression;
-      return CodeInsightServicesUtil.invertCondition((PsiExpression)element);
+    public @NotNull PsiExpression getNegatedExpression(@NotNull PsiElement element) {
+      Project project = element.getProject();
+      String negatedExpressionText = DumbService.getInstance(project)
+        .computeWithAlternativeResolveEnabled(() -> BoolUtils.getNegatedExpressionText((PsiExpression)element));
+      return JavaPsiFacade.getElementFactory(project).createExpressionFromText(negatedExpressionText, element);
     }
   };
 
-  public static final Condition<PsiElement> IS_NUMBER =
-    element -> element instanceof PsiExpression && isNumber(((PsiExpression)element).getType());
+  private static Condition<PsiElement> wrap(Condition<PsiElement> cond) {
+    return e -> DumbService.getInstance(e.getProject()).computeWithAlternativeResolveEnabled(() -> cond.value(e));
+  }
 
   public static final Condition<PsiElement> IS_BOOLEAN =
-    element -> element instanceof PsiExpression && isBoolean(((PsiExpression)element).getType());
-
-  public static final Condition<PsiElement> IS_THROWABLE =
-    element -> element instanceof PsiExpression && isThrowable(((PsiExpression)element).getType());
+    wrap(element -> element instanceof PsiExpression expression && isBoolean(expression.getType()));
 
   public static final Condition<PsiElement> IS_NON_VOID =
-    element -> element instanceof PsiExpression && isNonVoid(((PsiExpression)element).getType());
+    wrap(element -> element instanceof PsiExpression expression && isNonVoid(expression.getType()));
 
   public static final Condition<PsiElement> IS_NOT_PRIMITIVE =
-    element -> element instanceof PsiExpression && isNotPrimitiveTypeExpression((PsiExpression)element);
-  
-  public static final Condition<PsiElement> IS_ARRAY = element -> {
-    if (!(element instanceof PsiExpression)) return false;
-
-    PsiType type = ((PsiExpression)element).getType();
-    return isArray(type);
-  };
-
-  public static final Condition<PsiElement> IS_ITERABLE_OR_ARRAY = element -> {
-    if (!(element instanceof PsiExpression)) return false;
-
-    PsiType type = ((PsiExpression)element).getType();
-    return isArray(type) || isIterable(type);
-  };
+    wrap(element -> element instanceof PsiExpression expression && isNotPrimitiveTypeExpression(expression));
 
   @Contract("null -> false")
   public static boolean isNotPrimitiveTypeExpression(@Nullable PsiExpression expression) {
     if (expression == null) {
       return false;
     }
-    PsiType type = expression.getType();
-    return type != null && !(type instanceof PsiPrimitiveType);
+    return DumbService.getInstance(expression.getProject()).computeWithAlternativeResolveEnabled(() -> {
+      PsiType type = expression.getType();
+      return type != null && !(type instanceof PsiPrimitiveType);
+    });
   }
 
   @Contract("null -> false")
@@ -190,17 +166,22 @@ public abstract class JavaPostfixTemplatesUtils {
 
   @Contract("null -> false")
   public static boolean isArray(@Nullable PsiType type) {
-    return type != null && type instanceof PsiArrayType;
+    return type instanceof PsiArrayType;
+  }
+
+  @Contract("null -> false")
+  public static boolean isArrayReference(@Nullable PsiType type) {
+    return type instanceof PsiArrayType arrayType && !(arrayType.getComponentType() instanceof PsiPrimitiveType);
   }
 
   @Contract("null -> false")
   public static boolean isBoolean(@Nullable PsiType type) {
-    return type != null && (PsiType.BOOLEAN.equals(type) || PsiType.BOOLEAN.equals(PsiPrimitiveType.getUnboxedType(type)));
+    return type != null && (PsiTypes.booleanType().equals(type) || type.equalsToText(CommonClassNames.JAVA_LANG_BOOLEAN));
   }
 
   @Contract("null -> false")
   public static boolean isNonVoid(@Nullable PsiType type) {
-    return type != null && !PsiType.VOID.equals(type);
+    return type != null && !PsiTypes.voidType().equals(type);
   }
 
   @Contract("null -> false")
@@ -208,26 +189,31 @@ public abstract class JavaPostfixTemplatesUtils {
     if (type == null) {
       return false;
     }
-    if (PsiType.INT.equals(type) || PsiType.BYTE.equals(type) || PsiType.LONG.equals(type)) {
+    if (PsiTypes.intType().equals(type) || PsiTypes.byteType().equals(type) || PsiTypes.longType().equals(type)) {
       return true;
     }
 
-    PsiPrimitiveType unboxedType = PsiPrimitiveType.getUnboxedType(type);
-    return PsiType.INT.equals(unboxedType) || PsiType.BYTE.equals(unboxedType) || PsiType.LONG.equals(unboxedType);
+    String canonicalText = type.getCanonicalText();
+    return CommonClassNames.JAVA_LANG_INTEGER.equals(canonicalText) ||
+           CommonClassNames.JAVA_LANG_LONG.equals(canonicalText) ||
+           CommonClassNames.JAVA_LANG_BYTE.equals(canonicalText);
   }
 
-  @NotNull
-  public static Function<PsiElement, String> getRenderer() {
+  public static @NotNull Function<PsiElement, String> getRenderer() {
     return element -> {
       assert element instanceof PsiExpression;
-      return new PsiExpressionTrimRenderer.RenderFunction().fun((PsiExpression)element);
+      return PsiExpressionTrimRenderer.render((PsiExpression)element);
     };
   }
 
-  @Nullable
-  public static PsiExpression getTopmostExpression(PsiElement context) {
+  public static @Nullable PsiExpression getTopmostExpression(PsiElement context) {
     PsiExpressionStatement statement = PsiTreeUtil.getNonStrictParentOfType(context, PsiExpressionStatement.class);
     return statement != null ? statement.getExpression() : null;
+  }
+
+  public static boolean isInExpressionFile(@NotNull PsiElement context) {
+    return context.getContainingFile() instanceof PsiCodeFragmentImpl codeFragment &&
+           codeFragment.getContentElementType() == JavaElementType.EXPRESSION_TEXT;
   }
 }
 

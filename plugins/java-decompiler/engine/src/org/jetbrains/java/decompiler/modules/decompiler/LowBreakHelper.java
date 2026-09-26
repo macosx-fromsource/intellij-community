@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
 import org.jetbrains.java.decompiler.modules.decompiler.stats.IfStatement;
@@ -21,7 +7,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.stats.SynchronizedStatem
 
 import java.util.List;
 
-public class LowBreakHelper {
+public final class LowBreakHelper {
 
   public static void lowBreakLabels(Statement root) {
 
@@ -37,7 +23,7 @@ public class LowBreakHelper {
       boolean found = false;
 
       for (StatEdge edge : stat.getLabelEdges()) {
-        if (edge.getType() == StatEdge.TYPE_BREAK) {
+        if (edge.getType() == StatEdge.EdgeType.BREAK) {
           Statement minclosure = getMinClosure(stat, edge.getSource());
           if (minclosure != stat) {
             minclosure.addLabeledEdge(edge);
@@ -60,7 +46,7 @@ public class LowBreakHelper {
 
   public static boolean isBreakEdgeLabeled(Statement source, Statement closure) {
 
-    if (closure.type == Statement.TYPE_DO || closure.type == Statement.TYPE_SWITCH) {
+    if (closure.type == Statement.StatementType.DO || closure.type == Statement.StatementType.SWITCH) {
 
       Statement parent = source.getParent();
 
@@ -69,7 +55,7 @@ public class LowBreakHelper {
       }
       else {
         return isBreakEdgeLabeled(parent, closure) ||
-               (parent.type == Statement.TYPE_DO || parent.type == Statement.TYPE_SWITCH);
+               (parent.type == Statement.StatementType.DO || parent.type == Statement.StatementType.SWITCH);
       }
     }
     else {
@@ -84,14 +70,14 @@ public class LowBreakHelper {
       Statement newclosure = null;
 
       switch (closure.type) {
-        case Statement.TYPE_SEQUENCE:
+        case SEQUENCE:
           Statement last = closure.getStats().getLast();
 
           if (isOkClosure(closure, source, last)) {
             newclosure = last;
           }
           break;
-        case Statement.TYPE_IF:
+        case IF:
           IfStatement ifclosure = (IfStatement)closure;
           if (isOkClosure(closure, source, ifclosure.getIfstat())) {
             newclosure = ifclosure.getIfstat();
@@ -100,7 +86,7 @@ public class LowBreakHelper {
             newclosure = ifclosure.getElsestat();
           }
           break;
-        case Statement.TYPE_TRYCATCH:
+        case TRY_CATCH:
           for (Statement st : closure.getStats()) {
             if (isOkClosure(closure, source, st)) {
               newclosure = st;
@@ -108,7 +94,7 @@ public class LowBreakHelper {
             }
           }
           break;
-        case Statement.TYPE_SYNCRONIZED:
+        case SYNCHRONIZED:
           Statement body = ((SynchronizedStatement)closure).getBody();
 
           if (isOkClosure(closure, source, body)) {
@@ -137,7 +123,7 @@ public class LowBreakHelper {
       ok = lst.isEmpty();
       if (!ok) {
         StatEdge edge = lst.get(0);
-        ok = (edge.closure == closure && edge.getType() == StatEdge.TYPE_BREAK);
+        ok = (edge.closure == closure && edge.getType() == StatEdge.EdgeType.BREAK);
       }
     }
 
@@ -157,7 +143,7 @@ public class LowBreakHelper {
       boolean found = false;
 
       for (StatEdge edge : stat.getLabelEdges()) {
-        if (edge.explicit && edge.labeled && edge.getType() == StatEdge.TYPE_BREAK) {
+        if (edge.explicit && edge.labeled && edge.getType() == StatEdge.EdgeType.BREAK) {
 
           Statement newclosure = getMaxBreakLift(stat, edge);
 

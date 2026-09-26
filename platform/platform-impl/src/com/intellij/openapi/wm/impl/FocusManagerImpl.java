@@ -1,183 +1,106 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.wm.impl;
 
-import com.intellij.ide.IdeEventQueue;
-import com.intellij.ide.UiActivity;
-import com.intellij.ide.UiActivityMonitor;
-import com.intellij.internal.focus.FocusTracesAction;
+import com.intellij.concurrency.ContextAwareRunnable;
+import com.intellij.ide.impl.ProjectUtil;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.DataContext;
-import com.intellij.openapi.actionSystem.PlatformDataKeys;
-import com.intellij.openapi.application.*;
-import com.intellij.openapi.application.ex.ApplicationManagerEx;
-import com.intellij.openapi.components.impl.ServiceManagerImpl;
+import com.intellij.openapi.actionSystem.PlatformCoreDataKeys;
+import com.intellij.openapi.application.ApplicationActivationListener;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopup;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.ui.popup.StackingPopupDispatcher;
+import com.intellij.openapi.util.ActionCallback;
+import com.intellij.openapi.util.ExpirableRunnable;
 import com.intellij.openapi.util.registry.Registry;
-import com.intellij.openapi.wm.*;
+import com.intellij.openapi.wm.IdeFocusManager;
+import com.intellij.openapi.wm.IdeFrame;
 import com.intellij.openapi.wm.ex.IdeFocusTraversalPolicy;
-import com.intellij.openapi.wm.ex.LayoutFocusTraversalPolicyExt;
-import com.intellij.reference.SoftReference;
-import com.intellij.ui.FocusTrackback;
-import com.intellij.util.concurrency.EdtExecutorService;
-import com.intellij.util.containers.WeakValueHashMap;
-import com.intellij.util.ui.UIUtil;
-import gnu.trove.TIntIntHashMap;
-import gnu.trove.TIntIntProcedure;
+import com.intellij.ui.ComponentUtil;
+import com.intellij.ui.DirtyUI;
+import com.intellij.ui.popup.AbstractPopup;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.EDT;
+import com.intellij.util.ui.EdtInvocationManager;
+import com.intellij.util.ui.StartupUiUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import javax.swing.JFrame;
+import javax.swing.RootPaneContainer;
+import javax.swing.SwingUtilities;
+import java.awt.AWTEvent;
+import java.awt.Component;
+import java.awt.Frame;
+import java.awt.KeyboardFocusManager;
+import java.awt.Window;
 import java.awt.event.FocusEvent;
-import java.awt.event.KeyEvent;
 import java.awt.event.WindowEvent;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
-import java.lang.ref.Reference;
-import java.lang.ref.WeakReference;
-import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.LinkedList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class FocusManagerImpl extends IdeFocusManager implements Disposable {
+public final class FocusManagerImpl extends IdeFocusManager implements Disposable {
   private static final Logger LOG = Logger.getInstance(FocusManagerImpl.class);
-  private static final UiActivity FOCUS = new UiActivity.Focus("awtFocusRequest");
-  private static final UiActivity TYPEAHEAD = new UiActivity.Focus("typeahead");
+  // this logger is for low-level focus-related requests (performed by JDK and our custom low-level mechanisms)
+  public static final Logger FOCUS_REQUESTS_LOG = Logger.getInstance("jb.focus.requests");
 
-  private final Application myApp;
+  private final List<FocusRequestInfo> myRequests = new LinkedList<>();
 
-  private FocusCommand myRequestFocusCmd;
-  private final List<FocusCommand> myFocusRequests = new ArrayList<>();
-
-  private final List<KeyEvent> myToDispatchOnDone = new ArrayList<>();
-
-  private Reference<FocusCommand> myLastForcedRequest;
-
-  private FocusCommand myFocusCommandOnAppActivation;
-  private ActionCallback myCallbackOnActivation;
-  private final boolean isInternalMode = ApplicationManagerEx.getApplicationEx().isInternal();
-  private final LinkedList<FocusRequestInfo> myRequests = new LinkedList<>();
-
-  private final IdeEventQueue myQueue;
-  private final KeyProcessorContext myKeyProcessorContext = new KeyProcessorContext();
-
-  private long myCmdTimestamp;
-  private long myForcedCmdTimestamp;
-
-  private final EdtAlarm myFocusedComponentAlarm;
-  private final EdtAlarm myForcedFocusRequestsAlarm;
-
-  private final EdtAlarm myIdleAlarm;
-  private final Set<Runnable> myIdleRequests = new LinkedHashSet<>();
-
-  private boolean myFlushWasDelayedToFixFocus;
-  private ExpirableRunnable myFocusRevalidator;
-
-  private final Set<FurtherRequestor> myValidFurtherRequestors = new HashSet<>();
-
-  private final Set<ActionCallback> myTypeAheadRequestors = new HashSet<>();
-  private final UiActivityMonitor myActivityMonitor;
-  private boolean myTypeaheadEnabled = true;
-  private int myModalityStateForLastForcedRequest;
-
-
-  private class IdleRunnable extends EdtRunnable {
-    @Override
-    public void runEdt() {
-      if (canFlushIdleRequests()) {
-        flushIdleRequests();
-      }
-      else {
-        if (processFocusRevalidation()) {
-          if (isFocusTransferReady()) {
-            flushIdleRequests();
-          }
-        }
-
-        restartIdleAlarm();
-      }
-    }
-  }
-
-  private boolean canFlushIdleRequests() {
-    Component focusOwner = getFocusOwner();
-    return isFocusTransferReady()
-           && !isIdleQueueEmpty()
-           && !IdeEventQueue.getInstance().isDispatchingFocusEvent()
-           && !(focusOwner == null && (!myValidFurtherRequestors.isEmpty() || myFocusRevalidator != null && !myFocusRevalidator.isExpired()));
-  }
-
-  private final Map<IdeFrame, Component> myLastFocused = new WeakValueHashMap<>();
-  private final Map<IdeFrame, Component> myLastFocusedAtDeactivation = new WeakValueHashMap<>();
+  private final Map<Window, Component> myLastFocused = ContainerUtil.createWeakKeyWeakValueMap();
+  private final Map<Window, Component> myLastFocusedAtDeactivation = ContainerUtil.createWeakKeyWeakValueMap();
 
   private DataContext myRunContext;
 
-  private final TIntIntHashMap myModalityCount2FlushCount = new TIntIntHashMap();
-
   private IdeFrame myLastFocusedFrame;
 
-  @SuppressWarnings("UnusedParameters")  // the dependencies are needed to ensure correct loading order
-  public FocusManagerImpl(ServiceManagerImpl serviceManager, WindowManager wm, UiActivityMonitor monitor) {
-    myApp = ApplicationManager.getApplication();
-    myQueue = IdeEventQueue.getInstance();
-    myActivityMonitor = monitor;
+  public FocusManagerImpl() {
+    ApplicationManager.getApplication().getMessageBus().simpleConnect().subscribe(ApplicationActivationListener.TOPIC, new AppListener());
 
-    myFocusedComponentAlarm = new EdtAlarm();
-    myForcedFocusRequestsAlarm = new EdtAlarm();
-    myIdleAlarm = new EdtAlarm();
-
-    final AppListener myAppListener = new AppListener();
-    myApp.getMessageBus().connect().subscribe(ApplicationActivationListener.TOPIC, myAppListener);
-
-    IdeEventQueue.getInstance().addDispatcher(e -> {
-      if (e instanceof FocusEvent) {
-        final FocusEvent fe = (FocusEvent)e;
+    StartupUiUtil.addAwtListener(AWTEvent.FOCUS_EVENT_MASK | AWTEvent.WINDOW_EVENT_MASK, this, e -> {
+      if (e instanceof FocusEvent fe) {
         final Component c = fe.getComponent();
-        if (c instanceof Window || c == null) return false;
+        if (c instanceof Window || c == null) return;
 
-        Component parent = UIUtil.findUltimateParent(c);
-
+        Component parent = ComponentUtil.findUltimateParent(c);
         if (parent instanceof IdeFrame) {
-          myLastFocused.put((IdeFrame)parent, c);
+          LOG.assertTrue(parent instanceof Window);
+          myLastFocused.put((Window)parent, c);
         }
       }
       else if (e instanceof WindowEvent) {
-        Window wnd = ((WindowEvent)e).getWindow();
+        Window window1 = ((WindowEvent)e).getWindow();
         if (e.getID() == WindowEvent.WINDOW_CLOSED) {
-          if (wnd instanceof IdeFrame) {
-            myLastFocused.remove(wnd);
-            myLastFocusedAtDeactivation.remove(wnd);
+          if (window1 instanceof IdeFrame) {
+            myLastFocused.remove(window1);
+            myLastFocusedAtDeactivation.remove(window1);
           }
         }
       }
+    });
 
-      return false;
-    }, this);
-
-    KeyboardFocusManager.getCurrentKeyboardFocusManager().addPropertyChangeListener("focusedWindow", new PropertyChangeListener() {
-      @Override
-      public void propertyChange(PropertyChangeEvent evt) {
-        if (evt.getNewValue() instanceof IdeFrame) {
-          myLastFocusedFrame = (IdeFrame)evt.getNewValue();
+    KeyboardFocusManager.getCurrentKeyboardFocusManager().addPropertyChangeListener("focusedWindow", event -> {
+      Object value = event.getNewValue();
+      if (value instanceof IdeFrame) {
+        LOG.assertTrue(value instanceof Window);
+        myLastFocusedFrame = (IdeFrame)value;
+      }
+      else {
+        Window window = getLastFocusedIdeWindow();
+        if (window != null && !window.isVisible()) {
+          // it is needed to forget about the closed window
+          myLastFocusedFrame = null;
         }
+      }
+    });
+    KeyboardFocusManager.getCurrentKeyboardFocusManager().addPropertyChangeListener(event -> {
+      if (FOCUS_REQUESTS_LOG.isDebugEnabled()) {
+        FOCUS_REQUESTS_LOG.debug(event.getPropertyName() + "=" + event.getNewValue());
       }
     });
   }
@@ -188,269 +111,69 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
   }
 
   @Override
-  @NotNull
-  public ActionCallback requestFocus(@NotNull final Component c, final boolean forced) {
-    return requestFocus(new FocusCommand.ByComponent(c, new Exception()), forced);
+  public @Nullable Window getLastFocusedIdeWindow() {
+    return (Window)myLastFocusedFrame;
+  }
+
+  @DirtyUI
+  @Override
+  public ActionCallback requestFocusInProject(@NotNull Component c, @Nullable Project project) {
+    if (StartupUiUtil.isWaylandToolkit()) {
+      var currentPopup = StackingPopupDispatcher.getInstance().getFocusedPopup();
+      if (currentPopup != null && !AbstractPopup.isForceCancelOnFocusLoss(currentPopup)) {
+        var currentPopupComponent = currentPopup.getContent();
+        if (!currentPopupComponent.isAncestorOf(c)) {
+          // On Wayland, transferring focus out of a popup is possible,
+          // but usually lead to an uncomfortable state when the popup is still showing,
+          // but doesn't get keyboard input.
+          return ActionCallback.REJECTED;
+        }
+      }
+    }
+    // if focus transfer is requested to the active project's window, we call 'requestFocus' to allow focusing detached project windows
+    // (editor or tool windows), otherwise we call 'requestFocusInWindow' to avoid unexpected project switching
+    Project activeProject = ProjectUtil.getActiveProject();
+    if (activeProject != null) {
+      if (project == null) {
+        project = ProjectUtil.getProjectForComponent(c);
+      }
+      if (project == activeProject) {
+        logFocusRequest(c, project, false);
+        toFrontImpl(c);
+        c.requestFocus();
+        return ActionCallback.DONE;
+      }
+    }
+    logFocusRequest(c, project, true);
+    c.requestFocusInWindow();
+    return ActionCallback.DONE;
   }
 
   @Override
-  @NotNull
-  public ActionCallback requestFocus(@NotNull final FocusCommand command, final boolean forced) {
-    assertDispatchThread();
-
-    if (isInternalMode) {
-      recordCommand(command, new Throwable(), forced);
-    }
-    final ActionCallback result = new ActionCallback();
-
-    myActivityMonitor.addActivity(FOCUS, ModalityState.any());
-    if (!forced) {
-
-      UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-        @Override
-        public void run() {
-          if (!myFocusRequests.contains(command)) {
-            myFocusRequests.add(command);
-          }
-        }
-      });
-
-      SwingUtilities.invokeLater(() -> {
-        resetUnforcedCommand(command);
-        _requestFocus(command, forced, result);
-      });
-    }
-    else {
-      _requestFocus(command, forced, result);
-    }
-
-    result.doWhenProcessed(() -> restartIdleAlarm());
-
-    return result;
+  public @NotNull ActionCallback requestFocus(final @NotNull Component c, final boolean forced) {
+    logFocusRequest(c, null, false);
+    c.requestFocus();
+    return ActionCallback.DONE;
   }
 
-  @NotNull
-  public List<FocusRequestInfo> getRequests() {
+  public @NotNull List<FocusRequestInfo> getRequests() {
     return myRequests;
   }
 
   public void recordFocusRequest(Component c, boolean forced) {
     myRequests.add(new FocusRequestInfo(c, new Throwable(), forced));
     if (myRequests.size() > 200) {
-      myRequests.removeFirst();
+      myRequests.remove(0);
     }
   }
 
-  private void recordCommand(@NotNull FocusCommand command, @NotNull Throwable trace, boolean forced) {
-    if (FocusTracesAction.isActive()) {
-      recordFocusRequest(command.getDominationComponent(), forced);
-    }
+  public static IdeFocusManager getInstance() {
+    return ApplicationManager.getApplication().getService(IdeFocusManager.class);
   }
 
-  private void _requestFocus(@NotNull final FocusCommand command, final boolean forced, @NotNull final ActionCallback result) {
-    result.doWhenProcessed(() -> maybeRemoveFocusActivity());
-    
-    if (checkForRejectOrByPass(command, forced, result)) return;
-
-    setCommand(command);
-    command.setCallback(result);
-
-    if (forced) {
-      myForcedFocusRequestsAlarm.cancelAllRequests();
-      setLastEffectiveForcedRequest(command);
-    }
-
-    SwingUtilities.invokeLater(() -> {
-      if (checkForRejectOrByPass(command, forced, result)) return;
-
-      if (myRequestFocusCmd == command) {
-        final TimedOutCallback focusTimeout =
-          new TimedOutCallback(Registry.intValue("actionSystem.commandProcessingTimeout"),
-                                      "Focus command timed out, cmd=" + command, command.getAllocation(), true) {
-            @Override
-            protected void onTimeout() {
-              forceFinishFocusSettleDown(command, result);
-            }
-          };
-
-        if (command.invalidatesRequestors()) {
-          myCmdTimestamp++;
-        }
-        revalidateFurtherRequestors();
-        if (forced) {
-          if (command.invalidatesRequestors()) {
-            myForcedCmdTimestamp++;
-          }
-          revalidateFurtherRequestors();
-        }
-
-        command.setForced(forced);
-        command.run().doWhenDone(() -> UIUtil.invokeLaterIfNeeded(() -> {
-          resetCommand(command, false);
-          result.setDone();
-        })).doWhenRejected(() -> {
-          result.setRejected();
-          resetCommand(command, true);
-        }).doWhenProcessed(() -> {
-          if (forced) {
-            myForcedFocusRequestsAlarm.addRequest(new SetLastEffectiveRunnable(), 250);
-          }
-        }).notify(focusTimeout);
-      }
-      else {
-        rejectCommand(command, result);
-      }
-    });
-  }
-
-  private void maybeRemoveFocusActivity() {
-    if (isFocusTransferReady()) {
-      myActivityMonitor.removeActivity(FOCUS);
-    }
-  }
-
-  private boolean checkForRejectOrByPass(@NotNull FocusCommand cmd, final boolean forced, @NotNull ActionCallback result) {
-    if (cmd.isExpired()) {
-      rejectCommand(cmd, result);
-      return true;
-    }
-
-    final FocusCommand lastRequest = getLastEffectiveForcedRequest();
-
-    if (!forced && !isUnforcedRequestAllowed()) {
-      if (cmd.equals(lastRequest)) {
-        resetCommand(cmd, false);
-        result.setDone();
-      }
-      else {
-        rejectCommand(cmd, result);
-      }
-      return true;
-    }
-
-
-    if (lastRequest != null && lastRequest.dominatesOver(cmd)) {
-      rejectCommand(cmd, result);
-      return true;
-    }
-
-    if (!Registry.is("focus.fix.lost.cursor")) {
-      boolean doNotExecuteBecauseAppIsInactive =
-        !myApp.isActive() && !canExecuteOnInactiveApplication(cmd) && Registry.is("actionSystem.suspendFocusTransferIfApplicationInactive");
-
-      if (doNotExecuteBecauseAppIsInactive) {
-        if (myCallbackOnActivation != null) {
-          myCallbackOnActivation.setRejected();
-          if (myFocusCommandOnAppActivation != null) {
-            resetCommand(myFocusCommandOnAppActivation, true);
-          }
-        }
-
-        myFocusCommandOnAppActivation = cmd;
-        myCallbackOnActivation = result;
-
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private void setCommand(@NotNull final FocusCommand command) {
-    myRequestFocusCmd = command;
-
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        if (!myFocusRequests.contains(command)) {
-          myFocusRequests.add(command);
-        }
-      }
-    });
-  }
-
-  private void resetCommand(@NotNull final FocusCommand cmd, boolean reject) {
-
-    assertDispatchThread();
-
-    if (cmd == myRequestFocusCmd) {
-      myRequestFocusCmd = null;
-    }
-
-    final KeyEventProcessor processor = cmd.getProcessor();
-    if (processor != null) {
-      processor.finish(myKeyProcessorContext);
-    }
-
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        myFocusRequests.remove(cmd);
-      }
-    });
-
-    if (reject) {
-      ActionCallback cb = cmd.getCallback();
-      if (cb != null && !cb.isProcessed()) {
-        cmd.getCallback().setRejected();
-      }
-    }
-  }
-
-  private void resetUnforcedCommand(@NotNull final FocusCommand cmd) {
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        myFocusRequests.remove(cmd);
-      }
-    });
-  }
-
-  private static boolean canExecuteOnInactiveApplication(@NotNull FocusCommand cmd) {
-    return cmd.canExecuteOnInactiveApp();
-  }
-
-  private void setLastEffectiveForcedRequest(@Nullable FocusCommand command) {
-    myLastForcedRequest = command == null ? null : new WeakReference<>(command);
-    myModalityStateForLastForcedRequest = getCurrentModalityCount();
-  }
-
-  @Nullable
-  private FocusCommand getLastEffectiveForcedRequest() {
-    final FocusCommand request = SoftReference.dereference(myLastForcedRequest);
-    return request != null && !request.isExpired() ? request : null;
-  }
-
-  boolean isUnforcedRequestAllowed() {
-    if (getLastEffectiveForcedRequest() == null) return true;
-    return myModalityStateForLastForcedRequest != getCurrentModalityCount();
-  }
-
-  public static FocusManagerImpl getInstance() {
-    return (FocusManagerImpl)ApplicationManager.getApplication().getComponent(IdeFocusManager.class);
-  }
-
+  @DirtyUI
   @Override
-  public void dispose() {
-    myForcedFocusRequestsAlarm.cancelAllRequests();
-    myFocusedComponentAlarm.cancelAllRequests();
-  }
-
-  private class KeyProcessorContext implements KeyEventProcessor.Context {
-    @Override
-    @NotNull
-    public List<KeyEvent> getQueue() {
-      return myToDispatchOnDone;
-    }
-
-    @Override
-    public void dispatch(@NotNull final List<KeyEvent> events) {
-      doWhenFocusSettlesDown(() -> {
-        myToDispatchOnDone.addAll(events);
-        restartIdleAlarm();
-      });
-    }
-  }
+  public void dispose() {}
 
   @Override
   public void doWhenFocusSettlesDown(@NotNull ExpirableRunnable runnable) {
@@ -458,452 +181,58 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
   }
 
   @Override
-  public void doWhenFocusSettlesDown(@NotNull final Runnable runnable) {
-    UIUtil.invokeLaterIfNeeded(() -> {
-      if (isFlushingIdleRequests()) {
-        myIdleRequests.add(runnable);
-        return;
-      }
-
-      if (myRunContext != null) {
-        flushRequest(runnable);
-        return;
-      }
-
-      final boolean needsRestart = isIdleQueueEmpty();
-      if (myIdleRequests.contains(runnable)) {
-        myIdleRequests.remove(runnable);
-        myIdleRequests.add(runnable);
-      } else {
-        myIdleRequests.add(runnable);
-      }
-
-      if (canFlushIdleRequests()) {
-        flushIdleRequests();
-      }
-      else {
-        if (needsRestart) {
-          restartIdleAlarm();
-        }
-      }
-    });
+  public void doWhenFocusSettlesDown(@NotNull Runnable runnable) {
+    doWhenFocusSettlesDown(runnable, ModalityState.defaultModalityState());
   }
 
   @Override
   public void doWhenFocusSettlesDown(@NotNull Runnable runnable, @NotNull ModalityState modality) {
+    // Immediate check is buggy.
+    // JVM can run "postponed" code on other thread before this thread set `immediate` to `false`
     AtomicBoolean immediate = new AtomicBoolean(true);
-    doWhenFocusSettlesDown(() -> {
+    EdtInvocationManager.invokeLaterIfNeeded((ContextAwareRunnable) () -> {
       if (immediate.get()) {
-        runnable.run();
-        return;
+        boolean expired = runnable instanceof ExpirableRunnable && ((ExpirableRunnable)runnable).isExpired();
+        if (!expired) {
+          runnable.run();
+        }
       }
-
-      ApplicationManager.getApplication().invokeLater(() -> doWhenFocusSettlesDown(runnable, modality), modality);
+      else {
+        // "Write-safe context" when postponed due to `TransactionGuardImpl#wrapLaterInvocation`
+        ApplicationManager.getApplication().invokeLater((ContextAwareRunnable) () -> doWhenFocusSettlesDown(runnable, modality), modality);
+      }
     });
     immediate.set(false);
   }
 
-  private void restartIdleAlarm() {
-    if (!ApplicationManager.getApplication().isActive()) return;
-    myIdleAlarm.cancelAllRequests();
-    myIdleAlarm.addRequest(new IdleRunnable(), Registry.intValue("actionSystem.focusIdleTimeout"));
-  }
-
-  private void flushIdleRequests() {
-    int currentModalityCount = getCurrentModalityCount();
-    try {
-      incFlushingRequests(1, currentModalityCount);
-
-      if (!isTypeaheadEnabled()) {
-        myToDispatchOnDone.clear();
-        myTypeAheadRequestors.clear();
-      }
-
-      if (!myToDispatchOnDone.isEmpty() && myTypeAheadRequestors.isEmpty()) {
-        final KeyEvent[] events = myToDispatchOnDone.toArray(new KeyEvent[myToDispatchOnDone.size()]);
-
-        IdeEventQueue.getInstance().getKeyEventDispatcher().resetState();
-
-        for (int eachIndex = 0; eachIndex < events.length; eachIndex++) {
-          if (!isFocusTransferReady()) {
-            break;
-          }
-
-          KeyEvent each = events[eachIndex];
-
-          Component owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-          if (owner == null) {
-            owner = JOptionPane.getRootFrame();
-          }
-
-          boolean metaKey =
-            each.getKeyCode() == KeyEvent.VK_ALT ||
-            each.getKeyCode() == KeyEvent.VK_CONTROL ||
-            each.getKeyCode() == KeyEvent.VK_SHIFT ||
-            each.getKeyCode() == KeyEvent.VK_META;
-
-          boolean toDispatch = false;
-          if (!metaKey && (each.getID() == KeyEvent.KEY_RELEASED || each.getID() == KeyEvent.KEY_TYPED)) {
-            for (int i = 0; i < eachIndex; i++) {
-              final KeyEvent prev = events[i];
-              if (prev == null) continue;
-
-              if (prev.getID() == KeyEvent.KEY_PRESSED) {
-                if (prev.getKeyCode() == each.getKeyCode() || prev.getKeyChar() == each.getKeyChar()) {
-                  toDispatch = true;
-                  events[i] = null;
-                  break;
-                }
-              }
-            }
-          }
-          else {
-            toDispatch = true;
-          }
-
-          myToDispatchOnDone.remove(each);
-          if (!toDispatch) {
-            continue;
-          }
-
-
-          KeyEvent keyEvent = new KeyEvent(owner, each.getID(), each.getWhen(), each.getModifiersEx(), each.getKeyCode(), each.getKeyChar(),
-                                           each.getKeyLocation());
-
-
-          if (SwingUtilities.getWindowAncestor(owner) != null) {
-            IdeEventQueue.getInstance().dispatchEvent(keyEvent);
-          }
-          else {
-            ((TransactionGuardImpl)TransactionGuard.getInstance()).performUserActivity(
-              () -> myQueue._dispatchEvent(keyEvent, true));
-          }
-        }
-
-        if (myToDispatchOnDone.isEmpty() && myTypeAheadRequestors.isEmpty()) {
-          myActivityMonitor.removeActivity(TYPEAHEAD);
-        }
-      }
-
-      if (!isFocusBeingTransferred()) {
-        boolean focusOk = getFocusOwner() != null;
-        if (!focusOk && !myFlushWasDelayedToFixFocus) {
-          IdeEventQueue.getInstance().fixStickyFocusedComponents(null);
-          myFlushWasDelayedToFixFocus = true;
-        }
-        else if (!focusOk) {
-          myFlushWasDelayedToFixFocus = false;
-        }
-
-        if (canFlushIdleRequests() && getFlushingIdleRequests() <= 1 && (focusOk || !myFlushWasDelayedToFixFocus)) {
-          myFlushWasDelayedToFixFocus = false;
-          flushNow();
-        }
-      }
-    }
-    finally {
-      incFlushingRequests(-1, currentModalityCount);
-      if (!isIdleQueueEmpty()) {
-        restartIdleAlarm();
-      }
-
-      maybeRemoveFocusActivity();
-    }
-  }
-
-  private boolean processFocusRevalidation() {
-    ExpirableRunnable revalidator = myFocusRevalidator;
-    myFocusRevalidator = null;
-    
-    if (revalidator != null && !revalidator.isExpired()) {
-      revalidator.run();
-      return true;
-    }
-    
-    return false;
-  }
-
-  private void flushNow() {
-    final Runnable[] all = myIdleRequests.toArray(new Runnable[myIdleRequests.size()]);
-    myIdleRequests.clear();
-    for (int i = 0; i < all.length; i++) {
-      flushRequest(all[i]);
-      if (isFocusBeingTransferred()) {
-        for (int j = i + 1; j < all.length; j++) {
-          myIdleRequests.add(all[j]);
-        }
-        break;
-      }
-    }
-    
-    maybeRemoveFocusActivity();
-  }
-
-  private static void flushRequest(Runnable each) {
-    if (each == null) return;
-    if (each instanceof Expirable) {
-      if (!((Expirable)each).isExpired()) {
-        each.run();
-      }
-    } else {
-      each.run();
-    }
-  }
-
-  public boolean isFocusTransferReady() {
-    assertDispatchThread();
-
-    if (myRunContext != null) return true;
-
-    invalidateFocusRequestsQueue();
-
-    if (!myFocusRequests.isEmpty()) return false;
-    if (myQueue == null) return true;
-
-    return !myQueue.isSuspendMode() && !myQueue.hasFocusEventsPending();
-  }
-
-  private void invalidateFocusRequestsQueue() {
-    assertDispatchThread();
-    UIUtil.invokeAndWaitIfNeeded(new Runnable() {
-      @Override
-      public void run() {
-        if (myFocusRequests.isEmpty()) return;
-
-        FocusCommand[] requests = myFocusRequests.toArray(new FocusCommand[myFocusRequests.size()]);
-        boolean wasChanged = false;
-        for (FocusCommand each : requests) {
-          if (each.isExpired()) {
-            resetCommand(each, true);
-            wasChanged = true;
-          }
-        }
-
-        if (wasChanged && myFocusRequests.isEmpty()) {
-          restartIdleAlarm();
-        }
-      }
-    });
-  }
-
-  private boolean isIdleQueueEmpty() {
-    return isPendingKeyEventsRedispatched() && myIdleRequests.isEmpty();
-  }
-
-  private boolean isPendingKeyEventsRedispatched() {
-    return myToDispatchOnDone.isEmpty();
-  }
-
-  @Override
-  public boolean dispatch(@NotNull KeyEvent e) {
-    if (!isTypeaheadEnabled()) return false;
-    if (isFlushingIdleRequests()) return false;
-
-    assertDispatchThread();
-
-    if (!isFocusTransferReady() || !isPendingKeyEventsRedispatched() || !myTypeAheadRequestors.isEmpty()) {
-      for (FocusCommand each : myFocusRequests) {
-        final KeyEventProcessor processor = each.getProcessor();
-        if (processor != null) {
-          final Boolean result = processor.dispatch(e, myKeyProcessorContext);
-          if (result != null) {
-            if (result.booleanValue()) {
-              myActivityMonitor.addActivity(TYPEAHEAD, ModalityState.any());
-              return true;
-            }
-            return false;
-          }
-        }
-      }
-
-      myToDispatchOnDone.add(e);
-      myActivityMonitor.addActivity(TYPEAHEAD, ModalityState.any());
-
-      restartIdleAlarm();
-
-      return true;
-    }
-    return false;
-  }
-
-  @Override
-  public void setTypeaheadEnabled(boolean enabled) {
-    myTypeaheadEnabled = enabled;
-  }
-
-  private boolean isTypeaheadEnabled() {
-    return Registry.is("actionSystem.fixLostTyping") && myTypeaheadEnabled;
-  }
-
-  @Override
-  public void typeAheadUntil(@NotNull ActionCallback callback, @NotNull String cause) {
-    if (!isTypeaheadEnabled()) return;
-
-    final long currentTime = System.currentTimeMillis();
-    final ActionCallback done;
-    if (!Registry.is("type.ahead.logging.enabled")) {
-      done = callback;
-    }
-    else {
-      final String id = new Exception().getStackTrace()[2].getClassName();
-      //LOG.setLevel(Level.ALL);
-      final SimpleDateFormat dateFormat = new SimpleDateFormat("dd MMM yyyy HH:ss:SSS", Locale.US);
-      LOG.info(dateFormat.format(System.currentTimeMillis()) + "\tStarted:  " + id);
-      done = new ActionCallback();
-      callback.doWhenDone(() -> {
-        done.setDone();
-        LOG.info(dateFormat.format(System.currentTimeMillis()) + "\tDone:     " + id);
-      });
-      callback.doWhenRejected(() -> {
-        done.setRejected();
-        LOG.info(dateFormat.format(System.currentTimeMillis()) + "\tRejected: " + id);
-      });
-    }
-    assertDispatchThread();
-
-    myTypeAheadRequestors.add(done);
-    done.notify(new TimedOutCallback(Registry.intValue("actionSystem.commandProcessingTimeout"),
-                                            "Typeahead request blocked",
-                                            new Exception() {
-                                              @Override
-                                              public String getMessage() {
-                                                return "Time: " + (System.currentTimeMillis() - currentTime) + "; cause: " + cause;
-                                              }
-                                            },
-                                            true).doWhenProcessed(() -> {
-                                              if (myTypeAheadRequestors.remove(done)) {
-                                                restartIdleAlarm();
-                                              }
-                                            }));
-  }
-
-  private boolean isFlushingIdleRequests() {
-    return getFlushingIdleRequests() > 0;
-  }
-
-  private int getFlushingIdleRequests() {
-    int currentModalityCount = getCurrentModalityCount();
-    return myModalityCount2FlushCount.get(currentModalityCount);
-  }
-
-  private void incFlushingRequests(int delta, final int currentModalityCount) {
-    if (myModalityCount2FlushCount.containsKey(currentModalityCount)) {
-      myModalityCount2FlushCount.adjustValue(currentModalityCount, delta);
-    }
-    else {
-      myModalityCount2FlushCount.put(currentModalityCount, delta);
-    }
-  }
-
-  private int getCurrentModalityCount() {
-    int modalityCount = 0;
-    Window[] windows = Window.getWindows();
-    for (Window each : windows) {
-      if (!each.isShowing()) continue;
-
-      if (each instanceof Dialog) {
-        Dialog eachDialog = (Dialog)each;
-        if (eachDialog.isModal()) {
-          modalityCount++;
-        }
-        else if (each instanceof JDialog) {
-          if (isModalContextPopup(((JDialog)each).getRootPane())) {
-            modalityCount++;
-          }
-        }
-      }
-      else if (each instanceof JWindow) {
-        JRootPane rootPane = ((JWindow)each).getRootPane();
-        if (isModalContextPopup(rootPane)) {
-          modalityCount++;
-        }
-      }
-    }
-    final int finalModalityCount = modalityCount;
-    myModalityCount2FlushCount.retainEntries(new TIntIntProcedure() {
-      @Override
-      public boolean execute(int eachModalityCount, int flushCount) {
-        return eachModalityCount <= finalModalityCount;
-      }
-    });
-
-    return modalityCount;
-  }
-
-  private static boolean isModalContextPopup(@NotNull JRootPane rootPane) {
-    final JBPopup popup = (JBPopup)rootPane.getClientProperty(JBPopup.KEY);
-    return popup != null && popup.isModalContext();
-  } 
-
-  @NotNull
-  @Override
-  public Expirable getTimestamp(final boolean trackOnlyForcedCommands) {
-    assertDispatchThread();
-
-    return new Expirable() {
-      long myOwnStamp = trackOnlyForcedCommands ? myForcedCmdTimestamp : myCmdTimestamp;
-
-      @Override
-      public boolean isExpired() {
-        return myOwnStamp < (trackOnlyForcedCommands ? myForcedCmdTimestamp : myCmdTimestamp);
-      }
-    };
-  }
-
-  @NotNull
-  @Override
-  public FocusRequestor getFurtherRequestor() {
-    assertDispatchThread();
-
-    FurtherRequestor requestor = new FurtherRequestor(this, getTimestamp(true));
-    myValidFurtherRequestors.add(requestor);
-    revalidateFurtherRequestors();
-    return requestor;
-  }
-
-  private void revalidateFurtherRequestors() {
-    Iterator<FurtherRequestor> requestorIterator = myValidFurtherRequestors.iterator();
-    while (requestorIterator.hasNext()) {
-      FurtherRequestor each = requestorIterator.next();
-      if (each.isExpired()) {
-        requestorIterator.remove();
-        Disposer.dispose(each);
-      }
-    }
-  }
-  
-  @Override
-  public void revalidateFocus(@NotNull final ExpirableRunnable runnable) {
-    SwingUtilities.invokeLater(() -> {
-      myFocusRevalidator = runnable;
-      restartIdleAlarm();
-    });
-  }
-
+  @DirtyUI
   @Override
   public Component getFocusOwner() {
     assertDispatchThread();
 
     Component result = null;
     if (!ApplicationManager.getApplication().isActive()) {
-      result = myLastFocusedAtDeactivation.get(getLastFocusedFrame());
+      IdeFrame frame = getLastFocusedFrame();
+      if (frame != null) {
+        LOG.assertTrue(frame instanceof Window);
+        result = myLastFocusedAtDeactivation.get(frame);
+      }
     }
     else if (myRunContext != null) {
-      result = (Component)myRunContext.getData(PlatformDataKeys.CONTEXT_COMPONENT.getName());
+      result = myRunContext.getData(PlatformCoreDataKeys.CONTEXT_COMPONENT);
     }
 
     if (result == null) {
-      result =  isFocusBeingTransferred() ? null : KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+      result = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
     }
 
-    final boolean meaninglessOwner = UIUtil.isMeaninglessFocusOwner(result);
-    if (result == null && !isFocusBeingTransferred() || meaninglessOwner) {
+    if (result == null) {
       final Component permOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getPermanentFocusOwner();
       if (permOwner != null) {
         result = permOwner;
       }
-      
-      if (UIUtil.isMeaninglessFocusOwner(result)) {
+
+      if (ComponentUtil.isMeaninglessFocusOwner(result)) {
         result = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
       }
     }
@@ -911,6 +240,7 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
     return result;
   }
 
+  @DirtyUI
   @Override
   public void runOnOwnContext(@NotNull DataContext context, @NotNull Runnable runnable) {
     assertDispatchThread();
@@ -925,29 +255,40 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
   }
 
   @Override
-  public Component getLastFocusedFor(IdeFrame frame) {
+  public Component getLastFocusedFor(@Nullable Window frame) {
     assertDispatchThread();
+
+    if (frame == null) {
+      return null;
+    }
 
     return myLastFocused.get(frame);
   }
 
-  public void setLastFocusedAtDeactivation(@NotNull IdeFrame frame, @NotNull Component c) {
+  public void setLastFocusedAtDeactivation(@NotNull Window frame, @NotNull Component c) {
     myLastFocusedAtDeactivation.put(frame, c);
   }
 
   @Override
   public void toFront(JComponent c) {
+    toFrontImpl(c);
+  }
+
+  private void toFrontImpl(Component c) {
     assertDispatchThread();
 
-    if (c == null) return;
+    if (c == null) {
+      return;
+    }
 
-    final Window window = UIUtil.getParentOfType(Window.class, c);
+    Window window = ComponentUtil.getParentOfType((Class<? extends Window>)Window.class, c);
     if (window != null && window.isShowing()) {
       doWhenFocusSettlesDown(() -> {
         if (ApplicationManager.getApplication().isActive()) {
           if (window instanceof JFrame && ((JFrame)window).getState() == Frame.ICONIFIED) {
             ((JFrame)window).setState(Frame.NORMAL);
-          } else {
+          }
+          else {
             window.toFront();
           }
         }
@@ -955,128 +296,14 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
     }
   }
 
-  private static class FurtherRequestor implements FocusRequestor {
-    private final IdeFocusManager myManager;
-    private final Expirable myExpirable;
-    private Throwable myAllocation;
-    private boolean myDisposed;
-
-    private FurtherRequestor(@NotNull IdeFocusManager manager, @NotNull Expirable expirable) {
-      myManager = manager;
-      myExpirable = expirable;
-      if (Registry.is("ide.debugMode")) {
-        myAllocation = new Exception();
+  private final class AppListener implements ApplicationActivationListener {
+    @Override
+    public void delayedApplicationDeactivated(@NotNull Window ideFrame) {
+      Component owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
+      if (owner != null && ComponentUtil.findUltimateParent(owner) == ideFrame) {
+        myLastFocusedAtDeactivation.put(ideFrame, owner);
       }
     }
-
-    @NotNull
-    @Override
-    public ActionCallback requestFocus(@NotNull Component c, boolean forced) {
-      final ActionCallback result = isExpired() ? ActionCallback.REJECTED : myManager.requestFocus(c, forced);
-      result.doWhenProcessed(() -> Disposer.dispose(this));
-      return result;
-    }
-
-    private boolean isExpired() {
-      return myExpirable.isExpired() || myDisposed;
-    }
-
-    @NotNull
-    @Override
-    public ActionCallback requestFocus(@NotNull FocusCommand command, boolean forced) {
-      return isExpired() ? ActionCallback.REJECTED : myManager.requestFocus(command, forced);
-    }
-
-    @Override
-    public void dispose() {
-      myDisposed = true;
-    }
-  }
-
-
-  static class EdtAlarm {
-    private final Set<EdtRunnable> myRequests = new HashSet<>();
-    
-    public void cancelAllRequests() {
-      for (EdtRunnable each : myRequests) {
-        each.expire();
-      }
-      myRequests.clear();
-    }
-
-    public void addRequest(@NotNull EdtRunnable runnable, int delay) {
-      myRequests.add(runnable);
-      EdtExecutorService.getScheduledExecutorInstance().schedule(runnable, delay, TimeUnit.MILLISECONDS);
-    }
-  }
-
-  private void forceFinishFocusSettleDown(@NotNull FocusCommand cmd, @NotNull ActionCallback cmdCallback) {
-    rejectCommand(cmd, cmdCallback);
-  }
-
-
-  private void rejectCommand(@NotNull FocusCommand cmd, @NotNull ActionCallback callback) {
-    resetCommand(cmd, true);
-    resetUnforcedCommand(cmd);
-
-    callback.setRejected();
-  }
-
-  private class AppListener extends ApplicationActivationListener.Adapter {
-
-    @Override
-    public void applicationActivated(final IdeFrame ideFrame) {
-      final FocusCommand cmd = myFocusCommandOnAppActivation;
-      ActionCallback callback = myCallbackOnActivation;
-      myFocusCommandOnAppActivation = null;
-      myCallbackOnActivation = null;
-
-      if (cmd != null) {
-        requestFocus(cmd, true).notify(callback);
-      } else {
-        focusLastFocusedComponent(ideFrame);
-      }
-    }
-
-    @Override
-    public void delayedApplicationDeactivated(IdeFrame ideFrame) {
-        final Component owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
-        Component parent = UIUtil.findUltimateParent(owner);
-
-        if (parent == ideFrame) {
-          myLastFocusedAtDeactivation.put(ideFrame, owner);
-        }
-    }
-
-    private void focusLastFocusedComponent(IdeFrame ideFrame) {
-      final KeyboardFocusManager mgr = KeyboardFocusManager.getCurrentKeyboardFocusManager();
-      if (mgr.getFocusOwner() == null) {
-        Component c = getComponent(myLastFocusedAtDeactivation, ideFrame);
-        if (c == null || !c.isShowing()) {
-          c = getComponent(myLastFocusedAtDeactivation, ideFrame);
-        }
-
-        final boolean mouseEventAhead = IdeEventQueue.isMouseEventAhead(null);
-        if (c != null && c.isShowing() && !mouseEventAhead) {
-          final LayoutFocusTraversalPolicyExt policy = LayoutFocusTraversalPolicyExt.findWindowPolicy(c);
-          if (policy != null) {
-            policy.setNoDefaultComponent(true, FocusManagerImpl.this);
-          }
-          requestFocus(c, false).doWhenProcessed(() -> {
-            if (policy != null) {
-              policy.setNoDefaultComponent(false, FocusManagerImpl.this);
-            }
-          });
-        }
-      }
-
-      myLastFocusedAtDeactivation.remove(ideFrame);
-    }
-  }
-
-  @Nullable
-  private static Component getComponent(@NotNull Map<IdeFrame, Component> map, IdeFrame frame) {
-    return map.get(frame);
   }
 
   @Override
@@ -1085,77 +312,71 @@ public class FocusManagerImpl extends IdeFocusManager implements Disposable {
   }
 
   @Override
-  public Component getFocusedDescendantFor(Component comp) {
-    final Component focused = getFocusOwner();
-    if (focused == null) return null;
+  public Component getFocusedDescendantFor(@NotNull Component comp) {
+    Component focused = getFocusOwner();
+    if (focused == null) {
+      return null;
+    }
 
-    if (focused == comp || SwingUtilities.isDescendingFrom(focused, comp)) return focused;
+    if (focused == comp || SwingUtilities.isDescendingFrom(focused, comp)) {
+      return focused;
+    }
 
-    List<JBPopup> popups = FocusTrackback.getChildPopups(comp);
+    List<JBPopup> popups = AbstractPopup.getChildPopups(comp);
     for (JBPopup each : popups) {
-      if (each.isFocused()) return focused;
+      if (each.isFocused()) {
+        return focused;
+      }
     }
 
     return null;
   }
 
   @Override
-  public boolean isFocusBeingTransferred() {
-    return !isFocusTransferReady();
-  }
-
-  @NotNull
-  @Override
-  public ActionCallback requestDefaultFocus(boolean forced) {
+  public @NotNull ActionCallback requestDefaultFocus(boolean forced) {
     Component toFocus = null;
-    if (myLastFocusedFrame != null) {
-      toFocus = myLastFocused.get(myLastFocusedFrame);
-      if (toFocus == null || !toFocus.isShowing()) {
-        toFocus = getFocusTargetFor(myLastFocusedFrame.getComponent());
+    IdeFrame lastFocusedFrame = myLastFocusedFrame;
+    if (lastFocusedFrame == null) {
+      for (Window window : Window.getWindows()) {
+        if (window instanceof RootPaneContainer && ((RootPaneContainer)window).getRootPane() != null && window.isActive()) {
+          Component toFocusOptional = getFocusTargetFor(((RootPaneContainer)window).getRootPane());
+          if (toFocusOptional != null) {
+            toFocus = toFocusOptional;
+          }
+          break;
+        }
       }
     }
     else {
-      Window[] windows = Window.getWindows();
-      for (Window each : windows) {
-        if (each.isActive()) {
-          if (each instanceof JFrame) {
-            toFocus = getFocusTargetFor(((JFrame)each).getRootPane());
-            break;
-          } else if (each instanceof JDialog) {
-            toFocus = getFocusTargetFor(((JDialog)each).getRootPane());
-            break;
-          } else if (each instanceof JWindow) {
-            toFocus = getFocusTargetFor(((JWindow)each).getRootPane());
-            break;
-          }          
-        }
+      LOG.assertTrue(lastFocusedFrame instanceof Window);
+      toFocus = myLastFocused.get(lastFocusedFrame);
+      if (toFocus == null || !toFocus.isShowing()) {
+        toFocus = getFocusTargetFor(lastFocusedFrame.getComponent());
       }
-    } 
-    
-    if (toFocus != null) {
-      return requestFocus(new FocusCommand.ByComponent(toFocus, new Exception()).setToInvalidateRequestors(false), forced);
     }
-    
-    
+
+    if (toFocus != null) {
+      return requestFocusInProject(toFocus, null);
+    }
     return ActionCallback.DONE;
   }
 
   @Override
   public boolean isFocusTransferEnabled() {
-    if (Registry.is("focus.fix.lost.cursor")) return true;
-    return myApp.isActive() || !Registry.is("actionSystem.suspendFocusTransferIfApplicationInactive");
+    return Registry.is("focus.fix.lost.cursor", false) ||
+           ApplicationManager.getApplication().isActive() ||
+           !Registry.is("actionSystem.suspendFocusTransferIfApplicationInactive", true);
   }
 
   private static void assertDispatchThread() {
-    if (Registry.is("actionSystem.assertFocusAccessFromEdt")) {
-      ApplicationManager.getApplication().assertIsDispatchThread();
+    if (Registry.is("actionSystem.assertFocusAccessFromEdt", true)) {
+      EDT.assertIsEdt();
     }
   }
 
-  private class SetLastEffectiveRunnable extends EdtRunnable {
-    @Override
-    public void runEdt() {
-      setLastEffectiveForcedRequest(null);
+  private static void logFocusRequest(@NotNull Component c, @Nullable Project project, boolean inWindow) {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug(String.format("inWindow = %s, project = %s, component = %s", inWindow, project, c), new Throwable());
     }
   }
 }

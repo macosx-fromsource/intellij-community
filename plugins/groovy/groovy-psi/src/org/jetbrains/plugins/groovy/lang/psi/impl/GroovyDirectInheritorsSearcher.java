@@ -1,27 +1,17 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl;
 
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Key;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.impl.search.StubHierarchyInheritorSearcher;
+import com.intellij.psi.impl.search.RelaxedDirectInheritorChecker;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.GlobalSearchScopeUtil;
 import com.intellij.psi.search.SearchScope;
+import com.intellij.psi.search.searches.ClassInheritorsSearch;
 import com.intellij.psi.search.searches.DirectClassInheritorsSearch;
 import com.intellij.psi.stubs.StubIndex;
 import com.intellij.psi.util.PsiUtilCore;
@@ -35,17 +25,21 @@ import org.jetbrains.plugins.groovy.lang.psi.stubs.index.GrAnonymousClassIndex;
 import org.jetbrains.plugins.groovy.lang.psi.stubs.index.GrDirectInheritorsIndex;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * @author ven
- */
-public class GroovyDirectInheritorsSearcher implements QueryExecutor<PsiClass, DirectClassInheritorsSearch.SearchParameters> {
+public final class GroovyDirectInheritorsSearcher implements QueryExecutor<PsiClass, DirectClassInheritorsSearch.SearchParameters> {
+  /**
+   * During inheritance checks across Groovy classes, some ast transformations might be applied to them. These transformations, in turn
+   * may call inheritance checks again, so endless recursion is created. Put this key into the base class to skip inheritance checks.
+   *
+   * @see ClassInheritorsSearch.SearchParameters#isCheckInheritance()
+   * @see DirectClassInheritorsSearch.SearchParameters#isCheckInheritance()
+   * @see org.jetbrains.plugins.groovy.transformations.AstTransformationSupport
+   */
+  public static final Key<Boolean> IGNORE_INHERITANCE_CHECK = Key.create("IGNORE_CHECK_INHERITANCE");
 
-  @NotNull
-  private static List<PsiClass> getDerivingClassCandidates(PsiClass clazz, GlobalSearchScope scope, boolean includeAnonymous) {
+  private static @NotNull List<PsiClass> getDerivingClassCandidates(PsiClass clazz, GlobalSearchScope scope, boolean includeAnonymous) {
     final String name = clazz.getName();
     if (name == null) return Collections.emptyList();
     final ArrayList<PsiClass> inheritors = new ArrayList<>();
@@ -57,41 +51,44 @@ public class GroovyDirectInheritorsSearcher implements QueryExecutor<PsiClass, D
       }
     }
     if (includeAnonymous) {
-      final Collection<GrAnonymousClassDefinition> classes =
-        StubIndex.getElements(GrAnonymousClassIndex.KEY, name, clazz.getProject(), scope, GrAnonymousClassDefinition.class);
-      for (GrAnonymousClassDefinition aClass : classes) {
-        inheritors.add(aClass);
-      }
+      inheritors.addAll(StubIndex.getElements(GrAnonymousClassIndex.KEY, name, clazz.getProject(), scope, GrAnonymousClassDefinition.class));
     }
     return inheritors;
   }
 
   @Override
-  public boolean execute(@NotNull final DirectClassInheritorsSearch.SearchParameters queryParameters, @NotNull final Processor<PsiClass> consumer) {
+  public boolean execute(final @NotNull DirectClassInheritorsSearch.SearchParameters queryParameters, final @NotNull Processor<? super PsiClass> consumer) {
     final PsiClass clazz = queryParameters.getClassToProcess();
-    final SearchScope scope = queryParameters.getScope();
+    SearchScope scope = ReadAction.compute(() -> queryParameters.getScope().intersectWith(clazz.getUseScope()));
     Project project = PsiUtilCore.getProjectInReadAction(clazz);
-    if (scope instanceof GlobalSearchScope) {
-      final List<PsiClass> candidates = DumbService.getInstance(project).runReadActionInSmartMode(() -> {
-        if (!clazz.isValid()) return Collections.emptyList();
-          GlobalSearchScope restrictedScope = StubHierarchyInheritorSearcher.restrictScope((GlobalSearchScope)scope);
-          return getDerivingClassCandidates(clazz, restrictedScope, queryParameters.includeAnonymous());
-        });
-      for (final PsiClass candidate : candidates) {
-        if (!queryParameters.isCheckInheritance() || isInheritor(clazz, candidate, project)) {
+    GlobalSearchScope globalSearchScope = GlobalSearchScopeUtil.toGlobalSearchScope(scope, project);
+    DumbService dumbService = DumbService.getInstance(project);
+    List<PsiClass> candidates = dumbService.runReadActionInSmartMode(() -> {
+      if (!clazz.isValid()) return Collections.emptyList();
+      return getDerivingClassCandidates(clazz, globalSearchScope, queryParameters.includeAnonymous());
+    });
+
+    if (!candidates.isEmpty()) {
+      RelaxedDirectInheritorChecker checker = dumbService.runReadActionInSmartMode(() -> new RelaxedDirectInheritorChecker(clazz));
+      boolean shouldSkipInheritanceChecks = shouldSkipInheritanceChecks(queryParameters);
+      for (PsiClass candidate : candidates) {
+        if (shouldSkipInheritanceChecks || (!queryParameters.isCheckInheritance() || dumbService.runReadActionInSmartMode(() -> checker.checkInheritance(candidate)))) {
           if (!consumer.process(candidate)) {
             return false;
           }
         }
       }
-
-      return true;
     }
-
     return true;
   }
 
-  private static boolean isInheritor(PsiClass clazz, PsiClass candidate, Project project) {
-    return DumbService.getInstance(project).runReadActionInSmartMode(() -> candidate.isValid() && candidate.isInheritor(clazz, false));
+  private static boolean shouldSkipInheritanceChecks(@NotNull DirectClassInheritorsSearch.SearchParameters queryParameters) {
+    if (Boolean.TRUE.equals(queryParameters.getClassToProcess().getUserData(IGNORE_INHERITANCE_CHECK))) return true;
+
+    ClassInheritorsSearch.SearchParameters originalParameters = queryParameters.getOriginalParameters();
+    if (originalParameters == null) return false;
+
+    PsiClass baseClass = originalParameters.getClassToProcess();
+    return Boolean.TRUE.equals(baseClass.getUserData(IGNORE_INHERITANCE_CHECK));
   }
 }

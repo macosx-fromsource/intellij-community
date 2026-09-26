@@ -1,79 +1,48 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.source.tree;
 
-import com.intellij.extapi.psi.StubBasedPsiElementBase;
 import com.intellij.lang.ASTNode;
+import com.intellij.lang.FileASTNode;
 import com.intellij.lexer.Lexer;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.Ref;
 import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiWhiteSpace;
-import com.intellij.psi.StubBuilder;
 import com.intellij.psi.impl.DebugUtil;
-import com.intellij.psi.impl.source.PsiFileImpl;
-import com.intellij.psi.stubs.IStubElementType;
-import com.intellij.psi.stubs.StubBase;
-import com.intellij.psi.stubs.StubElement;
-import com.intellij.psi.stubs.StubTree;
+import com.intellij.psi.templateLanguages.OuterLanguageElement;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.tree.IStrongWhitespaceHolderElementType;
-import com.intellij.psi.tree.IStubFileElementType;
 import com.intellij.psi.tree.TokenSet;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-public class TreeUtil {
+public final class TreeUtil {
   private static final Key<String> UNCLOSED_ELEMENT_PROPERTY = Key.create("UNCLOSED_ELEMENT_PROPERTY");
 
-  private TreeUtil() {
-  }
-
-  public static void ensureParsed(ASTNode node) {
+  public static void ensureParsed(@Nullable ASTNode node) {
     if (node != null) {
       node.getFirstChildNode();
     }
-  }
-
-  public static void ensureParsedRecursively(@NotNull ASTNode node) {
-    ((TreeElement)node).acceptTree(new RecursiveTreeElementWalkingVisitor() { });
-  }
-  public static void ensureParsedRecursivelyCheckingProgress(@NotNull ASTNode node, @NotNull final ProgressIndicator indicator) {
-    ((TreeElement)node).acceptTree(new RecursiveTreeElementWalkingVisitor() {
-      @Override
-      public void visitLeaf(LeafElement leaf) {
-        indicator.checkCanceled();
-      }
-    });
   }
 
   public static boolean isCollapsedChameleon(ASTNode node) {
     return node instanceof LazyParseableElement && !((LazyParseableElement)node).isParsed();
   }
 
-  @Nullable
-  public static ASTNode findChildBackward(ASTNode parent, IElementType type) {
-    if (DebugUtil.CHECK_INSIDE_ATOMIC_ACTION_ENABLED) {
-      ApplicationManager.getApplication().assertReadAccessAllowed();
+  @ApiStatus.Internal
+  public static boolean isCollapsedChameleonVersioned(ASTNode node, long version) {
+    return node instanceof LazyParseableElement && !((LazyParseableElement)node).isParsedVersioned(version);
+  }
+
+  public static @Nullable ASTNode findChildBackward(@NotNull ASTNode parent, @NotNull IElementType type) {
+    if (DebugUtil.CHECK_INSIDE_ATOMIC_ACTION_ENABLED && parent instanceof TreeElement) {
+      ((TreeElement)parent).assertReadAccessAllowed();
     }
     for (ASTNode element = parent.getLastChildNode(); element != null; element = element.getTreePrev()) {
       if (element.getElementType() == type) return element;
@@ -81,59 +50,45 @@ public class TreeUtil {
     return null;
   }
 
-  @Nullable
-  public static ASTNode skipElements(ASTNode element, TokenSet types) {
-    while (true) {
-      if (element == null) return null;
-      if (!types.contains(element.getElementType())) break;
-      element = element.getTreeNext();
-    }
-    return element;
+  public static @Nullable ASTNode skipElements(@Nullable ASTNode element, @NotNull TokenSet types) {
+    ASTNode candidate = element;
+    while (candidate != null && types.contains(candidate.getElementType())) candidate = candidate.getTreeNext();
+    return candidate;
   }
 
-  @Nullable
-  public static ASTNode skipElementsBack(@Nullable ASTNode element, TokenSet types) {
-    if (element == null) return null;
-    if (!types.contains(element.getElementType())) return element;
-
-    ASTNode parent = element.getTreeParent();
-    ASTNode prev = element;
-    while (prev instanceof CompositeElement) {
-      if (!types.contains(prev.getElementType())) return prev;
-      prev = prev.getTreePrev();
-    }
-    if (prev == null) return null;
-    ASTNode firstChildNode = parent.getFirstChildNode();
-    ASTNode lastRelevant = null;
-    while (firstChildNode != prev) {
-      if (!types.contains(firstChildNode.getElementType())) lastRelevant = firstChildNode;
-      firstChildNode = firstChildNode.getTreeNext();
-    }
-    return lastRelevant;
+  public static @Nullable ASTNode skipElementsBack(@Nullable ASTNode element, @NotNull TokenSet types) {
+    ASTNode candidate = element;
+    while (candidate != null && types.contains(candidate.getElementType())) candidate = candidate.getTreePrev();
+    return candidate;
   }
 
-  @Nullable
-  public static ASTNode findParent(ASTNode element, IElementType type) {
+  public static @Nullable ASTNode findParent(@NotNull ASTNode element, @NotNull IElementType type) {
     for (ASTNode parent = element.getTreeParent(); parent != null; parent = parent.getTreeParent()) {
       if (parent.getElementType() == type) return parent;
     }
     return null;
   }
 
-  @Nullable
-  public static ASTNode findParent(ASTNode element, TokenSet types) {
+  public static @Nullable ASTNode findParent(@NotNull ASTNode element, @NotNull TokenSet types) {
     for (ASTNode parent = element.getTreeParent(); parent != null; parent = parent.getTreeParent()) {
       if (types.contains(parent.getElementType())) return parent;
     }
     return null;
   }
 
-  @Nullable
-  public static LeafElement findFirstLeaf(ASTNode element) {
+  public static @Nullable ASTNode findParent(@NotNull ASTNode element, @NotNull TokenSet types, @Nullable TokenSet stopAt) {
+    for (ASTNode parent = element.getTreeParent(); parent != null; parent = parent.getTreeParent()) {
+      if (types.contains(parent.getElementType())) return parent;
+      if (stopAt != null && stopAt.contains(parent.getElementType())) return null;
+    }
+    return null;
+  }
+
+  public static @Nullable LeafElement findFirstLeaf(@NotNull ASTNode element) {
     return (LeafElement)findFirstLeaf(element, true);
   }
 
-  public static ASTNode findFirstLeaf(ASTNode element, boolean expandChameleons) {
+  public static ASTNode findFirstLeaf(@NotNull ASTNode element, boolean expandChameleons) {
     if (element instanceof LeafElement || !expandChameleons && isCollapsedChameleon(element)) {
       return element;
     }
@@ -146,36 +101,11 @@ public class TreeUtil {
     }
   }
 
-  private static boolean isLeafOrCollapsedChameleon(ASTNode node) {
-    return node instanceof LeafElement || isCollapsedChameleon(node);
-  }
-
-  @Nullable
-  public static TreeElement findFirstLeafOrChameleon(final TreeElement element) {
-    if (element == null) return null;
-
-    final Ref<TreeElement> result = Ref.create(null);
-    element.acceptTree(new RecursiveTreeElementWalkingVisitor(false) {
-      @Override
-      protected void visitNode(final TreeElement element) {
-        if (isLeafOrCollapsedChameleon(element)) {
-          result.set(element);
-          stopWalking();
-          return;
-        }
-        super.visitNode(element);
-      }
-    });
-
-    return result.get();
-  }
-
-  @Nullable
-  public static ASTNode findLastLeaf(ASTNode element) {
+  public static @Nullable ASTNode findLastLeaf(@NotNull ASTNode element) {
     return findLastLeaf(element, true);
   }
 
-  public static ASTNode findLastLeaf(ASTNode element, boolean expandChameleons) {
+  public static ASTNode findLastLeaf(@NotNull ASTNode element, boolean expandChameleons) {
     if (element instanceof LeafElement || !expandChameleons && isCollapsedChameleon(element)) {
       return element;
     }
@@ -186,8 +116,7 @@ public class TreeUtil {
     return null;
   }
 
-  @Nullable
-  public static ASTNode findSibling(ASTNode start, IElementType elementType) {
+  public static @Nullable ASTNode findSibling(ASTNode start, @NotNull IElementType elementType) {
     ASTNode child = start;
     while (true) {
       if (child == null) return null;
@@ -196,8 +125,7 @@ public class TreeUtil {
     }
   }
 
-  @Nullable
-  public static ASTNode findSibling(ASTNode start, TokenSet types) {
+  public static @Nullable ASTNode findSibling(ASTNode start, @NotNull TokenSet types) {
     ASTNode child = start;
     while (true) {
       if (child == null) return null;
@@ -206,8 +134,7 @@ public class TreeUtil {
     }
   }
 
-  @Nullable
-  public static ASTNode findSiblingBackward(ASTNode start, IElementType elementType) {
+  public static @Nullable ASTNode findSiblingBackward(ASTNode start, @NotNull IElementType elementType) {
     ASTNode child = start;
     while (true) {
       if (child == null) return null;
@@ -217,8 +144,7 @@ public class TreeUtil {
   }
 
 
-  @Nullable
-  public static ASTNode findSiblingBackward(ASTNode start, TokenSet types) {
+  public static @Nullable ASTNode findSiblingBackward(ASTNode start, @NotNull TokenSet types) {
     ASTNode child = start;
     while (true) {
       if (child == null) return null;
@@ -227,11 +153,10 @@ public class TreeUtil {
     }
   }
 
-  @Nullable
-  public static ASTNode findCommonParent(ASTNode one, ASTNode two) {
+  public static @Nullable ASTNode findCommonParent(ASTNode one, ASTNode two) {
     // optimization
     if (one == two) return one;
-    final Set<ASTNode> parents = new HashSet<ASTNode>(20);
+    Set<ASTNode> parents = new HashSet<>(20);
     while (one != null) {
       parents.add(one);
       one = one.getTreeParent();
@@ -243,15 +168,40 @@ public class TreeUtil {
     return null;
   }
 
-  public static Couple<ASTNode> findTopmostSiblingParents(ASTNode one, ASTNode two) {
+  /**
+   * Efficient way of traversing the syntax tree up to its root.
+   * Efficiency comes from the removal of repeated querying of versions.
+   */
+  @ApiStatus.Internal
+  public static @NotNull ASTNode findTopmostParent(@NotNull ASTNode element) {
+    if (element instanceof TreeElement) {
+      TreeElement treeElement = (TreeElement)element;
+      long readingVersion = treeElement.getVersionForReading();
+      TreeElement parent = treeElement.getTreeParentVersioned(readingVersion);
+      while (parent != null) {
+        treeElement = parent;
+        parent = treeElement.getTreeParentVersioned(readingVersion);
+      }
+      return treeElement;
+    } else {
+      ASTNode parent = element.getTreeParent();
+      while (parent != null) {
+        element = parent;
+        parent = parent.getTreeParent();
+      }
+      return element;
+    }
+  }
+
+  public static @NotNull Couple<ASTNode> findTopmostSiblingParents(ASTNode one, ASTNode two) {
     if (one == two) return Couple.of(null, null);
 
-    LinkedList<ASTNode> oneParents = new LinkedList<ASTNode>();
+    LinkedList<ASTNode> oneParents = new LinkedList<>();
     while (one != null) {
       oneParents.add(one);
       one = one.getTreeParent();
     }
-    LinkedList<ASTNode> twoParents = new LinkedList<ASTNode>();
+    LinkedList<ASTNode> twoParents = new LinkedList<>();
     while (two != null) {
       twoParents.add(two);
       two = two.getTreeParent();
@@ -266,23 +216,26 @@ public class TreeUtil {
     return Couple.of(one, two);
   }
 
-  public static void clearCaches(@NotNull final TreeElement tree) {
-    tree.acceptTree(new RecursiveTreeElementWalkingVisitor(false) {
+  public static void clearCaches(@NotNull TreeElement tree) {
+    tree.acceptTree(new RecursiveTreeElementWalkingVisitor(tree, false) {
       @Override
-      protected void visitNode(final TreeElement element) {
+      protected void visitNode(TreeElement element) {
         element.clearCaches();
         super.visitNode(element);
       }
     });
   }
 
-  @Nullable
-  public static ASTNode nextLeaf(@NotNull final ASTNode node) {
+  public static @Nullable ASTNode nextLeaf(@NotNull ASTNode node) {
     return nextLeaf((TreeElement)node, null);
   }
 
+  public static @Nullable LeafElement nextLeaf(@NotNull LeafElement node) {
+    return nextLeaf(node, null);
+  }
+
   public static final Key<FileElement> CONTAINING_FILE_KEY_AFTER_REPARSE = Key.create("CONTAINING_FILE_KEY_AFTER_REPARSE");
-  public static FileElement getFileElement(TreeElement element) {
+  public static FileElement getFileElement(@NotNull TreeElement element) {
     TreeElement parent = element;
     while (parent != null && !(parent instanceof FileElement)) {
       parent = parent.getTreeParent();
@@ -293,8 +246,18 @@ public class TreeUtil {
     return (FileElement)parent;
   }
 
-  @Nullable
-  public static ASTNode prevLeaf(final ASTNode node) {
+  public static FileASTNode getFileElement(@NotNull ASTNode element) {
+    ASTNode parent = element;
+    while (parent != null && !(parent instanceof FileASTNode)) {
+      parent = parent.getTreeParent();
+    }
+    if (parent == null) {
+      parent = element.getUserData(CONTAINING_FILE_KEY_AFTER_REPARSE);
+    }
+    return (FileASTNode)parent;
+  }
+
+  public static @Nullable ASTNode prevLeaf(ASTNode node) {
     return prevLeaf((TreeElement)node, null);
   }
 
@@ -306,16 +269,14 @@ public class TreeUtil {
     return lexer.getBufferSequence().subSequence(lexer.getTokenStart(), lexer.getTokenEnd()).toString();
   }
 
-  @Nullable
-  public static LeafElement nextLeaf(@NotNull TreeElement start, CommonParentState commonParent) {
+  public static @Nullable LeafElement nextLeaf(@NotNull TreeElement start, CommonParentState commonParent) {
     return (LeafElement)nextLeaf(start, commonParent, null, true);
   }
 
-  @Nullable
-  public static TreeElement nextLeaf(@NotNull TreeElement start,
-                                     CommonParentState commonParent,
-                                     IElementType searchedType,
-                                     boolean expandChameleons) {
+  public static @Nullable TreeElement nextLeaf(@NotNull TreeElement start,
+                                               CommonParentState commonParent,
+                                               IElementType searchedType,
+                                               boolean expandChameleons) {
     TreeElement element = start;
     while (element != null) {
       if (commonParent != null) {
@@ -347,16 +308,15 @@ public class TreeUtil {
     }
   }
 
-  @Nullable
-  private static TreeElement findFirstLeafOrType(@NotNull TreeElement element,
-                                                 final IElementType searchedType,
-                                                 final CommonParentState commonParent,
-                                                 final boolean expandChameleons) {
-    class MyVisitor extends RecursiveTreeElementWalkingVisitor {
+  private static @Nullable TreeElement findFirstLeafOrType(@NotNull TreeElement element,
+                                                           IElementType searchedType,
+                                                           CommonParentState commonParent,
+                                                           boolean expandChameleons) {
+    final class MyVisitor extends RecursiveTreeElementWalkingVisitor {
       private TreeElement result;
 
       private MyVisitor(boolean doTransform) {
-        super(doTransform);
+        super(element, doTransform);
       }
 
       @Override
@@ -380,8 +340,7 @@ public class TreeUtil {
     return visitor.result;
   }
 
-  @Nullable
-  public static ASTNode prevLeaf(TreeElement start, @Nullable CommonParentState commonParent) {
+  public static @Nullable ASTNode prevLeaf(TreeElement start, @Nullable CommonParentState commonParent) {
     while (true) {
       if (start == null) return null;
       if (commonParent != null) {
@@ -403,8 +362,7 @@ public class TreeUtil {
     }
   }
 
-  @Nullable
-  public static ASTNode nextLeaf(@Nullable ASTNode start, boolean expandChameleons) {
+  public static @Nullable ASTNode nextLeaf(@Nullable ASTNode start, boolean expandChameleons) {
     while (start != null) {
       for (ASTNode each = start.getTreeNext(); each != null; each = each.getTreeNext()) {
         ASTNode leaf = findFirstLeaf(each, expandChameleons);
@@ -415,8 +373,7 @@ public class TreeUtil {
     return null;
   }
 
-  @Nullable
-  public static ASTNode prevLeaf(@Nullable ASTNode start, boolean expandChameleons) {
+  public static @Nullable ASTNode prevLeaf(@Nullable ASTNode start, boolean expandChameleons) {
     while (start != null) {
       for (ASTNode each = start.getTreePrev(); each != null; each = each.getTreePrev()) {
         ASTNode leaf = findLastLeaf(each, expandChameleons);
@@ -427,14 +384,29 @@ public class TreeUtil {
     return null;
   }
 
-  @Nullable
-  public static ASTNode getLastChild(ASTNode element) {
+  public static @Nullable ASTNode getLastChild(ASTNode element) {
     ASTNode child = element;
     while (child != null) {
       element = child;
       child = element.getLastChildNode();
     }
     return element;
+  }
+
+  public static boolean containsOuterLanguageElements(@NotNull ASTNode node) {
+    AtomicBoolean result = new AtomicBoolean(false);
+    ((TreeElement)node).acceptTree(new RecursiveTreeElementWalkingVisitor(node) {
+      @Override
+      protected void visitNode(TreeElement element) {
+        if (element instanceof OuterLanguageElement) {
+          result.set(true);
+          stopWalking();
+          return;
+        }
+        super.visitNode(element);
+      }
+    });
+    return result.get();
   }
 
   public static final class CommonParentState {
@@ -444,52 +416,11 @@ public class TreeUtil {
     boolean isStrongElementOnRisingSlope = true;
   }
 
-  public static class StubBindingException extends RuntimeException {
-    StubBindingException(String message) {
-      super(message);
-    }
-  }
-
-  public static void bindStubsToTree(@NotNull PsiFileImpl file, @NotNull StubTree stubTree, @NotNull FileElement tree) throws StubBindingException {
-    final ListIterator<StubElement<?>> stubs = stubTree.getPlainList().listIterator();
-    stubs.next();  // skip file root stub
-
-    final IStubFileElementType type = file.getElementTypeForStubBuilder();
-    assert type != null;
-    final StubBuilder builder = type.getBuilder();
-    tree.acceptTree(new RecursiveTreeElementWalkingVisitor() {
-      @Override
-      protected void visitNode(TreeElement node) {
-        CompositeElement parent = node.getTreeParent();
-        if (parent != null && builder.skipChildProcessingWhenBuildingStubs(parent, node)) {
-          return;
-        }
-
-        IElementType type = node.getElementType();
-        if (type instanceof IStubElementType && ((IStubElementType)type).shouldCreateStub(node)) {
-          final StubElement stub = stubs.hasNext() ? stubs.next() : null;
-          if (stub == null || stub.getStubType() != type) {
-            throw new StubBindingException("stub:" + stub + ", AST:" + type);
-          }
-
-          StubBasedPsiElementBase psi = (StubBasedPsiElementBase)node.getPsi();
-          //noinspection unchecked
-          ((StubBase)stub).setPsi(psi);
-          psi.setStubIndex(stubs.previousIndex());
-        }
-
-        super.visitNode(node);
-      }
-    });
-  }
-
-  @Nullable
-  public static ASTNode skipWhitespaceAndComments(final ASTNode node, boolean forward) {
+  public static @Nullable ASTNode skipWhitespaceAndComments(@Nullable ASTNode node, boolean forward) {
     return skipWhitespaceCommentsAndTokens(node, TokenSet.EMPTY, forward);
   }
 
-  @Nullable
-  public static ASTNode skipWhitespaceCommentsAndTokens(final ASTNode node, @NotNull TokenSet alsoSkip, boolean forward) {
+  public static @Nullable ASTNode skipWhitespaceCommentsAndTokens(@Nullable ASTNode node, @NotNull TokenSet alsoSkip, boolean forward) {
     ASTNode element = node;
     while (true) {
       if (element == null) return null;
@@ -499,7 +430,7 @@ public class TreeUtil {
     return element;
   }
 
-  public static boolean isWhitespaceOrComment(ASTNode element) {
+  public static boolean isWhitespaceOrComment(@NotNull ASTNode element) {
     return element.getPsi() instanceof PsiWhiteSpace || element.getPsi() instanceof PsiComment;
   }
 }

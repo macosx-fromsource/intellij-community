@@ -17,24 +17,25 @@ package com.intellij.lang.ant.dom;
 
 import com.intellij.util.xml.Attribute;
 import com.intellij.util.xml.GenericAttributeValue;
+import org.jetbrains.annotations.NonNls;
 
 import java.util.Arrays;
 import java.util.List;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Aug 12, 2010
  */
 public abstract class AntDomTimestampTask extends AntDomPropertyDefiningElement {
   // implicit properties
-  public static final String DSTAMP = "DSTAMP";
-  public static final String TSTAMP = "TSTAMP";
-  public static final String TODAY  = "TODAY";
-  
+  public static final @NonNls String DSTAMP = "DSTAMP";
+  public static final @NonNls String TSTAMP = "TSTAMP";
+  public static final @NonNls String TODAY  = "TODAY";
+
   @Attribute("prefix")
   public abstract GenericAttributeValue<String> getPrefix();
 
-  protected List<String> getImplicitPropertyNames() {
+  @Override
+  protected List<@NonNls String> getImplicitPropertyNames() {
     String prefix = getPrefix().getStringValue();
     if (prefix == null) {
       return Arrays.asList(DSTAMP, TSTAMP, TODAY);
@@ -43,9 +44,5 @@ public abstract class AntDomTimestampTask extends AntDomPropertyDefiningElement 
       prefix += ".";
     }
     return Arrays.asList(prefix + DSTAMP, prefix + TSTAMP, prefix + TODAY);
-  }
-  // todo: provide real values if that is really needed
-  protected String calcPropertyValue(String propertyName) {
-    return super.calcPropertyValue(propertyName);
   }
 }

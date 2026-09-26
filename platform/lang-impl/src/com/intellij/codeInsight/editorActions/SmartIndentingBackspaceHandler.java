@@ -1,52 +1,34 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.editorActions;
 
-import com.intellij.codeStyle.CodeStyleFacade;
-import com.intellij.formatting.FormatterEx;
-import com.intellij.formatting.FormattingModel;
-import com.intellij.formatting.FormattingModelBuilder;
-import com.intellij.lang.LanguageFormatting;
+import com.intellij.application.options.CodeStyle;
+import com.intellij.injected.editor.EditorWindow;
+import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.*;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.fileTypes.FileType;
-import com.intellij.openapi.project.Project;
+import com.intellij.openapi.editor.CaretModel;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.LogicalPosition;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.codeStyle.CodeStyleSettings;
-import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.util.text.CharArrayUtil;
 import org.jetbrains.annotations.NotNull;
 
-public class SmartIndentingBackspaceHandler extends AbstractIndentingBackspaceHandler {
+import java.util.List;
+
+final class SmartIndentingBackspaceHandler extends AbstractIndentingBackspaceHandler {
   private static final Logger LOG = Logger.getInstance(SmartIndentingBackspaceHandler.class);
 
   private String myReplacement;
   private int myStartOffset;
 
-  public SmartIndentingBackspaceHandler() {
+  SmartIndentingBackspaceHandler() {
     super(SmartBackspaceMode.AUTOINDENT);
   }
 
   @Override
   protected void doBeforeCharDeleted(char c, PsiFile file, Editor editor) {
-    Project project = file.getProject();
     Document document = editor.getDocument();
     CharSequence charSequence = document.getImmutableCharSequence();
     CaretModel caretModel = editor.getCaretModel();
@@ -58,13 +40,11 @@ public class SmartIndentingBackspaceHandler extends AbstractIndentingBackspaceHa
       myReplacement = null;
       return;
     }
-    PsiDocumentManager.getInstance(project).commitDocument(document);
-    CodeStyleFacade codeStyleFacade = CodeStyleFacade.getInstance(project);
-    myReplacement = codeStyleFacade.getLineIndent(document, lineStartOffset);
+    myReplacement = CodeStyle.getLineIndent(editor, file.getLanguage(), lineStartOffset, true);
     if (myReplacement == null) {
       return;
     }
-    int tabSize = getTabSize(codeStyleFacade, document);
+    int tabSize = CodeStyle.getIndentOptions(file).TAB_SIZE;
     int targetColumn = getWidth(myReplacement, tabSize);
     int endOffset = CharArrayUtil.shiftForward(charSequence, caretOffset, " \t");
     LogicalPosition logicalPosition = caretOffset < endOffset ? editor.offsetToLogicalPosition(endOffset) : pos;
@@ -79,8 +59,13 @@ public class SmartIndentingBackspaceHandler extends AbstractIndentingBackspaceHa
     else {
       int prevLineEndOffset = document.getLineEndOffset(logicalPosition.line - 1);
       myStartOffset = CharArrayUtil.shiftBackward(charSequence, prevLineEndOffset - 1, " \t") + 1;
-      if (myStartOffset != document.getLineStartOffset(logicalPosition.line - 1)) {
-        myReplacement = getSpacing(file, endOffset);
+      if (myStartOffset != document.getLineStartOffset(logicalPosition.line - 1) || myStartOffset == 0) {
+        int spacing = CodeStyle.getJoinedLinesSpacing(editor, file.getLanguage(), endOffset, true);
+        if (spacing < 0) {
+          LOG.error("The call `codeStyleFacade.getJoinedLinesSpacing` should not return the negative value");
+          spacing = 0;
+        }
+        myReplacement = StringUtil.repeatSymbol(' ', spacing);
       }
     }
   }
@@ -95,27 +80,16 @@ public class SmartIndentingBackspaceHandler extends AbstractIndentingBackspaceHa
     CaretModel caretModel = editor.getCaretModel();
     int endOffset = CharArrayUtil.shiftForward(document.getImmutableCharSequence(), caretModel.getOffset(), " \t");
 
+    if (editor instanceof EditorWindow) {
+      List<TextRange> ranges = InjectedLanguageManager.getInstance(file.getProject())
+                                                      .intersectWithAllEditableFragments(file, new TextRange(myStartOffset, endOffset));
+      if (ranges.size() != 1 || !ranges.get(0).equalsToRange(myStartOffset, endOffset)) return false;
+    }
+
     document.replaceString(myStartOffset, endOffset, myReplacement);
     caretModel.moveToOffset(myStartOffset + myReplacement.length());
 
     return true;
-  }
-
-  private static String getSpacing(PsiFile file, int offset) {
-    FormattingModelBuilder builder = LanguageFormatting.INSTANCE.forContext(file);
-    if (builder == null) {
-      return "";
-    }
-    CodeStyleSettings settings = CodeStyleSettingsManager.getSettings(file.getProject());
-    FormattingModel model = builder.createModel(file, settings);
-    int spacing = FormatterEx.getInstance().getSpacingForBlockAtOffset(model, offset);
-    return StringUtil.repeatSymbol(' ', spacing);
-  }
-
-  private static int getTabSize(@NotNull CodeStyleFacade codeStyleFacade, @NotNull Document document) {
-    VirtualFile file = FileDocumentManager.getInstance().getFile(document);
-    FileType fileType = file == null ? null : file.getFileType();
-    return codeStyleFacade.getTabSize(fileType);
   }
 
   private static int getWidth(@NotNull String indent, int tabSize) {
@@ -126,9 +100,11 @@ public class SmartIndentingBackspaceHandler extends AbstractIndentingBackspaceHa
         case '\t':
           width = tabSize * (width / tabSize + 1);
           break;
+        case ' ':
+          width++;
+          break;
         default:
           LOG.error("Unexpected whitespace character: " + ((int)c));
-        case ' ':
           width++;
       }
     }

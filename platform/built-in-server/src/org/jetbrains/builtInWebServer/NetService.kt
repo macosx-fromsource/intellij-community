@@ -1,21 +1,26 @@
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.builtInWebServer
 
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.filters.TextConsoleBuilder
 import com.intellij.execution.process.OSProcessHandler
-import com.intellij.execution.process.ProcessAdapter
 import com.intellij.execution.process.ProcessEvent
+import com.intellij.execution.process.ProcessListener
 import com.intellij.execution.ui.ConsoleViewContentType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Getter
 import com.intellij.openapi.util.Key
 import com.intellij.util.Consumer
 import com.intellij.util.net.NetUtils
-import org.jetbrains.concurrency.*
+import org.jetbrains.annotations.NonNls
+import org.jetbrains.concurrency.AsyncPromise
+import org.jetbrains.concurrency.AsyncValueLoader
+import org.jetbrains.concurrency.Promise
+import org.jetbrains.concurrency.errorIfNotMessage
+import org.jetbrains.concurrency.isRejected
 import javax.swing.Icon
 
 abstract class NetService @JvmOverloads protected constructor(protected val project: Project, private val consoleManager: ConsoleManager = ConsoleManager()) : Disposable {
@@ -33,14 +38,14 @@ abstract class NetService @JvmOverloads protected constructor(protected val proj
     }
 
     override fun load(promise: AsyncPromise<OSProcessHandler>): Promise<OSProcessHandler> {
-      val port = NetUtils.findAvailableSocketPort()
+      val port = getAvailableSocketPort()
       val processHandler = doGetProcessHandler(port)
       if (processHandler == null) {
         promise.setError("rejected")
         return promise
       }
 
-      promise.rejected {
+      promise.onError {
         processHandler.destroyProcess()
         LOG.errorIfNotMessage(it)
       }
@@ -78,6 +83,8 @@ abstract class NetService @JvmOverloads protected constructor(protected val proj
     }
   }
 
+  protected open fun getAvailableSocketPort() = NetUtils.findAvailableSocketPort()
+
   @Throws(ExecutionException::class)
   protected abstract fun createProcessHandler(project: Project, port: Int): OSProcessHandler?
 
@@ -94,13 +101,14 @@ abstract class NetService @JvmOverloads protected constructor(protected val proj
   protected open fun configureConsole(consoleBuilder: TextConsoleBuilder) {
   }
 
+  @NonNls
   protected abstract fun getConsoleToolWindowId(): String
 
   protected abstract fun getConsoleToolWindowIcon(): Icon
 
   open fun getConsoleToolWindowActions(): ActionGroup = DefaultActionGroup()
 
-  private inner class MyProcessAdapter(private val osProcessHandler: OSProcessHandler?) : ProcessAdapter(), Consumer<String> {
+  private inner class MyProcessAdapter(private val osProcessHandler: OSProcessHandler?) : ProcessListener, Consumer<String> {
     override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
       print(event.text, ConsoleViewContentType.getConsoleViewType(outputType))
     }
@@ -110,7 +118,8 @@ abstract class NetService @JvmOverloads protected constructor(protected val proj
     }
 
     override fun processTerminated(event: ProcessEvent) {
-      if (processHandler.has() && (processHandler.get(false) as Getter<*>).get() == osProcessHandler) {
+      val result = processHandler.resultIfFullFilled
+      if (result != null && result == osProcessHandler) {
         processHandler.reset()
       }
       print("${getConsoleToolWindowId()} terminated\n", ConsoleViewContentType.SYSTEM_OUTPUT)

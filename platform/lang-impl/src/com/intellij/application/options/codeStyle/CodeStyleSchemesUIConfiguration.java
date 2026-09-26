@@ -1,59 +1,46 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.application.options.codeStyle;
 
-import com.intellij.openapi.components.*;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.RoamingType;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.xmlb.XmlSerializerUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.net.MalformedURLException;
 import java.net.URL;
 
-/**
- * @author Rustam Vishnyakov
- */
+@ApiStatus.Internal
 @State(
   name = "CodeStyleSchemesUIConfiguration",
   storages = {@Storage(value = "other.xml", roamingType = RoamingType.DISABLED)}
 )
-public class CodeStyleSchemesUIConfiguration implements PersistentStateComponent<CodeStyleSchemesUIConfiguration> {
+public final class CodeStyleSchemesUIConfiguration implements PersistentStateComponent<CodeStyleSchemesUIConfiguration> {
   public String RECENT_IMPORT_FILE_LOCATION = "";
 
-  @Nullable
   @Override
-  public CodeStyleSchemesUIConfiguration getState() {
+  public @Nullable CodeStyleSchemesUIConfiguration getState() {
     return this;
   }
 
   @Override
-  public void loadState(CodeStyleSchemesUIConfiguration state) {
+  public void loadState(@NotNull CodeStyleSchemesUIConfiguration state) {
     XmlSerializerUtil.copyBean(state, this);
   }
 
   public static CodeStyleSchemesUIConfiguration getInstance() {
-    return ServiceManager.getService(CodeStyleSchemesUIConfiguration.class);
+    return ApplicationManager.getApplication().getService(CodeStyleSchemesUIConfiguration.class);
   }
 
-  public static class Util {
-    @Nullable
-    public static VirtualFile getRecentImportFile() {
+  public static final class Util {
+    public static @Nullable VirtualFile getRecentImportFile() {
       CodeStyleSchemesUIConfiguration configuration = getInstance();
       if (configuration != null) {
         String fileLocation = configuration.RECENT_IMPORT_FILE_LOCATION;

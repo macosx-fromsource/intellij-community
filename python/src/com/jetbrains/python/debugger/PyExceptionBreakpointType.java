@@ -1,65 +1,59 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.debugger;
 
 import com.google.common.collect.Maps;
 import com.intellij.icons.AllIcons;
+import com.intellij.ide.IdeTooltipManager;
 import com.intellij.ide.util.AbstractTreeClassChooserDialog;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.ui.IdeBorderFactory;
+import com.intellij.ui.TooltipWithClickableLinks;
+import com.intellij.ui.components.JBBox;
+import com.intellij.ui.components.JBLabel;
+import com.intellij.util.ui.JBUI;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
 import com.intellij.xdebugger.breakpoints.XBreakpointType;
 import com.intellij.xdebugger.breakpoints.ui.XBreakpointCustomPropertiesPanel;
+import com.intellij.xdebugger.evaluation.XDebuggerEditorsProvider;
+import com.jetbrains.python.PyBundle;
+import com.jetbrains.python.PyClassTreeChooserDialog;
 import com.jetbrains.python.psi.PyClass;
 import com.jetbrains.python.psi.PyUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+import javax.swing.Box;
+import javax.swing.Icon;
+import javax.swing.JCheckBox;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
 
 
-public class PyExceptionBreakpointType
+public final class PyExceptionBreakpointType
   extends XBreakpointType<XBreakpoint<PyExceptionBreakpointProperties>, PyExceptionBreakpointProperties> {
 
   private static final String BASE_EXCEPTION = "BaseException";
 
   public PyExceptionBreakpointType() {
-    super("python-exception", "Python Exception Breakpoint");
+    super("python-exception", PyBundle.message("debugger.exception.breakpoint.type"));
   }
 
-  @NotNull
   @Override
-  public Icon getEnabledIcon() {
+  public @NotNull Icon getEnabledIcon() {
     return AllIcons.Debugger.Db_exception_breakpoint;
   }
 
-  @NotNull
   @Override
-  public Icon getDisabledIcon() {
+  public @NotNull Icon getDisabledIcon() {
     return AllIcons.Debugger.Db_disabled_exception_breakpoint;
   }
 
@@ -75,7 +69,8 @@ public class PyExceptionBreakpointType
 
   @Override
   public XBreakpoint<PyExceptionBreakpointProperties> addBreakpoint(final Project project, JComponent parentComponent) {
-    final PyClassTreeChooserDialog dialog = new PyClassTreeChooserDialog("Select Exception Class",
+    final PyClassTreeChooserDialog dialog = new PyClassTreeChooserDialog(PyBundle.message(
+      "debugger.exception.breakpoint.select.exception.class"),
                                                                          project,
                                                                          GlobalSearchScope.allScope(project),
                                                                          new PyExceptionCachingFilter(), null);
@@ -87,13 +82,8 @@ public class PyExceptionBreakpointType
     if (pyClass != null) {
       final String qualifiedName = pyClass.getQualifiedName();
       assert qualifiedName != null : "Qualified name of the class shouldn't be null";
-      return ApplicationManager.getApplication().runWriteAction(new Computable<XBreakpoint<PyExceptionBreakpointProperties>>() {
-        @Override
-        public XBreakpoint<PyExceptionBreakpointProperties> compute() {
-          return XDebuggerManager.getInstance(project).getBreakpointManager()
-            .addBreakpoint(PyExceptionBreakpointType.this, new PyExceptionBreakpointProperties(qualifiedName));
-        }
-      });
+      return XDebuggerManager.getInstance(project).getBreakpointManager()
+        .addBreakpoint(this, new PyExceptionBreakpointProperties(qualifiedName));
     }
     return null;
   }
@@ -102,7 +92,7 @@ public class PyExceptionBreakpointType
     private final HashMap<Integer, Pair<WeakReference<PyClass>, Boolean>> processedElements = Maps.newHashMap();
 
     @Override
-    public boolean isAccepted(@NotNull final PyClass pyClass) {
+    public boolean isAccepted(final @NotNull PyClass pyClass) {
       final VirtualFile virtualFile = pyClass.getContainingFile().getVirtualFile();
       if (virtualFile == null) {
         return false;
@@ -112,12 +102,7 @@ public class PyExceptionBreakpointType
       final Pair<WeakReference<PyClass>, Boolean> pair = processedElements.get(key);
       boolean isException;
       if (pair == null || pair.first.get() != pyClass) {
-        isException = ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
-          @Override
-          public Boolean compute() {
-            return PyUtil.isExceptionClass(pyClass);
-          }
-        });
+        isException = ReadAction.compute(() -> PyUtil.isExceptionClass(pyClass));
         processedElements.put(key, Pair.create(new WeakReference<>(pyClass), isException));
       }
       else {
@@ -138,11 +123,17 @@ public class PyExceptionBreakpointType
     if (properties != null) {
       String exception = properties.getException();
       if (BASE_EXCEPTION.equals(exception)) {
-        return "Any exception";
+        return PyBundle.message("debugger.exception.breakpoint.any.exception");
       }
       return exception;
     }
     return "";
+  }
+
+  @Override
+  public @Nullable XDebuggerEditorsProvider getEditorsProvider(@NotNull XBreakpoint<PyExceptionBreakpointProperties> breakpoint,
+                                                               @NotNull Project project) {
+    return new PyDebuggerEditorsProvider();
   }
 
   @Override
@@ -160,7 +151,7 @@ public class PyExceptionBreakpointType
   }
 
   @Override
-  public XBreakpointCustomPropertiesPanel<XBreakpoint<PyExceptionBreakpointProperties>> createCustomPropertiesPanel() {
+  public XBreakpointCustomPropertiesPanel<XBreakpoint<PyExceptionBreakpointProperties>> createCustomPropertiesPanel(@NotNull Project project) {
     return new PyExceptionBreakpointPropertiesPanel();
   }
 
@@ -170,20 +161,28 @@ public class PyExceptionBreakpointType
     private JCheckBox myNotifyOnTerminateCheckBox;
     private JCheckBox myNotifyOnRaiseCheckBox;
     private JCheckBox myIgnoreLibrariesCheckBox;
+    private JBLabel myWarningIcon;
 
-    @NotNull
     @Override
-    public JComponent getComponent() {
-      myNotifyOnTerminateCheckBox = new JCheckBox("On termination");
-      myNotifyOnRaiseCheckBox = new JCheckBox("On raise");
-      myIgnoreLibrariesCheckBox = new JCheckBox("Ignore library files");
+    public @NotNull JComponent getComponent() {
+      myNotifyOnTerminateCheckBox = new JCheckBox(PyBundle.message("debugger.exception.breakpoint.on.termination"));
+      myNotifyOnRaiseCheckBox = new JCheckBox(PyBundle.message("debugger.exception.breakpoint.on.raise"));
+      myIgnoreLibrariesCheckBox = new JCheckBox(PyBundle.message("debugger.exception.breakpoint.ignore.library.files"));
 
-      Box notificationsBox = Box.createVerticalBox();
+      JBBox notificationsBox = JBBox.createVerticalBox();
       JPanel panel = new JPanel(new BorderLayout());
       panel.add(myNotifyOnTerminateCheckBox, BorderLayout.NORTH);
       notificationsBox.add(panel);
-      panel = new JPanel(new BorderLayout());
-      panel.add(myNotifyOnRaiseCheckBox, BorderLayout.NORTH);
+      panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+      panel.setBorder(JBUI.Borders.empty());
+      panel.add(myNotifyOnRaiseCheckBox, Integer.valueOf(FlowLayout.LEFT));
+      myWarningIcon = new JBLabel(AllIcons.General.BalloonWarning);
+      IdeTooltipManager.getInstance().setCustomTooltip(
+        myWarningIcon,
+        new TooltipWithClickableLinks.ForBrowser(myWarningIcon,
+                                                 PyBundle.message("debugger.warning.message")));
+      myWarningIcon.setBorder(JBUI.Borders.emptyLeft(5));
+      panel.add(myWarningIcon);
       notificationsBox.add(panel);
       panel = new JPanel(new BorderLayout());
       panel.add(myIgnoreLibrariesCheckBox, BorderLayout.NORTH);
@@ -195,7 +194,7 @@ public class PyExceptionBreakpointType
       innerPanel.add(Box.createHorizontalStrut(3), BorderLayout.WEST);
       innerPanel.add(Box.createHorizontalStrut(3), BorderLayout.EAST);
       panel.add(innerPanel, BorderLayout.NORTH);
-      panel.setBorder(IdeBorderFactory.createTitledBorder("Activation policy", true));
+      panel.setBorder(IdeBorderFactory.createTitledBorder(PyBundle.message("debugger.exception.breakpoint.activation.policy")));
 
       return panel;
     }

@@ -35,22 +35,16 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 
-/**
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 10.08.2007
- */
 public class RncFoldingBuilder implements FoldingBuilder {
   @Override
-  @NotNull
-  public FoldingDescriptor[] buildFoldRegions(@NotNull ASTNode node, @NotNull Document document) {
+  public FoldingDescriptor @NotNull [] buildFoldRegions(@NotNull ASTNode node, @NotNull Document document) {
 
     final ArrayList<FoldingDescriptor> regions = new ArrayList<>();
     process(node, document, regions);
 
-    return regions.size() > 0
-            ? regions.toArray(new FoldingDescriptor[regions.size()])
-            : FoldingDescriptor.EMPTY;
+    return !regions.isEmpty()
+           ? regions.toArray(FoldingDescriptor.EMPTY_ARRAY)
+           : FoldingDescriptor.EMPTY_ARRAY;
   }
 
   @Override
@@ -86,7 +80,7 @@ public class RncFoldingBuilder implements FoldingBuilder {
     return isCommentLike(node.getElementType()) && CodeFoldingSettings.getInstance().COLLAPSE_DOC_COMMENTS;
   }
 
-  private static void process(@Nullable ASTNode node, Document document, ArrayList<FoldingDescriptor> regions) {
+  private static void process(@Nullable ASTNode node, Document document, ArrayList<? super FoldingDescriptor> regions) {
     if (node == null) {
       return;
     }
@@ -119,8 +113,7 @@ public class RncFoldingBuilder implements FoldingBuilder {
     }
   }
 
-  @Nullable
-  private static ASTNode checkNodeAndSiblings(@Nullable ASTNode node, TokenSet tokens, ArrayList<FoldingDescriptor> regions, Document document) {
+  private static @Nullable ASTNode checkNodeAndSiblings(@Nullable ASTNode node, TokenSet tokens, ArrayList<? super FoldingDescriptor> regions, Document document) {
     if (node != null && tokens.contains(node.getElementType())) {
       final ASTNode start = node;
       ASTNode end = start;

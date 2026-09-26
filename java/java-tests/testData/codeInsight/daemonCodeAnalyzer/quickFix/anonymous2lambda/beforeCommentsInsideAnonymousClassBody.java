@@ -1,8 +1,9 @@
-// "Replace with lambda" "true"
+// "Replace with lambda" "true-preview"
 
 class Test {
-  Runnable r = new Ru<caret>nnable() {
-    //my comment
+  Runnable r = new//comment inside new expression
+    Ru<caret>nnable() {
+   //my comment
     public void run () {}
   };
 }

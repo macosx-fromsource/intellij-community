@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.changes.committed;
 
 import com.intellij.ide.util.treeView.TreeState;
@@ -27,29 +13,32 @@ import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.ChangesUtil;
 import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNode;
 import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNodeRenderer;
+import com.intellij.openapi.vcs.changes.ui.DirectoryChangesGroupingPolicy;
 import com.intellij.openapi.vcs.changes.ui.TreeModelBuilder;
 import com.intellij.openapi.vcs.versionBrowser.CommittedChangeList;
 import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.vcsUtil.VcsUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.DefaultMutableTreeNode;
-import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
-/**
- * @author yole
- */
+
+@ApiStatus.Internal
 public class StructureFilteringStrategy implements ChangeListFilteringStrategy {
   private final List<ChangeListener> myListeners = ContainerUtil.createLockFreeCopyOnWriteList();
   private MyUI myUI;
@@ -61,23 +50,25 @@ public class StructureFilteringStrategy implements ChangeListFilteringStrategy {
   }
 
   @Override
-  public CommittedChangesFilterKey getKey() {
+  public @NotNull CommittedChangesFilterKey getKey() {
     return new CommittedChangesFilterKey(toString(), CommittedChangesFilterPriority.STRUCTURE);
   }
 
+  @Override
   public String toString() {
     return VcsBundle.message("filter.structure.name");
   }
 
-  @Nullable
-  public JComponent getFilterUI() {
+  @Override
+  public @Nullable JComponent getFilterUI() {
     if (myUI == null) {
       myUI = new MyUI();
     }
     return myUI.getComponent();
   }
 
-  public void setFilterBase(List<CommittedChangeList> changeLists) {
+  @Override
+  public void setFilterBase(@NotNull List<? extends CommittedChangeList> changeLists) {
     // todo cycle here
     if (myUI == null) {
       myUI = new MyUI();
@@ -86,26 +77,30 @@ public class StructureFilteringStrategy implements ChangeListFilteringStrategy {
     myUI.append(changeLists);
   }
 
-  public void addChangeListener(ChangeListener listener) {
+  @Override
+  public void addChangeListener(@NotNull ChangeListener listener) {
     myListeners.add(listener);
   }
 
-  public void removeChangeListener(ChangeListener listener) {
+  @Override
+  public void removeChangeListener(@NotNull ChangeListener listener) {
     myListeners.remove(listener);
   }
 
+  @Override
   public void resetFilterBase() {
     myUI.reset();
   }
 
-  public void appendFilterBase(List<CommittedChangeList> changeLists) {
+  @Override
+  public void appendFilterBase(@NotNull List<? extends CommittedChangeList> changeLists) {
     myUI.append(changeLists);
   }
 
-  @NotNull
-  public List<CommittedChangeList> filterChangeLists(List<CommittedChangeList> changeLists) {
-    if (mySelection.size() == 0) {
-      return changeLists;
+  @Override
+  public @NotNull List<CommittedChangeList> filterChangeLists(@NotNull List<? extends CommittedChangeList> changeLists) {
+    if (mySelection.isEmpty()) {
+      return new ArrayList<>(changeLists);
     }
     final ArrayList<CommittedChangeList> result = new ArrayList<>();
     for (CommittedChangeList list : changeLists) {
@@ -132,14 +127,15 @@ public class StructureFilteringStrategy implements ChangeListFilteringStrategy {
     private final JComponent myScrollPane;
     private final Tree myStructureTree;
     private boolean myRendererInitialized;
-    private final TreeModelBuilder myBuilder;
+    private final Set<FilePath> myFilePaths = new HashSet<>();
     private TreeState myState;
 
-    public MyUI() {
+    MyUI() {
       myStructureTree = new Tree();
       myStructureTree.setRootVisible(false);
       myStructureTree.setShowsRootHandles(true);
       myStructureTree.getSelectionModel().addTreeSelectionListener(new TreeSelectionListener() {
+        @Override
         public void valueChanged(final TreeSelectionEvent e) {
           final List<FilePath> filePaths = new ArrayList<>(mySelection);
 
@@ -159,21 +155,17 @@ public class StructureFilteringStrategy implements ChangeListFilteringStrategy {
         }
       });
       myScrollPane = ScrollPaneFactory.createScrollPane(myStructureTree);
-      myBuilder = new TreeModelBuilder(myProject, false);
     }
 
-    @NotNull
-    private List<FilePath> getFilePathsUnder(@NotNull ChangesBrowserNode<?> node) {
+    private static @NotNull List<FilePath> getFilePathsUnder(@NotNull ChangesBrowserNode<?> node) {
       List<FilePath> result = Collections.emptyList();
       Object userObject = node.getUserObject();
 
       if (userObject instanceof FilePath) {
-        result = ContainerUtil.list(((FilePath)userObject));
+        result = Collections.singletonList(((FilePath)userObject));
       }
       else if (userObject instanceof Module) {
-        result = Arrays.stream(ModuleRootManager.getInstance((Module)userObject).getContentRoots())
-          .map(VcsUtil::getFilePath)
-          .collect(Collectors.toList());
+        result = ContainerUtil.map(ModuleRootManager.getInstance((Module)userObject).getContentRoots(), VcsUtil::getFilePath);
       }
 
       return result;
@@ -191,28 +183,27 @@ public class StructureFilteringStrategy implements ChangeListFilteringStrategy {
     }
 
     public void reset() {
+      myFilePaths.clear();
       myState = TreeState.createOn(myStructureTree, (DefaultMutableTreeNode)myStructureTree.getModel().getRoot());
-      myStructureTree.setModel(myBuilder.clearAndGetModel());
+      myStructureTree.setModel(TreeModelBuilder.buildEmpty());
     }
 
-    public void append(final List<CommittedChangeList> changeLists) {
-      final TreeState localState = (myState != null) && myBuilder.isEmpty()
+    public void append(final List<? extends CommittedChangeList> changeLists) {
+      final TreeState localState = myState != null && myFilePaths.isEmpty()
                                    ? myState
                                    : TreeState.createOn(myStructureTree, (DefaultMutableTreeNode)myStructureTree.getModel().getRoot());
 
-      final Set<FilePath> filePaths = new HashSet<>();
       for (CommittedChangeList changeList : changeLists) {
         for (Change change : changeList.getChanges()) {
           final FilePath path = ChangesUtil.getFilePath(change);
           if (path.getParentPath() != null) {
-            filePaths.add(path.getParentPath());
+            myFilePaths.add(path.getParentPath());
           }
         }
       }
 
-      final DefaultTreeModel model = myBuilder.buildModelFromFilePaths(filePaths);
-      myStructureTree.setModel(model);
-      localState.applyTo(myStructureTree, (DefaultMutableTreeNode)myStructureTree.getModel().getRoot());
+      myStructureTree.setModel(TreeModelBuilder.buildFromFilePaths(myProject, new DirectoryChangesGroupingPolicy.Factory(), myFilePaths));
+      localState.applyTo(myStructureTree, myStructureTree.getModel().getRoot());
       myStructureTree.revalidate();
       myStructureTree.repaint();
       initRenderer();

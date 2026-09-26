@@ -1,34 +1,22 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
 import org.jetbrains.java.decompiler.code.cfg.BasicBlock;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
-import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeDirection;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeType;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.BasicBlockStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.SequenceStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement.StatementType;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
 
-public class SequenceHelper {
+public final class SequenceHelper {
 
 
   public static void condenseSequences(Statement root) {
@@ -37,17 +25,16 @@ public class SequenceHelper {
 
   private static void condenseSequencesRec(Statement stat) {
 
-    if (stat.type == Statement.TYPE_SEQUENCE) {
+    if (stat.type == StatementType.SEQUENCE) {
 
-      List<Statement> lst = new ArrayList<>();
-      lst.addAll(stat.getStats());
+      List<Statement> lst = new ArrayList<>(stat.getStats());
 
       boolean unfolded = false;
 
       // unfold blocks
       for (int i = 0; i < lst.size(); i++) {
         Statement st = lst.get(i);
-        if (st.type == Statement.TYPE_SEQUENCE) {
+        if (st.type == StatementType.SEQUENCE) {
 
           removeEmptyStatements((SequenceStatement)st);
 
@@ -56,14 +43,14 @@ public class SequenceHelper {
             Statement first = st.getFirst();
             for (StatEdge edge : st.getAllPredecessorEdges()) {
               st.removePredecessor(edge);
-              edge.getSource().changeEdgeNode(Statement.DIRECTION_FORWARD, edge, first);
+              edge.getSource().changeEdgeNode(EdgeDirection.FORWARD, edge, first);
               first.addPredecessor(edge);
             }
 
             // move successors
             Statement last = st.getStats().getLast();
             if (last.getAllSuccessorEdges().isEmpty() && i < lst.size() - 1) {
-              last.addSuccessor(new StatEdge(StatEdge.TYPE_REGULAR, last, lst.get(i + 1)));
+              last.addSuccessor(new StatEdge(EdgeType.REGULAR, last, lst.get(i + 1)));
             }
             else {
               for (StatEdge edge : last.getAllSuccessorEdges()) {
@@ -73,7 +60,7 @@ public class SequenceHelper {
                   }
                 }
                 else {
-                  edge.getSource().changeEdgeType(Statement.DIRECTION_FORWARD, edge, StatEdge.TYPE_REGULAR);
+                  edge.getSource().changeEdgeType(EdgeDirection.FORWARD, edge, EdgeType.REGULAR);
                   edge.closure.getLabelEdges().remove(edge);
                   edge.closure = null;
                 }
@@ -110,7 +97,7 @@ public class SequenceHelper {
     }
 
     // sequence consisting of one statement -> disband
-    if (stat.type == Statement.TYPE_SEQUENCE) {
+    if (stat.type == StatementType.SEQUENCE) {
 
       removeEmptyStatements((SequenceStatement)stat);
 
@@ -144,7 +131,7 @@ public class SequenceHelper {
     outer:
     while (true) {
       for (Statement st : stat.getStats()) {
-        if ((st.getStats().isEmpty() || st.getExprents() != null) && st.type != Statement.TYPE_BASICBLOCK) {
+        if ((st.getStats().isEmpty() || st.getExprents() != null) && st.type != StatementType.BASIC_BLOCK) {
           destroyAndFlattenStatement(st);
           continue outer;
         }
@@ -168,7 +155,7 @@ public class SequenceHelper {
       }
     }
 
-    for (StatEdge edge : next.getPredecessorEdges(StatEdge.TYPE_BREAK)) {
+    for (StatEdge edge : next.getPredecessorEdges(EdgeType.BREAK)) {
       if (last != edge.getSource() && !last.containsStatementStrict(edge.getSource())) {
         return false;
       }
@@ -194,7 +181,7 @@ public class SequenceHelper {
         if (st.getExprents() != null && st.getExprents().isEmpty()) {
 
           if (st.getAllSuccessorEdges().isEmpty()) {
-            List<StatEdge> lstBreaks = st.getPredecessorEdges(StatEdge.TYPE_BREAK);
+            List<StatEdge> lstBreaks = st.getPredecessorEdges(EdgeType.BREAK);
 
             if (lstBreaks.isEmpty()) {
               for (StatEdge edge : st.getAllPredecessorEdges()) {
@@ -205,16 +192,16 @@ public class SequenceHelper {
           }
           else {
             StatEdge sucedge = st.getAllSuccessorEdges().get(0);
-            if (sucedge.getType() != StatEdge.TYPE_FINALLYEXIT) {
+            if (sucedge.getType() != EdgeType.FINALLY_EXIT) {
               st.removeSuccessor(sucedge);
 
               for (StatEdge edge : st.getAllPredecessorEdges()) {
-                if (sucedge.getType() != StatEdge.TYPE_REGULAR) {
-                  edge.getSource().changeEdgeType(Statement.DIRECTION_FORWARD, edge, sucedge.getType());
+                if (sucedge.getType() != EdgeType.REGULAR) {
+                  edge.getSource().changeEdgeType(EdgeDirection.FORWARD, edge, sucedge.getType());
                 }
 
                 st.removePredecessor(edge);
-                edge.getSource().changeEdgeNode(Statement.DIRECTION_FORWARD, edge, sucedge.getDestination());
+                edge.getSource().changeEdgeNode(EdgeDirection.FORWARD, edge, sucedge.getDestination());
                 sucedge.getDestination().addPredecessor(edge);
 
                 if (sucedge.closure != null) {
@@ -283,15 +270,10 @@ public class SequenceHelper {
       return stat;
     }
 
-    switch (stat.type) {
-      case Statement.TYPE_IF:
-      case Statement.TYPE_SEQUENCE:
-      case Statement.TYPE_SWITCH:
-      case Statement.TYPE_SYNCRONIZED:
-        return getFirstExprentlist(stat.getFirst());
-    }
-
-    return null;
+    return switch (stat.type) {
+      case IF, SEQUENCE, SWITCH, SYNCHRONIZED -> getFirstExprentlist(stat.getFirst());
+      default -> null;
+    };
   }
 
 

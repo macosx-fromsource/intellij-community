@@ -24,9 +24,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * @author Nadya Zabrodina
- */
 public class HgVersionTest extends HgPlatformTest {
 
   //todo: should be changed to Junit Parameterized tests
@@ -47,7 +44,7 @@ public class HgVersionTest extends HgPlatformTest {
 
   public void testParseSupported() throws Exception {
     for (TestHgVersion test : commonTests) {
-      HgVersion version = HgVersion.parseVersionAndExtensionInfo(test.output, Collections.<String>emptyList());
+      HgVersion version = HgVersion.parseVersionAndExtensionInfo(test.output, Collections.emptyList());
       assertEqualVersions(version, test);
       assertTrue(version.isSupported());
     }
@@ -56,7 +53,7 @@ public class HgVersionTest extends HgPlatformTest {
   public void testParseUnsupported() throws Exception {
     TestHgVersion unsupportedVersion = new TestHgVersion("Mercurial Distributed SCM (version 1.5.1)", 1, 5, 1);
     HgVersion parsedVersion =
-      HgVersion.parseVersionAndExtensionInfo(unsupportedVersion.output, Collections.<String>emptyList());
+      HgVersion.parseVersionAndExtensionInfo(unsupportedVersion.output, Collections.emptyList());
     assertEqualVersions(parsedVersion, unsupportedVersion);
     assertFalse(parsedVersion.isSupported());
   }
@@ -99,7 +96,7 @@ public class HgVersionTest extends HgPlatformTest {
     private final int middle;
     private final int minor;
 
-    public TestHgVersion(String output, int major, int middle, int minor) {
+    TestHgVersion(String output, int major, int middle, int minor) {
       this.output = output;
       this.major = major;
       this.middle = middle;

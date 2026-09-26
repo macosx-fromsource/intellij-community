@@ -1,129 +1,155 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon.impl.quickfix;
 
 import com.intellij.application.options.ModuleListCellRenderer;
 import com.intellij.codeInsight.daemon.QuickFixBundle;
-import com.intellij.codeInsight.daemon.impl.actions.AddImportAction;
-import com.intellij.compiler.ModuleCompilerUtil;
-import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.codeInsight.daemon.ReferenceImporter;
+import com.intellij.codeInsight.daemon.impl.analysis.JavaModuleGraphUtil;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.ide.nls.NlsMessages;
+import com.intellij.java.JavaBundle;
+import com.intellij.openapi.application.AccessToken;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtilCore;
-import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.roots.*;
+import com.intellij.openapi.roots.DependencyScope;
+import com.intellij.openapi.roots.JavaProjectModelModificationService;
+import com.intellij.openapi.roots.ModuleOrderEntry;
+import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.ui.popup.IPopupChooserBuilder;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Couple;
-import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.*;
-import com.intellij.ui.components.JBList;
+import com.intellij.openapi.util.text.HtmlChunk;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaModule;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiNameHelper;
+import com.intellij.psi.PsiPolyVariantReference;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.impl.source.resolve.JavaResolveUtil;
+import com.intellij.util.SlowOperations;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.modules.CircularModuleDependenciesDetector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.function.BooleanSupplier;
+
+import static com.intellij.openapi.roots.DependencyScope.TEST;
 
 /**
  * @author anna
- * @since 20.11.2012
  */
-class AddModuleDependencyFix extends AddOrderEntryFix {
-  private static final Logger LOG = Logger.getInstance(AddModuleDependencyFix.class);
-
+class AddModuleDependencyFix extends OrderEntryFix {
   private final Module myCurrentModule;
-  private final VirtualFile myRefVFile;
-  private final List<PsiClass> myClasses;
-  private final Set<Module> myModules;
+  private final Set<? extends Module> myModules;
+  private final DependencyScope myScope;
+  private final boolean myExported;
 
-  public AddModuleDependencyFix(Module currentModule, VirtualFile refVFile, List<PsiClass> classes, PsiReference reference) {
+  AddModuleDependencyFix(@NotNull PsiReference reference,
+                         @NotNull Module currentModule,
+                         @NotNull DependencyScope scope,
+                         @NotNull List<? extends PsiMember> members) {
     super(reference);
     myCurrentModule = currentModule;
-    myRefVFile = refVFile;
-    myClasses = classes;
-    myModules = new LinkedHashSet<>();
+    LinkedHashSet<Module> modules = new LinkedHashSet<>();
+    myScope = scope;
+    myExported = false;
 
-    final PsiElement psiElement = reference.getElement();
-    final Project project = psiElement.getProject();
-    final JavaPsiFacade facade = JavaPsiFacade.getInstance(project);
-    final ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
-    final ModuleRootManager rootManager = ModuleRootManager.getInstance(currentModule);
-    for (PsiClass aClass : classes) {
-      if (!facade.getResolveHelper().isAccessible(aClass, psiElement, aClass)) continue;
-      PsiFile psiFile = aClass.getContainingFile();
-      if (psiFile == null) continue;
-      VirtualFile virtualFile = psiFile.getVirtualFile();
-      if (virtualFile == null) continue;
-      Module classModule = fileIndex.getModuleForFile(virtualFile);
-      if (classModule != null && classModule != currentModule && !rootManager.isDependsOn(classModule)) {
-        myModules.add(classModule);
+    PsiElement psiElement = reference.getElement();
+    ModuleRootManager rootManager = ModuleRootManager.getInstance(currentModule);
+    for (PsiMember member : members) {
+      if (isAccessible(member, psiElement)) {
+        Module memberModule = ModuleUtilCore.findModuleForFile(member.getContainingFile());
+        if (memberModule != null && memberModule != currentModule && !dependsWithScope(rootManager, memberModule, scope)) {
+          modules.add(memberModule);
+        }
       }
     }
-  }
-
-  public AddModuleDependencyFix(Module currentModule, VirtualFile refVFile, Set<Module> modules, PsiReference reference) {
-    super(reference);
-    myCurrentModule = currentModule;
-    myRefVFile = refVFile;
-    myClasses = Collections.emptyList();
     myModules = modules;
   }
 
-  @Override
-  @NotNull
-  public String getText() {
-    if (myModules.size() == 1) {
-      final Module module = ContainerUtil.getFirstItem(myModules);
-      LOG.assertTrue(module != null);
-      return QuickFixBundle.message("orderEntry.fix.add.dependency.on.module", module.getName());
-    }
-    else {
-      return QuickFixBundle.message("orderEntry.fix.add.dependency.on.module.choose");
-    }
+  AddModuleDependencyFix(@NotNull PsiPolyVariantReference reference,
+                         @NotNull Module currentModule,
+                         @NotNull Set<? extends Module> modules,
+                         @NotNull DependencyScope scope,
+                         boolean exported) {
+    super(reference);
+    myCurrentModule = currentModule;
+    myModules = modules;
+    myScope = scope;
+    myExported = exported;
+  }
+
+  private static boolean dependsWithScope(@NotNull ModuleRootManager rootManager, Module classModule, DependencyScope scope) {
+    return ContainerUtil.exists(rootManager.getOrderEntries(),
+                                entry -> entry instanceof ModuleOrderEntry orderEntry && classModule.equals(orderEntry.getModule()) &&
+                                         (scope == TEST || scope == orderEntry.getScope()));
+  }
+
+  private static boolean isAccessible(PsiMember member, PsiElement refElement) {
+    PsiClass containingClass = member.getContainingClass();
+    return JavaResolveUtil.isAccessible(member, containingClass, member.getModifierList(), refElement, member instanceof PsiClass m ? m : containingClass, null);
   }
 
   @Override
-  @NotNull
-  public String getFamilyName() {
+  public @NotNull String getText() {
+    if (myModules.size() == 1) {
+      Module module = ContainerUtil.getFirstItem(myModules);
+      assert module != null;
+      return QuickFixBundle.message("orderEntry.fix.add.dependency.on.module", getModuleName(module));
+    }
+    return QuickFixBundle.message("orderEntry.fix.add.dependency.on.module.choose");
+  }
+
+  @Override
+  public @NotNull String getFamilyName() {
     return QuickFixBundle.message("orderEntry.fix.family.add.module.dependency");
   }
 
   @Override
-  public boolean isAvailable(@NotNull Project project, Editor editor, PsiFile file) {
-    return !project.isDisposed() && !myCurrentModule.isDisposed() && !myModules.isEmpty() && myModules.stream().noneMatch(Module::isDisposed);
+  public boolean isAvailable(@NotNull Project project, Editor editor, PsiFile psiFile) {
+    return !project.isDisposed() &&
+           !myCurrentModule.isDisposed() &&
+           !myModules.isEmpty() &&
+           !ContainerUtil.exists(myModules, Module::isDisposed);
   }
 
   @Override
-  public void invoke(@NotNull Project project, @Nullable Editor editor, PsiFile file) {
+  public void invoke(@NotNull Project project, @Nullable Editor editor, PsiFile psiFile) {
     if (myModules.size() == 1) {
       addDependencyOnModule(project, editor, ContainerUtil.getFirstItem(myModules));
     }
     else {
-      JBList<Module> list = new JBList<>(myModules);
-      list.setCellRenderer(new ModuleListCellRenderer());
-      JBPopup popup = JBPopupFactory.getInstance().createListPopupBuilder(list)
+      ModuleListCellRenderer renderer = new ModuleListCellRenderer();
+
+      //noinspection DialogTitleCapitalization
+      IPopupChooserBuilder<? extends Module> builder = JBPopupFactory.getInstance()
+        .createPopupChooserBuilder(new ArrayList<>(myModules))
+        .setRenderer(renderer)
         .setTitle(QuickFixBundle.message("orderEntry.fix.choose.module.to.add.dependency.on"))
         .setMovable(false)
         .setResizable(false)
         .setRequestFocus(true)
-        .setItemChoosenCallback(() -> addDependencyOnModule(project, editor, list.getSelectedValue()))
-        .createPopup();
+        .setItemChosenCallback(selectedValue -> {
+          if (selectedValue != null) {
+            addDependencyOnModule(project, editor, selectedValue);
+          }
+        });
+      builder = renderer.installSpeedSearch(builder);
+      JBPopup popup = builder.createPopup();
       if (editor != null) {
         popup.showInBestPositionFor(editor);
       }
@@ -133,36 +159,73 @@ class AddModuleDependencyFix extends AddOrderEntryFix {
     }
   }
 
-  private void addDependencyOnModule(Project project, Editor editor, @Nullable Module module) {
-    if (module == null) return;
-    Couple<Module> circularModules = ModuleCompilerUtil.addingDependencyFormsCircularity(myCurrentModule, module);
-    if (circularModules == null || showCircularWarning(project, circularModules, module)) {
-      WriteAction.run(() -> {
-        boolean test = ModuleRootManager.getInstance(myCurrentModule).getFileIndex().isInTestSourceContent(myRefVFile);
-        DependencyScope scope = test ? DependencyScope.TEST : DependencyScope.COMPILE;
-        JavaProjectModelModificationService.getInstance(project).addDependency(myCurrentModule, module, scope);
-
-        if (editor != null && !myClasses.isEmpty()) {
-          PsiClass[] targetClasses = myClasses.stream()
-            .filter(c -> ModuleUtilCore.findModuleForPsiElement(c) == module)
-            .toArray(PsiClass[]::new);
-          if (targetClasses.length > 0 && !DumbService.isDumb(project)) {
-            new AddImportAction(project, myReference, editor, targetClasses).execute();
-          }
-        }
-      });
-    }
-  }
-
-  private static boolean showCircularWarning(Project project, Couple<Module> circle, Module classModule) {
-    String message = QuickFixBundle.message("orderEntry.fix.circular.dependency.warning",
-                                            classModule.getName(), circle.getFirst().getName(), circle.getSecond().getName());
-    String title = QuickFixBundle.message("orderEntry.fix.title.circular.dependency.warning");
-    return Messages.showOkCancelDialog(project, message, title, Messages.getWarningIcon()) == Messages.OK;
-  }
-
   @Override
-  public boolean startInWriteAction() {
-    return false;
+  public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile psiFile) {
+    return new IntentionPreviewInfo.Html(
+      HtmlChunk.text(JavaBundle.message("adds.module.dependencies.preview",
+                                        myModules.size(),
+                                        getModuleName(ContainerUtil.getFirstItem(myModules)),
+                                        NlsMessages.formatAndList(ContainerUtil.map(myModules, module -> "'" + getModuleName(module) + "'")),
+                                        getModuleName(myCurrentModule))));
+  }
+
+  private void addDependencyOnModule(@NotNull Project project, Editor editor, @NotNull Module module) {
+    ReadAction.nonBlocking(() -> CircularModuleDependenciesDetector.addingDependencyFormsCircularity(myCurrentModule, module))
+      .expireWhen(() -> project.isDisposed() || module.isDisposed())
+      .finishOnUiThread(ModalityState.nonModal(), circularModules -> {
+        try (AccessToken ignore = SlowOperations.knownIssue("IDEA-359248")) {
+          addDependencyOnModuleEDT(project, editor, module, circularModules);
+        }
+      }).submit(AppExecutorUtil.getAppExecutorService());
+  }
+
+  private void addDependencyOnModuleEDT(@NotNull Project project, Editor editor, @NotNull Module module, Couple<Module> circularModules) {
+    if (circularModules != null && !showCircularWarning(project, circularModules, module)) return;
+
+    JavaProjectModelModificationService.getInstance(project).addDependency(myCurrentModule, module, myScope, myExported)
+      .onSuccess(_ -> {
+        ReadAction.nonBlocking(() -> {
+            PsiReference ref = restoreReference();
+            List<BooleanSupplier> autoImportActions = new ArrayList<>();
+            if (ref != null) {
+              PsiElement element = ref.getElement();
+              PsiFile psiFile = element.getContainingFile();
+              for (ReferenceImporter importer : ReferenceImporter.EP_NAME.getExtensionList()) {
+                BooleanSupplier action = importer.computeAutoImportAtOffset(editor, psiFile, element.getTextOffset(), false);
+                if (action != null) {
+                  autoImportActions.add(action);
+                }
+              }
+            }
+            return autoImportActions;
+          }).finishOnUiThread(ModalityState.nonModal(), actions -> {
+            for (BooleanSupplier action : actions) {
+              if (action.getAsBoolean()) {
+                break;
+              }
+            }
+          })
+          .submit(AppExecutorUtil.getAppExecutorService());
+      });
+  }
+
+  private boolean showCircularWarning(@NotNull Project project, @NotNull Couple<Module> circle, @NotNull Module classModule) {
+    String message = QuickFixBundle.message("orderEntry.fix.circular.dependency.warning",
+                                            getModuleName(classModule), getModuleName(circle.getFirst()),
+                                            getModuleName(circle.getSecond()));
+    String title = QuickFixBundle.message("orderEntry.fix.title.circular.dependency.warning");
+    return Messages.showOkCancelDialog(project, message, title,
+                                       Messages.getYesButton(),
+                                       Messages.getCancelButton(),
+                                       Messages.getWarningIcon()) == Messages.OK;
+  }
+
+  private @NotNull String getModuleName(@NotNull Module module) {
+    final PsiJavaModule javaModule = JavaModuleGraphUtil.findDescriptorByModule(module, myScope == TEST);
+    if (javaModule != null && PsiNameHelper.isValidModuleName(javaModule.getName(), javaModule)) {
+      return javaModule.getName();
+    } else {
+      return module.getName();
+    }
   }
 }

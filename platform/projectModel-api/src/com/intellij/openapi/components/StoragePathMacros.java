@@ -1,69 +1,55 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.components;
 
-import com.intellij.openapi.project.Project;
-import org.jetbrains.annotations.NonNls;
-import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.ApiStatus.Internal;
 
 /**
- * We have a framework for persisting component states (see {@link State} {@link Storage}). It allows to specify which file
- * should hold persisting data. There is a number of standard file system anchors like 'workspace file', 'project config dir' which
- * can be used for defining a storage file's path. Hence, IJ provides special support for such anchors in the form of macros,
- * i.e. special markers that are mapped to the current file system environment at runtime.
- * <p/>
+ * The IntelliJ Platform allows for persisting component states (see {@link State} and {@link Storage}).
+ * It is possible to specify which file should hold persisting data.
+ * There are a number of standard file system anchors like 'workspace file',
+ * 'project config dir', which can be used for defining a storage file's path.
+ * <p>
+ * The platform provides special support for such anchors in the form of macros,
+ * i.e., special markers that are mapped to the current file system environment at runtime.
+ * <p>
  * This class holds those markers and utility method for working with them.
  *
- * @author Denis Zhdanov
- * @since 5/2/12 12:57 PM
+ * @see <a href="https://plugins.jetbrains.com/docs/intellij/persisting-state-of-components.html">Persisting State of Components (IntelliJ Platform Docs)</a>
  */
-public class StoragePathMacros {
-  @Deprecated
-  @NotNull
-  public static final String ROOT_CONFIG = "$ROOT_CONFIG$";
+public final class StoragePathMacros {
+  /**
+   * {@link com.intellij.openapi.project.Project#getWorkspaceFile() Workspace} file key.
+   * {@code 'Workspace file'} holds settings that are local to a particular environment
+   * and should not be shared with other team members.
+   */
+  public static final String WORKSPACE_FILE = "$WORKSPACE_FILE$";
 
   /**
-   * Points to the application-level options root directory.
-   * @deprecated Not required anymore. See {@link State#storages()}. In short: specify relative path instead (without macro).
+   * Storage file for cache-like data. Stored outside of project directory (if project level component)
+   * and outside of application configuration directory (if application level component).
    */
-  @Deprecated
-  public static final String APP_CONFIG = "$APP_CONFIG$";
+  public static final String CACHE_FILE = "$CACHE_FILE$";
 
   /**
-   * @deprecated Not required anymore. See {@link State#storages()}.
+   * Same as {@link #WORKSPACE_FILE}, but stored per-product. Applicable only for project-level.
    */
-  @Deprecated
+  public static final String PRODUCT_WORKSPACE_FILE = "$PRODUCT_WORKSPACE_FILE$";
+
+  public static final String MODULE_FILE = "$MODULE_FILE$";
+
+  @Internal
+  public static final String PROJECT_DEFAULT_FILE = "project.default.xml";
+
+  /**
+   * Application level non-roamable storage.
+   */
+  public static final String NON_ROAMABLE_FILE = "other.xml";
+
+  @Internal
+  public static final String APP_INTERNAL_STATE_DB = "app-internal-state.db";
+
+  @Internal
   public static final String PROJECT_FILE = "$PROJECT_FILE$";
 
-  /**
-   * @deprecated Not required anymore. See {@link State#storages()}.
-   */
-  @Deprecated
-  public static final String PROJECT_CONFIG_DIR = "$PROJECT_CONFIG_DIR$";
-
-  /**
-   * {@link Project#getWorkspaceFile() Workspace} file key.
-   * <p/>
-   * <code>'Workspace file'</code> holds settings that are local to a particular environment and should not be shared with another
-   * team members.
-   */
-  @NonNls @NotNull public static final String WORKSPACE_FILE = "$WORKSPACE_FILE$";
-
-  @NonNls @NotNull public static final String MODULE_FILE = "$MODULE_FILE$";
-
-  private StoragePathMacros() {
-  }
+  private StoragePathMacros() { }
 }

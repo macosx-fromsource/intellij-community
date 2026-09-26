@@ -1,34 +1,34 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.ui.update;
 
 import com.intellij.concurrency.JobScheduler;
-import com.intellij.testFramework.UsefulTestCase;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.EmptyRunnable;
+import com.intellij.testFramework.LightPlatformTestCase;
+import com.intellij.testFramework.PlatformTestUtil;
 import com.intellij.util.Alarm;
+import com.intellij.util.ExceptionUtil;
 import com.intellij.util.TimeoutUtil;
 import com.intellij.util.WaitFor;
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
-public class MergingUpdateQueueTest extends UsefulTestCase {
-  public void testOnShowNotify() throws Exception {
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
+
+public class MergingUpdateQueueTest extends LightPlatformTestCase {
+  public void testOnShowNotify() {
     final MyUpdate first = new MyUpdate("first");
     final MyUpdate second = new MyUpdate("second");
 
@@ -48,8 +48,8 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     assertAfterProcessing(second, true, true);
   }
 
-  public void testPriority() throws Exception {
-    final boolean[] attemps = new boolean[3];
+  public void testPriority() {
+    final boolean[] attempts = new boolean[3];
 
     final MyQueue queue = new MyQueue();
 
@@ -57,9 +57,9 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
       @Override
       public void run() {
         super.run();
-        attemps[0] = true;
-        assertTrue(attemps[1]);
-        assertTrue(attemps[2]);
+        attempts[0] = true;
+        assertTrue(attempts[1]);
+        assertTrue(attempts[2]);
       }
     };
 
@@ -67,9 +67,9 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
       @Override
       public void run() {
         super.run();
-        assertFalse(attemps[0]);
-        attemps[1] = true;
-        assertFalse(attemps[2]);
+        assertFalse(attempts[0]);
+        attempts[1] = true;
+        assertFalse(attempts[2]);
       }
     };
 
@@ -77,9 +77,9 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
       @Override
       public void run() {
         super.run();
-        assertFalse(attemps[0]);
-        assertTrue(attemps[1]);
-        attemps[2] = true;
+        assertFalse(attempts[0]);
+        assertTrue(attempts[1]);
+        attempts[2] = true;
       }
     };
 
@@ -94,7 +94,7 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     assertAfterProcessing(third, true, true);
   }
 
-  public void testDoNoExecuteExpired() throws Throwable {
+  public void testDoNoExecuteExpired() {
 
     final boolean[] expired = new boolean[1];
 
@@ -124,7 +124,7 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
   }
 
 
-  public void testOnShowNotifyMerging() throws Exception {
+  public void testOnShowNotifyMerging() {
     final MyUpdate twin1 = new MyUpdate("twin");
     final MyUpdate twin2 = new MyUpdate("twin");
 
@@ -143,7 +143,7 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     assertAfterProcessing(twin2, true, true);
   }
 
-  public void testExecuteWhenActive() throws Exception {
+  public void testExecuteWhenActive() {
     final MyQueue queue = new MyQueue();
 
     queue.showNotify();
@@ -160,7 +160,7 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     assertAfterProcessing(second, true, true);
   }
 
-  public void testMergeWhenActive() throws Exception {
+  public void testMergeWhenActive() {
     final MyQueue queue = new MyQueue();
 
     queue.showNotify();
@@ -177,22 +177,22 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     assertAfterProcessing(twin2, true, true);
   }
 
-  public void testEatByQueue() throws Exception {
+  public void testEatByQueue() {
     executeEatingTest(false);
   }
 
-  public void testEatUpdatesInQueue() throws Exception {
+  public void testEatUpdatesInQueue() {
     executeEatingTest(true);
   }
 
-  private static void executeEatingTest(boolean foodFirst) throws Exception{
+  private static void executeEatingTest(boolean foodFirst) {
     final MyQueue queue = new MyQueue();
     queue.showNotify();
 
     final MyUpdate food = new MyUpdate("food");
     MyUpdate hungry = new MyUpdate("hungry") {
       @Override
-      public boolean canEat(Update update) {
+      public boolean canEat(@NotNull Update update) {
         return update == food;
       }
     };
@@ -211,7 +211,7 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     assertAfterProcessing(food, false, false);
   }
 
-  public void testCuncurrentFlushing() throws Exception {
+  public void testConcurrentFlushing() {
     final MyQueue queue = new MyQueue();
     queue.showNotify();
 
@@ -226,7 +226,32 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     waitForExecution(queue);
   }
 
-  public void testConcurrentQueing() throws Exception {
+  public void testBlockingFlush() throws Exception {
+    MyQueue queue = new MyQueue();
+    queue.showNotify();
+    AtomicReference<Object> executed = new AtomicReference<>();
+    ApplicationManager.getApplication().executeOnPooledThread(() -> {
+      try {
+        queue.queue(new MyUpdate("update"));
+        queue.flush();
+        executed.set(queue.wasExecuted());
+      }
+      catch (RuntimeException | Error th) {
+        executed.set(th);
+      }
+    });
+    while (executed.get() == null) {
+      PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue();
+      Thread.sleep(50);
+    }
+    Object result = executed.get();
+    if (result instanceof Throwable) {
+      ExceptionUtil.rethrowUnchecked((Throwable)result);
+    }
+    assertTrue(Boolean.TRUE.equals(executed.get()));
+  }
+
+  public void testConcurrentQueueing() {
     final MyQueue queue = new MyQueue();
     queue.showNotify();
 
@@ -269,8 +294,8 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     }
   }
 
-  private static class MyQueue extends MergingUpdateQueue {
-    private boolean myExecuted;
+  private static final class MyQueue extends MergingUpdateQueue {
+    private boolean isExecuted;
 
     private MyQueue() {
       this(400);
@@ -278,26 +303,25 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
 
     private MyQueue(int mergingTimeSpan) {
       super("Test", mergingTimeSpan, false, null);
-      setPassThrough(false);
     }
 
     @Override
-    public void run() {
-
+    protected @NotNull Runnable getFlushTask() {
+      return EmptyRunnable.getInstance();
     }
 
     private void onTimer() {
-      super.run();
+      super.getFlushTask().run();
     }
 
     @Override
-    protected void execute(@NotNull final Update[] update) {
-      super.execute(update);
-      myExecuted = true;
+    protected void execute(@NotNull List<? extends Update> updates) {
+      super.execute(updates);
+      isExecuted = true;
     }
 
     boolean wasExecuted() {
-      return myExecuted;
+      return isExecuted;
     }
 
     @Override
@@ -306,7 +330,7 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     }
   }
 
-  private static void waitForExecution(final MyQueue queue) {
+  private static void waitForExecution(@NotNull MyQueue queue) {
     queue.onTimer();
     new WaitFor(5000) {
       @Override
@@ -317,9 +341,8 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
   }
 
   public void testReallyMergeEqualIdentityEqualPriority() {
-    final MyQueue queue = new MyQueue();
-
-    final AtomicInteger count = new AtomicInteger();
+    MyQueue queue = new MyQueue();
+    AtomicInteger count = new AtomicInteger();
     for (int i = 0; i < 100; i++) {
       for (int j = 0; j < 100; j++) {
         queue.queue(new Update("foo" + j) {
@@ -342,9 +365,9 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
 
     final AtomicInteger count = new AtomicInteger();
     ScheduledExecutorService executor = JobScheduler.getScheduler();
-    List<Future> futures = ContainerUtil.newArrayList();
+    List<Future> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
-      ScheduledFuture<?> future = executor.schedule((Runnable)() -> {
+      ScheduledFuture<?> future = executor.schedule(() -> {
         for (int j = 0; j < 100; j++) {
           TimeoutUtil.sleep(1);
           queue.queue(new Update(new Object()) {
@@ -391,7 +414,6 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
   public void testAddRequestsInPooledThreadDoNotExecuteConcurrently() throws InterruptedException {
     int delay = 10;
     MergingUpdateQueue queue = new MergingUpdateQueue("x", delay, true, null, getTestRootDisposable(), null, Alarm.ThreadToUse.POOLED_THREAD);
-    queue.setPassThrough(false);
     CountDownLatch startedExecuting1 = new CountDownLatch(1);
     CountDownLatch canContinue = new CountDownLatch(1);
     queue.queue(new Update("1") {
@@ -417,5 +439,34 @@ public class MergingUpdateQueueTest extends UsefulTestCase {
     TimeoutUtil.sleep(delay + 1000);
     canContinue.countDown();
     assertTrue(startedExecuting2.await(10, TimeUnit.SECONDS));
+  }
+  public void testQueueInsideQueueMustNotInterfereWithWaitForAllExecuted() throws Exception {
+    MergingUpdateQueue queue = new MergingUpdateQueue(getTestName(false), 100, true, null, getTestRootDisposable(), null, Alarm.ThreadToUse.POOLED_THREAD);
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicBoolean secondExecuted = new AtomicBoolean();
+    queue.queue(Update.create("first", () -> {
+      queue.queue(Update.create("second", () -> {
+        secondExecuted.set(true);
+      }));
+      TimeoutUtil.sleep(1000);
+      latch.countDown();
+    }));
+
+    queue.waitForAllExecuted(10, TimeUnit.SECONDS);
+    assertEquals(0, latch.getCount());
+    assertTrue(secondExecuted.get());
+  }
+
+  public void testMustRejectOnDispose() {
+    MergingUpdateQueue queue = new MergingUpdateQueue(getTestName(false), 1_000_000, true, null, getTestRootDisposable(), null, Alarm.ThreadToUse.POOLED_THREAD);
+    Update update = new Update(this) {
+      @Override
+      public void run() {
+      }
+    };
+    queue.queue(update);
+    assertThat(update.isRejected()).isFalse();
+    Disposer.dispose(queue);
+    assertThat(update.isRejected()).isTrue();
   }
 }

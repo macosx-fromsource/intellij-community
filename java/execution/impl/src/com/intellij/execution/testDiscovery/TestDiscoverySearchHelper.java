@@ -1,101 +1,81 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.execution.testDiscovery;
 
 import com.intellij.codeInsight.TestFrameworks;
-import com.intellij.codeInsight.actions.FormatChangedTextUtil;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.openapi.vcs.changes.Change;
-import com.intellij.openapi.vcs.changes.ChangeListManager;
-import com.intellij.openapi.vcs.changes.ContentRevision;
-import com.intellij.openapi.vcs.changes.LocalChangeList;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassOwner;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiMethod;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.diff.FilesTooBigForDiffException;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
-public class TestDiscoverySearchHelper {
+public final class TestDiscoverySearchHelper {
   public static Set<String> search(final Project project,
                                    final Pair<String, String> position,
                                    final String changeList,
-                                   final String frameworkPrefix) {
+                                   byte frameworkId) {
     final Set<String> patterns = new LinkedHashSet<>();
     if (position != null) {
-      try {
-        collectPatterns(project, patterns, position.first, position.second, frameworkPrefix);
-      }
-      catch (IOException ignore) {
-      }
+      collectPatterns(project, patterns, position.first, position.second, frameworkId);
     }
-    final List<VirtualFile> files = getAffectedFiles(changeList, project);
+    final List<VirtualFile> files = TestDiscoveryVcsHelper.collectAffectedFiles(project, changeList);
     final PsiManager psiManager = PsiManager.getInstance(project);
     final TestDiscoveryIndex discoveryIndex = TestDiscoveryIndex.getInstance(project);
     for (final VirtualFile file : files) {
-      ApplicationManager.getApplication().runReadAction(() -> {
+      ReadAction.runBlocking(() -> {
         final PsiFile psiFile = psiManager.findFile(file);
         if (psiFile instanceof PsiClassOwner) {
           if (position != null) {
             final PsiClass[] classes = ((PsiClassOwner)psiFile).getClasses();
             if (classes.length == 0 || TestFrameworks.detectFramework(classes[0]) == null) return;
           }
-          try {
-            final List<TextRange> changedTextRanges = FormatChangedTextUtil.getInstance().getChangedTextRanges(project, psiFile);
-            for (TextRange textRange : changedTextRanges) {
-              final PsiElement start = psiFile.findElementAt(textRange.getStartOffset());
-              final PsiElement end = psiFile.findElementAt(textRange.getEndOffset());
-              final PsiElement parent = PsiTreeUtil.findCommonParent(new PsiElement[]{start, end});
-              final Collection<PsiMethod> methods = new ArrayList<>(PsiTreeUtil.findChildrenOfType(parent, PsiMethod.class));
-              final PsiMethod containingMethod = PsiTreeUtil.getParentOfType(parent, PsiMethod.class);
-              if (containingMethod != null) {
-                methods.add(containingMethod);
+          final List<TextRange> changedTextRanges = TestDiscoveryVcsHelper.collectChangedTextRanges(project, psiFile);
+          for (TextRange textRange : changedTextRanges) {
+            final PsiElement start = psiFile.findElementAt(textRange.getStartOffset());
+            final PsiElement end = psiFile.findElementAt(textRange.getEndOffset());
+            final PsiElement parent = PsiTreeUtil.findCommonParent(new PsiElement[]{start, end});
+            final Collection<PsiMethod> methods = new ArrayList<>(PsiTreeUtil.findChildrenOfType(parent, PsiMethod.class));
+            final PsiMethod containingMethod = PsiTreeUtil.getParentOfType(parent, PsiMethod.class);
+            if (containingMethod != null) {
+              methods.add(containingMethod);
+            }
+            for (PsiMethod changedMethod : methods) {
+              final LinkedHashSet<String> detectedPatterns = position == null ? collectPatterns(changedMethod, frameworkId) : null;
+              if (detectedPatterns != null) {
+                patterns.addAll(detectedPatterns);
               }
-              for (PsiMethod changedMethod : methods) {
-                final LinkedHashSet<String> detectedPatterns = position == null ? collectPatterns(changedMethod, frameworkPrefix) : null;
-                if (detectedPatterns != null) {
-                  patterns.addAll(detectedPatterns);
-                }
-                final PsiClass containingClass = changedMethod.getContainingClass();
-                if (containingClass != null && containingClass.getParent() == psiFile) {
-                  final String classQualifiedName = containingClass.getQualifiedName();
-                  final String changedMethodName = changedMethod.getName();
-                  try {
-                    if (classQualifiedName != null &&
-                        (position == null && TestFrameworks.detectFramework(containingClass) != null ||
-                         position != null && !discoveryIndex.hasTestTrace(frameworkPrefix + classQualifiedName + "-" + changedMethodName))) {
-                      patterns.add(classQualifiedName + "," + changedMethodName);
-                    }
-                  }
-                  catch (IOException ignore) {}
+              final PsiClass containingClass = changedMethod.getContainingClass();
+              if (containingClass != null && containingClass.getParent() == psiFile) {
+                final String classQualifiedName = containingClass.getQualifiedName();
+                final String changedMethodName = changedMethod.getName();
+                if (classQualifiedName != null &&
+                    (position == null && TestFrameworks.detectFramework(containingClass) != null ||
+                     position != null && !discoveryIndex.hasTestTrace(classQualifiedName, changedMethodName, frameworkId))) {
+                  patterns.add(classQualifiedName + "," + changedMethodName);
                 }
               }
             }
-          }
-          catch (FilesTooBigForDiffException ignore) {
           }
         }
       });
@@ -106,57 +86,25 @@ public class TestDiscoverySearchHelper {
     return new HashSet<>(ContainerUtil.filter(patterns, fqn -> ReadAction.compute(() -> psiFacade.findClass(StringUtil.getPackageName(fqn, ','), searchScope) != null)));
   }
 
-  private static void collectPatterns(final Project project,
-                                      final Set<String> patterns,
-                                      final String classFQName,
-                                      final String methodName,
-                                      final String frameworkId) throws IOException {
-    final TestDiscoveryIndex discoveryIndex = TestDiscoveryIndex.getInstance(project);
-    final Collection<String> testsByMethodName = discoveryIndex.getTestsByMethodName(classFQName, methodName);
-    if (testsByMethodName != null) {
-      for (String pattern : ContainerUtil.filter(testsByMethodName, s -> s.startsWith(frameworkId))) {
-        patterns.add(pattern.substring(frameworkId.length()).replace('-', ','));
-      }
-    }
+  private static void collectPatterns(@NotNull Project project,
+                                      @NotNull Set<? super String> patterns,
+                                      @NotNull String classFQName,
+                                      @NotNull String methodName,
+                                      byte frameworkId) {
+    List<Couple<String>> classesAndMethods = new SmartList<>(Couple.of(classFQName, methodName));
+    TestDiscoveryProducer.consumeDiscoveredTests(project, classesAndMethods, frameworkId, Collections.emptyList(), (c, m, p) -> {
+      patterns.add(c + "," + m);
+      return true;
+    });
   }
 
-  @NotNull
-  private static List<VirtualFile> getAffectedFiles(String changeListName, Project project) {
-    final ChangeListManager changeListManager = ChangeListManager.getInstance(project);
-    if ("All".equals(changeListName)) {
-      return changeListManager.getAffectedFiles();
-    }
-    final LocalChangeList changeList = changeListManager.findChangeList(changeListName);
-    if (changeList != null) {
-      List<VirtualFile> files = new ArrayList<>();
-      for (Change change : changeList.getChanges()) {
-        final ContentRevision afterRevision = change.getAfterRevision();
-        if (afterRevision != null) {
-          final VirtualFile file = afterRevision.getFile().getVirtualFile();
-          if (file != null) {
-            files.add(file);
-          }
-        }
-      }
-      return files;
-    }
-
-    return Collections.emptyList();
-  }
-
-  @Nullable
-  private static LinkedHashSet<String> collectPatterns(PsiMethod psiMethod, String frameworkId) {
+  private static @NotNull LinkedHashSet<String> collectPatterns(PsiMethod psiMethod, byte frameworkId) {
     LinkedHashSet<String> patterns = new LinkedHashSet<>();
     final PsiClass containingClass = psiMethod.getContainingClass();
     if (containingClass != null) {
       final String qualifiedName = containingClass.getQualifiedName();
       if (qualifiedName != null) {
-        try {
-          collectPatterns(psiMethod.getProject(), patterns, qualifiedName, psiMethod.getName(), frameworkId);
-        }
-        catch (IOException e) {
-          return null;
-        }
+        collectPatterns(psiMethod.getProject(), patterns, qualifiedName, psiMethod.getName(), frameworkId);
       }
     }
     return patterns;

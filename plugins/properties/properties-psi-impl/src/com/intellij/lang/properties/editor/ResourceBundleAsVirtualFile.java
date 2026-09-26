@@ -1,25 +1,11 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.properties.editor;
 
 import com.intellij.ide.presentation.Presentation;
 import com.intellij.lang.properties.ResourceBundle;
 import com.intellij.lang.properties.ResourceBundleImpl;
 import com.intellij.lang.properties.psi.PropertiesFile;
-import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.StandardFileSystems;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileSystem;
 import com.intellij.openapi.vfs.VirtualFileWithoutContent;
@@ -27,7 +13,6 @@ import com.intellij.openapi.vfs.newvfs.RefreshQueue;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
@@ -36,36 +21,33 @@ import java.util.List;
  * @author Alexey
  */
 @Presentation(icon = "AllIcons.Nodes.ResourceBundle")
-public class ResourceBundleAsVirtualFile extends VirtualFile implements VirtualFileWithoutContent {
+public final class ResourceBundleAsVirtualFile extends VirtualFile implements VirtualFileWithoutContent {
   private final ResourceBundle myResourceBundle;
 
-  public ResourceBundleAsVirtualFile(@NotNull final ResourceBundle resourceBundle) {
+  public ResourceBundleAsVirtualFile(@NotNull ResourceBundle resourceBundle) {
     myResourceBundle = resourceBundle;
   }
 
-  @NotNull
-  public ResourceBundle getResourceBundle() {
+  public @NotNull ResourceBundle getResourceBundle() {
     return myResourceBundle;
   }
 
   @Override
-  @NotNull
-  public VirtualFileSystem getFileSystem() {
-    return LocalFileSystem.getInstance();
+  public @NotNull VirtualFileSystem getFileSystem() {
+    return StandardFileSystems.local();
   }
 
   @Override
-  @NotNull
-  public String getPath() {
+  public @NotNull String getPath() {
     return getName();
   }
 
   @Override
-  @NotNull
-  public String getName() {
-    return myResourceBundle.getBaseName();
+  public @NotNull String getName() {
+    return myResourceBundle.isValid() ? myResourceBundle.getBaseName() : "";
   }
 
+  @Override
   public boolean equals(final Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
@@ -77,12 +59,13 @@ public class ResourceBundleAsVirtualFile extends VirtualFile implements VirtualF
     return true;
   }
 
+  @Override
   public int hashCode() {
     return myResourceBundle.hashCode();
   }
 
   @Override
-  public void rename(Object requestor, @NotNull String newName) throws IOException {
+  public void rename(Object requestor, @NotNull String newName) {
     throw new UnsupportedOperationException();
   }
 
@@ -98,7 +81,7 @@ public class ResourceBundleAsVirtualFile extends VirtualFile implements VirtualF
 
   @Override
   public boolean isValid() {
-    if (myResourceBundle instanceof ResourceBundleImpl && !((ResourceBundleImpl)myResourceBundle).isValid()) {
+    if (myResourceBundle instanceof ResourceBundleImpl && !myResourceBundle.isValid()) {
       return false;
     }
     for (PropertiesFile propertiesFile : myResourceBundle.getPropertiesFiles()) {
@@ -112,7 +95,7 @@ public class ResourceBundleAsVirtualFile extends VirtualFile implements VirtualF
 
   @Override
   public VirtualFile getParent() {
-    return myResourceBundle.getBaseDirectory();
+    return myResourceBundle.isValid() ? myResourceBundle.getBaseDirectory() : null;
   }
 
   @Override
@@ -120,42 +103,38 @@ public class ResourceBundleAsVirtualFile extends VirtualFile implements VirtualF
     return EMPTY_ARRAY;
   }
 
-  @NotNull
   @Override
-  public VirtualFile createChildDirectory(Object requestor, @NotNull String name) throws IOException {
-    throw new UnsupportedOperationException();
-  }
-
-  @NotNull
-  @Override
-  public VirtualFile createChildData(Object requestor, @NotNull String name) throws IOException {
+  public @NotNull VirtualFile createChildDirectory(Object requestor, @NotNull String name) {
     throw new UnsupportedOperationException();
   }
 
   @Override
-  public void delete(Object requestor) throws IOException {
+  public @NotNull VirtualFile createChildData(Object requestor, @NotNull String name) {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
+  public void delete(Object requestor) {
     //todo
   }
 
   @Override
-  public void move(Object requestor, @NotNull VirtualFile newParent) throws IOException {
+  public void move(Object requestor, @NotNull VirtualFile newParent) {
     //todo
   }
 
   @Override
-  public InputStream getInputStream() throws IOException {
+  public @NotNull InputStream getInputStream() {
     throw new UnsupportedOperationException();
   }
 
   @Override
-  @NotNull
-  public OutputStream getOutputStream(Object requestor, long newModificationStamp, long newTimeStamp) throws IOException {
+  public @NotNull OutputStream getOutputStream(Object requestor, long newModificationStamp, long newTimeStamp) {
     throw new UnsupportedOperationException();
   }
 
   @Override
-  @NotNull
-  public byte[] contentsToByteArray() throws IOException {
+  public byte @NotNull [] contentsToByteArray() {
     //TODO compare files action uses this method
     return new byte[0];
   }

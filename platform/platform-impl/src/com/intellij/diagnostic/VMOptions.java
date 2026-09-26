@@ -1,185 +1,321 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.diagnostic;
 
+import com.intellij.ide.IdeBundle;
 import com.intellij.openapi.application.ApplicationNamesInfo;
 import com.intellij.openapi.application.PathManager;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.util.SystemProperties;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.io.NioFiles;
+import com.intellij.openapi.util.text.Strings;
+import com.intellij.openapi.vfs.CharsetToolkit;
+import com.intellij.util.SmartList;
+import com.intellij.util.system.OS;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.annotations.PropertyKey;
 
-import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
-import java.util.Collections;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class VMOptions {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.diagnostic.VMOptions");
+@SuppressWarnings("UseOptimizedEelFunctions")
+public final class VMOptions {
+  private static final Logger LOG = Logger.getInstance(VMOptions.class);
+  private static final ReadWriteLock ourUserFileLock = new ReentrantReadWriteLock();
+
+  private VMOptions() { }
 
   public enum MemoryKind {
-    HEAP("Xmx", ""), PERM_GEN("XX:MaxPermSize", "="), CODE_CACHE("XX:ReservedCodeCacheSize", "=");
+    HEAP("Xmx", "", "change.memory.max.heap"),
+    MIN_HEAP("Xms", "", "change.memory.min.heap"),
+    METASPACE("XX:MaxMetaspaceSize", "=", "change.memory.metaspace"),
+    DIRECT_BUFFERS("XX:MaxDirectMemorySize", "=", "change.memory.direct.buffers"),
+    CODE_CACHE("XX:ReservedCodeCacheSize", "=", "change.memory.code.cache");
 
-    public final String optionName;
+    public final @NlsSafe String optionName;
     public final String option;
-    public final Pattern pattern;
+    private final String labelKey;
 
-    MemoryKind(String name, String separator) {
+    MemoryKind(String name, String separator, @PropertyKey(resourceBundle = "messages.IdeBundle") String key) {
       optionName = name;
-      option = "-" + name + separator;
-      pattern = Pattern.compile(option + "(\\d*)([a-zA-Z]*)");
+      option = '-' + name + separator;
+      labelKey = key;
+    }
+
+    public @NlsContexts.Label String label() {
+      return IdeBundle.message(labelKey);
     }
   }
 
-  public static int readXmx() {
-    return readOption(MemoryKind.HEAP, true);
-  }
-
-  public static int readMaxPermGen() {
-    return readOption(MemoryKind.PERM_GEN, true);
-  }
-
-  public static int readCodeCache() {
-    return readOption(MemoryKind.CODE_CACHE, true);
-  }
-
-  public static void writeXmx(int value) {
-    writeOption(MemoryKind.HEAP, value);
-  }
-
-  public static void writeMaxPermGen(int value) {
-    writeOption(MemoryKind.PERM_GEN, value);
-  }
-
-  public static void writeCodeCache(int value) {
-    writeOption(MemoryKind.CODE_CACHE, value);
-  }
-
-  public static int readOption(MemoryKind kind, boolean effective) {
-    List<String> arguments;
-    if (ourTestPath != null) {
+  /// Returns a value of the given [`memory setting`][MemoryKind] (in MiBs), or `-1` when unable to find out
+  /// (e.g., a user doesn't have custom memory settings).
+  ///
+  /// @see #readOption(String, boolean)
+  public static int readOption(@NotNull MemoryKind kind, boolean effective) {
+    var strValue = readOption(kind.option, effective);
+    if (strValue != null) {
       try {
-        String content = FileUtil.loadFile(new File(ourTestPath));
-        arguments = Collections.singletonList(content);
+        return (int)(parseMemoryOption(strValue) >> 20);
       }
-      catch (IOException e) {
-        throw new RuntimeException(e);
+      catch (IllegalArgumentException e) {
+        LOG.info(e);
       }
     }
-    else if (effective) {
-      arguments = ManagementFactory.getRuntimeMXBean().getInputArguments();
+    return -1;
+  }
+
+  /// Returns a value of the given option, or `null` when unable to find.
+  ///
+  /// @param effective when `true`, the method returns a value for the current JVM (from [ManagementFactory#getRuntimeMXBean()]),
+  ///                  otherwise it reads a user's .vmoptions [`file`][#getUserOptionsFile()].
+  public static @Nullable String readOption(@NotNull String prefix, boolean effective) {
+    var lines = options(effective);
+    // the list is iterated in the reverse order, because the last value wins
+    for (var i = lines.size() - 1; i >= 0; i--) {
+      var line = lines.get(i).trim();
+      if (line.startsWith(prefix)) {
+        return line.substring(prefix.length());
+      }
+    }
+    return null;
+  }
+
+  /// Returns a (possibly empty) list of the given option's values.
+  ///
+  /// @see #readOption(String, boolean)
+  public static @NotNull List<String> readOptions(@NotNull String prefix, boolean effective) {
+    var values = new SmartList<String>();
+    for (var s : options(effective)) {
+      var line = s.trim();
+      if (line.startsWith(prefix)) {
+        values.add(line.substring(prefix.length()));
+      }
+    }
+    return values;
+  }
+
+  private static List<String> options(boolean effective) {
+    if (effective) {
+      return ManagementFactory.getRuntimeMXBean().getInputArguments();
     }
     else {
-      File file = getWriteFile();
-      if (file == null || !file.exists()) {
-        return -1;
-      }
+      var platformOptions = List.<String>of();
+      var userOptions = List.<String>of();
 
-      try {
-        String content = FileUtil.loadFile(file);
-        arguments = Collections.singletonList(content);
-      }
-      catch (IOException e) {
-        LOG.warn(e);
-        return -1;
-      }
-    }
-
-    for (String argument : arguments) {
-      Matcher m = kind.pattern.matcher(argument);
-      if (m.find()) {
+      var platformFile = getPlatformOptionsFile();
+      if (Files.exists(platformFile)) {
         try {
-          int value = Integer.parseInt(m.group(1));
-          double multiplier = parseUnit(m.group(2));
-          return (int)(value * multiplier);
+          platformOptions = Files.readAllLines(platformFile, getFileCharset());
         }
-        catch (NumberFormatException e) {
-          LOG.info(e);
+        catch (IOException e) {
+          LOG.warn(e);
+        }
+      }
+
+      var userFile = getUserOptionsFile();
+      if (userFile != null && Files.exists(userFile)) {
+        ourUserFileLock.readLock().lock();
+        try {
+          userOptions = Files.readAllLines(userFile, getFileCharset());
+        }
+        catch (IOException e) {
+          LOG.warn(e);
+        }
+        finally {
+          ourUserFileLock.readLock().unlock();
+        }
+      }
+
+      var result = new ArrayList<String>(platformOptions.size() + userOptions.size());
+      result.addAll(platformOptions);
+      result.addAll(userOptions);
+      return result;
+    }
+  }
+
+  /// Parses VM memory option (such as "-Xmx") string value and returns its numeric value (in bytes).
+  /// See ['java' command manual](https://docs.oracle.com/en/java/javase/16/docs/specs/man/java.html#extra-options-for-java)
+  /// for the syntax.
+  ///
+  /// @throws IllegalArgumentException when either a number or a unit is invalid
+  public static long parseMemoryOption(@NotNull String strValue) throws IllegalArgumentException {
+    var p = 0;
+    while (p < strValue.length() && Strings.isDecimalDigit(strValue.charAt(p))) p++;
+    var numValue = Long.parseLong(strValue.substring(0, p));
+    if (p < strValue.length()) {
+      var unit = strValue.substring(p);
+      if ("k".equalsIgnoreCase(unit)) numValue <<= 10;
+      else if ("m".equalsIgnoreCase(unit)) numValue <<= 20;
+      else if ("g".equalsIgnoreCase(unit)) numValue <<= 30;
+      else throw new IllegalArgumentException("Invalid unit: " + unit);
+    }
+    return numValue;
+  }
+
+  /// Sets or deletes a Java memory limit (in MiBs). See [#setOption(String, String)] for details.
+  public static void setOption(@NotNull MemoryKind option, int value) throws IOException {
+    setOption(option.option, value > 0 ? value + "m" : null);
+  }
+
+  /// Sets or deletes a Java system property. See [#setOption(String, String)] for details.
+  public static void setProperty(@NotNull String name, @Nullable String newValue) throws IOException {
+    setOption("-D" + name + '=', newValue);
+  }
+
+  /// Sets or deletes a VM option in a user's .vmoptions [`file`][#getUserOptionsFile()].
+  ///
+  /// When `newValue` is `null`, all options that start with a given prefix are removed from the file.
+  /// When `newValue` is not `null` and an option is present in the file, its value is replaced,
+  /// otherwise the option is added to the file.
+  public static void setOption(@NotNull String prefix, @Nullable String newValue) throws IOException {
+    setOptions(List.of(new Pair<>(prefix, newValue)));
+  }
+
+  /// Sets or deletes multiple options in one pass. See [#setOption(String, String)] for details.
+  public static void setOptions(@NotNull List<Pair<@NotNull String, @Nullable String>> options) throws IOException {
+    var file = getUserOptionsFile();
+    if (file == null) {
+      throw new IOException("The IDE is not configured for using custom VM options (jb.vmOptionsFile=" + System.getProperty("jb.vmOptionsFile") + ')');
+    }
+    setOptions(options, file);
+  }
+
+  @ApiStatus.Internal
+  public static void setOptions(@NotNull List<Pair<@NotNull String, @Nullable String>> _options, @NotNull Path file) throws IOException {
+    var lines = Files.exists(file) ? new ArrayList<>(Files.readAllLines(file, getFileCharset())) : new ArrayList<String>();
+    var options = new ArrayList<Pair<String, @Nullable String>>(_options);
+    var modified = false;
+
+    for (var il = lines.listIterator(lines.size()); il.hasPrevious(); ) {
+      var line = il.previous().trim();
+      for (var io = options.iterator(); io.hasNext(); ) {
+        var option = io.next();
+        if (line.startsWith(option.first)) {
+          if (option.second == null) {
+            il.remove();
+            modified = true;
+          }
+          else {
+            var newLine = option.first + option.second;
+            if (!newLine.equals(line)) {
+              il.set(newLine);
+              modified = true;
+            }
+            io.remove();
+          }
           break;
         }
       }
     }
 
-    return -1;
+    for (var option : options) {
+      if (option.second != null) {
+        lines.add(option.first + option.second);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      NioFiles.createDirectories(file.getParent());
+      ourUserFileLock.writeLock().lock();
+      try {
+        Files.write(file, lines, getFileCharset());
+      }
+      finally {
+        ourUserFileLock.writeLock().unlock();
+      }
+    }
   }
 
-  private static double parseUnit(String unitString) {
-    if (StringUtil.startsWithIgnoreCase(unitString, "k")) return (double)1 / 1024;
-    if (StringUtil.startsWithIgnoreCase(unitString, "g")) return 1024;
-    return 1;
+  /// Returns `true` when user's VM options may be created (or already exists) -
+  /// i.e., when the IDE knows a place where a launcher will look for that file.
+  public static boolean canWriteOptions() {
+    return getUserOptionsFile() != null;
   }
 
-  private static void writeOption(MemoryKind option, int value) {
-    File file = getWriteFile();
-    if (file == null) return;
+  @ApiStatus.Internal
+  public static @NotNull Path getPlatformOptionsFile() {
+    return PathManager.getBinDir().resolve(getFileName());
+  }
+
+  @ApiStatus.Internal
+  public static @Nullable Path getUserOptionsFile() {
+    var vmOptionsFile = System.getProperty("jb.vmOptionsFile");
+    if (vmOptionsFile == null) {
+      // launchers should specify a path to a VM options file used to configure a JVM
+      return null;
+    }
+
+    var candidate = Path.of(vmOptionsFile).toAbsolutePath();
+    if (!PathManager.isUnderHomeDirectory(candidate)) {
+      // a file is located outside the IDE installation - meaning it is safe to overwrite
+      return candidate;
+    }
+
+    var location = PathManager.getCustomOptionsDirectory();
+    if (location == null) {
+      return null;
+    }
+
+    return Path.of(location, getFileName());
+  }
+
+  @ApiStatus.Internal
+  public static @NotNull String getFileName() {
+    var fileName = ApplicationNamesInfo.getInstance().getScriptName();
+    if (OS.CURRENT != OS.macOS) fileName += "64";
+    if (OS.CURRENT == OS.Windows) fileName += ".exe";
+    fileName += ".vmoptions";
+    return fileName;
+  }
+
+  @ApiStatus.Internal
+  public static @NotNull Charset getFileCharset() {
+    return Boolean.getBoolean("ide.native.launcher") ? StandardCharsets.UTF_8 : CharsetToolkit.getPlatformCharset();
+  }
+
+  //<editor-fold desc="Deprecated stuff.">
+  /// @deprecated ignores write errors; please use [#setProperty] instead
+  @Deprecated(forRemoval = true)
+  public static void writeOption(@NotNull String option, @NotNull String separator, @NotNull String value) {
+    PluginException.reportDeprecatedUsage("VMOptions.writeOption", "Use `#setOption` instead");
 
     try {
-      String content = file.exists() ? FileUtil.loadFile(file) : read();
-
-      String optionValue = option.option + value + "m";
-
-      if (!StringUtil.isEmptyOrSpaces(content)) {
-        Matcher m = option.pattern.matcher(content);
-        if (m.find()) {
-          StringBuffer b = new StringBuffer();
-          m.appendReplacement(b, Matcher.quoteReplacement(optionValue));
-          m.appendTail(b);
-          content = b.toString();
-        }
-        else {
-          content = StringUtil.trimTrailing(content) + SystemProperties.getLineSeparator() + optionValue;
-        }
-      }
-      else {
-        content = optionValue;
-      }
-
-      if (file.exists()) {
-        FileUtil.setReadOnlyAttribute(file.getPath(), false);
-      }
-      else {
-        FileUtil.ensureExists(file.getParentFile());
-      }
-
-      FileUtil.writeToFile(file, content);
+      setOption("-D" + option + separator, value);
     }
     catch (IOException e) {
       LOG.warn(e);
     }
   }
 
-  @Nullable
-  public static String read() {
+  /// @deprecated from 2021.3 on, the result may be incomplete: launchers collect VM options from two files, but this method returns
+  /// only one of them (see IDEA-240526 for more details). In addition, clients have to deal with platform-specific line separators and charsets,
+  /// and manipulating the whole content of the file cannot guarantee thread-safety.
+  /// Please use [#readOption]/[#setOption] methods instead.
+  @Deprecated(forRemoval = true)
+  public static @Nullable String read() {
+    PluginException.reportDeprecatedUsage("VMOptions.read", "Use `#readOption` instead");
+
     try {
-      File newFile = getWriteFile();
-      if (newFile != null && newFile.exists()) {
-        return FileUtil.loadFile(newFile);
+      var newFile = getUserOptionsFile();
+      if (newFile != null && Files.exists(newFile)) {
+        return Files.readString(newFile, getFileCharset());
       }
 
-      String vmOptionsFile = System.getProperty("jb.vmOptionsFile");
+      var vmOptionsFile = System.getProperty("jb.vmOptionsFile");
       if (vmOptionsFile != null) {
-        return FileUtil.loadFile(new File(vmOptionsFile));
+        return Files.readString(Path.of(vmOptionsFile), getFileCharset());
       }
     }
     catch (IOException e) {
@@ -188,53 +324,5 @@ public class VMOptions {
 
     return null;
   }
-
-  @Nullable
-  public static File getWriteFile() {
-    if (ourTestPath != null) {
-      return new File(ourTestPath);
-    }
-
-    String vmOptionsFile = System.getProperty("jb.vmOptionsFile");
-    if (vmOptionsFile == null) {
-      // launchers should specify a path to an options file used to configure a JVM
-      LOG.warn("VM options file path missing");
-      return null;
-    }
-
-    if (!FileUtil.isAncestor(PathManager.getHomePath(), vmOptionsFile, true)) {
-      // a file is located outside the IDE installation - meaning it is safe to overwrite
-      return new File(vmOptionsFile);
-    }
-
-    String location = PathManager.getCustomOptionsDirectory();
-    if (location == null) {
-      LOG.warn("custom options directory not specified (" + PathManager.PROPERTY_PATHS_SELECTOR + " not set?)");
-      return null;
-    }
-
-    return new File(location, getCustomFileName());
-  }
-
-  @NotNull
-  public static String getCustomFileName() {
-    StringBuilder sb = new StringBuilder(32);
-    sb.append(ApplicationNamesInfo.getInstance().getProductName().toLowerCase(Locale.US));
-    if (SystemInfo.is64Bit && !SystemInfo.isMac) sb.append("64");
-    if (SystemInfo.isWindows) sb.append(".exe");
-    sb.append(".vmoptions");
-    return sb.toString();
-  }
-
-  private static String ourTestPath;
-
-  @TestOnly
-  static void setTestFile(String path) {
-    ourTestPath = path;
-  }
-
-  @TestOnly
-  static void clearTestFile() {
-    ourTestPath = null;
-  }
+  //</editor-fold>
 }

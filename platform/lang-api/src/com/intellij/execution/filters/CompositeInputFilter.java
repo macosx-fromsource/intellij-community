@@ -1,50 +1,39 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.execution.filters;
 
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.util.Pair;
-import com.intellij.util.containers.ContainerUtilRt;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collection;
 import java.util.List;
 
 public class CompositeInputFilter implements InputFilter {
   private static final Logger LOG = Logger.getInstance(CompositeInputFilter.class);
 
-  private final List<Pair<InputFilter, Boolean /* is dumb aware */>> myFilters = ContainerUtilRt.newArrayList();
+  private final @NotNull InputFilterWrapper @NotNull [] myFilters;
   private final DumbService myDumbService;
 
-  public CompositeInputFilter(@NotNull Project project) {
+  public CompositeInputFilter(@NotNull Project project, @NotNull Collection<? extends InputFilter> allFilters) {
     myDumbService = DumbService.getInstance(project);
+    myFilters = ContainerUtil.map2Array(allFilters, new InputFilterWrapper[0], filter -> new InputFilterWrapper(filter));
   }
 
   @Override
-  @Nullable
-  public List<Pair<String, ConsoleViewContentType>> applyFilter(final String text, final ConsoleViewContentType contentType) {
-    boolean dumb = myDumbService.isDumb();
-    for (Pair<InputFilter, Boolean> pair : myFilters) {
-      if (!dumb || pair.second == Boolean.TRUE) {
+  public @Nullable List<Pair<String, ConsoleViewContentType>> applyFilter(final @NotNull String text, final @NotNull ConsoleViewContentType contentType) {
+    var dumb = NotNullLazyValue.lazy(myDumbService::isDumb);
+    for (InputFilterWrapper filter : myFilters) {
+      if (filter.isDumbAware || !dumb.get()) {
         long t0 = System.currentTimeMillis();
-        InputFilter filter = pair.first;
         List<Pair<String, ConsoleViewContentType>> result = filter.applyFilter(text, contentType);
         t0 = System.currentTimeMillis() - t0;
         if (t0 > 100) {
@@ -58,25 +47,31 @@ public class CompositeInputFilter implements InputFilter {
     return null;
   }
 
-  public void addFilter(@NotNull final InputFilter filter) {
-    InputFilter wrapper = new InputFilter() {
-      boolean isBroken;
+  private static class InputFilterWrapper implements InputFilter {
+    private final @NotNull InputFilter myOriginal;
+    private boolean isBroken;
+    private final boolean isDumbAware;
 
-      @Nullable
-      @Override
-      public List<Pair<String, ConsoleViewContentType>> applyFilter(String text, ConsoleViewContentType contentType) {
-        if (!isBroken) {
-          try {
-            return filter.applyFilter(text, contentType);
-          }
-          catch (Throwable e) {
-            isBroken = true;
-            LOG.error(e);
-          }
+    InputFilterWrapper(@NotNull InputFilter original) {
+      isDumbAware = DumbService.isDumbAware(original);
+      myOriginal = original;
+    }
+
+    @Override
+    public @Nullable List<Pair<String, ConsoleViewContentType>> applyFilter(@NotNull String text, @NotNull ConsoleViewContentType contentType) {
+      if (!isBroken) {
+        try {
+          return myOriginal.applyFilter(text, contentType);
         }
-        return null;
+        catch (ProcessCanceledException ignored) {
+          ProgressManager.checkCanceled();
+        }
+        catch (Throwable e) {
+          isBroken = true;
+          LOG.error(e);
+        }
       }
-    };
-    myFilters.add(Pair.create(wrapper, DumbService.isDumbAware(filter)));
+      return null;
+    }
   }
 }

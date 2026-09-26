@@ -15,6 +15,7 @@
  */
 package org.intellij.plugins.xpathView.util;
 
+import com.intellij.application.options.CodeStyle;
 import com.intellij.codeInsight.highlighting.HighlightManager;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.LogicalPosition;
@@ -24,17 +25,22 @@ import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.xml.XmlTag;
-import com.intellij.util.containers.ContainerUtil;
+import it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet;
 import org.intellij.plugins.xpathView.Config;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class HighlighterUtil {
+public final class HighlighterUtil {
     private static final Key<List<RangeHighlighter>> HIGHLIGHTERS_KEY = Key.create("XPATH_HIGHLIGHTERS");
 
     private HighlighterUtil() {
@@ -92,9 +98,8 @@ public class HighlighterUtil {
         return false;
     }
 
-    @SuppressWarnings({"unchecked", "RawUseOfParameterizedType"})
     private static boolean purgeInvalidHighlighters(Editor editor, List<RangeHighlighter> hl) {
-        final Set set = ContainerUtil.newIdentityTroveSet(Arrays.asList(editor.getMarkupModel().getAllHighlighters()));
+        final Set<RangeHighlighter> set = new ReferenceOpenHashSet<>(editor.getMarkupModel().getAllHighlighters());
         boolean hasHighlighter = false;
         for (Iterator<RangeHighlighter> iterator = hl.iterator(); iterator.hasNext();) {
             final RangeHighlighter h = iterator.next();
@@ -109,8 +114,7 @@ public class HighlighterUtil {
 
     public static List<RangeHighlighter> getHighlighters(Editor editor) {
         if (!hasHighlighters(editor)) {
-            //noinspection unchecked
-            return Collections.emptyList();
+          return Collections.emptyList();
         } else {
             return editor.getUserData(HIGHLIGHTERS_KEY);
         }
@@ -127,9 +131,8 @@ public class HighlighterUtil {
     public static RangeHighlighter highlightNode(Editor editor, final PsiElement node, TextAttributes attrs, Config cfg) {
         TextRange range;
         final PsiElement realElement;
-        if ((node instanceof XmlTag) && cfg.isHighlightStartTagOnly()) {
-            XmlTag tag = (XmlTag)node;
-            realElement = MyPsiUtil.getNameElement(tag);
+        if ((node instanceof XmlTag tag) && cfg.isHighlightStartTagOnly()) {
+          realElement = MyPsiUtil.getNameElement(tag);
             range = realElement.getTextRange();
         } else {
             range = node.getTextRange();
@@ -151,10 +154,10 @@ public class HighlighterUtil {
         return rangeHighlighter;
     }
 
-    private static Object formatTooltip(Editor e, PsiElement element) {
+    private static String formatTooltip(Editor e, PsiElement element) {
         if (!(element instanceof XmlTag)) {
           final String text = element.getText();
-          if ((text == null || text.length() == 0) && MyPsiUtil.isNameElement(element)) {
+          if ((text == null || text.isEmpty()) && MyPsiUtil.isNameElement(element)) {
             final XmlTag tag = PsiTreeUtil.getParentOfType(element, XmlTag.class, true);
             if (tag != null) {
               return tag.getName();
@@ -164,12 +167,9 @@ public class HighlighterUtil {
         }
         // have to use html/preformatted or else the tooltip gets formatted totally weird.
 
-        final CodeStyleSettingsManager instance = CodeStyleSettingsManager.getInstance(element.getProject());
-        final int tabSize = instance.getCurrentSettings().getTabSize(FileTypeManager.getInstance().getFileTypeByExtension("xml"));
+        final int tabSize = CodeStyle.getSettings(element.getProject()).getTabSize(FileTypeManager.getInstance().getFileTypeByExtension("xml"));
         final char[] spaces = new char[tabSize];
-        for (int i = 0; i < spaces.length; i++) {
-            spaces[i] = ' ';
-        }
+        Arrays.fill(spaces, ' ');
 
         final int textOffset = element.getTextOffset();
         final int lineStartOffset = e.logicalPositionToOffset(new LogicalPosition(e.offsetToLogicalPosition(textOffset).line, 0));

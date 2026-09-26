@@ -1,41 +1,32 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.htmlInspections;
 
-import com.intellij.codeInsight.daemon.XmlErrorMessages;
+import com.intellij.codeInsight.daemon.impl.analysis.RemoveAttributeIntentionFix;
+import com.intellij.codeInsight.daemon.impl.analysis.XmlHighlightVisitor;
 import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Key;
 import com.intellij.psi.html.HtmlTag;
 import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlTag;
+import com.intellij.util.text.EditDistance;
 import com.intellij.xml.XmlAttributeDescriptor;
-import com.intellij.xml.XmlBundle;
 import com.intellij.xml.XmlElementDescriptor;
+import com.intellij.xml.analysis.XmlAnalysisBundle;
+import com.intellij.xml.impl.XmlAttributeDescriptorEx;
 import com.intellij.xml.impl.schema.AnyXmlElementDescriptor;
 import com.intellij.xml.util.HtmlUtil;
 import com.intellij.xml.util.XmlUtil;
-import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
+
 public class HtmlUnknownAttributeInspectionBase extends HtmlUnknownElementInspection {
   private static final Key<HtmlUnknownElementInspection> ATTRIBUTE_KEY = Key.create(ATTRIBUTE_SHORT_NAME);
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInspection.htmlInspections.HtmlUnknownAttributeInspection");
+  private static final Logger LOG = Logger.getInstance(HtmlUnknownAttributeInspectionBase.class);
 
   public HtmlUnknownAttributeInspectionBase() {
     this("");
@@ -44,40 +35,19 @@ public class HtmlUnknownAttributeInspectionBase extends HtmlUnknownElementInspec
   public HtmlUnknownAttributeInspectionBase(String defaultValues) {
     super(defaultValues);
   }
-  
-  @Override
-  @Nls
-  @NotNull
-  public String getDisplayName() {
-    return XmlBundle.message("html.inspections.unknown.attribute");
-  }
 
   @Override
-  @NonNls
-  @NotNull
-  public String getShortName() {
+  public @NonNls @NotNull String getShortName() {
     return ATTRIBUTE_SHORT_NAME;
   }
 
   @Override
-  protected String getCheckboxTitle() {
-    return XmlBundle.message("html.inspections.unknown.tag.attribute.checkbox.title");
-  }
-
-  @NotNull
-  @Override
-  protected String getPanelTitle() {
-    return XmlBundle.message("html.inspections.unknown.tag.attribute.title");
-  }
-
-  @Override
-  @NotNull
-  protected Logger getLogger() {
+  protected @NotNull Logger getLogger() {
     return LOG;
   }
 
   @Override
-  protected void checkAttribute(@NotNull final XmlAttribute attribute, @NotNull final ProblemsHolder holder, final boolean isOnTheFly) {
+  protected void checkAttribute(final @NotNull XmlAttribute attribute, final @NotNull ProblemsHolder holder, final boolean isOnTheFly) {
     final XmlTag tag = attribute.getParent();
 
     if (tag instanceof HtmlTag) {
@@ -85,24 +55,71 @@ public class HtmlUnknownAttributeInspectionBase extends HtmlUnknownElementInspec
       if (elementDescriptor == null || elementDescriptor instanceof AnyXmlElementDescriptor) {
         return;
       }
-
-      XmlAttributeDescriptor attributeDescriptor = elementDescriptor.getAttributeDescriptor(attribute);
-
+      ArrayList<LocalQuickFix> quickfixes = new ArrayList<>(6);
+      final String name = attribute.getName();
+      boolean isFixRequired = false;
+      XmlAttributeDescriptor attributeDescriptor = attribute.getDescriptor();
       if (attributeDescriptor == null && !attribute.isNamespaceDeclaration()) {
-        final String name = attribute.getName();
         if (!XmlUtil.attributeFromTemplateFramework(name, tag) && (!isCustomValuesEnabled() || !isCustomValue(name))) {
+          isFixRequired = true;
           boolean maySwitchToHtml5 = HtmlUtil.isCustomHtml5Attribute(name) && !HtmlUtil.hasNonHtml5Doctype(tag);
-          LocalQuickFix[] quickfixes = new LocalQuickFix[maySwitchToHtml5 ? 3 : 2];
-          quickfixes[0] = new AddCustomHtmlElementIntentionAction(ATTRIBUTE_KEY, name, XmlBundle.message("add.custom.html.attribute", name));
-          quickfixes[1] = new RemoveAttributeIntentionAction(name);
+          quickfixes.add(new AddCustomHtmlElementIntentionAction(ATTRIBUTE_KEY, name, XmlAnalysisBundle.message("html.quickfix.add.custom.html.attribute", name)));
+          quickfixes.add(new RemoveAttributeIntentionFix(name));
           if (maySwitchToHtml5) {
-            quickfixes[2] = new SwitchToHtml5WithHighPriorityAction();
+            quickfixes.add(new SwitchToHtml5WithHighPriorityAction());
           }
-
-          registerProblemOnAttributeName(attribute, XmlErrorMessages.message("attribute.is.not.allowed.here", attribute.getName()), holder,
-                                         quickfixes);
+          addSimilarAttributesQuickFixes(tag, name, quickfixes);
         }
       }
+      else if (attributeDescriptor instanceof XmlAttributeDescriptorEx) {
+        ((XmlAttributeDescriptorEx)attributeDescriptor).validateAttributeName(attribute, holder, isOnTheFly);
+      }
+
+      var highlightType = addUnknownXmlAttributeQuickFixes(tag, name, quickfixes, holder, isFixRequired);
+
+      if (!quickfixes.isEmpty()) {
+        registerProblemOnAttributeName(
+          attribute,
+          XmlAnalysisBundle.message("xml.inspections.attribute.is.not.allowed.here", name),
+          holder,
+          highlightType,
+          quickfixes.toArray(LocalQuickFix.EMPTY_ARRAY)
+        );
+      }
     }
+  }
+
+  private static void addSimilarAttributesQuickFixes(XmlTag tag, String name, ArrayList<? super LocalQuickFix> quickfixes) {
+    XmlElementDescriptor descriptor = tag.getDescriptor();
+    if (descriptor == null) return;
+    XmlAttributeDescriptor[] descriptors = descriptor.getAttributesDescriptors(tag);
+    int initialSize = quickfixes.size();
+    for (XmlAttributeDescriptor attr : descriptors) {
+      if (EditDistance.optimalAlignment(name, attr.getName(), false, 1) <= 1) {
+        quickfixes.add(new XmlAttributeRenameFix(attr));
+      }
+      if (quickfixes.size() >= initialSize + 3) break;
+    }
+  }
+
+  private static @NotNull ProblemHighlightType addUnknownXmlAttributeQuickFixes(XmlTag tag,
+                                                                       String name,
+                                                                       ArrayList<? super LocalQuickFix> quickfixes,
+                                                                       ProblemsHolder holder,
+                                                                       boolean isFixRequired) {
+    var highlightType = ProblemHighlightType.GENERIC_ERROR_OR_WARNING;
+    for (XmlUnknownAttributeQuickFixProvider fixProvider : XmlUnknownAttributeQuickFixProvider.EP_NAME.getExtensionList()) {
+      quickfixes.addAll(fixProvider.getOrRegisterAttributeFixes(tag, name, holder, isFixRequired));
+      var providerHighlightType = fixProvider.getProblemHighlightType(tag);
+      if (highlightType == ProblemHighlightType.GENERIC_ERROR_OR_WARNING
+          && providerHighlightType != ProblemHighlightType.GENERIC_ERROR_OR_WARNING) {
+        highlightType = providerHighlightType;
+      }
+    }
+    if (XmlHighlightVisitor.isInjectedWithoutValidation(tag)
+        && ProblemHighlightType.WEAK_WARNING.ordinal() < highlightType.ordinal()) {
+      highlightType = ProblemHighlightType.WEAK_WARNING;
+    }
+    return highlightType;
   }
 }

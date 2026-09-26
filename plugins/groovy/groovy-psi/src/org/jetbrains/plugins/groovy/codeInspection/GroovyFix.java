@@ -21,13 +21,13 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory;
 import org.jetbrains.plugins.groovy.lang.psi.api.formatter.GrControlStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrBlockStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.util.GrStatementOwner;
 
 public abstract class GroovyFix implements LocalQuickFix {
@@ -36,20 +36,14 @@ public abstract class GroovyFix implements LocalQuickFix {
     protected void doFix(@NotNull Project project, @NotNull ProblemDescriptor descriptor) throws IncorrectOperationException {
     }
 
-    @NotNull
     @Override
-    public String getName() {
+    public @NotNull String getFamilyName() {
       throw new UnsupportedOperationException();
     }
   };
   public static final GroovyFix[] EMPTY_ARRAY = new GroovyFix[0];
 
-  //to appear in "Apply Fix" statement when multiple Quick Fixes exist
-  @Override
-  @NotNull
-  public String getFamilyName() {
-    return "";
-  }
+
 
   @Override
   public void applyFix(@NotNull Project project,
@@ -72,24 +66,17 @@ public abstract class GroovyFix implements LocalQuickFix {
       throws IncorrectOperationException;
 
 
-  protected static void replaceExpression(GrExpression expression, String newExpression) {
-    final GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(expression.getProject());
-    final GrExpression newCall = factory.createExpressionFromText(newExpression);
-    expression.replaceWithExpression(newCall, true);
-  }
-
-  protected static void replaceStatement(GrStatement statement, String newStatement) {
+  public static void replaceStatement(GrStatement statement, @NonNls String newStatement) {
     final GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(statement.getProject());
-    final GrStatement newCall = (GrStatement) factory.createTopElementFromText(newStatement);
+    final GrStatement newCall = (GrStatement)factory.createTopElementFromText(newStatement);
     statement.replaceWithStatement(newCall);
   }
 
   /**
    * unwraps surrounding blocks from newStatement.
    */
-  protected static void replaceStatement(GrStatement oldStatement, GrStatement newStatement) throws IncorrectOperationException {
-    if (newStatement instanceof GrBlockStatement) {
-      GrBlockStatement blockStatement = (GrBlockStatement)newStatement;
+  public static void replaceStatement(GrStatement oldStatement, GrStatement newStatement) throws IncorrectOperationException {
+    if (newStatement instanceof GrBlockStatement blockStatement) {
       final GrOpenBlock openBlock = blockStatement.getBlock();
       final GrStatement[] statements = openBlock.getStatements();
       if (statements.length == 0) {
@@ -97,8 +84,7 @@ public abstract class GroovyFix implements LocalQuickFix {
       }
       else {
         final PsiElement parent = oldStatement.getParent();
-        if (parent instanceof GrStatementOwner) {
-          GrStatementOwner statementOwner = (GrStatementOwner)parent;
+        if (parent instanceof GrStatementOwner statementOwner) {
           for (GrStatement statement : statements) {
             statementOwner.addStatementBefore(statement, oldStatement);
           }

@@ -1,9 +1,9 @@
-// "Create property" "true"
+// "Create property" "true-preview"
 class Calculator {
     private int i;
 
     public void printError() {
-        setI(0);
+      setI(0);
     }
 
     public void setI(int i) {

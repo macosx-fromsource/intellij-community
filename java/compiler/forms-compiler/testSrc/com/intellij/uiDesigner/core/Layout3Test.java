@@ -15,27 +15,36 @@
  */
 package com.intellij.uiDesigner.core;
 
-import junit.framework.TestCase;
+import org.junit.jupiter.api.Test;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JButton;
+import javax.swing.JPanel;
+import java.awt.Dimension;
+import java.awt.Insets;
 
-public final class Layout3Test extends TestCase{
+import static com.intellij.uiDesigner.core.SpansTest.setDefaults;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public final class Layout3Test {
+  @Test
   public void test1() {
-    final JPanel panel = new JPanel(new GridLayoutManager(2,1, new Insets(0,0,0,0), 0, 0));
+    final JPanel panel = new JPanel(new GridLayoutManager(2, 1, new Insets(0, 0, 0, 0), 0, 0));
 
     final JButton button1 = new JButton();
-    button1.setPreferredSize(new Dimension(100,20));
+    setDefaults(button1);
+    button1.setPreferredSize(new Dimension(100, 40));
     final JButton button2 = new JButton();
-    button2.setPreferredSize(new Dimension(100,100));
+    setDefaults(button2);
+    button2.setPreferredSize(new Dimension(100, 100));
 
-    panel.add(button1, new GridConstraints(0,0,1,1,GridConstraints.ANCHOR_CENTER,GridConstraints.FILL_BOTH,
-      GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0));
+    panel.add(button1, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                           GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0));
 
-    panel.add(button2, new GridConstraints(1,0,1,1,GridConstraints.ANCHOR_CENTER,GridConstraints.FILL_BOTH,
-      GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0));
+    panel.add(button2, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                           GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0));
 
-    final Dimension preferredSize = panel.getPreferredSize();
-    assertEquals(SystemInfo.isMac ? 129 : 120, preferredSize.height);
+    panel.doLayout();
+
+    assertEquals(140, panel.getPreferredSize().height);
   }
 }

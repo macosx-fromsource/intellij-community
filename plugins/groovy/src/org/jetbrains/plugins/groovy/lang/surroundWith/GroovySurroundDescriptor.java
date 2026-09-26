@@ -22,11 +22,7 @@ import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.refactoring.GroovyRefactoringUtil;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 22.05.2007
- */
-public class GroovySurroundDescriptor implements SurroundDescriptor {
+public final class GroovySurroundDescriptor implements SurroundDescriptor {
   private static final Surrounder[] ourSurrounders = new Surrounder[]{
     //statements: like in java
     new IfSurrounder(),
@@ -57,8 +53,7 @@ public class GroovySurroundDescriptor implements SurroundDescriptor {
   };
 
   @Override
-  @NotNull
-  public Surrounder[] getSurrounders() {
+  public Surrounder @NotNull [] getSurrounders() {
     return ourSurrounders;
   }
 
@@ -68,8 +63,7 @@ public class GroovySurroundDescriptor implements SurroundDescriptor {
   }
 
   @Override
-  @NotNull
-  public PsiElement[] getElementsToSurround(PsiFile file, int startOffset, int endOffset) {
+  public PsiElement @NotNull [] getElementsToSurround(PsiFile file, int startOffset, int endOffset) {
     return GroovyRefactoringUtil.findStatementsInRange(file, startOffset, endOffset, true);
   }
 

@@ -15,15 +15,14 @@
  */
 package com.theoryinpractice.testng.configuration.browser;
 
-import com.intellij.psi.PsiPackage;
-import com.intellij.openapi.project.Project;
 import com.intellij.execution.configuration.BrowseModuleValueActionListener;
 import com.intellij.ide.util.PackageChooserDialog;
+import com.intellij.openapi.project.Project;
+import com.intellij.psi.PsiPackage;
+import com.theoryinpractice.testng.TestngBundle;
 
 /**
  * @author Hani Suleiman
- *         Date: Jul 21, 2005
- *         Time: 12:56:02 PM
  */
 public class PackageBrowser extends BrowseModuleValueActionListener
 {
@@ -33,7 +32,7 @@ public class PackageBrowser extends BrowseModuleValueActionListener
 
     @Override
     protected String showDialog() {
-        PackageChooserDialog chooser = new PackageChooserDialog("Choose Package", getProject());
+        PackageChooserDialog chooser = new PackageChooserDialog(TestngBundle.message("package.browser.dialog.title.choose.package"), getProject());
         chooser.show();
         PsiPackage psiPackage = chooser.getSelectedPackage();
         String packageName = psiPackage == null ? null : psiPackage.getQualifiedName();

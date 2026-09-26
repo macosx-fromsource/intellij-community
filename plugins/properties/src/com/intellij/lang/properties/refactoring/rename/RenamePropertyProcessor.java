@@ -1,28 +1,14 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.properties.refactoring.rename;
 
 import com.intellij.lang.properties.IProperty;
+import com.intellij.lang.properties.PropertiesBundle;
 import com.intellij.lang.properties.PropertiesImplUtil;
 import com.intellij.lang.properties.PropertiesUtil;
 import com.intellij.lang.properties.ResourceBundle;
 import com.intellij.lang.properties.psi.PropertiesFile;
 import com.intellij.lang.properties.refactoring.PropertiesRefactoringSettings;
 import com.intellij.lang.properties.xml.XmlProperty;
-import com.intellij.openapi.util.Comparing;
 import com.intellij.pom.PomTargetPsiElement;
 import com.intellij.psi.PsiElement;
 import com.intellij.refactoring.rename.RenamePsiElementProcessor;
@@ -33,56 +19,61 @@ import org.jetbrains.annotations.NotNull;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public class RenamePropertyProcessor extends RenamePsiElementProcessor {
   @Override
-  public boolean canProcessElement(@NotNull final PsiElement element) {
+  public boolean canProcessElement(final @NotNull PsiElement element) {
     return element instanceof IProperty ||
            (element instanceof PomTargetPsiElement && ((PomTargetPsiElement)element).getTarget() instanceof XmlProperty);
   }
 
   @Override
-  public void prepareRenaming(final PsiElement element, final String newName,
-                              final Map<PsiElement, String> allRenames) {
-    ResourceBundle resourceBundle = PropertiesImplUtil.getProperty(element).getPropertiesFile().getResourceBundle();
+  public void prepareRenaming(final @NotNull PsiElement element, final @NotNull String newName,
+                              final @NotNull Map<PsiElement, String> allRenames) {
+    ResourceBundle resourceBundle = Objects.requireNonNull(PropertiesImplUtil.getProperty(element)).getPropertiesFile().getResourceBundle();
 
     final Map<PsiElement, String> allRenamesCopy = new LinkedHashMap<>(allRenames);
     allRenames.clear();
-    for (final Map.Entry<PsiElement, String> e : allRenamesCopy.entrySet()) {
-      final IProperty property = PropertiesImplUtil.getProperty(e.getKey());
-      final List<IProperty> properties = PropertiesUtil.findAllProperties(resourceBundle, property.getUnescapedKey());
-      for (final IProperty toRename : properties) {
-        allRenames.put(toRename.getPsiElement(), e.getValue());
-      }
-    }
-  }
-
-  @Override
-  public void findCollisions(PsiElement element,
-                             final String newName,
-                             Map<? extends PsiElement, String> allRenames,
-                             List<UsageInfo> result) {
-    for (final Map.Entry<? extends PsiElement, String> e: allRenames.entrySet()) {
-      for (IProperty property : ((PropertiesFile)e.getKey().getContainingFile()).getProperties()) {
-        if (Comparing.strEqual(e.getValue(), property.getKey())) {
-          result.add(new UnresolvableCollisionUsageInfo(property.getPsiElement(), e.getKey()) {
-            @Override
-            public String getDescription() {
-              return "New property name \'" + e.getValue() + "\' hides existing property";
-            }
-          });
+    allRenamesCopy.forEach((key, value) -> {
+      final IProperty property = PropertiesImplUtil.getProperty(key);
+      if (property != null) {
+        final List<IProperty> properties = PropertiesUtil.findAllProperties(resourceBundle, property.getUnescapedKey());
+        for (final IProperty toRename : properties) {
+          allRenames.put(toRename.getPsiElement(), value);
         }
       }
-    }
+    });
   }
 
   @Override
-   public boolean isToSearchInComments(PsiElement element) {
+  public void findCollisions(@NotNull PsiElement element,
+                             final @NotNull String newName,
+                             @NotNull Map<? extends PsiElement, String> allRenames,
+                             @NotNull List<UsageInfo> result) {
+    allRenames.forEach((key, value) -> {
+      final PropertiesFile propertiesFile = PropertiesImplUtil.getPropertiesFile(key.getContainingFile());
+      if (propertiesFile == null) return;
+
+      final IProperty property = propertiesFile.findPropertyByKey(value);
+      if (property == null) return;
+
+      result.add(new UnresolvableCollisionUsageInfo(property.getPsiElement(), key) {
+        @Override
+        public String getDescription() {
+          return PropertiesBundle.message("rename.hides.existing.property.conflict", value);
+        }
+      });
+    });
+  }
+
+  @Override
+   public boolean isToSearchInComments(@NotNull PsiElement element) {
      return PropertiesRefactoringSettings.getInstance().RENAME_SEARCH_IN_COMMENTS;
    }
  
    @Override
-   public void setToSearchInComments(PsiElement element, boolean enabled) {
+   public void setToSearchInComments(@NotNull PsiElement element, boolean enabled) {
      PropertiesRefactoringSettings.getInstance().RENAME_SEARCH_IN_COMMENTS = enabled;
    }
 }

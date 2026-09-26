@@ -1,22 +1,13 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.refactoring.convertToJava;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypes;
 import com.intellij.psi.util.PsiTreeUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
@@ -42,8 +33,6 @@ import java.util.Collections;
  */
 public class ClosureGenerator {
   private static final Logger LOG = Logger.getInstance(ClosureGenerator.class);
-
-  public static final String[] MODIFIERS = new String[]{PsiModifier.PUBLIC};
 
   private final StringBuilder builder;
   private final ExpressionContext context;
@@ -71,12 +60,10 @@ public class ClosureGenerator {
     final GrMethod method = generateClosureMethod(closure);
     final GrReflectedMethod[] reflectedMethods = method.getReflectedMethods();
 
-    if (reflectedMethods.length > 0) {
-      for (GrReflectedMethod reflectedMethod : reflectedMethods) {
-        if (reflectedMethod.getSkippedParameters().length > 0) {
-          generator.writeMethod(builder, reflectedMethod);
-          builder.append('\n');
-        }
+    for (GrReflectedMethod reflectedMethod : reflectedMethods) {
+      if (reflectedMethod.getSkippedParameters().length > 0) {
+        generator.writeMethod(builder, reflectedMethod);
+        builder.append('\n');
       }
     }
     builder.append('}');
@@ -90,16 +77,15 @@ public class ClosureGenerator {
     final GrParameter[] parameters = block.getAllParameters();
     GenerationUtil.writeParameterList(builder, parameters, new GeneratorClassNameProvider(), context);
 
-    Collection<GrStatement> myExitPoints = !PsiType.VOID.equals(returnType) ? ControlFlowUtils.collectReturns(block) : Collections.<GrStatement>emptySet();
+    Collection<GrStatement> myExitPoints = !PsiTypes.voidType().equals(returnType) ? ControlFlowUtils.collectReturns(block) : Collections.emptySet();
     boolean shouldInsertReturnNull = !(returnType instanceof PsiPrimitiveType) &&
                                      MissingReturnInspection.methodMissesSomeReturns(block, MissingReturnInspection.ReturnStatus.shouldNotReturnValue);
 
-    new CodeBlockGenerator(builder, context.extend(), myExitPoints).generateCodeBlock(block, shouldInsertReturnNull);
+    new CodeBlockGenerator(builder, context.extend(), myExitPoints).generateCodeBlock(parameters, block, shouldInsertReturnNull);
     builder.append('\n');
   }
 
-  @NotNull
-  private GrMethod generateClosureMethod(@NotNull GrClosableBlock block) {
+  private @NotNull GrMethod generateClosureMethod(@NotNull GrClosableBlock block) {
     final GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(context.project);
     final GrMethod method = factory.createMethodFromText("def doCall(){}", block);
 
@@ -118,9 +104,7 @@ public class ClosureGenerator {
     return method;
   }
 
-  @NonNls
-  @NotNull
-  private CharSequence getOwner(@NotNull GrClosableBlock closure) {
+  private @NonNls @NotNull CharSequence getOwner(@NotNull GrClosableBlock closure) {
     final GroovyPsiElement context = PsiTreeUtil.getParentOfType(closure, GrMember.class, GroovyFile.class);
     LOG.assertTrue(context != null);
 

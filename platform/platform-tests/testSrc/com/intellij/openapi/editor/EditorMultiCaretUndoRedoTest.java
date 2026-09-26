@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2018 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,123 +15,128 @@
  */
 package com.intellij.openapi.editor;
 
-import com.intellij.openapi.application.Result;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.command.CommandProcessor;
-import com.intellij.openapi.command.impl.CurrentEditorProvider;
 import com.intellij.openapi.command.impl.UndoManagerImpl;
 import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.impl.AbstractEditorTest;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.fileEditor.TextEditor;
+import com.intellij.openapi.fileEditor.impl.CurrentEditorProvider;
 import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider;
-import com.intellij.testFramework.TestFileType;
-import org.jetbrains.annotations.NotNull;
-
-import java.io.IOException;
+import com.intellij.openapi.fileTypes.PlainTextFileType;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.Nullable;
 
 public class EditorMultiCaretUndoRedoTest extends AbstractEditorTest {
-  private CurrentEditorProvider mySavedCurrentEditorProvider;
-
-  public void setUp() throws Exception {
-    super.setUp();
-    mySavedCurrentEditorProvider = getUndoManager().getEditorProvider();
-  }
-
+  @Override
   public void tearDown() throws Exception {
-    getUndoManager().setEditorProvider(mySavedCurrentEditorProvider);
-    super.tearDown();
+    try {
+      getUndoManager().setOverriddenEditorProvider(null);
+    }
+    catch (Throwable e) {
+      addSuppressedException(e);
+    }
+    finally {
+      super.tearDown();
+    }
   }
 
   @Override
-  // disabling execution of tests in command
-  protected void runTest() throws Throwable {
-    new WriteAction<Void>() {
-      @Override
-      protected void run(@NotNull Result<Void> result) throws Throwable {
-        doRunTest();
-      }
-    }.execute();
+  protected boolean isRunInCommand() {
+    return false;
   }
 
-  public void testUndoRedo() throws Exception {
-    init("some<caret> text<caret>\n" +
-         "some <selection><caret>other</selection> <selection>text<caret></selection>\n" +
-         "<selection>ano<caret>ther</selection> line");
-    type('A');
-    executeAction("EditorDelete");
-    mouse().clickAt(0, 1);
-    undo();
-    checkResult("someA<caret>textA<caret>some A<caret>A<caret>A<caret>line");
-    undo();
-    checkResult("someA<caret> textA<caret>\n" +
-                      "some A<caret> A<caret>\n" +
-                      "A<caret> line");
-    undo();
-    checkResult("some<caret> text<caret>\n" +
-                      "some <selection><caret>other</selection> <selection>text<caret></selection>\n" +
-                      "<selection>ano<caret>ther</selection> line");
-    redo();
-    checkResult("someA<caret> textA<caret>\n" +
-                      "some A<caret> A<caret>\n" +
-                      "A<caret> line");
+  public void testUndoRedo() {
+    WriteAction.run(()-> {
+      init("""
+             some<caret> text<caret>
+             some <selection><caret>other</selection> <selection>text<caret></selection>
+             <selection>ano<caret>ther</selection> line""");
+      type('A');
+      executeAction("EditorDelete");
+      mouse().clickAt(0, 1);
+      undo();
+      checkResult("someA<caret>textA<caret>some A<caret>A<caret>A<caret>line");
+      undo();
+      checkResult("""
+                    someA<caret> textA<caret>
+                    some A<caret> A<caret>
+                    A<caret> line""");
+      undo();
+      checkResult("""
+                    some<caret> text<caret>
+                    some <selection><caret>other</selection> <selection>text<caret></selection>
+                    <selection>ano<caret>ther</selection> line""");
+      redo();
+      checkResult("""
+                    someA<caret> textA<caret>
+                    some A<caret> A<caret>
+                    A<caret> line""");
+    });
   }
 
-  public void testBlockSelectionStateAfterUndo() throws Exception {
-    init("a");
-    ((EditorEx)myEditor).setColumnMode(true);
-    mouse().clickAt(0, 2);
-    type('b');
-    undo();
-    executeAction("EditorRightWithSelection");
-    verifyCaretsAndSelections(0, 3, 2, 3);
+  public void testBlockSelectionStateAfterUndo() {
+    WriteAction.run(()-> {
+      init("a");
+      ((EditorEx)getEditor()).setColumnMode(true);
+      mouse().clickAt(0, 2);
+      type('b');
+      undo();
+      executeAction("EditorRightWithSelection");
+      verifyCaretsAndSelections(0, 3, 2, 3);
+    });
   }
 
-  public void testBlockSelectionStateAfterUndo2() throws Exception {
-    init("a");
-    ((EditorEx)myEditor).setColumnMode(true);
-    mouse().pressAt(0, 0).dragTo(0, 2).release();
-    type('b');
-    undo();
-    verifyCaretsAndSelections(0, 2, 0, 2);
+  public void testBlockSelectionStateAfterUndo2() {
+    WriteAction.run(() -> {
+      init("a");
+      ((EditorEx)getEditor()).setColumnMode(true);
+      mouse().pressAt(0, 0).dragTo(0, 2).release();
+      type('b');
+      undo();
+      verifyCaretsAndSelections(0, 2, 0, 2);
+    });
   }
 
-  public void testPrimaryCaretPositionAfterUndo() throws Exception {
-    init("line1\n" +
-         "line2");
-    mouse().alt().pressAt(1, 1).dragTo(0, 0).release();
-    type(' ');
-    undo();
-    assertEquals(new LogicalPosition(0, 0), myEditor.getCaretModel().getPrimaryCaret().getLogicalPosition());
+  public void testPrimaryCaretPositionAfterUndo() {
+    WriteAction.run(() -> {
+      init("line1\n" +
+           "line2");
+      mouse().alt().pressAt(1, 1).dragTo(0, 0).release();
+      type(' ');
+      undo();
+      assertEquals(new LogicalPosition(0, 0), getEditor().getCaretModel().getPrimaryCaret().getLogicalPosition());
+    });
   }
 
   private void checkResult(final String text) {
     CommandProcessor.getInstance().runUndoTransparentAction(() -> checkResultByText(text));
   }
 
-  private static void undo() {
+  private void undo() {
     getUndoManager().undo(getTextEditor());
   }
 
-  private static void redo() {
+  private void redo() {
     getUndoManager().redo(getTextEditor());
   }
 
-  private static UndoManagerImpl getUndoManager() {
-    return (UndoManagerImpl) UndoManager.getInstance(ourProject);
+  private UndoManagerImpl getUndoManager() {
+    return (UndoManagerImpl) UndoManager.getInstance(getProject());
   }
 
-  private static TextEditor getTextEditor() {
-    return TextEditorProvider.getInstance().getTextEditor(myEditor);
+  private TextEditor getTextEditor() {
+    return TextEditorProvider.getInstance().getTextEditor(getEditor());
   }
 
-  private void init(String text) throws IOException {
-    init(text, TestFileType.TEXT);
+  private void init(String text) {
+    init(text, PlainTextFileType.INSTANCE);
     setEditorVisibleSize(1000, 1000);
-    getUndoManager().setEditorProvider(new CurrentEditorProvider() {
+    getUndoManager().setOverriddenEditorProvider(new CurrentEditorProvider() {
       @Override
-      public FileEditor getCurrentEditor() {
+      public FileEditor getCurrentEditor(@Nullable Project project) {
         return getTextEditor();
       }
     });

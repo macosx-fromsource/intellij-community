@@ -20,7 +20,7 @@ package com.intellij.remoteServer.agent.util;
  */
 public class DeploymentDataImpl implements DeploymentData {
 
-  private String myName;
+  private final String myName;
   private boolean myStarted;
 
   public DeploymentDataImpl(String name, boolean started) {
@@ -28,14 +28,17 @@ public class DeploymentDataImpl implements DeploymentData {
     myStarted = started;
   }
 
+  @Override
   public String getName() {
     return myName;
   }
 
+  @Override
   public boolean isStarted() {
     return myStarted;
   }
 
+  @Override
   public void setStarted(boolean started) {
     myStarted = started;
   }

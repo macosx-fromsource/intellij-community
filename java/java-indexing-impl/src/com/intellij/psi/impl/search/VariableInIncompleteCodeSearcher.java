@@ -1,23 +1,15 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.search;
 
 import com.intellij.openapi.application.QueryExecutorBase;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiCompiledElement;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.PsiVariable;
 import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.SearchScope;
@@ -30,13 +22,13 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Looks for references to local variable or method parameter in invalid (incomplete) code.
  */
-public class VariableInIncompleteCodeSearcher extends QueryExecutorBase<PsiReference, ReferencesSearch.SearchParameters> {
+public final class VariableInIncompleteCodeSearcher extends QueryExecutorBase<PsiReference, ReferencesSearch.SearchParameters> {
   public VariableInIncompleteCodeSearcher() {
     super(true);
   }
 
   @Override
-  public void processQuery(@NotNull final ReferencesSearch.SearchParameters p, @NotNull final Processor<PsiReference> consumer) {
+  public void processQuery(final @NotNull ReferencesSearch.SearchParameters p, final @NotNull Processor<? super PsiReference> consumer) {
     final PsiElement refElement = p.getElementToSearch();
     if (!refElement.isValid() || !(refElement instanceof PsiVariable)) return;
 
@@ -62,18 +54,15 @@ public class VariableInIncompleteCodeSearcher extends QueryExecutorBase<PsiRefer
     PsiElement[] elements = ((LocalSearchScope)scope).getScope();
     if (elements.length == 0) return;
 
-    PsiSearchHelper.SERVICE.getInstance(p.getProject()).processElementsWithWord((element, offsetInElement) -> {
+    PsiSearchHelper.getInstance(p.getProject()).processElementsWithWord((element, offsetInElement) -> {
       for (PsiElement child = element.findElementAt(offsetInElement); child != null; child = child.getParent()) {
         if (!child.textMatches(name)) {
           break;
         }
-        if (child instanceof PsiJavaCodeReferenceElement) {
-          final PsiJavaCodeReferenceElement ref = (PsiJavaCodeReferenceElement)child;
-          if (!ref.isQualified() &&
-              !(ref.getParent() instanceof PsiMethodCallExpression) &&
-              ref.resolve() == null && ref.advancedResolve(true).getElement() == refElement) {
-            consumer.process(ref);
-          }
+        if (child instanceof PsiJavaCodeReferenceElement ref && !ref.isQualified() &&
+            !(ref.getParent() instanceof PsiMethodCallExpression) &&
+            ref.resolve() == null && ref.advancedResolve(true).getElement() == refElement) {
+          consumer.process(ref);
         }
       }
       return true;

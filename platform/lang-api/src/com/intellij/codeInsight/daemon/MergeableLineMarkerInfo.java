@@ -1,175 +1,293 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon;
 
+import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.markup.GutterIconRenderer;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
-import com.intellij.openapi.ui.popup.PopupChooserBuilder;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
-import com.intellij.ui.IdeBorderFactory;
-import com.intellij.ui.awt.RelativePoint;
-import com.intellij.ui.components.JBLabel;
-import com.intellij.ui.components.JBList;
 import com.intellij.util.Function;
-import com.intellij.util.NotNullFunction;
 import com.intellij.util.SmartList;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.xml.util.XmlStringUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.Icon;
+import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * @author Konstantin Bulenkov
  */
 public abstract class MergeableLineMarkerInfo<T extends PsiElement> extends LineMarkerInfo<T> {
+
+  private static final Logger LOG = Logger.getInstance(MergeableLineMarkerInfo.class);
+
+  private @Nullable Function<? super PsiElement, @Nls(capitalization = Nls.Capitalization.Title) String> myPresentationProvider;
+
+  /**
+   * @deprecated Use {@link #MergeableLineMarkerInfo(PsiElement, TextRange, Icon, Function, GutterIconNavigationHandler, GutterIconRenderer.Alignment, Supplier)} instead
+   */
+  @Deprecated
   public MergeableLineMarkerInfo(@NotNull T element,
                                  @NotNull TextRange textRange,
-                                 Icon icon,
-                                 int updatePass,
+                                 @Nullable Icon icon,
+                                 int __,
                                  @Nullable Function<? super T, String> tooltipProvider,
                                  @Nullable GutterIconNavigationHandler<T> navHandler,
                                  @NotNull GutterIconRenderer.Alignment alignment) {
-    super(element, textRange, icon, updatePass, tooltipProvider, navHandler, alignment);
+    super(element, textRange, icon, tooltipProvider, navHandler, alignment);
+  }
+
+  /**
+   * @deprecated Use {@link #MergeableLineMarkerInfo(PsiElement, TextRange, Icon, Function, GutterIconNavigationHandler, GutterIconRenderer.Alignment, Supplier)} instead
+   */
+  @Deprecated
+  public MergeableLineMarkerInfo(@NotNull T element,
+                                 @NotNull TextRange textRange,
+                                 @Nullable Icon icon,
+                                 @Nullable Function<? super T, String> tooltipProvider,
+                                 @Nullable GutterIconNavigationHandler<T> navHandler,
+                                 @NotNull GutterIconRenderer.Alignment alignment) {
+    super(element, textRange, icon, tooltipProvider, navHandler, alignment);
+  }
+
+  /**
+   * @param accessibleNameProvider callback to calculate the icon's accessible name (used by screen reader), see also {@link #getCommonAccessibleNameProvider(List)}
+   */
+  public MergeableLineMarkerInfo(@NotNull T element,
+                                 @NotNull TextRange textRange,
+                                 @NotNull Icon icon,
+                                 @Nullable Function<? super T, String> tooltipProvider,
+                                 @Nullable GutterIconNavigationHandler<T> navHandler,
+                                 @NotNull GutterIconRenderer.Alignment alignment,
+                                 @NotNull Supplier<@NotNull @Nls String> accessibleNameProvider) {
+    super(element, textRange, icon, tooltipProvider, navHandler, alignment, accessibleNameProvider);
+  }
+
+  public MergeableLineMarkerInfo(@NotNull T element,
+                                 @NotNull TextRange textRange,
+                                 @NotNull Icon icon,
+                                 @Nullable Function<? super T, String> tooltipProvider,
+                                 @Nullable Function<? super PsiElement, @Nls(capitalization = Nls.Capitalization.Title) String> presentationProvider,
+                                 @Nullable GutterIconNavigationHandler<T> navHandler,
+                                 @NotNull GutterIconRenderer.Alignment alignment,
+                                 @NotNull Supplier<@NotNull @Nls String> accessibleNameProvider) {
+    super(element, textRange, icon, tooltipProvider, navHandler, alignment, accessibleNameProvider);
+    myPresentationProvider = presentationProvider;
   }
 
   public abstract boolean canMergeWith(@NotNull MergeableLineMarkerInfo<?> info);
 
-  public abstract Icon getCommonIcon(@NotNull List<MergeableLineMarkerInfo> infos);
-  @NotNull
-  public abstract Function<? super PsiElement, String> getCommonTooltip(@NotNull List<MergeableLineMarkerInfo> infos);
+  /**
+   * Retrieves the weight of the mergeable line marker.
+   * The line marker's icon with the greatest weight is used for merged icon, otherwise the first one is used.
+   *
+   * @return the weight of the line marker.
+   */
+  public int getWeight() {
+    return 0;
+  }
 
-  public GutterIconRenderer.Alignment getCommonIconAlignment(@NotNull List<MergeableLineMarkerInfo> infos) {
+  public abstract Icon getCommonIcon(@NotNull List<? extends MergeableLineMarkerInfo<?>> infos);
+
+  public static @NotNull List<? extends MergeableLineMarkerInfo<?>> getMergedMarkers(LineMarkerInfo<?> info) {
+    if (info instanceof MyLineMarkerInfo myLineMarkerInfo) {
+      return myLineMarkerInfo.getInfos();
+    }
+    return Collections.emptyList();
+  }
+
+  public @NotNull Function<? super PsiElement, String> getCommonTooltip(@NotNull List<? extends MergeableLineMarkerInfo<?>> infos) {
+    return element -> {
+      Set<String> tooltips = new LinkedHashSet<>(ContainerUtil.mapNotNull(infos, info -> info.getLineMarkerTooltip()));
+      StringBuilder tooltip = new StringBuilder();
+      for (String info : tooltips) {
+        if (!tooltip.isEmpty()) {
+          tooltip.append(UIUtil.BORDER_LINE);
+        }
+        tooltip.append(UIUtil.getHtmlBody(info));
+      }
+      return XmlStringUtil.wrapInHtml(tooltip);
+    };
+  }
+
+
+  public @NotNull GutterIconRenderer.Alignment getCommonIconAlignment(@NotNull List<? extends MergeableLineMarkerInfo<?>> infos) {
     return GutterIconRenderer.Alignment.LEFT;
   }
-  
-  public String getElementPresentation(PsiElement element) {
-    return element.getText();
+
+  private static Supplier<@NotNull @Nls String> getCommonAccessibleNameProvider(@NotNull List<? extends MergeableLineMarkerInfo<?>> infos) {
+    return infos.get(0).getAccessibleNameProvider();
   }
 
-  public int getCommonUpdatePass(@NotNull List<MergeableLineMarkerInfo> infos) {
-    return updatePass;
+  public @NotNull @Nls(capitalization = Nls.Capitalization.Title) String getElementPresentation(@NotNull PsiElement element) {
+    return myPresentationProvider != null ? myPresentationProvider.fun(element) : element.getText();
   }
 
-  public boolean configurePopupAndRenderer(@NotNull PopupChooserBuilder builder,
-                                           @NotNull JBList list,
-                                           @NotNull List<MergeableLineMarkerInfo> markers) {
-    return false;
-  }
-
-  @NotNull
-  public static List<LineMarkerInfo> merge(@NotNull List<MergeableLineMarkerInfo> markers) {
-    List<LineMarkerInfo> result = new SmartList<>();
-    for (int i = 0; i < markers.size(); i++) {
-      MergeableLineMarkerInfo marker = markers.get(i);
-      List<MergeableLineMarkerInfo> toMerge = new SmartList<>();
-      for (int k = markers.size() - 1; k > i; k--) {
-        MergeableLineMarkerInfo current = markers.get(k);
-        if (marker.canMergeWith(current)) {
-          toMerge.add(0, current);
-          markers.remove(k);
+  /**
+   * Try to merge every marker from {@code sameLineMarkers} with every other marker from this list.
+   * Yes, it's a quadratic number of {@link MergeableLineMarkerInfo#canMergeWith(MergeableLineMarkerInfo)} calls.
+   * The list is not modified in the process.
+   */
+  public static @NotNull List<LineMarkerInfo<?>> merge(@NotNull List<? extends MergeableLineMarkerInfo<?>> sameLineMarkers, int passId) {
+    // must maintain the order of sameLineMarkers, to show icons in consistent order
+    List<LineMarkerInfo<?>> result = new ArrayList<>(sameLineMarkers.size());
+    boolean[] alreadyMerged = new boolean[sameLineMarkers.size()]; // [i]=true means the `sameLineMarkers[i]` was merged with some other marker from this array, and should not be tried to merge again
+    for (int i = 0; i < sameLineMarkers.size(); i++) {
+      MergeableLineMarkerInfo<?> prev = sameLineMarkers.get(i);
+      if (alreadyMerged[i]) continue;
+      List<MergeableLineMarkerInfo<?>> toMerge = new SmartList<>();
+      for (int k = i + 1; k < sameLineMarkers.size(); k++) {
+        MergeableLineMarkerInfo<?> next = sameLineMarkers.get(k);
+        if (alreadyMerged[k]) continue;
+        boolean canMergeWith = prev.canMergeWith(next);
+        if (ApplicationManager.getApplication().isUnitTestMode() && !canMergeWith && next.canMergeWith(prev)) {
+          LOG.error("inconsistent canMergeWith():" + next.getClass() + "[" + next.getLineMarkerTooltip() + "] can merge " +
+                    prev.getClass() + "[" + prev.getLineMarkerTooltip() + "], but not vice versa");
+        }
+        if (canMergeWith) {
+          alreadyMerged[k] = true; // mark as merged to avoid counting it twice
+          if (toMerge.isEmpty()) {
+            toMerge.add(prev);
+          }
+          toMerge.add(next);
         }
       }
       if (toMerge.isEmpty()) {
-        result.add(marker);
+        result.add(prev);
       }
       else {
-        toMerge.add(0, marker);
-        result.add(new MyLineMarkerInfo(toMerge));
+        result.add(new MyLineMarkerInfo(toMerge, passId));
       }
     }
     return result;
   }
 
-  private static class MyLineMarkerInfo extends LineMarkerInfo<PsiElement> {
-    private MyLineMarkerInfo(@NotNull List<MergeableLineMarkerInfo> markers) {
-      this(markers, markers.get(0));
+  private static final class MyLineMarkerInfo extends LineMarkerInfo<PsiElement> {
+    private final List<? extends MergeableLineMarkerInfo<?>> myMarkers;
+    private final List<ActionGroup> myGroups;
+
+    private MyLineMarkerInfo(@NotNull List<? extends MergeableLineMarkerInfo<?>> markers, int passId) {
+      this(markers, getTemplate(markers), passId);
     }
 
-    private MyLineMarkerInfo(@NotNull List<MergeableLineMarkerInfo> markers, @NotNull MergeableLineMarkerInfo template) {
+    /**
+     *  An 'updatePass' field is explicitly set here to avoid duplicated markers
+     *  @see com.intellij.codeHighlighting.Pass#SLOW_LINE_MARKERS
+     */
+    private MyLineMarkerInfo(@NotNull List<? extends MergeableLineMarkerInfo<?>> markers, @NotNull MergeableLineMarkerInfo<?> template, int passId) {
       //noinspection ConstantConditions
-      super(template.getElement(),
-            getCommonTextRange(markers),
-            template.getCommonIcon(markers),
-            template.getCommonUpdatePass(markers),
-            template.getCommonTooltip(markers),
-            getCommonNavigationHandler(markers),
-            template.getCommonIconAlignment(markers));
+      super(template.getElement(), getCommonTextRange(markers), template.getCommonIcon(markers),
+            getCommonAccessibleNameProvider(markers), template.getCommonTooltip(markers),
+            null, template.getCommonIconAlignment(markers));
+      myMarkers = markers;
+      myGroups = ContainerUtil.map(markers, info -> info.createGutterRenderer().getPopupMenuActions());
+      updatePass = passId;
     }
 
-    private static TextRange getCommonTextRange(List<MergeableLineMarkerInfo> markers) {
+    public @NotNull List<? extends MergeableLineMarkerInfo<?>> getInfos() {
+      return myMarkers;
+    }
+
+    private @NotNull DefaultActionGroup getCommonActionGroup() {
+      DefaultActionGroup commonActionGroup = new DefaultActionGroup();
+      for (int i = 0; i < myGroups.size(); i++) {
+        ActionGroup popupActions = myGroups.get(i);
+        if (popupActions != null) {
+          commonActionGroup.addSeparator();
+          commonActionGroup.addAll(popupActions);
+        }
+        else {
+          MergeableLineMarkerInfo<?> mergeableLineMarkerInfo = myMarkers.get(i);
+          commonActionGroup.add(mergeableLineMarkerInfo.getNavigateAction());
+        }
+      }
+      return commonActionGroup;
+    }
+
+    private static @NotNull TextRange getCommonTextRange(@NotNull List<? extends MergeableLineMarkerInfo<?>> markers) {
       int startOffset = Integer.MAX_VALUE;
       int endOffset = Integer.MIN_VALUE;
-      for (MergeableLineMarkerInfo marker : markers) {
+      for (MergeableLineMarkerInfo<?> marker : markers) {
         startOffset = Math.min(startOffset, marker.startOffset);
         endOffset = Math.max(endOffset, marker.endOffset);
       }
       return TextRange.create(startOffset, endOffset);
     }
 
-    private static GutterIconNavigationHandler<PsiElement> getCommonNavigationHandler(@NotNull final List<MergeableLineMarkerInfo> markers) {
-      return new GutterIconNavigationHandler<PsiElement>() {
+    @Override
+    public GutterIconRenderer createGutterRenderer() {
+      return new LineMarkerGutterIconRenderer<>(this) {
         @Override
-        public void navigate(final MouseEvent e, PsiElement elt) {
-          final List<LineMarkerInfo> infos = new ArrayList<>(markers);
-          Collections.sort(infos, (o1, o2) -> o1.startOffset - o2.startOffset);
-          final JBList list = new JBList(infos);
-          list.setFixedCellHeight(UIUtil.LIST_FIXED_CELL_HEIGHT);
-          PopupChooserBuilder builder  = JBPopupFactory.getInstance().createListPopupBuilder(list);
-          if (!markers.get(0).configurePopupAndRenderer(builder, list, infos)) {
-            list.installCellRenderer(dom -> {
-              if (dom instanceof LineMarkerInfo) {
-                Icon icon = null;
-                final GutterIconRenderer renderer = ((LineMarkerInfo)dom).createGutterRenderer();
-                if (renderer != null) {
-                  icon = renderer.getIcon();
-                }
-                PsiElement element = ((LineMarkerInfo)dom).getElement();
-                assert element != null;
-                final String elementPresentation =
-                  dom instanceof MergeableLineMarkerInfo ? ((MergeableLineMarkerInfo)dom).getElementPresentation(element) : element.getText();
-                String text = StringUtil.first(elementPresentation, 100, true).replace('\n', ' ');
+        public AnAction getClickAction() {
+          return null;
+        }
 
-                final JBLabel label = new JBLabel(text, icon, SwingConstants.LEFT);
-                label.setBorder(IdeBorderFactory.createEmptyBorder(2));
-                return label;
-              }
+        @Override
+        public boolean isNavigateAction() {
+          return true;
+        }
 
-              return new JBLabel();
-            });
-          }
-          builder.setItemChoosenCallback(() -> {
-            final Object value = list.getSelectedValue();
-            if (value instanceof LineMarkerInfo) {
-              final GutterIconNavigationHandler handler = ((LineMarkerInfo)value).getNavigationHandler();
-              if (handler != null) {
-                //noinspection unchecked
-                handler.navigate(e, ((LineMarkerInfo)value).getElement());
-              }
-            }
-          }).createPopup().show(new RelativePoint(e));
+        @Override
+        public @NotNull ActionGroup getPopupMenuActions() {
+          return getCommonActionGroup();
         }
       };
     }
+
+    private static MergeableLineMarkerInfo<?> getTemplate(@NotNull List<? extends MergeableLineMarkerInfo<?>> markers) {
+      return Collections.max(markers, Comparator.comparingInt(MergeableLineMarkerInfo::getWeight));
+    }
+  }
+
+  protected @NotNull AnAction getNavigateAction() {
+    return new AnAction() {
+      @Override
+      public void actionPerformed(@NotNull AnActionEvent e) {
+        MouseEvent mouseEvent = getMouseEvent(e);
+        getNavigationHandler().navigate(mouseEvent, getElement());
+      }
+
+      private static @NotNull MouseEvent getMouseEvent(@NotNull AnActionEvent e) {
+        InputEvent inputEvent = e.getInputEvent();
+        if (inputEvent instanceof MouseEvent mouseEvent) {
+          return mouseEvent;
+        }
+        return JBPopupFactory.getInstance().guessBestPopupLocation(e.getDataContext()).toMouseEvent();
+      }
+
+      @Override
+      public void update(@NotNull AnActionEvent e) {
+        PsiElement element = getElement();
+        if (element != null) {
+          Presentation presentation = e.getPresentation();
+          presentation.setIcon(getIcon());
+          presentation.setText(getElementPresentation(element));
+        }
+      }
+
+      @Override
+      public @NotNull ActionUpdateThread getActionUpdateThread() {
+        return ActionUpdateThread.BGT;
+      }
+    };
   }
 }

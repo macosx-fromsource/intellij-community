@@ -1,5 +1,5 @@
 while True:
   try:
-    print "a"
+    print("a")
   finally:
-    <error descr="'continue' not supported inside 'finally' clause">continue</error>
+    continue

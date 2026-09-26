@@ -1,7 +1,7 @@
 package org.jetbrains.plugins.groovy.lang.overriding;
 
 import com.intellij.psi.PsiMethod;
-import com.intellij.testFramework.fixtures.LightCodeInsightFixtureTestCase;
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFileBase;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
 import org.jetbrains.plugins.groovy.util.TestUtils;
@@ -9,17 +9,13 @@ import org.jetbrains.plugins.groovy.util.TestUtils;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 31.07.2007
- */
-public abstract class OverridingTester extends LightCodeInsightFixtureTestCase {
+public abstract class OverridingTester extends LightJavaCodeInsightFixtureTestCase {
   @Override
   protected String getBasePath() {
     return TestUtils.getTestDataPath() + "overriding/";
   }
 
-  public void doTest() throws Throwable {
+  public void doTest() {
     final String testFile = getTestName(true) + ".test";
     final List<String> strings = TestUtils.readInput(getTestDataPath() + "/" + testFile);
     GroovyFileBase psiFile = (GroovyFileBase) myFixture.addFileToProject("foo.groovy", strings.get(0));

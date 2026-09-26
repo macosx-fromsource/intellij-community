@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.scope.processor;
 
 import com.intellij.openapi.util.Key;
@@ -20,7 +6,6 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiSubstitutor;
 import com.intellij.psi.ResolveState;
 import com.intellij.psi.filters.ElementFilter;
-import com.intellij.psi.scope.BaseScopeProcessor;
 import com.intellij.psi.scope.PsiScopeProcessor;
 import com.intellij.util.SmartList;
 import org.jetbrains.annotations.NotNull;
@@ -28,11 +13,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-/**
- * @author ik
- * Date: 13.02.2003
- */
-public class FilterScopeProcessor<T> extends BaseScopeProcessor {
+public class FilterScopeProcessor<T> implements PsiScopeProcessor {
   protected final List<T> myResults;
   private PsiElement myCurrentDeclarationHolder;
   private final ElementFilter myFilter;
@@ -43,11 +24,11 @@ public class FilterScopeProcessor<T> extends BaseScopeProcessor {
   }
 
   public FilterScopeProcessor(@NotNull ElementFilter filter, @NotNull PsiScopeProcessor processor) {
-    this(filter, processor, new SmartList<T>());
+    this(filter, processor, new SmartList<>());
   }
 
   public FilterScopeProcessor(@NotNull ElementFilter filter) {
-    this(filter, null, new SmartList<T>());
+    this(filter, null, new SmartList<>());
   }
 
   public FilterScopeProcessor(@NotNull ElementFilter filter, @Nullable PsiScopeProcessor processor, @NotNull List<T> container) {
@@ -77,8 +58,8 @@ public class FilterScopeProcessor<T> extends BaseScopeProcessor {
     return true;
   }
 
+  @SuppressWarnings("unchecked")
   protected void add(@NotNull PsiElement element, @NotNull PsiSubstitutor substitutor) {
-    //noinspection unchecked
     myResults.add((T)element);
   }
 
@@ -90,8 +71,7 @@ public class FilterScopeProcessor<T> extends BaseScopeProcessor {
     return null;
   }
 
-  @NotNull
-  public List<T> getResults() {
+  public @NotNull List<T> getResults() {
     return myResults;
   }
 }

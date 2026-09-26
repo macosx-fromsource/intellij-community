@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2010 JetBrains s.r.o.
+ * Copyright 2000-2016 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,16 @@
  */
 package com.intellij.lang.ant.dom;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.psi.PsiFileSystemItem;
 import com.intellij.util.xml.Attribute;
 import com.intellij.util.xml.Convert;
 import com.intellij.util.xml.GenericAttributeValue;
-import org.apache.tools.ant.Task;
 
 import java.util.List;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Jul 1, 2010
  */
 public abstract class AntDomTypeDef extends AntDomCustomClasspathComponent{
 
@@ -53,7 +52,7 @@ public abstract class AntDomTypeDef extends AntDomCustomClasspathComponent{
     return CustomAntElementsRegistry.getInstance(getAntProject()).hasTypeLoadingErrors(this);
   }
 
-  public final List<String> getErrorDescriptions() {
+  public final List<@NlsSafe String> getErrorDescriptions() {
     return CustomAntElementsRegistry.getInstance(getAntProject()).getTypeLoadingErrors(this);
   }
   
@@ -64,24 +63,20 @@ public abstract class AntDomTypeDef extends AntDomCustomClasspathComponent{
 
     final String adaptto = getAdaptto().getStringValue();
     if (adaptto != null && isAssignableFrom(adaptto, clazz)) {
-      return isAssignableFrom(Task.class.getName(), clazz);
+      return isAssignableFrom("org.apache.tools.ant.Task", clazz);
     }
 
     final String adapter = getAdapter().getStringValue();
     if (adapter != null) {
       try {
         final Class adapterClass = clazz.getClassLoader().loadClass(adapter);
-        return isAssignableFrom(Task.class.getName(), adapterClass);
+        return isAssignableFrom("org.apache.tools.ant.Task", adapterClass);
       }
-      catch (ClassNotFoundException ignored) {
-      }
-      catch (NoClassDefFoundError ignored) {
-      }
-      catch (UnsupportedClassVersionError ignored) {
+      catch (ClassNotFoundException | UnsupportedClassVersionError | NoClassDefFoundError ignored) {
       }
     }
 
-    return isAssignableFrom(Task.class.getName(), clazz);
+    return isAssignableFrom("org.apache.tools.ant.Task", clazz);
   }
 
   private static boolean isAssignableFrom(final String baseClassName, final Class clazz) {

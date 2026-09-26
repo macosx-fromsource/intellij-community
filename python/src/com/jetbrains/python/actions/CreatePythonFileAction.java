@@ -1,45 +1,41 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.actions;
 
 import com.intellij.ide.actions.CreateFileFromTemplateAction;
 import com.intellij.ide.actions.CreateFileFromTemplateDialog;
+import com.intellij.ide.actions.NewFileActionWithCategory;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDirectory;
+import com.jetbrains.python.PyBundle;
 import com.jetbrains.python.PythonFileType;
+import com.jetbrains.python.pyi.PyiFileType;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 
-/**
- * @author yole
- */
-public class CreatePythonFileAction extends CreateFileFromTemplateAction implements DumbAware {
-  public CreatePythonFileAction() {
-    super("Python File", "Creates a Python file from the specified template", PythonFileType.INSTANCE.getIcon());
+@ApiStatus.Internal
+final class CreatePythonFileAction extends CreateFileFromTemplateAction implements DumbAware, NewFileActionWithCategory {
+  CreatePythonFileAction() {
+    super(PyBundle.messagePointer("action.create.python.file.title"), PyBundle.messagePointer("action.create.python.file.description"), PythonFileType.INSTANCE.getIcon());
   }
 
   @Override
-  protected void buildDialog(Project project, PsiDirectory directory, CreateFileFromTemplateDialog.Builder builder) {
+  protected void buildDialog(@NotNull Project project, @NotNull PsiDirectory directory,
+                             @NotNull CreateFileFromTemplateDialog.Builder builder) {
     builder
-      .setTitle("New Python file")
-      .addKind("Python file", PythonFileType.INSTANCE.getIcon(), "Python Script")
-      .addKind("Python unit test", PythonFileType.INSTANCE.getIcon(), "Python Unit Test");
+      .setTitle(PyBundle.message("create.python.file.action.new.python.file"))
+      .addKind(PyBundle.message("create.python.file.action.python.file"), PythonFileType.INSTANCE.getIcon(), "Python Script")
+      .addKind(PyBundle.message("create.python.file.action.python.unit.test"), PythonFileType.INSTANCE.getIcon(), "Python Unit Test")
+      .addKind(PyBundle.message("create.python.file.action.python.stub"), PyiFileType.INSTANCE.getIcon(), "Python Stub");
   }
 
   @Override
-  protected String getActionName(PsiDirectory directory, String newName, String templateName) {
-    return "Create Python script " + newName; 
+  protected String getActionName(PsiDirectory directory, @NotNull String newName, String templateName) {
+    return PyBundle.message("create.python.file.script.action", newName);
+  }
+
+  @Override
+  public @NotNull String getCategory() {
+    return "Python";
   }
 }

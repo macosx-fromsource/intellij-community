@@ -1,82 +1,82 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.execution.runners;
 
+import com.intellij.execution.ExecutionBundle;
+import com.intellij.execution.impl.ConsoleViewImpl;
+import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ExecutionConsole;
 import com.intellij.execution.ui.RunContentDescriptor;
-import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ex.ActionManagerEx;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.ui.popup.Balloon;
+import com.intellij.openapi.util.CheckedDisposable;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.ui.GotItMessage;
-import com.intellij.ui.awt.RelativePoint;
-import com.intellij.util.Alarm;
+import com.intellij.ui.GotItComponentBuilder;
+import com.intellij.ui.GotItTooltip;
+import com.intellij.ui.scale.JBUIScale;
+import com.intellij.util.concurrency.EdtExecutorService;
+import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.update.UiNotifyConnector;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Point;
+import java.util.concurrent.TimeUnit;
 
-/**
-* @author Sergey Simonchik
-*/
-public class RerunTestsNotification {
+public final class RerunTestsNotification {
 
-  private static final String KEY = "rerun.tests.notification.shown";
+  private static final @NonNls String TOOLTIP_ID = "rerun.tests";
 
   public static void showRerunNotification(@Nullable RunContentDescriptor contentToReuse,
-                                           @NotNull final ExecutionConsole executionConsole) {
+                                           @NotNull ExecutionConsole executionConsole) {
     if (contentToReuse == null) {
       return;
     }
     String lastActionId = ActionManagerEx.getInstanceEx().getPrevPreformedActionId();
-    boolean showNotification = !RerunTestsAction.ID.equals(lastActionId);
-    if (showNotification && !PropertiesComponent.getInstance().isTrueValue(KEY)) {
-      UiNotifyConnector.doWhenFirstShown(executionConsole.getComponent(), () -> doShow(executionConsole));
+    if (RerunTestsAction.ID.equals(lastActionId)) {
+      return;
     }
+    String shortcutText = KeymapUtil.getFirstKeyboardShortcutText(ActionManager.getInstance().getAction(RerunTestsAction.ID));
+    if (shortcutText.isEmpty()) {
+      return;
+    }
+    GotItTooltip tooltip = new GotItTooltip(TOOLTIP_ID, ExecutionBundle.message("popup.content.rerun.tests.with", shortcutText), executionConsole)
+      .withPosition(Balloon.Position.above);
+    if (!tooltip.canShow()) {
+      Disposer.dispose(tooltip);
+      return;
+    }
+    CheckedDisposable lifetime = Disposer.newCheckedDisposable();
+    Disposer.register(tooltip, lifetime);
+    UiNotifyConnector.doWhenFirstShown(executionConsole.getComponent(), () -> {
+      EdtExecutorService.getScheduledExecutorInstance()
+        .schedule(() -> showTooltip(tooltip, lifetime, executionConsole), 1000, TimeUnit.MILLISECONDS);
+    }, tooltip);
   }
 
-  private static void doShow(@NotNull final ExecutionConsole executionConsole) {
-    final Alarm alarm = new Alarm();
-    alarm.addRequest(() -> {
-      String shortcutText = KeymapUtil.getFirstKeyboardShortcutText(
-        ActionManager.getInstance().getAction(RerunTestsAction.ID)
-      );
-      if (shortcutText.isEmpty()) {
-        return;
-      }
-
-      GotItMessage message = GotItMessage.createMessage("Rerun tests with " + shortcutText, "");
-      message.setDisposable(executionConsole);
-      message.setCallback(() -> PropertiesComponent.getInstance().setValue(KEY, true));
-      message.setShowCallout(false);
-      Dimension consoleSize = executionConsole.getComponent().getSize();
-
-      message.show(
-        new RelativePoint(
-          executionConsole.getComponent(),
-          new Point(consoleSize.width - 185, consoleSize.height - 60)
-        ),
-        Balloon.Position.below
-      );
-
-      Disposer.dispose(alarm);
-    }, 1000);
+  private static void showTooltip(@NotNull GotItTooltip tooltip,
+                                  @NotNull CheckedDisposable lifetime,
+                                  @NotNull ExecutionConsole executionConsole) {
+    if (lifetime.isDisposed()) {
+      return;
+    }
+    ConsoleView consoleView = UIUtil.findComponentOfType(executionConsole.getComponent(), ConsoleViewImpl.class);
+    if (consoleView == null) {
+      Disposer.dispose(tooltip);
+      return;
+    }
+    tooltip.show(consoleView.getComponent(), RerunTestsNotification::getBottomRightPoint);
   }
 
+  /**
+   * Returns the pointer target that keeps the balloon inside the bottom-right corner of the component.
+   */
+  private static @NotNull Point getBottomRightPoint(@NotNull Component component, @NotNull Balloon balloon) {
+    int inset = JBUIScale.scale(12);
+    int x = component.getWidth() - inset - balloon.getPreferredSize().width + GotItComponentBuilder.getArrowShift();
+    return new Point(Math.max(inset, x), component.getHeight() - inset);
+  }
 }

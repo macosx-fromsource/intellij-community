@@ -1,28 +1,22 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.profile.codeInspection.ui.filter;
 
+import com.intellij.analysis.AnalysisBundle;
 import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInsight.daemon.impl.SeverityRegistrar;
 import com.intellij.codeInspection.ex.InspectionProfileImpl;
 import com.intellij.codeInspection.ex.ScopeToolState;
 import com.intellij.icons.AllIcons;
+import com.intellij.idea.ActionsBundle;
 import com.intellij.lang.Language;
+import com.intellij.lang.MetaLanguage;
 import com.intellij.lang.annotation.HighlightSeverity;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.actionSystem.Toggleable;
 import com.intellij.openapi.actionSystem.ex.CheckboxAction;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationNamesInfo;
@@ -33,38 +27,47 @@ import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.profile.codeInspection.ui.LevelChooserAction;
 import com.intellij.profile.codeInspection.ui.SingleInspectionProfilePanel;
 import com.intellij.ui.FilterComponent;
-import com.intellij.util.containers.HashSet;
+import com.intellij.util.SmartList;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * @author Dmitry Batkovich
  */
-public class InspectionFilterAction extends DefaultActionGroup implements Toggleable, DumbAware {
-  private final static int MIN_LANGUAGE_COUNT_TO_WRAP = 11;
+public final class InspectionFilterAction extends DefaultActionGroup implements Toggleable, DumbAware {
+  private static final int MIN_LANGUAGE_COUNT_TO_WRAP = 11;
 
   private final SeverityRegistrar mySeverityRegistrar;
   private final InspectionsFilter myInspectionsFilter;
-  @NotNull private final FilterComponent myFilterComponent;
+  private final @NotNull FilterComponent myFilterComponent;
 
   public InspectionFilterAction(@NotNull InspectionProfileImpl profile,
                                 @NotNull InspectionsFilter inspectionsFilter,
                                 @NotNull Project project,
                                 @NotNull FilterComponent filterComponent) {
-    super("Filter Inspections", true);
+    super(ActionsBundle.message("action.InspectionFilterAction.filter.inspections.text"), true);
     myInspectionsFilter = inspectionsFilter;
     myFilterComponent = filterComponent;
-    mySeverityRegistrar = profile.getProfileManager().getOwnSeverityRegistrar();
+    mySeverityRegistrar = profile.getProfileManager().getSeverityRegistrar();
     getTemplatePresentation().setIcon(AllIcons.General.Filter);
     tune(profile, project);
   }
 
   @Override
-  public void update(AnActionEvent e) {
+  public void update(@NotNull AnActionEvent e) {
     super.update(e);
-    e.getPresentation().putClientProperty(Toggleable.SELECTED_PROPERTY, !myInspectionsFilter.isEmptyFilter());
+    Toggleable.setSelected(e.getPresentation(), !myInspectionsFilter.isEmptyFilter());
+  }
+
+  @Override
+  public @NotNull ActionUpdateThread getActionUpdateThread() {
+    return ActionUpdateThread.EDT;
   }
 
   private void tune(InspectionProfileImpl profile, Project project) {
@@ -88,15 +91,15 @@ public class InspectionFilterAction extends DefaultActionGroup implements Toggle
 
     final Set<String> languageIds = new HashSet<>();
     for (ScopeToolState state : profile.getDefaultStates(project)) {
-      final String languageId = state.getTool().getLanguage();
-      languageIds.add(languageId);
+      final String language = state.getTool().getLanguage();
+      if (language != null) languageIds.add(language);
     }
 
-    final List<Language> languages = new ArrayList<>();
+    final List<Language> languages = new SmartList<>();
     for (String id : languageIds) {
       if (id != null) {
         final Language language = Language.findLanguageByID(id);
-        if (language != null) {
+        if (language != null && !(language instanceof MetaLanguage)) {
           languages.add(language);
         }
       }
@@ -104,9 +107,9 @@ public class InspectionFilterAction extends DefaultActionGroup implements Toggle
 
     if (!languages.isEmpty()) {
       final DefaultActionGroup languageActionGroupParent =
-        new DefaultActionGroup("Filter by Language", languages.size() >= MIN_LANGUAGE_COUNT_TO_WRAP);
+        new DefaultActionGroup(ActionsBundle.message("action.InspectionFilterAction.filter.by.language.text"), languages.size() >= MIN_LANGUAGE_COUNT_TO_WRAP);
       add(languageActionGroupParent);
-      Collections.sort(languages, Comparator.comparing(Language::getDisplayName));
+      languages.sort(Comparator.comparing(Language::getDisplayName));
       for (Language language : languages) {
         languageActionGroupParent.add(new LanguageFilterAction(language));
       }
@@ -118,9 +121,9 @@ public class InspectionFilterAction extends DefaultActionGroup implements Toggle
     add(new ShowOnlyCleanupInspectionsAction());
   }
 
-  private class ResetFilterAction extends DumbAwareAction {
-    public ResetFilterAction() {
-      super("Reset Filter");
+  private final class ResetFilterAction extends DumbAwareAction {
+    ResetFilterAction() {
+      super(ActionsBundle.messagePointer("action.ResetFilterAction.text"));
     }
 
     @Override
@@ -133,46 +136,61 @@ public class InspectionFilterAction extends DefaultActionGroup implements Toggle
       final Presentation presentation = e.getPresentation();
       presentation.setEnabled(!myInspectionsFilter.isEmptyFilter());
     }
+
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
   }
 
-  private class ShowOnlyCleanupInspectionsAction extends CheckboxAction implements DumbAware{
-    public ShowOnlyCleanupInspectionsAction() {
-      super("Show Only Cleanup Inspections");
+  private final class ShowOnlyCleanupInspectionsAction extends CheckboxAction implements DumbAware{
+    ShowOnlyCleanupInspectionsAction() {
+      super(AnalysisBundle.message("inspections.settings.show.only.cleanup.text"));
     }
 
     @Override
-    public boolean isSelected(final AnActionEvent e) {
+    public boolean isSelected(final @NotNull AnActionEvent e) {
       return myInspectionsFilter.isShowOnlyCleanupInspections();
     }
 
     @Override
-    public void setSelected(final AnActionEvent e, final boolean state) {
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void setSelected(final @NotNull AnActionEvent e, final boolean state) {
       myInspectionsFilter.setShowOnlyCleanupInspections(state);
     }
   }
 
-  private class ShowAvailableOnlyOnAnalyzeInspectionsAction extends CheckboxAction implements DumbAware {
+  private final class ShowAvailableOnlyOnAnalyzeInspectionsAction extends CheckboxAction implements DumbAware {
 
-    public ShowAvailableOnlyOnAnalyzeInspectionsAction() {
-      super("Show Only \"Available only for Analyze | Inspect Code\"");
+    ShowAvailableOnlyOnAnalyzeInspectionsAction() {
+      super(AnalysisBundle.message("inspections.settings.show.only.batch.text"));
     }
 
     @Override
-    public boolean isSelected(final AnActionEvent e) {
+    public boolean isSelected(final @NotNull AnActionEvent e) {
       return myInspectionsFilter.isAvailableOnlyForAnalyze();
     }
 
     @Override
-    public void setSelected(final AnActionEvent e, final boolean state) {
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void setSelected(final @NotNull AnActionEvent e, final boolean state) {
       myInspectionsFilter.setAvailableOnlyForAnalyze(state);
     }
   }
 
-  private class ShowWithSpecifiedSeverityInspectionsAction extends CheckboxAction implements DumbAware {
+  private final class ShowWithSpecifiedSeverityInspectionsAction extends CheckboxAction implements DumbAware {
 
     private final HighlightSeverity mySeverity;
 
-    private ShowWithSpecifiedSeverityInspectionsAction(final HighlightSeverity severity) {
+    private ShowWithSpecifiedSeverityInspectionsAction(@NotNull HighlightSeverity severity) {
       super(SingleInspectionProfilePanel.renderSeverity(severity),
             null,
             HighlightDisplayLevel.find(severity).getIcon());
@@ -181,12 +199,17 @@ public class InspectionFilterAction extends DefaultActionGroup implements Toggle
 
 
     @Override
-    public boolean isSelected(final AnActionEvent e) {
+    public boolean isSelected(final @NotNull AnActionEvent e) {
       return myInspectionsFilter.containsSeverity(mySeverity);
     }
 
     @Override
-    public void setSelected(final AnActionEvent e, final boolean state) {
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void setSelected(final @NotNull AnActionEvent e, final boolean state) {
       if (state) {
         myInspectionsFilter.addSeverity(mySeverity);
       } else {
@@ -195,48 +218,66 @@ public class InspectionFilterAction extends DefaultActionGroup implements Toggle
     }
   }
 
-  private class ShowEnabledOrDisabledInspectionsAction extends CheckboxAction implements DumbAware{
+  private final class ShowEnabledOrDisabledInspectionsAction extends CheckboxAction implements DumbAware{
 
     private final Boolean myShowEnabledActions;
 
-    public ShowEnabledOrDisabledInspectionsAction(final boolean showEnabledActions) {
-      super("Show Only " + (showEnabledActions ? "Enabled" : "Disabled"));
+    ShowEnabledOrDisabledInspectionsAction(final boolean showEnabledActions) {
+      super(showEnabledActions ? AnalysisBundle.message("inspections.settings.show.only.enabled.text")
+                               : AnalysisBundle.message("inspections.settings.show.only.disabled.text"));
       myShowEnabledActions = showEnabledActions;
     }
 
 
     @Override
-    public boolean isSelected(final AnActionEvent e) {
+    public boolean isSelected(final @NotNull AnActionEvent e) {
       return myInspectionsFilter.getSuitableInspectionsStates() == myShowEnabledActions;
     }
 
     @Override
-    public void setSelected(final AnActionEvent e, final boolean state) {
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void setSelected(final @NotNull AnActionEvent e, final boolean state) {
       final boolean previousState = isSelected(e);
       myInspectionsFilter.setSuitableInspectionsStates(previousState ? null : myShowEnabledActions);
     }
   }
 
-  private class LanguageFilterAction extends CheckboxAction implements DumbAware {
+  private final class LanguageFilterAction extends CheckboxAction implements DumbAware {
+    private final Language myLanguage;
 
-    private final String myLanguageId;
+    LanguageFilterAction(final @Nullable Language language) {
+      super(getDisplayNameForLanguage(language));
+      myLanguage = language;
+    }
 
-    public LanguageFilterAction(final @Nullable Language language) {
-      super(language == null ? "Language is not specified" : language.getDisplayName());
-      myLanguageId = language == null ? null : language.getID();
+    private static @Nls @NotNull String getDisplayNameForLanguage(@Nullable Language language) {
+      if (language == null) {
+        return AnalysisBundle.message("inspections.settings.language.not.specified.warning");
+      }
+      String displayName = language.getDisplayName();
+      return displayName.isEmpty() ? AnalysisBundle.message("inspections.settings.language.any") : displayName;
     }
 
     @Override
-    public boolean isSelected(AnActionEvent e) {
-      return myInspectionsFilter.containsLanguageId(myLanguageId);
+    public boolean isSelected(@NotNull AnActionEvent e) {
+      return myInspectionsFilter.containsLanguage(myLanguage);
     }
 
     @Override
-    public void setSelected(AnActionEvent e, boolean state) {
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void setSelected(@NotNull AnActionEvent e, boolean state) {
       if (state) {
-        myInspectionsFilter.addLanguageId(myLanguageId);
+        myInspectionsFilter.addLanguage(myLanguage);
       } else {
-        myInspectionsFilter.removeLanguageId(myLanguageId);
+        myInspectionsFilter.removeLanguage(myLanguage);
       }
     }
   }
@@ -245,31 +286,36 @@ public class InspectionFilterAction extends DefaultActionGroup implements Toggle
                                  (StringUtil.isEmptyOrSpaces(StringUtil.trimStart(ApplicationInfo.getInstance().getMinorVersion(),"0")) ?
                                  "" : "."+ApplicationInfo.getInstance().getMinorVersion());
   private final String presentableVersion = ApplicationNamesInfo.getInstance().getProductName() + " " + version;
-  private class ShowNewInspectionsAction extends AnAction implements DumbAware {
+  private final class ShowNewInspectionsAction extends AnAction implements DumbAware {
     private ShowNewInspectionsAction() {
-      super("Show New Inspections in " + presentableVersion,
-            "Shows new inspections which are available since " + presentableVersion,
+      super(AnalysisBundle.message("inspections.settings.show.new.text", presentableVersion),
+            AnalysisBundle.message("inspections.settings.show.new.description", presentableVersion),
             AllIcons.Actions.Lightning);
     }
 
     @Override
-    public void actionPerformed(AnActionEvent e) {
-      myFilterComponent.setFilter("\"New in " + version + "\"");
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      myFilterComponent.setFilter("\"New in " + version + "\""); //NON-NLS
     }
   }
 
-  private class ShowOnlyModifiedInspectionsAction extends CheckboxAction implements DumbAware {
-    public ShowOnlyModifiedInspectionsAction() {
-      super("Show Only Modified Inspections");
+  private final class ShowOnlyModifiedInspectionsAction extends CheckboxAction implements DumbAware {
+    ShowOnlyModifiedInspectionsAction() {
+      super(AnalysisBundle.message("inspections.settings.show.modified.text"));
     }
 
     @Override
-    public boolean isSelected(AnActionEvent e) {
+    public boolean isSelected(@NotNull AnActionEvent e) {
       return myInspectionsFilter.isShowOnlyModifiedInspections();
     }
 
     @Override
-    public void setSelected(AnActionEvent e, boolean state) {
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.EDT;
+    }
+
+    @Override
+    public void setSelected(@NotNull AnActionEvent e, boolean state) {
       myInspectionsFilter.setShowOnlyModifiedInspections(state);
     }
   }

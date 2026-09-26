@@ -1,28 +1,17 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.run;
 
-import com.google.common.collect.Lists;
 import com.intellij.diagnostic.logging.LogConfigurationPanel;
 import com.intellij.execution.ExecutionBundle;
-import com.intellij.execution.Location;
 import com.intellij.execution.configuration.AbstractRunConfiguration;
 import com.intellij.execution.configuration.EnvironmentVariablesComponent;
-import com.intellij.execution.configurations.*;
-import com.intellij.execution.testframework.AbstractTestProxy;
+import com.intellij.execution.configurations.ConfigurationFactory;
+import com.intellij.execution.configurations.GeneralCommandLine;
+import com.intellij.execution.configurations.ParamsGroup;
+import com.intellij.execution.configurations.RunProfileWithCompileBeforeLaunchOption;
+import com.intellij.execution.configurations.RuntimeConfigurationError;
+import com.intellij.execution.configurations.RuntimeConfigurationException;
+import com.intellij.execution.testframework.sm.runner.GeneralIdBasedToSMTRunnerEventsConvertor;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.module.ModuleType;
@@ -35,41 +24,48 @@ import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.util.InvalidDataException;
 import com.intellij.openapi.util.JDOMExternalizerUtil;
 import com.intellij.openapi.util.WriteExternalException;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.PsiElement;
-import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.PathMappingSettings;
 import com.intellij.util.PlatformUtils;
+import com.intellij.util.xmlb.annotations.Transient;
 import com.jetbrains.python.PyBundle;
 import com.jetbrains.python.PythonModuleTypeBase;
-import com.jetbrains.python.psi.PyClass;
-import com.jetbrains.python.psi.PyFunction;
+import com.jetbrains.python.debugger.settings.PyDebuggerSettings;
+import com.jetbrains.python.run.features.PyRunToolData;
 import com.jetbrains.python.sdk.PythonEnvUtil;
 import com.jetbrains.python.sdk.PythonSdkType;
-import com.jetbrains.python.testing.PyPsiLocationWithFixedClass;
+import com.jetbrains.python.sdk.legacy.PythonSdkUtil;
 import org.jdom.Element;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import static com.jetbrains.python.run.PythonScriptCommandLineState.getExpandedWorkingDir;
+import static com.jetbrains.python.run.features.PyRunToolExtKt.activeRunToolData;
 
 /**
  * @author Leonid Shalupov
  */
-public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRunConfiguration> extends AbstractRunConfiguration
-  implements LocatableConfiguration, AbstractPythonRunConfigurationParams, CommandLinePatcher {
-  /**
-   * When passing path to test to runners, you should join parts with this char.
-   * I.e.: file.py::PyClassTest::test_method
-   */
-  public static final String TEST_NAME_PARTS_SPLITTER = "::";
+public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRunConfiguration<T>> extends AbstractRunConfiguration
+  implements AbstractPythonRunConfigurationParams, CommandLinePatcher, RunProfileWithCompileBeforeLaunchOption {
+  private static final String RUN_TOOL = "RUN_TOOL";
+  private static final String RUN_AS_SCRIPT = "RUN_AS_SCRIPT";
+  private @Nullable Boolean useRunTool = null;
+  private @Nullable Boolean runAsScript = null;
   private String myInterpreterOptions = "";
   private String myWorkingDirectory = "";
   private String mySdkHome = "";
+  private Sdk mySdk = null;
   private boolean myUseModuleSdk;
   private boolean myAddContentRoots = true;
   private boolean myAddSourceRoots = true;
@@ -81,28 +77,38 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
    */
   protected boolean mySkipModuleSerialization;
 
-  public AbstractPythonRunConfiguration(Project project, final ConfigurationFactory factory) {
+  public AbstractPythonRunConfiguration(@NotNull Project project, @NotNull ConfigurationFactory factory) {
     super(project, factory);
-    getConfigurationModule().init();
+    getConfigurationModule().setModuleToAnyFirstIfNotSpecified();
   }
 
+  @Override
   public List<Module> getValidModules() {
     return getValidModules(getProject());
   }
 
+  @Override
   public PathMappingSettings getMappingSettings() {
     return myMappingSettings;
   }
 
+  @Override
   public void setMappingSettings(@Nullable PathMappingSettings mappingSettings) {
     myMappingSettings = mappingSettings;
   }
 
+  /**
+   * @return if config uses {@link GeneralIdBasedToSMTRunnerEventsConvertor} or not
+   */
+  public boolean isIdTestBased() {
+    return false;
+  }
+
   public static List<Module> getValidModules(Project project) {
     final Module[] modules = ModuleManager.getInstance(project).getModules();
-    List<Module> result = Lists.newArrayList();
+    List<Module> result = new ArrayList<>();
     for (Module module : modules) {
-      if (PythonSdkType.findPythonSdk(module) != null) {
+      if (PythonSdkUtil.findPythonSdk(module) != null) {
         result.add(module);
       }
     }
@@ -128,9 +134,13 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     };
   }
 
-  @NotNull
   @Override
-  public final SettingsEditor<T> getConfigurationEditor() {
+  public final @NotNull SettingsEditor<T> getConfigurationEditor() {
+    if (Registry.is("python.new.run.config", false) && isNewUiSupported()) {
+      // TODO: actually, we should return result of `PythonExtendedConfigurationEditor.create()` call, but it produces side effects
+      // investigation needed PY-17716
+      return createConfigurationEditor();
+    }
     final SettingsEditor<T> runConfigurationEditor = PythonExtendedConfigurationEditor.create(createConfigurationEditor());
 
     final SettingsEditorGroup<T> group = new SettingsEditorGroup<>();
@@ -139,15 +149,21 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     group.addEditor(ExecutionBundle.message("run.configuration.configuration.tab.title"), runConfigurationEditor);
 
     // tabs provided by extensions:
-    //noinspection unchecked
-    PythonRunConfigurationExtensionsManager.getInstance().appendEditors(this, (SettingsEditorGroup)group);
+    PythonRunConfigurationExtensionsManager.Companion.getInstance().appendEditors(this, group);
     group.addEditor(ExecutionBundle.message("logs.tab.title"), new LogConfigurationPanel<>());
 
     return group;
   }
 
+  protected boolean isNewUiSupported() {
+    return false;
+  }
+
   protected abstract SettingsEditor<T> createConfigurationEditor();
 
+  /**
+   * <strong>Always call super</strong> when overwriting this method
+   */
   @Override
   public void checkConfiguration() throws RuntimeConfigurationException {
     super.checkConfiguration();
@@ -159,7 +175,7 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
 
   private void checkExtensions() throws RuntimeConfigurationException {
     try {
-      PythonRunConfigurationExtensionsManager.getInstance().validateConfiguration(this, false);
+      PythonRunConfigurationExtensionsManager.Companion.getInstance().validateConfiguration(this, false);
     }
     catch (RuntimeConfigurationException e) {
       throw e;
@@ -172,24 +188,28 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
   private void checkSdk() throws RuntimeConfigurationError {
     if (PlatformUtils.isPyCharm()) {
       final String path = getInterpreterPath();
-      if (path == null) {
-        throw new RuntimeConfigurationError("Please select a valid Python interpreter");
+      if (StringUtil.isEmptyOrSpaces(path)) {
+        throw new RuntimeConfigurationError(PyBundle.message("runcfg.unittest.no_valid_sdk"));
       }
     }
     else {
       if (!myUseModuleSdk) {
         if (StringUtil.isEmptyOrSpaces(getSdkHome())) {
           final Sdk projectSdk = ProjectRootManager.getInstance(getProject()).getProjectSdk();
-          if (projectSdk == null || !(projectSdk.getSdkType() instanceof PythonSdkType)) {
+          if (projectSdk == null || !PythonSdkUtil.isPythonSdk(projectSdk)) {
             throw new RuntimeConfigurationError(PyBundle.message("runcfg.unittest.no_sdk"));
           }
         }
-        else if (!PythonSdkType.getInstance().isValidSdkHome(getSdkHome())) {
+        // Only that the SDK is a Python one, which is what the project-SDK branch above checks too. Whether the
+        // interpreter actually runs is not asked here: this method runs on every validation pass of the run
+        // configuration editor, and answering it launches a process. A broken interpreter fails at launch instead,
+        // with the error the launch itself reports.
+        else if (mySdk == null || !PythonSdkUtil.isPythonSdk(mySdk)) {
           throw new RuntimeConfigurationError(PyBundle.message("runcfg.unittest.no_valid_sdk"));
         }
       }
       else {
-        Sdk sdk = PythonSdkType.findPythonSdk(getModule());
+        Sdk sdk = PythonSdkUtil.findPythonSdk(getModule());
         if (sdk == null) {
           throw new RuntimeConfigurationError(PyBundle.message("runcfg.unittest.no_module_sdk"));
         }
@@ -197,10 +217,14 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     }
   }
 
+  @Override
   public String getSdkHome() {
+    if (mySdk != null) {
+      return mySdk.getHomePath();
+    }
     String sdkHome = mySdkHome;
     if (StringUtil.isEmptyOrSpaces(mySdkHome)) {
-      final Sdk projectJdk = PythonSdkType.findPythonSdk(getModule());
+      final Sdk projectJdk = PythonSdkUtil.findPythonSdk(getModule());
       if (projectJdk != null) {
         sdkHome = projectJdk.getHomePath();
       }
@@ -208,13 +232,15 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     return sdkHome;
   }
 
-  @Nullable
-  public String getInterpreterPath() {
+  public @Nullable String getInterpreterPath() {
     String sdkHome;
     if (myUseModuleSdk) {
-      Sdk sdk = PythonSdkType.findPythonSdk(getModule());
+      Sdk sdk = PythonSdkUtil.findPythonSdk(getModule());
       if (sdk == null) return null;
       sdkHome = sdk.getHomePath();
+    }
+    else if (mySdk != null) {
+      sdkHome = mySdk.getHomePath();
     }
     else {
       sdkHome = getSdkHome();
@@ -222,33 +248,65 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     return sdkHome;
   }
 
-  public Sdk getSdk() {
+  @Override
+  @Transient
+  public @Nullable Sdk getSdk() {
     if (myUseModuleSdk) {
-      return PythonSdkType.findPythonSdk(getModule());
+      return PythonSdkUtil.findPythonSdk(getModule());
+    }
+    else if (mySdk != null) {
+      return mySdk;
     }
     else {
-      return PythonSdkType.findSdkByPath(getSdkHome());
+      return PythonSdkUtil.findSdkByPath(getSdkHome());
     }
   }
 
-  public void readExternal(Element element) throws InvalidDataException {
+  private @NotNull List<String> myEnvFiles = Collections.emptyList();
+
+  @Override
+  public @NotNull List<String> getEnvFilePaths() {
+    return myEnvFiles;
+  }
+
+  @Override
+  public void setEnvFilePaths(@NotNull List<String> envFiles) {
+    myEnvFiles = envFiles;
+  }
+
+  @Override
+  public void readExternal(@NotNull Element element) throws InvalidDataException {
     super.readExternal(element);
     myInterpreterOptions = JDOMExternalizerUtil.readField(element, "INTERPRETER_OPTIONS");
     readEnvs(element);
     mySdkHome = JDOMExternalizerUtil.readField(element, "SDK_HOME");
+
+    final String sdkName = JDOMExternalizerUtil.readField(element, "SDK_NAME");
+    if (sdkName != null) {
+      mySdk = PythonSdkUtil.findSdkByKey(sdkName);
+    }
+
+    var output = JDOMExternalizerUtil.readField(element, "ENV_FILES");
+    myEnvFiles = output != null ? StringUtil.split(output, File.pathSeparator) : Collections.emptyList();
+
     myWorkingDirectory = JDOMExternalizerUtil.readField(element, "WORKING_DIRECTORY");
     myUseModuleSdk = Boolean.parseBoolean(JDOMExternalizerUtil.readField(element, "IS_MODULE_SDK"));
     final String addContentRoots = JDOMExternalizerUtil.readField(element, "ADD_CONTENT_ROOTS");
     myAddContentRoots = addContentRoots == null || Boolean.parseBoolean(addContentRoots);
     final String addSourceRoots = JDOMExternalizerUtil.readField(element, "ADD_SOURCE_ROOTS");
     myAddSourceRoots = addSourceRoots == null || Boolean.parseBoolean(addSourceRoots);
-    if ( !mySkipModuleSerialization) {
+
+    if (!mySkipModuleSerialization) {
       getConfigurationModule().readExternal(element);
     }
 
     setMappingSettings(PathMappingSettings.readExternal(element));
     // extension settings:
-    PythonRunConfigurationExtensionsManager.getInstance().readExternal(this, element);
+    PythonRunConfigurationExtensionsManager.Companion.getInstance().readExternal(this, element);
+    String runToolValue = JDOMExternalizerUtil.readField(element, RUN_TOOL);
+    useRunTool = StringUtil.isEmpty(runToolValue) ? null : Boolean.parseBoolean(runToolValue);
+    String runAsScriptValue = JDOMExternalizerUtil.readField(element, RUN_AS_SCRIPT);
+    runAsScript = StringUtil.isEmpty(runAsScriptValue) ? null : Boolean.parseBoolean(runAsScriptValue);
   }
 
   protected void readEnvs(Element element) {
@@ -259,23 +317,30 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     EnvironmentVariablesComponent.readExternal(element, getEnvs());
   }
 
-  public void writeExternal(Element element) throws WriteExternalException {
+  @Override
+  public void writeExternal(@NotNull Element element) throws WriteExternalException {
     super.writeExternal(element);
+    JDOMExternalizerUtil.writeField(element, "ENV_FILES", String.join(File.pathSeparator, myEnvFiles));
     JDOMExternalizerUtil.writeField(element, "INTERPRETER_OPTIONS", myInterpreterOptions);
     writeEnvs(element);
     JDOMExternalizerUtil.writeField(element, "SDK_HOME", mySdkHome);
+    if (mySdk != null) {
+      JDOMExternalizerUtil.writeField(element, "SDK_NAME", mySdk.getName());
+    }
     JDOMExternalizerUtil.writeField(element, "WORKING_DIRECTORY", myWorkingDirectory);
     JDOMExternalizerUtil.writeField(element, "IS_MODULE_SDK", Boolean.toString(myUseModuleSdk));
     JDOMExternalizerUtil.writeField(element, "ADD_CONTENT_ROOTS", Boolean.toString(myAddContentRoots));
     JDOMExternalizerUtil.writeField(element, "ADD_SOURCE_ROOTS", Boolean.toString(myAddSourceRoots));
-    if ( !mySkipModuleSerialization) {
+    if (!mySkipModuleSerialization) {
       getConfigurationModule().writeExternal(element);
     }
 
     // extension settings:
-    PythonRunConfigurationExtensionsManager.getInstance().writeExternal(this, element);
+    PythonRunConfigurationExtensionsManager.Companion.getInstance().writeExternal(this, element);
 
     PathMappingSettings.writeExternal(element, getMappingSettings());
+    JDOMExternalizerUtil.writeField(element, RUN_TOOL, useRunTool == null ? null : Boolean.toString(useRunTool));
+    JDOMExternalizerUtil.writeField(element, RUN_AS_SCRIPT, runAsScript == null ? null : Boolean.toString(runAsScript));
   }
 
   protected void writeEnvs(Element element) {
@@ -283,35 +348,49 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     EnvironmentVariablesComponent.writeExternal(element, getEnvs());
   }
 
+  @Override
   public String getInterpreterOptions() {
     return myInterpreterOptions;
   }
 
+  @Override
   public void setInterpreterOptions(String interpreterOptions) {
     myInterpreterOptions = interpreterOptions;
   }
 
+  @Override
   public String getWorkingDirectory() {
     return myWorkingDirectory;
   }
 
+  @Override
   public void setWorkingDirectory(String workingDirectory) {
     myWorkingDirectory = workingDirectory;
   }
 
+  @Override
   public void setSdkHome(String sdkHome) {
     mySdkHome = sdkHome;
   }
 
-  @Nullable
-  public Module getModule() {
+  @Override
+  @Transient
+  public void setSdk(@Nullable Sdk sdk) {
+    mySdk = sdk;
+  }
+
+  @Override
+  @Transient
+  public @Nullable Module getModule() {
     return getConfigurationModule().getModule();
   }
 
+  @Override
   public boolean isUseModuleSdk() {
     return myUseModuleSdk;
   }
 
+  @Override
   public void setUseModuleSdk(boolean useModuleSdk) {
     myUseModuleSdk = useModuleSdk;
   }
@@ -337,16 +416,20 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
   }
 
   public static void copyParams(AbstractPythonRunConfigurationParams source, AbstractPythonRunConfigurationParams target) {
-    target.setEnvs(new HashMap<>(source.getEnvs()));
+    target.setEnvFilePaths(source.getEnvFilePaths());
+    target.setEnvs(new LinkedHashMap<>(source.getEnvs()));
     target.setInterpreterOptions(source.getInterpreterOptions());
     target.setPassParentEnvs(source.isPassParentEnvs());
     target.setSdkHome(source.getSdkHome());
+    target.setSdk(source.getSdk());
     target.setWorkingDirectory(source.getWorkingDirectory());
     target.setModule(source.getModule());
     target.setUseModuleSdk(source.isUseModuleSdk());
     target.setMappingSettings(source.getMappingSettings());
     target.setAddContentRoots(source.shouldAddContentRoots());
     target.setAddSourceRoots(source.shouldAddSourceRoots());
+    target.setUseRunTool(source.getUseRunTool());
+    target.setRunAsScript(source.getRunAsScript());
   }
 
   /**
@@ -355,57 +438,31 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
    *
    * @param commandLine what to patch
    */
+  @Override
+  @ApiStatus.Internal
   public void patchCommandLine(GeneralCommandLine commandLine) {
     final String interpreterPath = getInterpreterPath();
     Sdk sdk = getSdk();
     if (sdk != null && interpreterPath != null) {
       patchCommandLineFirst(commandLine, interpreterPath);
-      patchCommandLineForVirtualenv(commandLine, interpreterPath);
-      patchCommandLineForBuildout(commandLine, interpreterPath);
-      patchCommandLineLast(commandLine, interpreterPath);
+      patchCommandLineForVirtualenv(commandLine, sdk);
     }
   }
 
   /**
-   * Patches command line before virtualenv and buildout patchers.
+   * Patches command line before virtualenv patchers.
    * Default implementation does nothing.
-   *
-   * @param commandLine
-   * @param sdkHome
    */
+  @ApiStatus.Internal
   protected void patchCommandLineFirst(GeneralCommandLine commandLine, String sdkHome) {
     // override
   }
 
   /**
-   * Patches command line after virtualenv and buildout patchers.
-   * Default implementation does nothing.
-   *
-   * @param commandLine
-   * @param sdkHome
-   */
-  protected void patchCommandLineLast(GeneralCommandLine commandLine, String sdkHome) {
-    // override
-  }
-
-  /**
-   * Gets called after {@link #patchCommandLineForVirtualenv(com.intellij.openapi.projectRoots.SdkType, com.intellij.openapi.projectRoots.SdkType)}
-   * Does nothing here, real implementations should use alter running script name or use engulfer.
-   *
-   * @param commandLine
-   * @param sdkHome
-   */
-  protected void patchCommandLineForBuildout(GeneralCommandLine commandLine, String sdkHome) {
-  }
-
-  /**
    * Alters PATH so that a virtualenv is activated, if present.
-   *
-   * @param commandLine
-   * @param sdkHome
    */
-  protected void patchCommandLineForVirtualenv(GeneralCommandLine commandLine, String sdkHome) {
-    PythonSdkType.patchCommandLineForVirtualenv(commandLine, sdkHome, isPassParentEnvs());
+  protected void patchCommandLineForVirtualenv(@NotNull GeneralCommandLine commandLine, @NotNull Sdk sdk) {
+    PythonSdkType.patchCommandLineForVirtualenv(commandLine, sdk);
   }
 
   protected void setUnbufferedEnv() {
@@ -415,42 +472,15 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
   }
 
   @Override
-  public boolean excludeCompileBeforeLaunchOption() {
+  public boolean isExcludeCompileBeforeLaunchOption() {
     final Module module = getModule();
-    return module != null ? ModuleType.get(module) instanceof PythonModuleTypeBase : true;
+    return module == null || ModuleType.get(module) instanceof PythonModuleTypeBase;
   }
 
   public boolean canRunWithCoverage() {
     return true;
   }
 
-  /**
-   * Create test spec (string to be passed to runner, probably glued with {@link #TEST_NAME_PARTS_SPLITTER})
-   * @param location test location as reported by runner
-   * @param failedTest failed test
-   * @return string spec or null if spec calculation is impossible
-   */
-  @Nullable
-  public String getTestSpec(@NotNull final Location<?> location, @NotNull final AbstractTestProxy failedTest) {
-    PsiElement element = location.getPsiElement();
-    PyClass pyClass = PsiTreeUtil.getParentOfType(element, PyClass.class, false);
-    if (location instanceof PyPsiLocationWithFixedClass) {
-      pyClass = ((PyPsiLocationWithFixedClass)location).getFixedClass();
-    }
-    PyFunction pyFunction = PsiTreeUtil.getParentOfType(element, PyFunction.class, false);
-    final VirtualFile virtualFile = location.getVirtualFile();
-    if (virtualFile != null) {
-      String path = virtualFile.getCanonicalPath();
-      if (pyClass != null) {
-        path += TEST_NAME_PARTS_SPLITTER + pyClass.getName();
-      }
-      if (pyFunction != null) {
-        path += TEST_NAME_PARTS_SPLITTER + pyFunction.getName();
-      }
-      return path;
-    }
-    return null;
-  }
 
   /**
    * Note to inheritors: Always check {@link #getWorkingDirectory()} first. You should return it, if it is not empty since
@@ -459,9 +489,8 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
    * @return working directory to run, never null, does its best to guess which dir to use.
    * Unlike {@link #getWorkingDirectory()} it does not simply take directory from config.
    */
-  @NotNull
-  public String getWorkingDirectorySafe() {
-    final String result = StringUtil.isEmpty(myWorkingDirectory) ? getProject().getBasePath() : myWorkingDirectory;
+  public @NotNull String getWorkingDirectorySafe() {
+    final String result = StringUtil.isEmpty(myWorkingDirectory) ? getProject().getBasePath() : getExpandedWorkingDir(this);
     if (result != null) {
       return result;
     }
@@ -473,8 +502,7 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     return new File(".").getAbsolutePath();
   }
 
-  @Nullable
-  private String getFirstModuleRoot() {
+  private @Nullable String getFirstModuleRoot() {
     final Module module = getModule();
     if (module == null) {
       return null;
@@ -489,15 +517,75 @@ public abstract class AbstractPythonRunConfiguration<T extends AbstractPythonRun
     return module != null ? module.getName() : null;
   }
 
+  @ApiStatus.Internal
   @Override
-  public boolean isCompileBeforeLaunchAddedByDefault() {
-    return false;
+  public final @Nullable Boolean getUseRunTool() {
+    return useRunTool;
+  }
+
+  @ApiStatus.Internal
+  @Override
+  public final void setUseRunTool(@Nullable Boolean useRunTool) {
+    this.useRunTool = useRunTool;
   }
 
   /**
-   * Adds test specs (like method, class, script, etc) to list of runner parameters.
+   * Names the tool this configuration will run with, so that the list of configurations says how each one runs.
    */
-  public void addTestSpecsAsParameters(@NotNull final ParamsGroup paramsGroup, @NotNull final List<String> testSpecs) {
+  @ApiStatus.Internal
+  @Override
+  public @Nullable @Nls String getSecondaryLabel() {
+    PyRunToolData runTool = activeRunToolData(this);
+    return runTool == null ? null : runTool.getLabel();
+  }
+
+  /**
+   * This configuration seen as one that runs a single script file, or {@code null} when it runs something else: a
+   * module target or a test runner has no script to carry a PEP 723 metadata block.
+   */
+  @ApiStatus.Internal
+  public @Nullable PyBareScriptConfiguration asBareScriptConfiguration() {
+    return null;
+  }
+
+  @ApiStatus.Internal
+  @Override
+  public final @Nullable Boolean getRunAsScript() {
+    return runAsScript;
+  }
+
+  @ApiStatus.Internal
+  @Override
+  public final void setRunAsScript(@Nullable Boolean runAsScript) {
+    this.runAsScript = runAsScript;
+  }
+
+  @Override
+  public boolean isBuildBeforeLaunchAddedByDefault() {
+    return false;
+  }
+
+  @Override
+  @ApiStatus.Internal
+  public boolean shouldDebugJustMyCode() {
+    return PyDebuggerSettings.getInstance().isLibrariesFilterEnabled();
+  }
+
+  @Override
+  @ApiStatus.Internal
+  public void setDebugJustMyCode(boolean debugJustMyCode) {
+    PyDebuggerSettings.getInstance().setLibrariesFilterEnabled(debugJustMyCode);
+  }
+
+
+  /**
+   * Adds test specs (like method, class, script, etc) to list of runner parameters.
+   * <p>
+   * To be deprecated.
+   * <p>
+   * The part of the legacy implementation based on {@link GeneralCommandLine}.
+   */
+  public void addTestSpecsAsParameters(final @NotNull ParamsGroup paramsGroup, final @NotNull List<String> testSpecs) {
     // By default we simply add them as arguments
     paramsGroup.addParameters(testSpecs);
   }

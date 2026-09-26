@@ -26,8 +26,10 @@ public interface VcsLogDataPack {
   Map<VirtualFile, VcsLogProvider> getLogProviders();
 
   @NotNull
-  VcsLogRefs getRefs();
+  VcsLogAggregatedStoredRefs getRefs();
 
   @NotNull
   VcsLogFilterCollection getFilters();
+
+  boolean isEmpty();
 }

@@ -14,28 +14,39 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 06-Mar-2008
- */
 package com.jetbrains.python.intentions;
 
-import com.jetbrains.python.PyBundle;
+import com.jetbrains.python.allure.Components;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+import com.jetbrains.python.PyPsiBundle;
 
+@Subsystems.CodeInsight
+@Components.Intentions
+@Layers.Functional
 public class PythonDemorganLawIntentionTest extends PyIntentionTestCase {
   public void testOr() {
-    doIntentionTest(PyBundle.message("INTN.demorgan.law"));
+    doTest();
   }
 
   public void testNotOr() {
-    doIntentionTest(PyBundle.message("INTN.demorgan.law"));
+    doTest();
   }
 
   public void testOrNot() {
-    doIntentionTest(PyBundle.message("INTN.demorgan.law"));
+    doTest();
   }
 
   public void testComplex() {
-    doIntentionTest(PyBundle.message("INTN.demorgan.law"));
+    doTest();
+  }
+
+  // PY-25605
+  public void testMissingOperand() {
+    doTest();
+  }
+
+  private void doTest() {
+    doIntentionTest(PyPsiBundle.message("INTN.NAME.demorgan.law"));
   }
 }

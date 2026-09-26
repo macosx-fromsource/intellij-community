@@ -1,53 +1,47 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.testFramework
 
 import com.intellij.analysis.AnalysisScope
 import com.intellij.codeInsight.daemon.HighlightDisplayKey
 import com.intellij.codeInspection.InspectionProfileEntry
+import com.intellij.codeInspection.InspectionWrapperUtil
+import com.intellij.codeInspection.LocalInspectionEP
 import com.intellij.codeInspection.LocalInspectionTool
-import com.intellij.codeInspection.ex.*
+import com.intellij.codeInspection.ex.InspectionManagerEx
+import com.intellij.codeInspection.ex.InspectionProfileImpl
+import com.intellij.codeInspection.ex.InspectionToolWrapper
+import com.intellij.codeInspection.ex.InspectionToolsSupplier
+import com.intellij.codeInspection.ex.Tools
+import com.intellij.codeInspection.ex.createSimple
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.profile.codeInspection.ProjectInspectionProfileManager
+import com.intellij.testFramework.fixtures.IdeaTestExecutionPolicy
 import com.intellij.testFramework.fixtures.impl.GlobalInspectionContextForTests
-import com.intellij.util.ReflectionUtil
-import gnu.trove.THashMap
+import com.intellij.util.containers.mapSmart
 import org.jetbrains.annotations.TestOnly
-import java.util.*
+import java.util.UUID
 
+@TestOnly
 fun configureInspections(tools: Array<InspectionProfileEntry>,
                          project: Project,
                          parentDisposable: Disposable): InspectionProfileImpl {
-  runInInitMode {
-    val profile = InspectionProfileImpl.createSimple(UUID.randomUUID().toString(), project, tools.map { InspectionToolRegistrar.wrapTool(it) })
-    val profileManager = ProjectInspectionProfileManager.getInstance(project)
-    // we don't restore old project profile because in tests it must be in any case null - app default profile
-    Disposer.register(parentDisposable, Disposable {
-      profileManager.deleteProfile(profile)
-      profileManager.setCurrentProfile(null)
-      clearAllToolsIn(InspectionProfileImpl.getBaseProfile())
-    })
+  val toolSupplier = InspectionToolsSupplier.Simple(tools.mapSmart { InspectionWrapperUtil.wrapTool(it) })
+  Disposer.register(parentDisposable, toolSupplier)
+  val profile = InspectionProfileImpl(UUID.randomUUID().toString(), toolSupplier, null)
+  val profileManager = ProjectInspectionProfileManager.getInstance(project)
+  // we don't restore old project profile because in tests it must be in any case null - app default profile
+  Disposer.register(parentDisposable, Disposable {
+    profileManager.deleteProfile(profile)
+    profileManager.setCurrentProfile(null)
+  })
 
-    profileManager.addProfile(profile)
-    profile.initInspectionTools(project)
-    profileManager.setCurrentProfile(profile)
-    return profile
-  }
+  profileManager.addProfile(profile)
+  profileManager.setCurrentProfile(profile)
+  enableInspectionTools(project, parentDisposable, *tools)
+  return profile
 }
 
 @JvmOverloads
@@ -56,7 +50,7 @@ fun createGlobalContextForTool(scope: AnalysisScope,
                                project: Project,
                                toolWrappers: List<InspectionToolWrapper<*, *>> = emptyList()): GlobalInspectionContextForTests {
   runInInitMode {
-    val profile = InspectionProfileImpl.createSimple("test", project, toolWrappers)
+    val profile = createSimple("test", project, toolWrappers)
     val context = object : GlobalInspectionContextForTests(project, (InspectionManagerEx.getInstance(project) as InspectionManagerEx).contentManager) {
       override fun getUsedTools(): List<Tools> {
         for (tool in toolWrappers) {
@@ -65,22 +59,9 @@ fun createGlobalContextForTool(scope: AnalysisScope,
         return profile.getAllEnabledInspectionTools(project)
       }
     }
+    context.setExternalProfile(profile)
     context.currentScope = scope
     return context
-  }
-}
-
-private fun clearAllToolsIn(profile: InspectionProfileImpl) {
-  if (!profile.wasInitialized()) {
-    return
-  }
-
-  for (state in profile.getAllTools(null)) {
-    val wrapper = state.tool
-    if (wrapper.extension != null) {
-      // make it not initialized
-      ReflectionUtil.resetField(wrapper, InspectionProfileEntry::class.java, "myTool")
-    }
   }
 }
 
@@ -88,32 +69,67 @@ fun ProjectInspectionProfileManager.createProfile(localInspectionTool: LocalInsp
   return configureInspections(arrayOf(localInspectionTool), project, disposable)
 }
 
-fun enableInspectionTool(project: Project, tool: InspectionProfileEntry, disposable: Disposable) = enableInspectionTool(project, InspectionToolRegistrar.wrapTool(tool), disposable)
+fun enableInspectionTool(project: Project, tool: InspectionProfileEntry, disposable: Disposable) {
+  enableAssociatedInspectionTool(project, tool, disposable)
+  enableInspectionTool(project, InspectionWrapperUtil.wrapTool(tool), disposable)
+}
 
 fun enableInspectionTools(project: Project, disposable: Disposable, vararg tools: InspectionProfileEntry) {
   for (tool in tools) {
-    enableInspectionTool(project, InspectionToolRegistrar.wrapTool(tool), disposable)
+    enableInspectionTool(project, InspectionWrapperUtil.wrapTool(tool), disposable)
+  }
+  for (tool in tools) {
+    enableAssociatedInspectionTool(project, tool, disposable)
   }
 }
 
 fun enableInspectionTool(project: Project, toolWrapper: InspectionToolWrapper<*, *>, disposable: Disposable) {
   val profile = ProjectInspectionProfileManager.getInstance(project).currentProfile
   val shortName = toolWrapper.shortName
-  val key = HighlightDisplayKey.find(shortName)
-  if (key == null) {
-    HighlightDisplayKey.register(shortName, toolWrapper.displayName, toolWrapper.id)
-  }
+  HighlightDisplayKey.findOrRegister(shortName, toolWrapper.displayName, toolWrapper.id)
 
   runInInitMode {
     val existingWrapper = profile.getInspectionTool(shortName, project)
     if (existingWrapper == null || existingWrapper.isInitialized != toolWrapper.isInitialized || toolWrapper.isInitialized && toolWrapper.tool !== existingWrapper.tool) {
-      profile.addTool(project, toolWrapper, THashMap<String, List<String>>())
+      profile.addTool(project, toolWrapper, null)
+      profile.enableTool(shortName, project)
+      Disposer.register(disposable, Disposable {
+        profile.removeTool(toolWrapper)
+        HighlightDisplayKey.unregister(shortName)
+      })
     }
-    profile.enableTool(shortName, project)
+    else {
+      profile.enableTool(shortName, project)
+      Disposer.register(disposable, Disposable {
+        if (profile.getToolsOrNull(shortName, project) != null) {
+          profile.setToolEnabled(shortName, false)
+        }
+      })
+    }
   }
-  Disposer.register(disposable, Disposable { profile.disableTool(shortName, project) })
+
+  IdeaTestExecutionPolicy.current()?.inspectionToolEnabled(project, toolWrapper, disposable)
 }
 
+@Suppress("UNCHECKED_CAST")
+private fun enableAssociatedInspectionTool(project: Project, tool: InspectionProfileEntry, disposable: Disposable) {
+  try {
+    val mainToolId = tool.mainToolId ?: return
+    val profile = ProjectInspectionProfileManager.getInstance(project).currentProfile
+    val isPresent = runInInitMode {
+      val mainTool = profile.getInspectionTool(mainToolId, project)
+      mainTool != null && mainTool.isInitialized
+    }
+    if (isPresent) return
+    val inspection = LocalInspectionEP.LOCAL_INSPECTION.extensionList.find { it.shortName == mainToolId } ?: return
+    val mainTool = inspection.instantiateTool()
+    enableInspectionTool(project, InspectionWrapperUtil.wrapTool(mainTool), disposable)
+  } catch (_: Throwable) {
+    return
+  }
+}
+
+@TestOnly
 inline fun <T> runInInitMode(runnable: () -> T): T {
   val old = InspectionProfileImpl.INIT_INSPECTIONS
   try {
@@ -122,5 +138,18 @@ inline fun <T> runInInitMode(runnable: () -> T): T {
   }
   finally {
     InspectionProfileImpl.INIT_INSPECTIONS = old
+  }
+}
+
+fun disableInspections(project: Project, vararg inspections: InspectionProfileEntry) {
+  val profile = InspectionProjectProfileManager.getInstance(project).currentProfile
+  for (inspection in inspections) {
+    profile.setToolEnabled(InspectionWrapperUtil.wrapTool(inspection).shortName, false)
+  }
+}
+
+fun InspectionProfileImpl.disableAllTools() {
+  for (entry in getInspectionTools(null)) {
+    setToolEnabled(entry.shortName, false)
   }
 }

@@ -36,7 +36,7 @@ public class RegExpHighlighter extends SyntaxHighlighterBase {
 
   static final TextAttributesKey CHARACTER = createTextAttributesKey("REGEXP.CHARACTER", DefaultLanguageHighlighterColors.STRING);
   static final TextAttributesKey DOT = createTextAttributesKey("REGEXP.DOT", DefaultLanguageHighlighterColors.DOT);
-  static final TextAttributesKey META = createTextAttributesKey("REGEXP.META", DefaultLanguageHighlighterColors.KEYWORD);
+  public static final TextAttributesKey META = createTextAttributesKey("REGEXP.META", DefaultLanguageHighlighterColors.KEYWORD);
   static final TextAttributesKey INVALID_CHARACTER_ESCAPE = createTextAttributesKey("REGEXP.INVALID_STRING_ESCAPE", DefaultLanguageHighlighterColors.INVALID_STRING_ESCAPE);
   static final TextAttributesKey BAD_CHARACTER = createTextAttributesKey("REGEXP.BAD_CHARACTER", HighlighterColors.BAD_CHARACTER);
   static final TextAttributesKey REDUNDANT_ESCAPE = createTextAttributesKey("REGEXP.REDUNDANT_ESCAPE", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE);
@@ -44,13 +44,14 @@ public class RegExpHighlighter extends SyntaxHighlighterBase {
   static final TextAttributesKey BRACES = createTextAttributesKey("REGEXP.BRACES", DefaultLanguageHighlighterColors.BRACES);
   static final TextAttributesKey BRACKETS = createTextAttributesKey("REGEXP.BRACKETS", DefaultLanguageHighlighterColors.BRACKETS);
   static final TextAttributesKey COMMA = createTextAttributesKey("REGEXP.COMMA", DefaultLanguageHighlighterColors.COMMA);
-  static final TextAttributesKey ESC_CHARACTER = createTextAttributesKey("REGEXP.ESC_CHARACTER", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE);
+  public static final TextAttributesKey ESC_CHARACTER = createTextAttributesKey("REGEXP.ESC_CHARACTER", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE);
   static final TextAttributesKey CHAR_CLASS = createTextAttributesKey("REGEXP.CHAR_CLASS", DefaultLanguageHighlighterColors.MARKUP_ENTITY);
   static final TextAttributesKey QUOTE_CHARACTER = createTextAttributesKey("REGEXP.QUOTE_CHARACTER", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE);
   static final TextAttributesKey COMMENT = createTextAttributesKey("REGEXP.COMMENT", DefaultLanguageHighlighterColors.LINE_COMMENT);
   static final TextAttributesKey QUANTIFIER = createTextAttributesKey("REGEXP.QUANTIFIER", DefaultLanguageHighlighterColors.NUMBER);
   static final TextAttributesKey OPTIONS = createTextAttributesKey("REGEXP.OPTIONS", DefaultLanguageHighlighterColors.PREDEFINED_SYMBOL);
   static final TextAttributesKey NAME = createTextAttributesKey("REGEXP.NAME", DefaultLanguageHighlighterColors.IDENTIFIER);
+  public static final TextAttributesKey MATCHED_GROUPS = createTextAttributesKey("REGEXP_MATCHED_GROUPS");
 
   private final Project myProject;
   private final ParserDefinition myParserDefinition;
@@ -105,14 +106,17 @@ public class RegExpHighlighter extends SyntaxHighlighterBase {
     ourMap.put(RegExpTT.QUOTE_END, QUOTE_CHARACTER);
 
     ourMap.put(RegExpTT.NON_CAPT_GROUP, PARENTHS);
+    ourMap.put(RegExpTT.ATOMIC_GROUP, PARENTHS);
     ourMap.put(RegExpTT.POS_LOOKBEHIND, PARENTHS);
     ourMap.put(RegExpTT.NEG_LOOKBEHIND, PARENTHS);
     ourMap.put(RegExpTT.POS_LOOKAHEAD, PARENTHS);
+    ourMap.put(RegExpTT.PCRE_BRANCH_RESET, PARENTHS);
     ourMap.put(RegExpTT.NEG_LOOKAHEAD, PARENTHS);
     ourMap.put(RegExpTT.SET_OPTIONS, PARENTHS);
     ourMap.put(RegExpTT.PYTHON_NAMED_GROUP, PARENTHS);
     ourMap.put(RegExpTT.PYTHON_NAMED_GROUP_REF, PARENTHS);
-    ourMap.put(RegExpTT.PYTHON_COND_REF, PARENTHS);
+    ourMap.put(RegExpTT.PCRE_RECURSIVE_NAMED_GROUP_REF, PARENTHS);
+    ourMap.put(RegExpTT.CONDITIONAL, PARENTHS);
     ourMap.put(RegExpTT.RUBY_NAMED_GROUP, PARENTHS);
     ourMap.put(RegExpTT.RUBY_QUOTED_NAMED_GROUP, PARENTHS);
     ourMap.put(RegExpTT.GROUP_BEGIN, PARENTHS);
@@ -142,14 +146,12 @@ public class RegExpHighlighter extends SyntaxHighlighterBase {
   }
 
   @Override
-  @NotNull
-  public Lexer getHighlightingLexer() {
+  public @NotNull Lexer getHighlightingLexer() {
     return myParserDefinition.createLexer(myProject);
   }
 
   @Override
-  @NotNull
-  public TextAttributesKey[] getTokenHighlights(IElementType tokenType) {
+  public @NotNull TextAttributesKey @NotNull [] getTokenHighlights(@NotNull IElementType tokenType) {
     return pack(ourMap.get(tokenType));
   }
 }

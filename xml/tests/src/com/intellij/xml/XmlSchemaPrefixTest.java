@@ -16,26 +16,26 @@
 package com.intellij.xml;
 
 import com.intellij.testFramework.fixtures.CodeInsightTestUtil;
-import com.intellij.testFramework.fixtures.LightCodeInsightFixtureTestCase;
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
 import com.intellij.xml.refactoring.SchemaPrefixRenameHandler;
 
 /**
  * @author Konstantin Bulenkov
  */
-public class XmlSchemaPrefixTest extends LightCodeInsightFixtureTestCase {
+public class XmlSchemaPrefixTest extends LightJavaCodeInsightFixtureTestCase {
 
-  public void testPrefixUsages() throws Exception {
+  public void testPrefixUsages() {
     doFindUsages("usages.xml", 16);
     doFindUsages("usages1.xml", 16);
   }
 
-  public void testRename() throws Exception {doRename();}
-  public void testRename1() throws Exception {doRename();}
+  public void testRename() {doRename();}
+  public void testRename1() {doRename();}
 
-  public void testRename2() throws Exception {doRename();}
-  public void testRenameFromClosingTag() throws Exception {doRename();}
+  public void testRename2() {doRename();}
+  public void testRenameFromClosingTag() {doRename();}
 
-  private void doRename() throws Exception {
+  private void doRename() {
     doRename("xsd");
   }
 

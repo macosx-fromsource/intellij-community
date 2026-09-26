@@ -1,205 +1,257 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.openapi.vfs.encoding;
 
 import com.intellij.ide.IdeBundle;
-import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.openapi.actionSystem.DefaultActionGroup;
-import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.lang.LangBundle;
+import com.intellij.lang.PerFileMappingsEx;
+import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.application.ApplicationNamesInfo;
-import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.options.ConfigurationException;
-import com.intellij.openapi.options.SearchableConfigurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Ref;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.NlsActions;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.ui.ScrollPaneFactory;
-import com.intellij.ui.table.JBTable;
-import org.jetbrains.annotations.Nls;
-import org.jetbrains.annotations.NonNls;
+import com.intellij.ui.ColoredTextContainer;
+import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.util.Consumer;
+import com.intellij.util.ObjectUtils;
+import com.intellij.util.ui.tree.PerFileConfigurableBase;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import java.awt.Dimension;
+import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-public class FileEncodingConfigurable implements SearchableConfigurable, Configurable.NoScroll {
-  private final Project myProject;
-  private EncodingFileTreeTable myTreeView;
-  private JScrollPane myTreePanel;
-  private JPanel myPanel;
-  private JCheckBox myTransparentNativeToAsciiCheckBox;
-  private JPanel myPropertiesFilesEncodingCombo;
-  private final Ref<Charset> mySelectedCharsetForPropertiesFiles = new Ref<>();
-  private final Ref<Charset> mySelectedIdeCharset = new Ref<>();           // IDE encoding or null if "System Default"
-  private final Ref<Charset> mySelectedProjectCharset = new Ref<>(); // Project encoding or null if "System Default"
-  private JLabel myTitleLabel;
-  private JPanel myIdeEncodingsListCombo;
-  private JPanel myProjectEncodingListCombo;
-  private ChooseFileEncodingAction myPropertiesEncodingAction;
-  private ChooseFileEncodingAction myIdeEncodingAction;
-  private ChooseFileEncodingAction myProjectEncodingAction;
+final class FileEncodingConfigurable extends PerFileConfigurableBase<Charset> {
 
-  public FileEncodingConfigurable(@NotNull Project project) {
-    myProject = project;
-    myTitleLabel.setText(myTitleLabel.getText().replace("$productName", ApplicationNamesInfo.getInstance().getFullProductName()));
+  private final FileEncodingConfigurableUI ui = new FileEncodingConfigurableUI();
+  private Charset myPropsCharset;
+
+  private final Mapping<Charset> myProjectMapping;
+  private final Mapping<Charset> myGlobalMapping;
+
+  FileEncodingConfigurable(@NotNull Project project) {
+    super(project, createMappings(project));
+    EncodingManager app = EncodingManager.getInstance();
+    EncodingProjectManagerImpl prj = (EncodingProjectManagerImpl)EncodingProjectManager.getInstance(myProject);
+    myProjectMapping = new Mapping<>(IdeBundle.message("file.encoding.option.global.encoding"),
+                                     () -> app.getDefaultCharsetName().isEmpty() ? null : app.getDefaultCharset(),
+                                     o -> app.setDefaultCharsetName(getCharsetName(o)));
+    myGlobalMapping = new Mapping<>(IdeBundle.message("file.encoding.option.project.encoding"),
+                                    prj::getConfiguredDefaultCharset,
+                                    o -> prj.setDefaultCharsetName(getCharsetName(o)));
   }
 
   @Override
-  @Nls
+  protected boolean isGlobalMapping(Mapping<Charset> prop) {
+    return prop == myGlobalMapping || super.isGlobalMapping(prop);
+  }
+
+  @Override
+  protected boolean isProjectMapping(Mapping<Charset> prop) {
+    return prop == myProjectMapping || super.isProjectMapping(prop);
+  }
+
+  @Override
   public String getDisplayName() {
     return IdeBundle.message("file.encodings.configurable");
   }
 
   @Override
-  @Nullable
-  @NonNls
   public String getHelpTopic() {
     return "reference.settingsdialog.project.file.encodings";
   }
 
   @Override
-  @NotNull
-  public String getId() {
+  public @NotNull String getId() {
     return "File.Encoding";
   }
 
-  @NotNull
-  private static ChooseFileEncodingAction installChooseEncodingCombo(@NotNull JPanel parentPanel, @NotNull final Ref<Charset> selected) {
-    ChooseFileEncodingAction myAction = new ChooseFileEncodingAction(null) {
-      @Override
-      public void update(final AnActionEvent e) {
-        getTemplatePresentation().setEnabled(true);
-        Charset charset = selected.get();
-        getTemplatePresentation().setText(charset == null ? IdeBundle.message("encoding.name.system.default", CharsetToolkit.getDefaultSystemCharset().displayName()) : charset.displayName());
-      }
-
-      @Override
-      protected void chosen(final VirtualFile virtualFile, @NotNull final Charset charset) {
-        selected.set(charset == NO_ENCODING ? null : charset);
-        update(null);
-      }
-
-      @NotNull
-      @Override
-      protected DefaultActionGroup createPopupActionGroup(JComponent button) {
-        return createCharsetsActionGroup("<System Default>", selected.get(), charset -> "Choose encoding '" + charset + "'");
-      }
-    };
-    parentPanel.removeAll();
-    Presentation templatePresentation = myAction.getTemplatePresentation();
-    parentPanel.add(myAction.createCustomComponent(templatePresentation), BorderLayout.CENTER);
-    myAction.update(null);
-    return myAction;
+  @Override
+  protected <S> Object getParameter(@NotNull Key<S> key) {
+    if (key == DESCRIPTION) return IdeBundle.message("encodings.dialog.caption", ApplicationNamesInfo.getInstance().getFullProductName());
+    if (key == MAPPING_TITLE) return IdeBundle.message("file.encoding.option.encoding.column");
+    if (key == TARGET_TITLE) return IdeBundle.message("file.encoding.option.path.column");
+    if (key == OVERRIDE_QUESTION) return null;
+    if (key == OVERRIDE_TITLE) return null;
+    if (key == EMPTY_TEXT) return IdeBundle.message("file.encodings.not.configured");
+    return null;
   }
 
   @Override
-  public JComponent createComponent() {
-    myPropertiesEncodingAction = installChooseEncodingCombo(myPropertiesFilesEncodingCombo, mySelectedCharsetForPropertiesFiles);
-    myIdeEncodingAction = installChooseEncodingCombo(myIdeEncodingsListCombo, mySelectedIdeCharset);
-    myProjectEncodingAction = installChooseEncodingCombo(myProjectEncodingListCombo, mySelectedProjectCharset);
-    myTreeView = new EncodingFileTreeTable(myProject);
-    myTreePanel.setViewportView(myTreeView);
-    myTreeView.getEmptyText().setText(IdeBundle.message("file.encodings.not.configured"));
-    return myPanel;
+  protected void renderValue(@Nullable Object target, @NotNull Charset t, @NotNull ColoredTextContainer renderer) {
+    VirtualFile file = target instanceof VirtualFile ? (VirtualFile)target : null;
+    EncodingUtil.FailReason result = file == null || file.isDirectory() ? null : ReadAction.computeBlocking(() -> EncodingUtil.checkCanConvertAndReload(file));
+
+    @NlsSafe String encodingText = t.displayName();
+    SimpleTextAttributes attributes = result == null ? SimpleTextAttributes.REGULAR_ATTRIBUTES : SimpleTextAttributes.GRAY_ATTRIBUTES;
+    renderer.append(encodingText + (result == null ? "" : " (" + EncodingUtil.reasonToString(result, file) + ")"), attributes);
+  }
+
+  @Override
+  protected @NotNull ActionGroup createActionListGroup(@Nullable Object target, @NotNull Consumer<? super Charset> onChosen) {
+    VirtualFile file = target instanceof VirtualFile ? (VirtualFile)target : null;
+    byte[] b = null;
+    try {
+      b = file == null || file.isDirectory() ? null : file.contentsToByteArray();
+    }
+    catch (IOException ignored) {
+    }
+    byte[] bytes = b;
+    Document document = file == null ? null : ReadAction.computeBlocking(() -> FileDocumentManager.getInstance().getDocument(file));
+
+    return new ChangeFileEncodingAction(true) {
+      @Override
+      protected boolean chosen(Document document, Editor editor, VirtualFile virtualFile, byte[] bytes, @NotNull Charset charset) {
+        onChosen.consume(charset);
+        return true;
+      }
+    }.createActionGroup(file, null, document, bytes, getClearValueText(target));
+  }
+
+  @Override
+  protected @NlsActions.ActionText @Nullable String getClearValueText(@Nullable Object target) {
+    return target != null ? super.getClearValueText(target) : LangBundle.message("action.set.system.default.encoding.text");
+  }
+
+  @Override
+  protected @NlsActions.ActionText @Nullable String getNullValueText(@Nullable Object target) {
+    return target != null ? super.getNullValueText(target) : IdeBundle.message("encoding.name.system.default", CharsetToolkit.getDefaultSystemCharset().displayName());
+  }
+
+  @Override
+  protected @NotNull Collection<Charset> getValueVariants(@Nullable Object target) {
+    return Arrays.asList(CharsetToolkit.getAvailableCharsets());
+  }
+
+  @Override
+  public @NotNull JComponent createComponent() {
+    final class PropertiesCharsetValue implements Value<Charset> {
+      @Override
+      public void commit() {}
+
+      @Override
+      public Charset get() {
+        return myPropsCharset;
+      }
+
+      @Override
+      public void set(Charset value) {
+        myPropsCharset = adjustChosenValue(null, value);
+      }
+    }
+
+    final String nullTextValue = IdeBundle.message("encoding.name.properties.default", getDefaultCharset().displayName());
+    JComponent tablePanel = super.createComponent();
+    Dimension size = tablePanel.getPreferredSize();
+    tablePanel.setPreferredSize(new Dimension(400, size.height));
+    return ui.createContent(tablePanel,
+                            createActionPanel(new PerFileConfigurableComboBoxAction(new PropertiesCharsetValue(), null, nullTextValue)));
+  }
+
+  private static @NotNull Charset getDefaultCharset() {
+    if(Registry.is("properties.file.encoding.legacy.support", false)) {
+      return StandardCharsets.ISO_8859_1;
+    } else {
+      return StandardCharsets.UTF_8;
+    }
+  }
+
+  @Override
+  protected @NotNull List<Mapping<Charset>> getDefaultMappings() {
+    return Arrays.asList(
+      myProjectMapping,
+      myGlobalMapping);
+  }
+
+  @Override
+  protected Charset adjustChosenValue(@Nullable Object target, Charset chosen) {
+    return chosen == ChooseFileEncodingAction.NO_ENCODING ? null : chosen;
   }
 
   @Override
   public boolean isModified() {
-    if (isIdeEncodingModified()) return true;
-    if (isProjectEncodingModified()) return true;
-    EncodingProjectManager encodingManager = EncodingProjectManager.getInstance(myProject);
-
-    Map<VirtualFile, Charset> editing = myTreeView.getValues();
-    Map<VirtualFile, Charset> existingMapping = getExistingMappingIncludingDefault(myProject);
-    boolean same = editing.equals(existingMapping)
-       && Comparing.equal(encodingManager.getDefaultCharsetForPropertiesFiles(null), mySelectedCharsetForPropertiesFiles.get())
-       && encodingManager.isNative2AsciiForPropertiesFiles() == myTransparentNativeToAsciiCheckBox.isSelected()
-      ;
+    if (super.isModified()) return true;
+    EncodingProjectManagerImpl encodingManager = (EncodingProjectManagerImpl)EncodingProjectManager.getInstance(myProject);
+    boolean same = Comparing.equal(encodingManager.getDefaultCharsetForPropertiesFiles(null), myPropsCharset)
+                   && encodingManager.isNative2AsciiForPropertiesFiles() == ui.transparentNativeToAsciiCheckBox.isSelected()
+                   && encodingManager.getBOMForNewUTF8Files() == ui.bomForUTF8Combo.getSelectedItem();
     return !same;
   }
 
-  @NotNull
-  static Map<VirtualFile, Charset> getExistingMappingIncludingDefault(@NotNull Project project) {
-    Map<VirtualFile, Charset> existingMapping = new HashMap<>();
-    EncodingProjectManagerImpl encodingProjectManager = (EncodingProjectManagerImpl)EncodingProjectManager.getInstance(project);
-    existingMapping.putAll(encodingProjectManager.getAllMappings());
-    existingMapping.put(null, encodingProjectManager.getDefaultCharset());
-    return existingMapping;
-  }
-
-  private boolean isIdeEncodingModified() {
-    String charsetName = getSelectedCharsetName(mySelectedIdeCharset);
-    return !charsetName.equals(EncodingManager.getInstance().getDefaultCharsetName());
-  }
-  private boolean isProjectEncodingModified() {
-    String charsetName = getSelectedCharsetName(mySelectedProjectCharset);
-    return !charsetName.equals(EncodingProjectManager.getInstance(myProject).getDefaultCharsetName());
-  }
-
-  @NotNull // charset name or empty for System Default
-  private static String getSelectedCharsetName(@NotNull Ref<Charset> selectedCharset) {
-    Charset charset = selectedCharset.get();
-    return charset == null ? "" : charset.name();
+  private static @NotNull String getCharsetName(@Nullable Charset c) {
+    return c == null ? "" : c.name();
   }
 
   @Override
   public void apply() throws ConfigurationException {
-    String projectCharsetName = getSelectedCharsetName(mySelectedProjectCharset);
-
-    Map<VirtualFile,Charset> result = myTreeView.getValues();
-    EncodingProjectManagerImpl encodingProjectManager = ((EncodingProjectManagerImpl)EncodingProjectManager.getInstance(myProject));
-    encodingProjectManager.setMapping(result);
-    encodingProjectManager.setDefaultCharsetName(projectCharsetName);
-    encodingProjectManager.setDefaultCharsetForPropertiesFiles(null, mySelectedCharsetForPropertiesFiles.get());
-    encodingProjectManager.setNative2AsciiForPropertiesFiles(null, myTransparentNativeToAsciiCheckBox.isSelected());
-
-    Charset ideCharset = mySelectedIdeCharset.get();
-    EncodingManager.getInstance().setDefaultCharsetName(ideCharset == null ? "" : ideCharset.name());
+    super.apply();
+    EncodingProjectManagerImpl encodingManager = (EncodingProjectManagerImpl)EncodingProjectManager.getInstance(myProject);
+    encodingManager.setDefaultCharsetForPropertiesFiles(null, myPropsCharset);
+    encodingManager.setNative2AsciiForPropertiesFiles(null, ui.transparentNativeToAsciiCheckBox.isSelected());
+    EncodingProjectManagerImpl.BOMForNewUTF8Files option = ObjectUtils.notNull((EncodingProjectManagerImpl.BOMForNewUTF8Files)ui.bomForUTF8Combo.getSelectedItem(), EncodingProjectManagerImpl.BOMForNewUTF8Files.NEVER);
+    encodingManager.setBOMForNewUtf8Files(option);
   }
 
   @Override
   public void reset() {
-    EncodingProjectManager encodingManager = EncodingProjectManager.getInstance(myProject);
-    myTreeView.reset(getExistingMappingIncludingDefault(myProject));
-    myTransparentNativeToAsciiCheckBox.setSelected(encodingManager.isNative2AsciiForPropertiesFiles());
-    mySelectedCharsetForPropertiesFiles.set(encodingManager.getDefaultCharsetForPropertiesFiles(null));
-
-    mySelectedIdeCharset.set(EncodingManager.getInstance().getDefaultCharsetName().isEmpty() ? null : EncodingManager.getInstance().getDefaultCharset());
-    mySelectedProjectCharset.set(encodingManager.getDefaultCharsetName().isEmpty() ? null : encodingManager.getDefaultCharset());
-    myPropertiesEncodingAction.update(null);
-    myIdeEncodingAction.update(null);
-    myProjectEncodingAction.update(null);
- }
+    EncodingProjectManagerImpl encodingManager = (EncodingProjectManagerImpl)EncodingProjectManager.getInstance(myProject);
+    ui.transparentNativeToAsciiCheckBox.setSelected(encodingManager.isNative2AsciiForPropertiesFiles());
+    myPropsCharset = encodingManager.getDefaultCharsetForPropertiesFiles(null);
+    ui.bomForUTF8Combo.setSelectedItem(encodingManager.getBOMForNewUTF8Files());
+    super.reset();
+  }
 
   @Override
-  public void disposeUIResources() {
+  protected boolean canEditTarget(@Nullable Object target, Charset value) {
+    return target == null || target instanceof VirtualFile && (
+      ((VirtualFile)target).isDirectory() || ReadAction.computeBlocking(() -> EncodingUtil.checkCanConvertAndReload((VirtualFile)target)) == null);
   }
 
-  public void selectFile(@NotNull VirtualFile virtualFile) {
-    myTreeView.select(virtualFile);
-  }
+  private static @NotNull PerFileMappingsEx<Charset> createMappings(@NotNull Project project) {
+    EncodingProjectManagerImpl prjManager = (EncodingProjectManagerImpl)EncodingProjectManager.getInstance(project);
+    return new PerFileMappingsEx<>() {
+      @Override
+      public @NotNull Map<VirtualFile, Charset> getMappings() {
+        return new HashMap<>(prjManager.getAllMappings());
+      }
 
-  private void createUIComponents() {
-    myTreePanel = ScrollPaneFactory.createScrollPane(new JBTable());
+      @Override
+      public void setMappings(@NotNull Map<VirtualFile, Charset> mappings) {
+        prjManager.setMapping(mappings);
+      }
+
+      @Override
+      public void setMapping(@Nullable VirtualFile file, Charset value) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public Charset getMapping(@Nullable VirtualFile file) {
+        throw new UnsupportedOperationException();
+      }
+
+      @Override
+      public @Nullable Charset getDefaultMapping(@Nullable VirtualFile file) {
+        return prjManager.getEncoding(file, true);
+      }
+    };
   }
 }

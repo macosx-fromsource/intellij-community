@@ -1,9 +1,11 @@
-// "Rename reference" "true"
+// "Rename reference" "true-preview"
 class FooInterface {
   private int myInt;
 }
 
 class Foo {
+    float myFloat;
+
     void buzz() {
         myI<caret>nt + myInt;
     }

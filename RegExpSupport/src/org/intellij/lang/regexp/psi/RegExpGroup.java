@@ -15,23 +15,59 @@
  */
 package org.intellij.lang.regexp.psi;
 
-import com.intellij.psi.PsiNamedElement;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.psi.PsiNameIdentifierOwner;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public interface RegExpGroup extends RegExpAtom, PsiNamedElement {
+public interface RegExpGroup extends RegExpAtom, PsiNameIdentifierOwner {
+
   boolean isCapturing();
 
-  boolean isSimple();
+  @NotNull RegExpPattern getPattern();
 
-  @Nullable
-  RegExpPattern getPattern();
+  /** @return true, if this is a named group of any kind, false otherwise */
+  boolean isAnyNamedGroup();
 
-  boolean isPythonNamedGroup();
+  @Nullable @NlsSafe String getGroupName();
 
-  boolean isRubyNamedGroup();
+  @NotNull Type getType();
 
-  boolean isNamedGroup();
+  enum Type {
+    /** (?<name>pattern) */
+    NAMED_GROUP,
 
-  @Nullable
-  String getGroupName();
+    /** (?'name'pattern) */
+    QUOTED_NAMED_GROUP,
+
+    /** (?P<name>pattern) */
+    PYTHON_NAMED_GROUP,
+
+    /** (pattern) */
+    CAPTURING_GROUP,
+
+    /** (?>pattern) */
+    ATOMIC,
+
+    /** (?:pattern) */
+    NON_CAPTURING,
+
+    /** (?=pattern) */
+    POSITIVE_LOOKAHEAD,
+
+    /** (?!pattern) */
+    NEGATIVE_LOOKAHEAD,
+
+    /** (?<=pattern) */
+    POSITIVE_LOOKBEHIND,
+
+    /** (?<!pattern) */
+    NEGATIVE_LOOKBEHIND,
+
+    /** (?|pattern) */
+    PCRE_BRANCH_RESET,
+
+    /** (?i:pattern) */
+    OPTIONS
+  }
 }

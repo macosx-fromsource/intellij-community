@@ -1,21 +1,6 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.roots.ui.configuration.artifacts;
 
-import com.intellij.openapi.application.Result;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.module.ModifiableModuleModel;
 import com.intellij.openapi.module.Module;
@@ -25,12 +10,21 @@ import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.ui.configuration.FacetsProvider;
 import com.intellij.openapi.roots.ui.configuration.ModuleEditor;
 import com.intellij.openapi.roots.ui.configuration.ModulesProvider;
+import com.intellij.openapi.roots.ui.configuration.ProjectStructureConfigurable;
 import com.intellij.openapi.roots.ui.configuration.projectRoot.StructureConfigurableContext;
 import com.intellij.openapi.roots.ui.configuration.projectRoot.daemon.ProjectStructureDaemonAnalyzerListener;
 import com.intellij.openapi.roots.ui.configuration.projectRoot.daemon.ProjectStructureElement;
 import com.intellij.openapi.roots.ui.configuration.projectRoot.daemon.ProjectStructureProblemsHolderImpl;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.packaging.artifacts.*;
+import com.intellij.packaging.artifacts.Artifact;
+import com.intellij.packaging.artifacts.ArtifactListener;
+import com.intellij.packaging.artifacts.ArtifactManager;
+import com.intellij.packaging.artifacts.ArtifactModel;
+import com.intellij.packaging.artifacts.ArtifactPointer;
+import com.intellij.packaging.artifacts.ArtifactPointerManager;
+import com.intellij.packaging.artifacts.ArtifactType;
+import com.intellij.packaging.artifacts.ModifiableArtifact;
+import com.intellij.packaging.artifacts.ModifiableArtifactModel;
 import com.intellij.packaging.elements.CompositePackagingElement;
 import com.intellij.packaging.elements.ManifestFileProvider;
 import com.intellij.packaging.impl.artifacts.ArtifactUtil;
@@ -44,13 +38,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
-* @author nik
-*/
-public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStructureConfigurableContext {
+public final class ArtifactsStructureConfigurableContextImpl implements ArtifactsStructureConfigurableContext {
   private ModifiableArtifactModel myModifiableModel;
   private final ManifestFilesInfo myManifestFilesInfo = new ManifestFilesInfo();
-  private final ArtifactAdapter myModifiableModelListener;
+  private final ArtifactListener myModifiableModelListener;
   private final StructureConfigurableContext myContext;
   private final Project myProject;
   private final Map<Artifact, CompositePackagingElement<?>> myModifiableRoots = new HashMap<>();
@@ -61,7 +52,7 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
   private final ManifestFileProvider myManifestFileProvider = new ArtifactEditorManifestFileProvider(this);
 
   public ArtifactsStructureConfigurableContextImpl(StructureConfigurableContext context, Project project,
-                                                   ArtifactEditorSettings defaultSettings, final ArtifactAdapter modifiableModelListener) {
+                                                   ArtifactEditorSettings defaultSettings, final ArtifactListener modifiableModelListener) {
     myDefaultSettings = defaultSettings;
     myModifiableModelListener = modifiableModelListener;
     myContext = context;
@@ -86,14 +77,12 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
   }
 
   @Override
-  @NotNull
-  public Project getProject() {
+  public @NotNull Project getProject() {
     return myProject;
   }
 
   @Override
-  @NotNull
-  public ArtifactModel getArtifactModel() {
+  public @NotNull ArtifactModel getArtifactModel() {
     if (myModifiableModel != null) {
       return myModifiableModel;
     }
@@ -101,8 +90,7 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
   }
 
   @Override
-  @NotNull
-  public Artifact getOriginalArtifact(@NotNull Artifact artifact) {
+  public @NotNull Artifact getOriginalArtifact(@NotNull Artifact artifact) {
     if (myModifiableModel != null) {
       return myModifiableModel.getOriginalArtifact(artifact);
     }
@@ -141,23 +129,19 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
   }
 
   @Override
-  public void editLayout(@NotNull final Artifact artifact, final Runnable action) {
+  public void editLayout(final @NotNull Artifact artifact, final Runnable action) {
     final Artifact originalArtifact = getOriginalArtifact(artifact);
-    new WriteAction() {
-      @Override
-      protected void run(@NotNull final Result result) {
-        final ModifiableArtifact modifiableArtifact = getOrCreateModifiableArtifactModel().getOrCreateModifiableArtifact(originalArtifact);
-        if (modifiableArtifact.getRootElement() == originalArtifact.getRootElement()) {
-          modifiableArtifact.setRootElement(getOrCreateModifiableRootElement(originalArtifact));
-        }
-        action.run();
+    WriteAction.run(() -> {
+      final ModifiableArtifact modifiableArtifact = getOrCreateModifiableArtifactModel().getOrCreateModifiableArtifact(originalArtifact);
+      if (modifiableArtifact.getRootElement() == originalArtifact.getRootElement()) {
+        modifiableArtifact.setRootElement(getOrCreateModifiableRootElement(originalArtifact));
       }
-    }.execute();
+      action.run();
+    });
     myContext.getDaemonAnalyzer().queueUpdate(getOrCreateArtifactElement(originalArtifact));
   }
 
-  @Nullable 
-  public ArtifactEditorImpl getArtifactEditor(Artifact artifact) {
+  public @Nullable ArtifactEditorImpl getArtifactEditor(Artifact artifact) {
     return myArtifactEditors.get(getOriginalArtifact(artifact));
   }
 
@@ -173,14 +157,12 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
     return artifactEditor;
   }
 
-  @Nullable
-  public ModifiableArtifactModel getActualModifiableModel() {
+  public @Nullable ModifiableArtifactModel getActualModifiableModel() {
     return myModifiableModel;
   }
 
   @Override
-  @NotNull
-  public ModifiableArtifactModel getOrCreateModifiableArtifactModel() {
+  public @NotNull ModifiableArtifactModel getOrCreateModifiableArtifactModel() {
     if (myModifiableModel == null) {
       myModifiableModel = ArtifactManager.getInstance(myProject).createModifiableModel();
       myModifiableModel.addListener(myModifiableModelListener);
@@ -194,14 +176,12 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
   }
 
   @Override
-  @NotNull
-  public ModulesProvider getModulesProvider() {
+  public @NotNull ModulesProvider getModulesProvider() {
     return myContext.getModulesConfigurator();
   }
 
   @Override
-  @NotNull
-  public FacetsProvider getFacetsProvider() {
+  public @NotNull FacetsProvider getFacetsProvider() {
     return myContext.getModulesConfigurator().getFacetsConfigurator();
   }
 
@@ -211,9 +191,8 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
     return library != null ? myContext.getLibraryModel(library) : myContext.getLibrary(libraryName, level);
   }
 
-  @NotNull
   @Override
-  public ManifestFileProvider getManifestFileProvider() {
+  public @NotNull ManifestFileProvider getManifestFileProvider() {
     return myManifestFileProvider;
   }
 
@@ -257,8 +236,7 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
   }
 
   @Override
-  @NotNull
-  public ArtifactProjectStructureElement getOrCreateArtifactElement(@NotNull Artifact artifact) {
+  public @NotNull ArtifactProjectStructureElement getOrCreateArtifactElement(@NotNull Artifact artifact) {
     ArtifactProjectStructureElement element = myArtifactElements.get(getOriginalArtifact(artifact));
     if (element == null) {
       element = new ArtifactProjectStructureElement(myContext, this, artifact);
@@ -271,5 +249,10 @@ public class ArtifactsStructureConfigurableContextImpl implements ArtifactsStruc
   public ModifiableRootModel getOrCreateModifiableRootModel(Module module) {
     final ModuleEditor editor = myContext.getModulesConfigurator().getOrCreateModuleEditor(module);
     return editor.getModifiableRootModelProxy();
+  }
+
+  @Override
+  public @NotNull ProjectStructureConfigurable getProjectStructureConfigurable() {
+    return myContext.getModulesConfigurator().getProjectStructureConfigurable();
   }
 }

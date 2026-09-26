@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.struct;
 
 import org.jetbrains.java.decompiler.main.DecompilerContext;
@@ -68,6 +54,8 @@ public class ContextUnit {
   }
 
   public void addOtherEntry(String fullPath, String entry) {
+    if (DecompilerContext.getOption(IFernflowerPreferences.SKIP_EXTRA_FILES))
+        return;
     otherEntries.add(new String[]{fullPath, entry});
   }
 
@@ -79,7 +67,7 @@ public class ContextUnit {
 
       StructClass newCl;
       try (DataInputFullStream in = loader.getClassStream(oldName)) {
-        newCl = new StructClass(in, cl.isOwn(), loader);
+        newCl = StructClass.create(in, cl.isOwn(), loader);
       }
 
       lstClasses.add(newCl);
@@ -94,7 +82,7 @@ public class ContextUnit {
 
   public void save() {
     switch (type) {
-      case TYPE_FOLDER:
+      case TYPE_FOLDER -> {
         // create folder
         resultSaver.saveFolder(filename);
 
@@ -106,6 +94,9 @@ public class ContextUnit {
         // classes
         for (int i = 0; i < classes.size(); i++) {
           StructClass cl = classes.get(i);
+          if (!cl.isOwn()) {
+            continue;
+          }
           String entryName = decompiledData.getClassEntryName(cl, classEntries.get(i));
           if (entryName != null) {
             String content = decompiledData.getClassContent(cl);
@@ -118,11 +109,8 @@ public class ContextUnit {
             }
           }
         }
-
-        break;
-
-      case TYPE_JAR:
-      case TYPE_ZIP:
+      }
+      case TYPE_JAR, TYPE_ZIP -> {
         // create archive file
         resultSaver.saveFolder(archivePath);
         resultSaver.createArchive(archivePath, filename, manifest);
@@ -150,6 +138,7 @@ public class ContextUnit {
         }
 
         resultSaver.closeArchive(archivePath, filename);
+      }
     }
   }
 

@@ -1,3 +1,4 @@
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.idea.svn.integrate;
 
 import com.intellij.openapi.vcs.VcsException;
@@ -6,23 +7,20 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.api.BaseSvnClient;
 import org.jetbrains.idea.svn.api.Depth;
 import org.jetbrains.idea.svn.api.ProgressTracker;
+import org.jetbrains.idea.svn.api.RevisionRange;
+import org.jetbrains.idea.svn.api.Target;
 import org.jetbrains.idea.svn.commandLine.BaseUpdateCommandListener;
 import org.jetbrains.idea.svn.commandLine.CommandUtil;
 import org.jetbrains.idea.svn.commandLine.SvnCommandName;
 import org.jetbrains.idea.svn.diff.DiffOptions;
-import org.tmatesoft.svn.core.wc.SVNRevisionRange;
-import org.tmatesoft.svn.core.wc2.SvnTarget;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author Konstantin Kolosovsky.
- */
 public class CmdMergeClient extends BaseSvnClient implements MergeClient {
   @Override
-  public void merge(@NotNull SvnTarget source,
+  public void merge(@NotNull Target source,
                     @NotNull File destination,
                     boolean dryRun,
                     boolean reintegrate,
@@ -38,8 +36,8 @@ public class CmdMergeClient extends BaseSvnClient implements MergeClient {
   }
 
   @Override
-  public void merge(@NotNull SvnTarget source,
-                    @NotNull SVNRevisionRange range,
+  public void merge(@NotNull Target source,
+                    @NotNull RevisionRange range,
                     @NotNull File destination,
                     @Nullable Depth depth,
                     boolean dryRun,
@@ -59,8 +57,8 @@ public class CmdMergeClient extends BaseSvnClient implements MergeClient {
   }
 
   @Override
-  public void merge(@NotNull SvnTarget source1,
-                    @NotNull SvnTarget source2,
+  public void merge(@NotNull Target source1,
+                    @NotNull Target source2,
                     @NotNull File destination,
                     @Nullable Depth depth,
                     boolean useAncestry,
@@ -98,8 +96,7 @@ public class CmdMergeClient extends BaseSvnClient implements MergeClient {
     CommandUtil.put(parameters, force, "--force");
     CommandUtil.put(parameters, recordOnly, "--record-only");
 
-    parameters.add("--accept");
-    parameters.add("postpone");
+    CommandUtil.put(parameters, "--accept", "postpone");
     // deprecated for 1.8, but should be specified for previous clients
     CommandUtil.put(parameters, reintegrate, "--reintegrate");
   }
@@ -107,7 +104,7 @@ public class CmdMergeClient extends BaseSvnClient implements MergeClient {
   private void run(File destination, ProgressTracker handler, List<String> parameters) throws VcsException {
     BaseUpdateCommandListener listener = new BaseUpdateCommandListener(CommandUtil.requireExistingParent(destination), handler);
 
-    execute(myVcs, SvnTarget.fromFile(destination), SvnCommandName.merge, parameters, listener);
+    execute(myVcs, Target.on(destination), SvnCommandName.merge, parameters, listener);
 
     listener.throwWrappedIfException();
   }

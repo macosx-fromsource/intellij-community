@@ -1,24 +1,12 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.jps.model.java.impl.compiler;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.util.SystemInfoRt;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.util.text.Strings;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -31,13 +19,13 @@ import java.util.regex.Pattern;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: 10/6/11
  */
-public class ResourcePatterns {
-  private static final Logger LOG = Logger.getInstance("#org.jetbrains.jps.model.java.impl.compiler.ResourcePatterns");
+@ApiStatus.Internal
+public final class ResourcePatterns {
+  private static final Logger LOG = Logger.getInstance(ResourcePatterns.class);
 
-  private final List<CompiledPattern> myCompiledPatterns = new ArrayList<CompiledPattern>();
-  private final List<CompiledPattern> myNegatedCompiledPatterns = new ArrayList<CompiledPattern>();
+  private final List<CompiledPattern> myCompiledPatterns = new ArrayList<>();
+  private final List<CompiledPattern> myNegatedCompiledPatterns = new ArrayList<>();
 
   public ResourcePatterns(final JpsJavaCompilerConfiguration configuration) {
     final List<String> patterns = configuration.getResourcePatterns();
@@ -52,12 +40,12 @@ public class ResourcePatterns {
     }
   }
 
-  public boolean isResourceFile(File file, @NotNull final File srcRoot) {
+  public boolean isResourceFile(File file, final @NotNull File srcRoot) {
     final String name = file.getName();
     final String relativePathToParent;
     final String parentPath = file.getParent();
     if (parentPath != null) {
-      relativePathToParent = "/" + FileUtilRt.getRelativePath(FileUtilRt.toSystemIndependentName(srcRoot.getAbsolutePath()), FileUtilRt.toSystemIndependentName(parentPath), '/', SystemInfo.isFileSystemCaseSensitive);
+      relativePathToParent = "/" + FileUtilRt.getRelativePath(FileUtilRt.toSystemIndependentName(srcRoot.getAbsolutePath()), FileUtilRt.toSystemIndependentName(parentPath), '/', SystemInfoRt.isFileSystemCaseSensitive);
     }
     else {
       relativePathToParent = null;
@@ -125,17 +113,7 @@ public class ResourcePatterns {
     if (slash >= 0) {
       dirPattern = wildcardPattern.substring(0, slash + 1);
       wildcardPattern = wildcardPattern.substring(slash + 1);
-      if (!dirPattern.startsWith("/")) {
-        dirPattern = "/" + dirPattern;
-      }
-      //now dirPattern starts and ends with '/'
-
-      dirPattern = normalizeWildcards(dirPattern);
-
-      dirPattern = StringUtil.replace(dirPattern, "/.*.*/", "(/.*)?/");
-      dirPattern = StringUtil.trimEnd(dirPattern, "/");
-
-      dirPattern = optimize(dirPattern);
+      dirPattern = optimizeDirPattern(dirPattern);
     }
 
     wildcardPattern = normalizeWildcards(wildcardPattern);
@@ -146,11 +124,26 @@ public class ResourcePatterns {
     return new CompiledPattern(compilePattern(wildcardPattern), dirCompiled, srcCompiled);
   }
 
+  public static String optimizeDirPattern(String dirPattern) {
+    if (!dirPattern.startsWith("/")) {
+      dirPattern = "/" + dirPattern;
+    }
+    //now dirPattern starts and ends with '/'
+
+    dirPattern = normalizeWildcards(dirPattern);
+
+    dirPattern = StringUtil.replace(dirPattern, "/.*.*/", "(/.*)?/", false);
+    dirPattern = Strings.trimEnd(dirPattern, "/");
+
+    dirPattern = optimize(dirPattern);
+    return dirPattern;
+  }
+
   private static String optimize(String wildcardPattern) {
     return wildcardPattern.replaceAll("(?:\\.\\*)+", ".*");
   }
 
-  private static String normalizeWildcards(String wildcardPattern) {
+  public static String normalizeWildcards(String wildcardPattern) {
     wildcardPattern = StringUtil.replace(wildcardPattern, "\\!", "!");
     wildcardPattern = StringUtil.replace(wildcardPattern, ".", "\\.");
     wildcardPattern = StringUtil.replace(wildcardPattern, "*?", ".+");
@@ -165,13 +158,13 @@ public class ResourcePatterns {
   }
 
   private static Pattern compilePattern(@NonNls String s) {
-    return Pattern.compile(s, SystemInfo.isFileSystemCaseSensitive ? 0 : Pattern.CASE_INSENSITIVE);
+    return Pattern.compile(s, SystemInfoRt.isFileSystemCaseSensitive ? 0 : Pattern.CASE_INSENSITIVE);
   }
   
   private static class CompiledPattern {
-    @NotNull final Pattern fileName;
-    @Nullable final Pattern dir;
-    @Nullable final Pattern srcRoot;
+    final @NotNull Pattern fileName;
+    final @Nullable Pattern dir;
+    final @Nullable Pattern srcRoot;
 
     CompiledPattern(@NotNull Pattern fileName, @Nullable Pattern dir, @Nullable Pattern srcRoot) {
       this.fileName = fileName;

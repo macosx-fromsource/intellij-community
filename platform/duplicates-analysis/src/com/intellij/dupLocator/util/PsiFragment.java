@@ -2,10 +2,9 @@ package com.intellij.dupLocator.util;
 
 import com.intellij.dupLocator.DuplicatesProfile;
 import com.intellij.lang.Language;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Computable;
 import com.intellij.psi.PsiAnchor;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -16,15 +15,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
-/**
- * Created by IntelliJ IDEA.
- * User: db
- * Date: Mar 26, 2004
- * Time: 4:58:00 PM
- * To change this template use File | Settings | File Templates.
- */
 public abstract class PsiFragment {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.dupLocator.PsiFragment");
+  private static final Logger LOG = Logger.getInstance(PsiFragment.class);
 
   protected final PsiAnchor[] myElementAnchors;
   private final Language myLanguage;
@@ -52,12 +44,8 @@ public abstract class PsiFragment {
     return doGetLanguageForElement(element);
   }
 
-  protected PsiAnchor createAnchor(final PsiElement element) {
-    return ApplicationManager.getApplication().runReadAction(new Computable<PsiAnchor>() {
-      public PsiAnchor compute() {
-        return PsiAnchor.create(element);
-      }
-    });
+  protected PsiAnchor createAnchor(PsiElement element) {
+    return ReadAction.computeBlocking(() -> PsiAnchor.create(element));
   }
 
   public PsiFragment(List<? extends PsiElement> elements) {
@@ -80,8 +68,7 @@ public abstract class PsiFragment {
                  : null;
   }
 
-  @NotNull
-  private static Language doGetLanguageForElement(@NotNull PsiElement element) {
+  private static @NotNull Language doGetLanguageForElement(@NotNull PsiElement element) {
     final DuplicatesProfile profile = DuplicatesProfile.findProfileForLanguage(element.getLanguage());
     if (profile == null) {
       return element.getLanguage();
@@ -146,8 +133,7 @@ public abstract class PsiFragment {
     return elements;
   }
 
-  @Nullable
-  public PsiFile getFile() {
+  public @Nullable PsiFile getFile() {
     return myElementAnchors.length > 0 ? myElementAnchors[0].getFile() : null;
   }
 
@@ -176,13 +162,12 @@ public abstract class PsiFragment {
     final int fEnd = f.getEndOffset();
 
     return
-      Comparing.equal(f.getFile(), getFile()) && (start <= fStart && end >= fEnd);
+      Comparing.equal(f.getFile(), getFile()) && start <= fStart && end >= fEnd;
   }
 
   public abstract boolean isEqual(PsiElement[] elements, int discardCost);
 
-  @Nullable
-  public UsageInfo getUsageInfo() {
+  public @Nullable UsageInfo getUsageInfo() {
     if (myElementAnchors.length == 1) {
       final PsiElement element = myElementAnchors[0].retrieve();
       if (element == null || !element.isValid()) return null;
@@ -201,6 +186,7 @@ public abstract class PsiFragment {
   }
 
   //debug only
+  @Override
   public String toString() {
     StringBuilder buffer = new StringBuilder();
 
@@ -215,17 +201,17 @@ public abstract class PsiFragment {
     return buffer.toString();
   }
 
+  @Override
   public boolean equals(Object o) {
     if (o == this) return true;
-    if (!(o instanceof PsiFragment)) return false;
-
-    PsiFragment other = ((PsiFragment)o);
+    if (!(o instanceof PsiFragment other)) return false;
 
     return other.getStartOffset() == getStartOffset() &&
            other.getEndOffset() == getEndOffset() &&
            Comparing.equal(other.getFile(), getFile());
   }
 
+  @Override
   public int hashCode() {
     int result = getStartOffset();
     result += 31 * result + getEndOffset();
@@ -254,8 +240,7 @@ public abstract class PsiFragment {
     return myElementAnchors.length > 1;
   }
 
-  @Nullable
-  public Language getLanguage() {
+  public @Nullable Language getLanguage() {
     return myLanguage;
   }
 }

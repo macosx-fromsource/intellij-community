@@ -1,32 +1,26 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.source.resolve.reference.impl.providers;
 
 import com.intellij.codeInsight.daemon.EmptyResolveMessageProvider;
-import com.intellij.codeInsight.daemon.JavaErrorMessages;
+import com.intellij.codeInsight.daemon.JavaErrorBundle;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.psi.*;
+import com.intellij.psi.ElementManipulators;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementResolveResult;
+import com.intellij.psi.PsiPackage;
+import com.intellij.psi.PsiPolyVariantReferenceBase;
+import com.intellij.psi.ResolveResult;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
 
 public class PsiPackageReference extends PsiPolyVariantReferenceBase<PsiElement> implements EmptyResolveMessageProvider {
   private final PackageReferenceSet myReferenceSet;
-  private final int myIndex;
+  protected final int myIndex;
 
   public PsiPackageReference(PackageReferenceSet set, TextRange range, int index) {
     super(set.getElement(), range, set.isSoft());
@@ -34,8 +28,7 @@ public class PsiPackageReference extends PsiPolyVariantReferenceBase<PsiElement>
     myIndex = index;
   }
 
-  @NotNull
-  private Set<PsiPackage> getContext() {
+  protected @NotNull Set<PsiPackage> getContext() {
     if (myIndex == 0) return myReferenceSet.getInitialContext();
     Set<PsiPackage> psiPackages = new HashSet<>();
     for (ResolveResult resolveResult : myReferenceSet.getReference(myIndex - 1).doMultiResolve()) {
@@ -48,30 +41,26 @@ public class PsiPackageReference extends PsiPolyVariantReferenceBase<PsiElement>
   }
 
   @Override
-  @NotNull
-  public Object[] getVariants() {
+  public Object @NotNull [] getVariants() {
     Set<PsiPackage> subPackages = new HashSet<>();
     for (PsiPackage psiPackage : getContext()) {
-      subPackages.addAll(Arrays.asList(psiPackage.getSubPackages(myReferenceSet.getResolveScope())));
+      ContainerUtil.addAll(subPackages, psiPackage.getSubPackages(myReferenceSet.getResolveScope()));
     }
     return subPackages.toArray();
   }
 
-  @NotNull
   @Override
-  public String getUnresolvedMessagePattern() {
+  public @NotNull String getUnresolvedMessagePattern() {
     //noinspection UnresolvedPropertyKey
-    return JavaErrorMessages.message("cannot.resolve.package");
+    return JavaErrorBundle.message("cannot.resolve.package");
   }
 
   @Override
-  @NotNull
-  public ResolveResult[] multiResolve(boolean incompleteCode) {
+  public ResolveResult @NotNull [] multiResolve(boolean incompleteCode) {
     return doMultiResolve();
   }
 
-  @NotNull
-  protected ResolveResult[] doMultiResolve() {
+  protected ResolveResult @NotNull [] doMultiResolve() {
     Collection<PsiPackage> packages = new HashSet<>();
     for (PsiPackage parentPackage : getContext()) {
       packages.addAll(myReferenceSet.resolvePackageName(parentPackage, getValue()));
@@ -86,7 +75,7 @@ public class PsiPackageReference extends PsiPolyVariantReferenceBase<PsiElement>
     }
     TextRange range = new TextRange(getReferenceSet().getReference(0).getRangeInElement().getStartOffset(), getRangeInElement().getEndOffset());
     String newName = ((PsiPackage)element).getQualifiedName();
-    return ElementManipulators.getManipulator(getElement()).handleContentChange(getElement(), range, newName);
+    return ElementManipulators.handleContentChange(getElement(), range, newName);
   }
 
   public PackageReferenceSet getReferenceSet() {

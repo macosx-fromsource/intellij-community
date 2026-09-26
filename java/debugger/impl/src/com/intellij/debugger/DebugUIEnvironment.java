@@ -20,12 +20,8 @@ import com.intellij.execution.ui.RunContentDescriptor;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.Icon;
 
-/**
- * Created by IntelliJ IDEA.
- * User: michael.golubev
- */
 public interface DebugUIEnvironment {
 
   DebugEnvironment getEnvironment();

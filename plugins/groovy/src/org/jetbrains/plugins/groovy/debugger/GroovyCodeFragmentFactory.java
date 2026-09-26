@@ -1,21 +1,7 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.debugger;
 
-import com.intellij.debugger.engine.evaluation.CodeFragmentFactory;
+import com.intellij.debugger.engine.JavaDebuggerCodeFragmentFactory;
 import com.intellij.debugger.engine.evaluation.TextWithImports;
 import com.intellij.debugger.engine.evaluation.expression.EvaluatorBuilder;
 import com.intellij.debugger.engine.evaluation.expression.EvaluatorBuilderImpl;
@@ -25,11 +11,21 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaCodeFragment;
+import com.intellij.psi.JavaCodeFragmentFactory;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementFactory;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiLocalVariable;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiParameter;
 import com.intellij.psi.util.ClassUtil;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.containers.ContainerUtil;
-import gnu.trove.THashMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.GroovyFileType;
@@ -38,9 +34,9 @@ import org.jetbrains.plugins.groovy.debugger.fragments.GroovyCodeFragment;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyRecursiveElementVisitor;
+import org.jetbrains.plugins.groovy.lang.psi.api.GrFunctionalExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrField;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameter;
@@ -49,16 +45,16 @@ import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.imports.GrImportStatem
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrCodeReferenceElement;
 import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.ClosureSyntheticParameter;
 import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.GrBindingVariable;
-import org.jetbrains.plugins.groovy.lang.psi.impl.synthetic.GrLightVariable;
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.regex.Pattern;
 
-/**
- * @author ven
- */
-public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
+public class GroovyCodeFragmentFactory extends JavaDebuggerCodeFragmentFactory {
   private static final String EVAL_NAME = "_JETGROOVY_EVAL_";
   private static final String IMPORTS = "___$$IMPORTS$$___";
   private static final String TEXT = "___$$TEXT$$___";
@@ -73,7 +69,7 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
   }
 
   @Override
-  public JavaCodeFragment createCodeFragment(TextWithImports textWithImports, PsiElement context, Project project) {
+  public JavaCodeFragment createPsiCodeFragmentImpl(TextWithImports textWithImports, PsiElement context, @NotNull Project project) {
     final Pair<Map<String, String>, GroovyFile> pair = externalParameters(textWithImports.getText(), context);
     GroovyFile toEval = pair.second;
     final Map<String, String> parameters = pair.first;
@@ -136,17 +132,20 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
       javaText.append("|clazz = java.lang.Class.forName(\"").append(ClassUtil.getJVMClassName(contextClass)).append("\");\n");
     }
 
-    javaText.append("final java.lang.ClassLoader |parentLoader = |clazz.getClassLoader();\n" +
-                    "   final groovy.lang.GroovyClassLoader |loader = new groovy.lang.GroovyClassLoader(|parentLoader);\n" +
-                    "   final java.lang.Class |c = |loader.parseClass(");
+    javaText.append("""
+                      final java.lang.ClassLoader |parentLoader = |clazz.getClassLoader();
+                         final groovy.lang.GroovyClassLoader |loader = new groovy.lang.GroovyClassLoader(|parentLoader);
+                         final java.lang.Class |c = |loader.parseClass(""");
     javaText.append("\"" + IMPORTS + "class DUMMY").append(" { ").append("public groovy.lang.Closure ")
-      .append(EVAL_NAME).append(" = {").append(TEXT).append("}}\"");
-    javaText.append(", \"DUMMY.groovy\");\n" +
-                    "   int |i;\n" +
-                    "   java.lang.reflect.Field[] |fields = |c.getFields();\n" +
-                    "   for (int |j = 0; |j < |fields.length; |j++) if (|fields[|j].getName().equals(\"_JETGROOVY_EVAL_\")) {|i = |j; break;}\n" +
-                    "   final java.lang.reflect.Field |field = |fields[|i];\n" +
-                    "   final java.lang.Object |closure = |field.get(|c.newInstance());\n");
+      .append(EVAL_NAME).append(" = {\\n").append(TEXT).append("\\n}}\"");
+    javaText.append("""
+                      , "DUMMY.groovy");
+                         int |i;
+                         java.lang.reflect.Field[] |fields = |c.getFields();
+                         for (int |j = 0; |j < |fields.length; |j++) if (|fields[|j].getName().equals("_JETGROOVY_EVAL_")) {|i = |j; break;}
+                         final java.lang.reflect.Field |field = |fields[|i];
+                         final java.lang.Object |closure = |field.get(|c.newInstance());
+                      """);
 
     javaText.append("groovy.lang.ExpandoMetaClass |emc = new groovy.lang.ExpandoMetaClass(|clazz);\n");
     if (!isStatic) {
@@ -185,12 +184,12 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
     return result;
   }
 
-  public static Pair<Map<String, String>, GroovyFile> externalParameters(String text, @NotNull final PsiElement context) {
+  public static Pair<Map<String, String>, GroovyFile> externalParameters(String text, final @NotNull PsiElement context) {
     final GroovyPsiElementFactory factory = GroovyPsiElementFactory.getInstance(context.getProject());
     final GroovyFile toEval = factory.createGroovyFile(text, false, context);
 
-    final GrClosableBlock closure = PsiTreeUtil.getParentOfType(context, GrClosableBlock.class);
-    final Map<String, String> parameters = new THashMap<>();
+    final GrFunctionalExpression functionalExpression = PsiTreeUtil.getParentOfType(context, GrFunctionalExpression.class);
+    final Map<String, String> parameters = new HashMap<>();
     final Map<GrExpression, String> replacements = new HashMap<>();
     toEval.accept(new GroovyRecursiveElementVisitor() {
       @Override
@@ -229,10 +228,10 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
           }
 
           String value;
-          if (closure != null &&
-              PsiTreeUtil.findCommonParent(resolved, closure) != closure &&
+          if (functionalExpression != null &&
+              !PsiTreeUtil.isAncestor(functionalExpression, resolved, false) &&
               !(resolved instanceof ClosureSyntheticParameter)) {
-            // Evaluating inside closure for outer variable definitions
+            // Evaluating inside functionalExpression for outer variable definitions
             // All non-local variables are accessed by references
             value = "this." + name;
           }
@@ -260,12 +259,11 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
 
         if (resolved instanceof PsiMethod) {
           String methodName = ((PsiMethod)resolved).getName();
-          if (closure != null && "getDelegate".equals(methodName) || "call".equals(methodName)) {
-            return true;
-          }
+          return functionalExpression != null &&
+                 ("getDelegate".equals(methodName) || "getOwner".equals(methodName)) || "call".equals(methodName);
         }
 
-        return closure != null && resolved instanceof GrLightVariable && "owner".equals(((GrLightVariable)resolved).getName());
+        return false;
       }
 
       private void replaceWithReference(GrExpression expr, final String exprText) {
@@ -283,7 +281,7 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
               int dotIndex = qName.lastIndexOf(".");
               if (dotIndex < 0) return;
               String packageName = qName.substring(0, dotIndex);
-              refElement.setQualifier(factory.createReferenceElementFromText(packageName));
+              refElement.setQualifier(factory.createCodeReference(packageName));
             }
           }
         }
@@ -301,13 +299,13 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
     GrImportStatement[] imports = toEval.getImportStatements();
     for (int i = imports.length - 1; i >= 0; i--) {
       TextRange range = imports[i].getTextRange();
-      text = text.substring(0, range.getStartOffset()) + text.substring(range.getEndOffset(), text.length());
+      text = text.substring(0, range.getStartOffset()) + text.substring(range.getEndOffset());
     }
     return StringUtil.escapeStringCharacters(text);
   }
 
   @Override
-  public JavaCodeFragment createPresentationCodeFragment(TextWithImports item, PsiElement context, Project project) {
+  protected JavaCodeFragment createPresentationPsiCodeFragmentImpl(@NotNull TextWithImports item, PsiElement context, @NotNull Project project) {
     GroovyCodeFragment result = new GroovyCodeFragment(project, item.getText());
     result.setContext(context);
     return result;
@@ -320,7 +318,7 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
         return ((PsiMember)parent).hasModifierProperty(PsiModifier.STATIC);
       }
       if (parent instanceof GroovyFile && parent.isPhysical()) return false;
-      if (parent instanceof GrClosableBlock) return false;
+      if (parent instanceof GrFunctionalExpression) return false;
 
       parent = parent.getContext();
     }
@@ -337,9 +335,8 @@ public class GroovyCodeFragmentFactory extends CodeFragmentFactory {
     return JavaPsiFacade.getInstance(project).findClass("org.codehaus.groovy.control.CompilationUnit", context.getResolveScope()) != null;
   }
 
-  @NotNull
   @Override
-  public LanguageFileType getFileType() {
+  public @NotNull LanguageFileType getFileType() {
     return GroovyFileType.GROOVY_FILE_TYPE;
   }
 

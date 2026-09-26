@@ -16,6 +16,7 @@
 package com.intellij.lang.ant.dom;
 
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
@@ -23,17 +24,17 @@ import com.intellij.psi.PsiFileSystemItem;
 import com.intellij.util.xml.Attribute;
 import com.intellij.util.xml.Convert;
 import com.intellij.util.xml.GenericAttributeValue;
+import org.jetbrains.annotations.NonNls;
 
 import java.io.IOException;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Aug 6, 2010
  */
 public abstract class AntDomLoadFileTask extends AntDomPropertyDefiningTask {
 
-  private static final Logger LOG = Logger.getInstance("#com.intellij.lang.ant.dom.AntDomLoadFileTask");
-  
+  private static final Logger LOG = Logger.getInstance(AntDomLoadFileTask.class);
+
   private String myCachedText;
 
   @Attribute("srcfile")
@@ -42,11 +43,12 @@ public abstract class AntDomLoadFileTask extends AntDomPropertyDefiningTask {
 
   @Attribute("encoding")
   public abstract GenericAttributeValue<String> getEncoding();
-  
-  protected String calcPropertyValue(String propertyName) {
+
+  @Override
+  protected @NlsSafe String calcPropertyValue(@NonNls String propertyName) {
     String text = myCachedText;
     if (text != null) {
-      return text; 
+      return text;
     }
     final PsiFileSystemItem file = getSrcFile().getValue();
     if (!(file instanceof PsiFile)) {

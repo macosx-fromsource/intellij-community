@@ -1,312 +1,377 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.colors.impl;
 
+import com.intellij.BundleBase;
+import com.intellij.DynamicBundle;
 import com.intellij.application.options.EditorFontsConstants;
 import com.intellij.configurationStore.SerializableScheme;
 import com.intellij.ide.ui.ColorBlindness;
 import com.intellij.ide.ui.UISettings;
-import com.intellij.openapi.application.ex.ApplicationInfoEx;
+import com.intellij.openapi.application.ApplicationInfo;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.HighlighterColors;
-import com.intellij.openapi.editor.colors.*;
+import com.intellij.openapi.editor.colors.ColorKey;
+import com.intellij.openapi.editor.colors.DelegatingFontPreferences;
+import com.intellij.openapi.editor.colors.EditorColorsManager;
+import com.intellij.openapi.editor.colors.EditorColorsScheme;
+import com.intellij.openapi.editor.colors.EditorFontType;
+import com.intellij.openapi.editor.colors.FontPreferences;
+import com.intellij.openapi.editor.colors.ModifiableFontPreferences;
+import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.colors.ex.DefaultColorSchemesManager;
 import com.intellij.openapi.editor.markup.EffectType;
 import com.intellij.openapi.editor.markup.TextAttributes;
-import com.intellij.openapi.options.FontSize;
-import com.intellij.openapi.options.SchemeManager;
+import com.intellij.openapi.options.Scheme;
+import com.intellij.openapi.options.SchemeState;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Couple;
 import com.intellij.openapi.util.InvalidDataException;
-import com.intellij.openapi.util.WriteExternalException;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.Ref;
+import com.intellij.ui.JBColor;
 import com.intellij.util.JdomKt;
 import com.intellij.util.PlatformUtils;
-import com.intellij.util.containers.ContainerUtilRt;
-import com.intellij.util.containers.HashMap;
-import com.intellij.util.ui.JBUI;
-import gnu.trove.THashMap;
+import com.intellij.util.SystemProperties;
 import org.jdom.Element;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.VisibleForTesting;
 
-import java.awt.*;
-import java.text.SimpleDateFormat;
-import java.util.*;
+import java.awt.Color;
+import java.awt.Font;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Properties;
+import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
-import static com.intellij.openapi.editor.colors.CodeInsightColors.*;
-import static com.intellij.openapi.editor.colors.EditorColors.*;
-import static com.intellij.openapi.editor.markup.TextAttributes.USE_INHERITED_MARKER;
-import static com.intellij.openapi.util.Couple.of;
-import static com.intellij.ui.ColorUtil.fromHex;
+@SuppressWarnings("UseJBColor")
+public abstract class AbstractColorsScheme extends EditorFontCacheImpl implements EditorColorsScheme, SerializableScheme {
+  private static final Logger LOG = Logger.getInstance(AbstractColorsScheme.class);
 
-public abstract class AbstractColorsScheme implements EditorColorsScheme, SerializableScheme {
-  private static final int CURR_VERSION = 142;
+  public static final TextAttributes INHERITED_ATTRS_MARKER = new TextAttributes();
+  public static final Color INHERITED_COLOR_MARKER = JBColor.marker("INHERITED_COLOR_MARKER");
+  public static final Color NULL_COLOR_MARKER = JBColor.marker("NULL_COLOR_MARKER");
 
-  private static final FontSize DEFAULT_FONT_SIZE = FontSize.SMALL;
+  public static final int CURR_VERSION = 142;
 
-  protected EditorColorsScheme myParentScheme;
+  @ApiStatus.Internal
+  public static final String ENABLE_RUNTIME_SCHEME_COLOR_WRAPPER_OPTION = "editor.color.scheme.mark.colors";
 
-  protected FontSize myQuickDocFontSize = DEFAULT_FONT_SIZE;
-  protected float myLineSpacing;
+  public static final String NAME_BUNDLE_PROPERTY = "lcNameBundle";
+  public static final String NAME_KEY_PROPERTY = "lcNameKey";
+  public static final @NonNls String NAME_ATTR = "name";
+  public static final @NonNls String META_INFO_PLUGIN_ID = "pluginId";
+  private static final @NonNls String EDITOR_FONT = "font";
+  private static final @NonNls String CONSOLE_FONT = "console-font";
+  private static final @NonNls String EDITOR_FONT_NAME = "EDITOR_FONT_NAME";
+  private static final @NonNls String CONSOLE_FONT_NAME = "CONSOLE_FONT_NAME";
+  private static final @NonNls String SCHEME_ELEMENT = "scheme";
+  private static final @NonNls String VERSION_ATTR = "version";
+  private static final @NonNls String BASE_ATTRIBUTES_ATTR = "baseAttributes";
+  private static final @NonNls String DEFAULT_SCHEME_ATTR = "default_scheme";
+  private static final @NonNls String PARENT_SCHEME_ATTR = "parent_scheme";
+  private static final @NonNls String OPTION_ELEMENT = "option";
+  private static final @NonNls String COLORS_ELEMENT = "colors";
+  private static final @NonNls String ATTRIBUTES_ELEMENT = "attributes";
+  private static final @NonNls String VALUE_ELEMENT = "value";
+  private static final @NonNls String BACKGROUND_COLOR_NAME = "BACKGROUND";
+  private static final @NonNls String LINE_SPACING = "LINE_SPACING";
+  private static final @NonNls String CONSOLE_LINE_SPACING = "CONSOLE_LINE_SPACING";
+  private static final @NonNls String FONT_SCALE = "FONT_SCALE";
+  private static final @NonNls String EDITOR_FONT_SIZE = "EDITOR_FONT_SIZE";
+  private static final @NonNls String CONSOLE_FONT_SIZE = "CONSOLE_FONT_SIZE";
+  private static final @NonNls String EDITOR_LIGATURES = "EDITOR_LIGATURES";
+  private static final @NonNls String CONSOLE_LIGATURES = "CONSOLE_LIGATURES";
+  private static final @NonNls String META_INFO_ELEMENT = "metaInfo";
+  private static final @NonNls String PROPERTY_ELEMENT = "property";
+  private static final @NonNls String PROPERTY_NAME_ATTR = "name";
+  /**
+   * Obsolete: removed since 24.1
+   */
+  private static final @NonNls String META_INFO_CREATION_TIME = "created";
+  /**
+   * Obsolete: removed since 24.1
+   */
+  private static final @NonNls String META_INFO_MODIFIED_TIME = "modified";
+  private static final @NonNls String META_INFO_IDE = "ide";
+  private static final @NonNls String META_INFO_IDE_VERSION = "ideVersion";
+  public static final @NonNls String META_INFO_ORIGINAL = "originalScheme";
+  private static final @NonNls String META_INFO_PARTIAL = "partialSave";
 
-  @NotNull private final Map<EditorFontType, Font> myFonts                  = new EnumMap<>(EditorFontType.class);
-  @NotNull private final FontPreferences           myFontPreferences        = new FontPreferences();
-  @NotNull private final FontPreferences           myConsoleFontPreferences = new FontPreferences();
-
-  private final ValueElementReader myValueReader = new TextAttributesReader();
-  private String myFallbackFontName;
-  private String mySchemeName;
-
-  private float myConsoleLineSpacing = -1;
-  
-  private boolean myIsSaveNeeded;
-  
-  private boolean myCanBeDeleted = true;
-
-  // version influences XML format and triggers migration
-  private int myVersion = CURR_VERSION;
-
-  protected Map<ColorKey, Color>                   myColorsMap     = ContainerUtilRt.newHashMap();
-  protected Map<TextAttributesKey, TextAttributes> myAttributesMap = new THashMap<>();
-
-  @NonNls private static final String EDITOR_FONT       = "font";
-  @NonNls private static final String CONSOLE_FONT      = "console-font";
-  @NonNls private static final String EDITOR_FONT_NAME  = "EDITOR_FONT_NAME";
-  @NonNls private static final String CONSOLE_FONT_NAME = "CONSOLE_FONT_NAME";
-  private                      Color  myDeprecatedBackgroundColor    = null;
-  @NonNls private static final String SCHEME_ELEMENT                 = "scheme";
-  @NonNls public static final  String NAME_ATTR                      = "name";
-  @NonNls private static final String VERSION_ATTR                   = "version";
-  @NonNls private static final String BASE_ATTRIBUTES_ATTR           = "baseAttributes";
-  @NonNls private static final String DEFAULT_SCHEME_ATTR            = "default_scheme";
-  @NonNls private static final String PARENT_SCHEME_ATTR             = "parent_scheme";
-  @NonNls private static final String OPTION_ELEMENT                 = "option";
-  @NonNls private static final String COLORS_ELEMENT                 = "colors";
-  @NonNls private static final String ATTRIBUTES_ELEMENT             = "attributes";
-  @NonNls private static final String VALUE_ELEMENT                  = "value";
-  @NonNls private static final String BACKGROUND_COLOR_NAME          = "BACKGROUND";
-  @NonNls private static final String LINE_SPACING                   = "LINE_SPACING";
-  @NonNls private static final String CONSOLE_LINE_SPACING           = "CONSOLE_LINE_SPACING";
-  @NonNls private static final String EDITOR_FONT_SIZE               = "EDITOR_FONT_SIZE";
-  @NonNls private static final String CONSOLE_FONT_SIZE              = "CONSOLE_FONT_SIZE";
-  @NonNls private static final String EDITOR_LIGATURES               = "EDITOR_LIGATURES";
-  @NonNls private static final String CONSOLE_LIGATURES              = "CONSOLE_LIGATURES";
-  @NonNls private static final String EDITOR_QUICK_JAVADOC_FONT_SIZE = "EDITOR_QUICK_DOC_FONT_SIZE";
-
-
+  private final boolean myMarkColorIds = SystemProperties.getBooleanProperty(ENABLE_RUNTIME_SCHEME_COLOR_WRAPPER_OPTION, false);
+  private final TextAttributesReader myValueReader = new TextAttributesReader();
   //region Meta info-related fields
-  private final Properties myMetaInfo = new Properties();
-  private final static SimpleDateFormat META_INFO_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
-
-  @NonNls private static final String META_INFO_ELEMENT       = "metaInfo";
-  @NonNls private static final String PROPERTY_ELEMENT        = "property";
-  @NonNls private static final String PROPERTY_NAME_ATTR      = "name";
-  
-  @NonNls private static final String META_INFO_CREATION_TIME = "created";
-  @NonNls private static final String META_INFO_MODIFIED_TIME = "modified";
-  @NonNls private static final String META_INFO_IDE           = "ide";
-  @NonNls private static final String META_INFO_IDE_VERSION   = "ideVersion";
-  @NonNls private static final String META_INFO_ORIGINAL      = "originalScheme";
-  
+  private final Properties metaInfo = new Properties();
+  protected EditorColorsScheme parentScheme;
+  Map<ColorKey, Color> colorMap = new HashMap<>();
+  Map<@NonNls String, TextAttributes> attributesMap = new HashMap<>();
+  private @NotNull FontPreferences fontPreferences =
+    new DelegatingFontPreferences(() -> AppEditorFontOptions.getInstance().getFontPreferences());
+  private @NotNull FontPreferences consoleFontPreferences = new DelegatingFontPreferences(() -> fontPreferences);
+  private String schemeName;
+  private boolean canBeDeleted = true;
+  // version influences an XML format and triggers migration
+  private int version = CURR_VERSION;
+  private Color deprecatedBackgroundColor;
   //endregion
 
   protected AbstractColorsScheme(EditorColorsScheme parentScheme) {
-    myParentScheme = parentScheme;
-    myFontPreferences.setChangeListener(() -> initFonts());
+    this.parentScheme = parentScheme;
   }
 
   public AbstractColorsScheme() {
   }
 
   public void setDefaultMetaInfo(@Nullable AbstractColorsScheme parentScheme) {
-    myMetaInfo.setProperty(META_INFO_CREATION_TIME, META_INFO_DATE_FORMAT.format(new Date()));
-    myMetaInfo.setProperty(META_INFO_IDE,           PlatformUtils.getPlatformPrefix());
-    myMetaInfo.setProperty(META_INFO_IDE_VERSION,   ApplicationInfoEx.getInstanceEx().getStrictVersion());
-    if (parentScheme != null && parentScheme != EmptyColorScheme.INSTANCE) {
-      myMetaInfo.setProperty(META_INFO_ORIGINAL, parentScheme.getName());
+    metaInfo.setProperty(META_INFO_IDE, PlatformUtils.getPlatformPrefix());
+    metaInfo.setProperty(META_INFO_IDE_VERSION, ApplicationInfo.getInstance().getStrictVersion());
+    if (parentScheme != null &&
+        parentScheme != EmptyColorScheme.getEmptyScheme() &&
+        !parentScheme.getName().startsWith(EDITABLE_COPY_PREFIX)) {
+      metaInfo.setProperty(META_INFO_ORIGINAL, parentScheme.getName());
+      String pluginId = parentScheme.getMetaProperties().getProperty(META_INFO_PLUGIN_ID);
+      if (pluginId != null) {
+        metaInfo.setProperty(META_INFO_PLUGIN_ID, pluginId);
+      }
     }
   }
 
-  @NotNull
   @Override
-  public Color getDefaultBackground() {
+  public @NotNull Color getDefaultBackground() {
     final Color c = getAttributes(HighlighterColors.TEXT).getBackgroundColor();
     return c != null ? c : Color.white;
   }
 
-  @NotNull
   @Override
-  public Color getDefaultForeground() {
+  public @NotNull Color getDefaultForeground() {
     final Color c = getAttributes(HighlighterColors.TEXT).getForegroundColor();
     return c != null ? c : Color.black;
   }
 
-  @NotNull
   @Override
-  public String getName() {
-    return mySchemeName;
+  public @NotNull String getName() {
+    return schemeName;
   }
 
   @Override
-  public void setFont(EditorFontType key, Font font) {
-    myFonts.put(key, font);
+  public void setName(@NotNull String name) {
+    schemeName = name;
+  }
+
+  @Override
+  public @NotNull String getDisplayName() {
+    if (!isReadOnly()) {
+      EditorColorsScheme original = getOriginal();
+      if (original != null && original.isReadOnly()) {
+        return original.getDisplayName();
+      }
+    }
+
+    String localizedName = getLocalizedName();
+    if (localizedName == null) {
+      //noinspection HardCodedStringLiteral
+      return Scheme.getBaseName(getName());
+    }
+    return localizedName;
+  }
+
+  protected @Nullable @Nls String getLocalizedName() {
+    String bundlePath = getMetaProperties().getProperty(NAME_BUNDLE_PROPERTY);
+    String bundleKey = getMetaProperties().getProperty(NAME_KEY_PROPERTY);
+    if (bundlePath != null && bundleKey != null) {
+      ResourceBundle bundle = DynamicBundle.getResourceBundle(getClass().getClassLoader(), bundlePath);
+      return BundleBase.messageOrDefault(bundle, bundleKey, null);
+    }
+    return null;
   }
 
   @Override
   public abstract Object clone();
 
-  public void copyTo(AbstractColorsScheme newScheme) {
-    myFontPreferences.copyTo(newScheme.myFontPreferences);
-    newScheme.myLineSpacing = myLineSpacing;
-    newScheme.myQuickDocFontSize = myQuickDocFontSize;
-    myConsoleFontPreferences.copyTo(newScheme.myConsoleFontPreferences);
-    newScheme.myConsoleLineSpacing = myConsoleLineSpacing;
+  public void copyTo(@NotNull AbstractColorsScheme newScheme) {
+    boolean noName = newScheme.schemeName == null;
+    boolean consoleDelegating = consoleFontPreferences instanceof DelegatingFontPreferences;
+    boolean editorDelegating = fontPreferences instanceof DelegatingFontPreferences;
 
-    final Set<EditorFontType> types = myFonts.keySet();
-    for (EditorFontType type : types) {
-      Font font = myFonts.get(type);
-      newScheme.setFont(type, font);
+    if (consoleDelegating) {
+      newScheme.setUseEditorFontPreferencesInConsole();
+    }
+    else {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("setConsoleFontPreferences: " + consoleFontPreferences.getFontFamily() + ":" + consoleFontPreferences.getSize(consoleFontPreferences.getFontFamily()));
+      }
+      newScheme.setConsoleFontPreferences(consoleFontPreferences);
+    }
+    if (editorDelegating) {
+      newScheme.setUseAppFontPreferencesInEditor();
+    }
+    else {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("setFontPreferences: " + fontPreferences.getFontFamily() +":"+fontPreferences.getSize(fontPreferences.getFontFamily()));
+      }
+      newScheme.setFontPreferences(fontPreferences);
     }
 
-    newScheme.myAttributesMap = new THashMap<>(myAttributesMap);
-    newScheme.myColorsMap = new HashMap<>(myColorsMap);
-    newScheme.myVersion = myVersion;
+    if (LOG.isDebugEnabled()) {
+      String delegateInfo = ". Delegate info: Console: " + consoleDelegating + " Editor: " + editorDelegating;
+      if (noName) {
+        LOG.debug("Copying scheme " + debugSchemeName() + " to empty newScheme" + delegateInfo);
+      } else {
+        LOG.debug("Copying scheme " + debugSchemeName() + " to " + newScheme.debugSchemeName() + delegateInfo);
+      }
+    }
+
+    newScheme.attributesMap = new HashMap<>(attributesMap);
+    newScheme.colorMap = new HashMap<>(colorMap);
+    newScheme.version = version;
+  }
+
+  public @NotNull Set<ColorKey> getColorKeys() {
+    return colorMap.keySet();
+  }
+
+  /**
+   * Returns attributes defined in this scheme (not inherited from a parent).
+   */
+  public @NotNull Map<@NonNls String, TextAttributes> getDirectlyDefinedAttributes() {
+    return new HashMap<>(attributesMap);
+  }
+
+  /**
+   * Returns colors defined in this scheme (not inherited from a parent).
+   */
+  public @NotNull Map<ColorKey, Color> getDirectlyDefinedColors() {
+    return new HashMap<>(colorMap);
   }
 
   @Override
-  public void setEditorFontName(String fontName) {
-    int editorFontSize = getEditorFontSize();
-    myFontPreferences.clear();
-    myFontPreferences.register(fontName, editorFontSize);
+  public void setUseAppFontPreferencesInEditor() {
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("setUseAppFontPreferencesInEditor in " + debugSchemeName());
+    }
+    fontPreferences = new DelegatingFontPreferences(() -> AppEditorFontOptions.getInstance().getFontPreferences());
     initFonts();
   }
 
   @Override
-  public void setEditorFontSize(int fontSize) {
-    fontSize = EditorFontsConstants.checkAndFixEditorFontSize(fontSize);
-    myFontPreferences.register(getEditorFontName(), fontSize);
-    initFonts();
-  }
-  
-  @Override
-  public void setQuickDocFontSize(@NotNull FontSize fontSize) {
-    if (myQuickDocFontSize != fontSize) {
-      myQuickDocFontSize = fontSize;
-      myIsSaveNeeded = true;
-    }
+  public boolean isUseAppFontPreferencesInEditor() {
+    return fontPreferences instanceof DelegatingFontPreferences;
   }
 
   @Override
-  public void setLineSpacing(float lineSpacing) {
-    myLineSpacing = EditorFontsConstants.checkAndFixEditorLineSpacing(lineSpacing);
+  public boolean isUseLigatures() {
+    return getFontPreferences().useLigatures();
   }
 
   @Override
-  public Font getFont(EditorFontType key) {
-    if (UISettings.getInstance().PRESENTATION_MODE) {
-      final Font font = myFonts.get(key);
-      return new Font(font.getName(), font.getStyle(), UISettings.getInstance().PRESENTATION_MODE_FONT_SIZE);
-    }
-    return myFonts.get(key);
+  public void setUseLigatures(boolean useLigatures) {
+    ensureEditableFontPreferences().setUseLigatures(useLigatures);
   }
 
   @Override
-  public void setName(@NotNull String name) {
-    mySchemeName = name;
+  public @NotNull Font getFont(EditorFontType key) {
+    return fontPreferences instanceof DelegatingFontPreferences ? getInstance().getFont(key) : super.getFont(key);
   }
 
-  @NotNull
   @Override
-  public FontPreferences getFontPreferences() {
-    return myFontPreferences;
+  public @NotNull FontPreferences getFontPreferences() {
+    return fontPreferences;
   }
 
   @Override
   public void setFontPreferences(@NotNull FontPreferences preferences) {
-    preferences.copyTo(myFontPreferences);
+    preferences.copyTo(ensureEditableFontPreferences());
     initFonts();
   }
 
   @Override
-  public String getEditorFontName() {
-    if (myFallbackFontName != null) {
-      return myFallbackFontName;
+  public @NlsSafe String getEditorFontName() {
+    return fontPreferences.getFontFamily();
+  }
+
+  @Override
+  public void setEditorFontName(String fontName) {
+    ModifiableFontPreferences currPreferences = ensureEditableFontPreferences();
+    boolean useLigatures = currPreferences.useLigatures();
+    float editorFontSize = getEditorFontSize2D();
+    if (LOG.isDebugEnabled()) {
+      String message = "setEditorFontName=%s for %s. Current name/size: %s:%.2f".formatted(
+        fontName, debugSchemeName(), currPreferences.getFontFamily(), editorFontSize);
+      Throwable stack = new Throwable(message);
+      LOG.debug(message, stack);
     }
-    return myFontPreferences.getFontFamily();
+    currPreferences.clear();
+    currPreferences.register(fontName, editorFontSize);
+    currPreferences.setUseLigatures(useLigatures);
+    initFonts();
   }
 
   @Override
   public int getEditorFontSize() {
-    return myFontPreferences.getSize(getEditorFontName());
+    return fontPreferences.getSize(fontPreferences.getFontFamily());
   }
 
-  @NotNull
   @Override
-  public FontSize getQuickDocFontSize() {
-    return myQuickDocFontSize;
+  public void setEditorFontSize(int fontSize) {
+    setEditorFontSize((float)fontSize);
   }
-  
+
+  @Override
+  public void setEditorFontSize(float fontSize) {
+    float fixedFontSize = EditorFontsConstants.checkAndFixEditorFontSize(fontSize);
+    if (LOG.isDebugEnabled()) {
+      String message = "setEditorFontSize for %s. %.2f (original: %.2f)".formatted(
+        debugSchemeName(), fixedFontSize, fontSize);
+      Throwable stack = new Throwable(message);
+      LOG.debug(message, stack);
+    }
+    ensureEditableFontPreferences().register(fontPreferences.getFontFamily(), fixedFontSize);
+    initFonts();
+    setSaveNeeded(true);
+  }
+
+  @Override
+  public float getEditorFontSize2D() {
+    return fontPreferences.getSize2D(fontPreferences.getFontFamily());
+  }
+
   @Override
   public float getLineSpacing() {
-    float spacing = myLineSpacing;
-    return spacing <= 0 ? 1.0f : spacing;
+    return fontPreferences.getLineSpacing();
+  }
+
+  @Override
+  public void setLineSpacing(float lineSpacing) {
+    ensureEditableFontPreferences().setLineSpacing(lineSpacing);
   }
 
   protected void initFonts() {
-    String editorFontName = getEditorFontName();
-    int editorFontSize = getEditorFontSize();
-    
-    myFallbackFontName = FontPreferences.getFallbackName(editorFontName, editorFontSize, myParentScheme);
-    if (myFallbackFontName != null) {
-      editorFontName = myFallbackFontName;
-    }
-    Font plainFont = new Font(editorFontName, Font.PLAIN, editorFontSize);
-    Font boldFont = new Font(editorFontName, Font.BOLD, editorFontSize);
-    Font italicFont = new Font(editorFontName, Font.ITALIC, editorFontSize);
-    Font boldItalicFont = new Font(editorFontName, Font.BOLD | Font.ITALIC, editorFontSize);
-
-    myFonts.put(EditorFontType.PLAIN, plainFont);
-    myFonts.put(EditorFontType.BOLD, boldFont);
-    myFonts.put(EditorFontType.ITALIC, italicFont);
-    myFonts.put(EditorFontType.BOLD_ITALIC, boldItalicFont);
-
-    String consoleFontName = getConsoleFontName();
-    int consoleFontSize = getConsoleFontSize();
-
-    Font consolePlainFont = new Font(consoleFontName, Font.PLAIN, consoleFontSize);
-    Font consoleBoldFont = new Font(consoleFontName, Font.BOLD, consoleFontSize);
-    Font consoleItalicFont = new Font(consoleFontName, Font.ITALIC, consoleFontSize);
-    Font consoleBoldItalicFont = new Font(consoleFontName, Font.BOLD | Font.ITALIC, consoleFontSize);
-
-    myFonts.put(EditorFontType.CONSOLE_PLAIN, consolePlainFont);
-    myFonts.put(EditorFontType.CONSOLE_BOLD, consoleBoldFont);
-    myFonts.put(EditorFontType.CONSOLE_ITALIC, consoleItalicFont);
-    myFonts.put(EditorFontType.CONSOLE_BOLD_ITALIC, consoleBoldItalicFont);
+    reset();
   }
 
-  public String toString() {
+  @Override
+  protected EditorColorsScheme getFontCacheScheme() {
+    return this;
+  }
+
+  @Override
+  public @NonNls String toString() {
     return getName();
   }
 
   @Override
   public void readExternal(@NotNull Element parentNode) {
-    UISettings settings = UISettings.getInstance();
-    ColorBlindness blindness = settings == null ? null : settings.COLOR_BLINDNESS;
+    UISettings settings = UISettings.getInstanceOrNull();
+    ColorBlindness blindness = settings == null ? null : settings.getColorBlindness();
     myValueReader.setAttribute(blindness == null ? null : blindness.name());
     if (SCHEME_ELEMENT.equals(parentNode.getName())) {
       readScheme(parentNode);
@@ -322,11 +387,11 @@ public abstract class AbstractColorsScheme implements EditorColorsScheme, Serial
       }
     }
     initFonts();
-    myVersion = CURR_VERSION;
+    version = CURR_VERSION;
   }
 
-  private void readScheme(Element node) {
-    myDeprecatedBackgroundColor = null;
+  private void readScheme(@NotNull Element node) {
+    deprecatedBackgroundColor = null;
     if (!SCHEME_ELEMENT.equals(node.getName())) {
       return;
     }
@@ -337,74 +402,60 @@ public abstract class AbstractColorsScheme implements EditorColorsScheme, Serial
       throw new IllegalStateException("Unsupported color scheme version: " + readVersion);
     }
 
-    myVersion = readVersion;
+    version = readVersion;
     String isDefaultScheme = node.getAttributeValue(DEFAULT_SCHEME_ATTR);
-    boolean isDefault = isDefaultScheme != null && Boolean.parseBoolean(isDefaultScheme);
+    boolean isDefault = Boolean.parseBoolean(isDefaultScheme);
     if (!isDefault) {
-      myParentScheme = getDefaultScheme(node.getAttributeValue(PARENT_SCHEME_ATTR, EmptyColorScheme.NAME));
+      parentScheme = getDefaultScheme(node.getAttributeValue(PARENT_SCHEME_ATTR, EmptyColorScheme.getSchemeName()));
     }
 
-    myMetaInfo.clear();
+    metaInfo.clear();
+    Ref<Float> fontScale = new Ref<>();
+    boolean clearEditorFonts = true;
+    boolean clearConsoleFonts = true;
     for (Element childNode : node.getChildren()) {
       String childName = childNode.getName();
       switch (childName) {
-        case OPTION_ELEMENT:
-          readSettings(childNode, isDefault);
-          break;
-        case EDITOR_FONT:
-          readFontSettings(childNode, myFontPreferences, isDefault);
-          break;
-        case CONSOLE_FONT:
-          readFontSettings(childNode, myConsoleFontPreferences, isDefault);
-          break;
-        case COLORS_ELEMENT:
-          readColors(childNode);
-          break;
-        case ATTRIBUTES_ELEMENT:
-          readAttributes(childNode);
-          break;
-        case META_INFO_ELEMENT:
-          readMetaInfo(childNode);
-          break;
+        case OPTION_ELEMENT -> readSettings(childNode, isDefault, fontScale);
+        case EDITOR_FONT -> {
+          readFontSettings(ensureEditableFontPreferences(), childNode, isDefault, fontScale.get(), clearEditorFonts);
+          clearEditorFonts = false;
+        }
+        case CONSOLE_FONT -> {
+          readFontSettings(ensureEditableConsoleFontPreferences(), childNode, isDefault, fontScale.get(), clearConsoleFonts);
+          clearConsoleFonts = false;
+        }
+        case COLORS_ELEMENT -> readColors(childNode);
+        case ATTRIBUTES_ELEMENT -> readAttributes(childNode);
+        case META_INFO_ELEMENT -> readMetaInfo(childNode);
       }
     }
 
-    if (myDeprecatedBackgroundColor != null) {
-      TextAttributes textAttributes = myAttributesMap.get(HighlighterColors.TEXT);
+    if (deprecatedBackgroundColor != null) {
+      TextAttributes textAttributes = attributesMap.get(HighlighterColors.TEXT.getExternalName());
       if (textAttributes == null) {
-        textAttributes = new TextAttributes(Color.black, myDeprecatedBackgroundColor, null, EffectType.BOXED, Font.PLAIN);
-        myAttributesMap.put(HighlighterColors.TEXT, textAttributes);
+        textAttributes = new TextAttributes(Color.black, deprecatedBackgroundColor, null, EffectType.BOXED, Font.PLAIN);
+        attributesMap.put(HighlighterColors.TEXT.getExternalName(), textAttributes);
       }
       else {
-        textAttributes.setBackgroundColor(myDeprecatedBackgroundColor);
+        textAttributes.setBackgroundColor(deprecatedBackgroundColor);
       }
     }
 
-    if (myConsoleFontPreferences.getEffectiveFontFamilies().isEmpty()) {
-      myFontPreferences.copyTo(myConsoleFontPreferences);
+    if (consoleFontPreferences.getEffectiveFontFamilies().isEmpty()) {
+      fontPreferences.copyTo(consoleFontPreferences);
     }
 
     initFonts();
   }
 
-  @NotNull
-  private static EditorColorsScheme getDefaultScheme(@NotNull String name) {
-    DefaultColorSchemesManager manager = DefaultColorSchemesManager.getInstance();
-    EditorColorsScheme defaultScheme = manager.getScheme(name);
-    if (defaultScheme == null) {
-      defaultScheme = EmptyColorScheme.INSTANCE;
-    }
-    return defaultScheme;
-  }
-  
-  
   private void readMetaInfo(@NotNull Element metaInfoElement) {
-    myMetaInfo.clear();
-    for (Element e: metaInfoElement.getChildren()) {
+    metaInfo.clear();
+    for (Element e : metaInfoElement.getChildren()) {
       if (PROPERTY_ELEMENT.equals(e.getName())) {
         String propertyName = e.getAttributeValue(PROPERTY_NAME_ATTR);
         if (propertyName != null) {
-          myMetaInfo.setProperty(propertyName, e.getText());
+          metaInfo.setProperty(propertyName, e.getText());
         }
       }
     }
@@ -412,123 +463,103 @@ public abstract class AbstractColorsScheme implements EditorColorsScheme, Serial
 
   public void readAttributes(@NotNull Element childNode) {
     for (Element e : childNode.getChildren(OPTION_ELEMENT)) {
+      String keyName = e.getAttributeValue(NAME_ATTR);
       Element valueElement = e.getChild(VALUE_ELEMENT);
-      TextAttributesKey key = TextAttributesKey.find(e.getAttributeValue(NAME_ATTR));
-      if (valueElement == null) {
-        if (e.getAttributeValue(BASE_ATTRIBUTES_ATTR) != null) {
-          myAttributesMap.put(key, USE_INHERITED_MARKER);
-        }
-        continue;
+      TextAttributes attr = valueElement != null ? myValueReader.readAttributes(valueElement, myMarkColorIds ? keyName : null) :
+                            e.getAttributeValue(BASE_ATTRIBUTES_ATTR) != null ? INHERITED_ATTRS_MARKER :
+                            null;
+      if (attr != null) {
+        attributesMap.put(keyName, attr);
       }
-
-      TextAttributes attr = myValueReader.read(TextAttributes.class, valueElement);
-      myAttributesMap.put(key, attr);
-      migrateErrorStripeColorFrom14(key, attr);
     }
   }
 
-  private void migrateErrorStripeColorFrom14(@NotNull TextAttributesKey name, @NotNull TextAttributes attr) {
-    if (myVersion >= 141 || myParentScheme == null) return;
-
-    Couple<Color> m = DEFAULT_STRIPE_COLORS.get(name.getExternalName());
-    if (m != null && Comparing.equal(m.first, attr.getErrorStripeColor())) {
-      attr.setErrorStripeColor(m.second);
-    }
-  }
-
-  @SuppressWarnings("UseJBColor")
-  private static final Map<String, Couple<Color>> DEFAULT_STRIPE_COLORS = new THashMap<String, Couple<Color>>() {
-    {
-      put(ERRORS_ATTRIBUTES.getExternalName(),                        of(Color.red,          fromHex("CF5B56")));
-      put(WARNINGS_ATTRIBUTES.getExternalName(),                      of(Color.yellow,       fromHex("EBC700")));
-      put("EXECUTIONPOINT_ATTRIBUTES",                                of(Color.blue,         fromHex("3763b0")));
-      put(IDENTIFIER_UNDER_CARET_ATTRIBUTES.getExternalName(),        of(fromHex("CCCFFF"),  fromHex("BAA8FF")));
-      put(WRITE_IDENTIFIER_UNDER_CARET_ATTRIBUTES.getExternalName(),  of(fromHex("FFCCE5"),  fromHex("F0ADF0")));
-      put(TEXT_SEARCH_RESULT_ATTRIBUTES.getExternalName(),            of(fromHex("586E75"),  fromHex("71B362")));
-      put(TODO_DEFAULT_ATTRIBUTES.getExternalName(),                  of(fromHex("268BD2"),  fromHex("54AAE3")));
-    }
-  };
-  
-  private void readColors(Element childNode) {
+  public void readColors(@NotNull Element childNode) {
     for (Element colorElement : childNode.getChildren(OPTION_ELEMENT)) {
+      String keyName = colorElement.getAttributeValue(NAME_ATTR);
       Color valueColor = myValueReader.read(Color.class, colorElement);
-      final String colorName = colorElement.getAttributeValue(NAME_ATTR);
-      if (BACKGROUND_COLOR_NAME.equals(colorName)) {
-        // This setting has been deprecated to usages of HighlighterColors.TEXT attributes.
-        myDeprecatedBackgroundColor = valueColor;
+      if (valueColor != null && keyName != null && myMarkColorIds) {
+        valueColor = new ColorKeyColor(valueColor, keyName);
       }
-
-      ColorKey name = ColorKey.find(colorName);
-      myColorsMap.put(name, valueColor);
+      if (valueColor == null && colorElement.getAttributeValue(BASE_ATTRIBUTES_ATTR) != null) {
+        valueColor = INHERITED_COLOR_MARKER;
+      }
+      if (BACKGROUND_COLOR_NAME.equals(keyName)) {
+        // This setting has been deprecated to usages of HighlighterColors.TEXT attributes.
+        deprecatedBackgroundColor = valueColor;
+      }
+      ColorKey name = ColorKey.find(Objects.requireNonNull(keyName));
+      colorMap.put(name, valueColor == null ? NULL_COLOR_MARKER : valueColor);
     }
   }
 
-  private void readSettings(@NotNull Element childNode, boolean isDefault) {
+  private void readSettings(@NotNull Element childNode, boolean isDefault, @NotNull Ref<Float> fontScale) {
     switch (childNode.getAttributeValue(NAME_ATTR)) {
-      case LINE_SPACING: {
+      case FONT_SCALE -> fontScale.set(myValueReader.read(Float.class, childNode));
+      case LINE_SPACING -> {
         Float value = myValueReader.read(Float.class, childNode);
-        if (value != null) myLineSpacing = value;
-        break;
+        if (value != null) setLineSpacing(value);
       }
-      case EDITOR_FONT_SIZE: {
-        int value = readFontSize(childNode, isDefault);
+      case EDITOR_FONT_SIZE -> {
+        float value = readFontSize(childNode, isDefault, fontScale.get());
         if (value > 0) setEditorFontSize(value);
-        break;
       }
-      case EDITOR_FONT_NAME: {
+      case EDITOR_FONT_NAME -> {
         String value = myValueReader.read(String.class, childNode);
         if (value != null) setEditorFontName(value);
-        break;
       }
-      case CONSOLE_LINE_SPACING: {
+      case CONSOLE_LINE_SPACING -> {
         Float value = myValueReader.read(Float.class, childNode);
         if (value != null) setConsoleLineSpacing(value);
-        break;
       }
-      case CONSOLE_FONT_SIZE: {
-        int value = readFontSize(childNode, isDefault);
+      case CONSOLE_FONT_SIZE -> {
+        float value = readFontSize(childNode, isDefault, fontScale.get());
         if (value > 0) setConsoleFontSize(value);
-        break;
       }
-      case CONSOLE_FONT_NAME: {
+      case CONSOLE_FONT_NAME -> {
         String value = myValueReader.read(String.class, childNode);
         if (value != null) setConsoleFontName(value);
-        break;
       }
-      case EDITOR_QUICK_JAVADOC_FONT_SIZE: {
-        FontSize value = myValueReader.read(FontSize.class, childNode);
-        if (value != null) myQuickDocFontSize = value;
-        break;
-      }
-      case EDITOR_LIGATURES: {
+      case EDITOR_LIGATURES -> {
         Boolean value = myValueReader.read(Boolean.class, childNode);
-        if (value != null) myFontPreferences.setUseLigatures(value);
-        break;
+        if (value != null) ensureEditableFontPreferences().setUseLigatures(value);
       }
-      case CONSOLE_LIGATURES: {
+      case CONSOLE_LIGATURES -> {
         Boolean value = myValueReader.read(Boolean.class, childNode);
-        if (value != null) myConsoleFontPreferences.setUseLigatures(value);
-        break;
+        if (value != null) {
+          ensureEditableConsoleFontPreferences().setUseLigatures(value);
+        }
       }
     }
   }
 
-  private int readFontSize(Element element, boolean isDefault) {
-    Integer size = myValueReader.read(Integer.class, element);
-    return size == null ? -1 : !isDefault ? size : JBUI.scaleFontSize(size);
+  private float readFontSize(Element element, boolean isDefault, Float fontScale) {
+    if (isDefault) {
+      return UISettings.getDefFontSize();
+    }
+    // Use integer size for compatibility
+    Integer intSize = myValueReader.read(Integer.class, element);
+    if (intSize == null) {
+      return -1;
+    }
+    return UISettings.restoreFontSize(intSize.floatValue(), fontScale);
   }
 
-  private void readFontSettings(@NotNull Element element, @NotNull FontPreferences preferences, boolean isDefaultScheme) {
-    List children = element.getChildren(OPTION_ELEMENT);
+  private void readFontSettings(@NotNull ModifiableFontPreferences preferences,
+                                @NotNull Element element,
+                                boolean isDefaultScheme,
+                                @Nullable Float fontScale,
+                                boolean clearFonts) {
+    if (clearFonts) preferences.clearFonts();
+    List<Element> children = element.getChildren(OPTION_ELEMENT);
     String fontFamily = null;
-    int size = -1;
-    for (Object child : children) {
-      Element e = (Element)child;
+    float size = -1;
+    for (Element e : children) {
       if (EDITOR_FONT_NAME.equals(e.getAttributeValue(NAME_ATTR))) {
         fontFamily = myValueReader.read(String.class, e);
       }
       else if (EDITOR_FONT_SIZE.equals(e.getAttributeValue(NAME_ATTR))) {
-        size = readFontSize(e, isDefaultScheme);
+        size = readFontSize(e, isDefaultScheme, fontScale);
       }
     }
     if (fontFamily != null && size > 1) {
@@ -541,56 +572,66 @@ public abstract class AbstractColorsScheme implements EditorColorsScheme, Serial
 
   public void writeExternal(Element parentNode) {
     parentNode.setAttribute(NAME_ATTR, getName());
-    parentNode.setAttribute(VERSION_ATTR, Integer.toString(myVersion));
+    parentNode.setAttribute(VERSION_ATTR, Integer.toString(version));
 
-    if (myParentScheme != null && myParentScheme != EmptyColorScheme.INSTANCE) {
-      parentNode.setAttribute(PARENT_SCHEME_ATTR, myParentScheme.getName());
+    /*
+     * FONT_SCALE is used to correctly identify the font size in both the JRE-managed HiDPI mode and
+     * the IDE-managed HiDPI mode: {@link UIUtil#isJreHiDPIEnabled()}. Also, it helps to distinguish
+     * the "hidpi-aware" scheme version from the previous one. Namely, the absence of the FONT_SCALE
+     * attribute in the scheme indicates the previous "hidpi-unaware" scheme and the restored font size
+     * is reset to default. It's assumed this (transition case) happens only once, after which the IDE
+     * will be able to restore the font size according to its scale and the IDE HiDPI mode. The default
+     * FONT_SCALE value should also be written for that reason.
+     */
+    if (!(fontPreferences instanceof DelegatingFontPreferences) || !(consoleFontPreferences instanceof DelegatingFontPreferences)) {
+      // must precede font options
+      JdomKt.addOptionTag(parentNode, FONT_SCALE, String.valueOf(UISettings.getDefFontScale()));
     }
-    
-    if (!myMetaInfo.isEmpty()) {
+
+    if (parentScheme != null && parentScheme != EmptyColorScheme.getEmptyScheme()) {
+      parentNode.setAttribute(PARENT_SCHEME_ATTR, parentScheme.getName());
+    }
+
+    if (!"true".equals(metaInfo.getProperty(META_INFO_PARTIAL)) && !isReadOnly() && getBaseScheme() != parentScheme) {
+      metaInfo.setProperty(META_INFO_PARTIAL, "true");
+    }
+
+    if (!metaInfo.isEmpty()) {
       parentNode.addContent(metaInfoToElement());
     }
 
-    if (getLineSpacing() != 1) {
+    // IJ has used a 'single customizable font' mode for ages. That's why we want to support that format now, when it's possible
+    // to specify a font sequence (see getFontPreferences()), there are big chances that many clients still will use a single font.
+    // That's why we want to use an old format when zero or one font is selected and 'extended' format otherwise.
+    boolean useOldFontFormat = fontPreferences.getEffectiveFontFamilies().size() <= 1;
+    if (!(fontPreferences instanceof DelegatingFontPreferences)) {
       JdomKt.addOptionTag(parentNode, LINE_SPACING, String.valueOf(getLineSpacing()));
+      if (useOldFontFormat) {
+        JdomKt.addOptionTag(parentNode, EDITOR_FONT_SIZE, String.valueOf(getEditorFontSize()));
+        JdomKt.addOptionTag(parentNode, EDITOR_FONT_NAME, fontPreferences.getFontFamily());
+      }
+      else {
+        writeFontPreferences(EDITOR_FONT, parentNode, fontPreferences);
+      }
+      writeLigaturesPreferences(parentNode, fontPreferences, EDITOR_LIGATURES);
     }
 
-    // IJ has used a 'single customizable font' mode for ages. That's why we want to support that format now, when it's possible
-    // to specify fonts sequence (see getFontPreferences()), there are big chances that many clients still will use a single font.
-    // That's why we want to use old format when zero or one font is selected and 'extended' format otherwise.
-    boolean useOldFontFormat = myFontPreferences.getEffectiveFontFamilies().size() <= 1;
-    if (useOldFontFormat) {
-      JdomKt.addOptionTag(parentNode, EDITOR_FONT_SIZE, String.valueOf(getEditorFontSize()));
-    }
-    else {
-      writeFontPreferences(EDITOR_FONT, parentNode, myFontPreferences);
-    }
-    writeLigaturesPreferences(parentNode, myFontPreferences, EDITOR_LIGATURES);
-    
-    if (!myFontPreferences.equals(myConsoleFontPreferences)) {
-      if (myConsoleFontPreferences.getEffectiveFontFamilies().size() <= 1) {
+    if (!(consoleFontPreferences instanceof DelegatingFontPreferences)) {
+      if (consoleFontPreferences.getEffectiveFontFamilies().size() <= 1) {
         JdomKt.addOptionTag(parentNode, CONSOLE_FONT_NAME, getConsoleFontName());
 
         if (getConsoleFontSize() != getEditorFontSize()) {
+          // Write font size as integer for compatibility
           JdomKt.addOptionTag(parentNode, CONSOLE_FONT_SIZE, Integer.toString(getConsoleFontSize()));
         }
       }
       else {
-        writeFontPreferences(CONSOLE_FONT, parentNode, myConsoleFontPreferences);
+        writeFontPreferences(CONSOLE_FONT, parentNode, consoleFontPreferences);
       }
-      writeLigaturesPreferences(parentNode, myConsoleFontPreferences, CONSOLE_LIGATURES);
-    }
-
-    if (getConsoleLineSpacing() != getLineSpacing()) {
-      JdomKt.addOptionTag(parentNode, CONSOLE_LINE_SPACING, Float.toString(getConsoleLineSpacing()));
-    }
-
-    if (DEFAULT_FONT_SIZE != getQuickDocFontSize()) {
-      JdomKt.addOptionTag(parentNode, EDITOR_QUICK_JAVADOC_FONT_SIZE, getQuickDocFontSize().toString());
-    }
-
-    if (useOldFontFormat) {
-      JdomKt.addOptionTag(parentNode, EDITOR_FONT_NAME, getEditorFontName());
+      writeLigaturesPreferences(parentNode, consoleFontPreferences, CONSOLE_LIGATURES);
+      if ((fontPreferences instanceof DelegatingFontPreferences) || getConsoleLineSpacing() != getLineSpacing()) {
+        JdomKt.addOptionTag(parentNode, CONSOLE_LINE_SPACING, Float.toString(getConsoleLineSpacing()));
+      }
     }
 
     Element colorElements = new Element(COLORS_ELEMENT);
@@ -605,8 +646,470 @@ public abstract class AbstractColorsScheme implements EditorColorsScheme, Serial
     if (!attrElements.getChildren().isEmpty()) {
       parentNode.addContent(attrElements);
     }
-    
-    myIsSaveNeeded = false;
+
+    setSaveNeeded(false);
+  }
+
+  private void writeAttributes(@NotNull Element attrElements) {
+    List<Map.Entry<String, TextAttributes>> list = new ArrayList<>(attributesMap.entrySet());
+    list.sort(Map.Entry.comparingByKey());
+    for (Map.Entry<String, TextAttributes> entry : list) {
+      String keyName = entry.getKey();
+      TextAttributes attributes = entry.getValue();
+      writeAttribute(attrElements, TextAttributesKey.find(keyName), attributes);
+    }
+  }
+
+  private void writeAttribute(@NotNull Element attrElements,
+                              @NotNull TextAttributesKey key,
+                              @NotNull TextAttributes attributes) {
+    EditorColorsScheme baseScheme = getBaseScheme();
+    if (attributes == INHERITED_ATTRS_MARKER) {
+      TextAttributesKey baseKey = key.getFallbackAttributeKey();
+      // IDEA-162774 do not store if inheritance = on in the parent scheme
+      TextAttributes parentAttributes = baseScheme instanceof AbstractColorsScheme absScheme ?
+                                        absScheme.getDirectlyDefinedAttributes(key) : null;
+      boolean parentOverwritingInheritance = parentAttributes != null && parentAttributes != INHERITED_ATTRS_MARKER;
+      if (parentOverwritingInheritance) {
+        attrElements.addContent(new Element(OPTION_ELEMENT)
+                                  .setAttribute(NAME_ATTR, key.getExternalName())
+                                  .setAttribute(BASE_ATTRIBUTES_ATTR, baseKey != null ? baseKey.getExternalName() : ""));
+      }
+      return;
+    }
+
+    if (baseScheme != null) {
+      // fallback attributes must be not used, otherwise derived scheme as copy will not have such key
+      TextAttributes parentAttributes = baseScheme instanceof AbstractColorsScheme absScheme
+                                        ? absScheme.getDirectlyDefinedAttributes(key)
+                                        : baseScheme.getAttributes(key);
+      if (attributes.equals(parentAttributes)) {
+        return;
+      }
+    }
+
+    Element valueElement = new Element(VALUE_ELEMENT);
+    attributes.writeExternal(valueElement);
+    attrElements.addContent(new Element(OPTION_ELEMENT).setAttribute(NAME_ATTR, key.getExternalName()).addContent(valueElement));
+  }
+
+  public void optimizeAttributeMap() {
+    EditorColorsScheme parentScheme = this.parentScheme;
+    if (parentScheme == null) {
+      return;
+    }
+
+    attributesMap.entrySet().removeIf(entry -> {
+      String keyName = entry.getKey();
+      TextAttributes attrs = entry.getValue();
+      TextAttributesKey key = TextAttributesKey.find(keyName);
+      if (attrs == INHERITED_ATTRS_MARKER) {
+        return !hasExplicitlyDefinedAttributes(parentScheme, key);
+      }
+      TextAttributes parent = parentScheme instanceof DefaultColorsScheme defaultScheme ?
+                              defaultScheme.getAttributes(key, false) : parentScheme.getAttributes(key);
+      return Comparing.equal(parent, attrs);
+    });
+
+    colorMap.keySet().removeAll(colorMap.keySet().stream().filter(key -> {
+      Color color = colorMap.get(key);
+      if (color == INHERITED_COLOR_MARKER) {
+        return !hasExplicitlyDefinedColors(parentScheme, key);
+      }
+
+      Color parent = parentScheme instanceof DefaultColorsScheme defaultScheme
+                     ? defaultScheme.getColor(key, false)
+                     : parentScheme.getColor(key);
+      return Comparing.equal(parent, color == NULL_COLOR_MARKER ? null : color);
+    }).collect(Collectors.toSet()));
+  }
+
+  private @NotNull Element metaInfoToElement() {
+    Element metaInfoElement = new Element(META_INFO_ELEMENT);
+    List<String> sortedPropertyNames = new ArrayList<>(metaInfo.stringPropertyNames());
+    sortedPropertyNames.sort(null);
+    for (String propertyName : sortedPropertyNames) {
+      String value = metaInfo.getProperty(propertyName);
+      Element propertyInfo = new Element(PROPERTY_ELEMENT);
+      propertyInfo.setAttribute(PROPERTY_NAME_ATTR, propertyName);
+      propertyInfo.setText(value);
+      metaInfoElement.addContent(propertyInfo);
+    }
+    return metaInfoElement;
+  }
+
+  private void writeColors(@NotNull Element colorElements) {
+    List<ColorKey> list = new ArrayList<>(colorMap.keySet());
+    list.sort(null);
+    for (ColorKey key : list) {
+      writeColor(colorElements, key);
+    }
+  }
+
+  private void writeColor(@NotNull Element colorElements, @NotNull ColorKey key) {
+    EditorColorsScheme baseScheme = getBaseScheme();
+    Color color = colorMap.get(key);
+    if (color == INHERITED_COLOR_MARKER) {
+      ColorKey fallbackKey = key.getFallbackColorKey();
+      Color parentFallback = baseScheme instanceof AbstractColorsScheme absScheme ?
+                             absScheme.getDirectlyDefinedColor(key) : null;
+      boolean parentOverwritingInheritance = parentFallback != null && parentFallback != INHERITED_COLOR_MARKER;
+      if (fallbackKey != null && parentOverwritingInheritance) {
+        colorElements.addContent(new Element(OPTION_ELEMENT)
+                                   .setAttribute(NAME_ATTR, key.getExternalName())
+                                   .setAttribute(BASE_ATTRIBUTES_ATTR, fallbackKey.getExternalName()));
+      }
+      return;
+    }
+
+    if (baseScheme != null) {
+      Color parent = baseScheme instanceof AbstractColorsScheme absScheme
+                     ? absScheme.getDirectlyDefinedColor(key)
+                     : baseScheme.getColor(key);
+      if (parent != null && colorsEqual(color, parent)) {
+        return;
+      }
+    }
+
+    String rgb = "";
+    if (color != NULL_COLOR_MARKER) {
+      rgb = String.format("%06X", 0xFFFFFF & color.getRGB());
+      int alpha = 0xFF & color.getAlpha();
+      if (alpha != 0xFF) {
+        rgb += String.format("%02X", alpha);
+      }
+    }
+    JdomKt.addOptionTag(colorElements, key.getExternalName(), rgb);
+  }
+
+  private @Nullable EditorColorsScheme getBaseScheme() {
+    if (schemeName.startsWith(EDITABLE_COPY_PREFIX)) {
+      EditorColorsScheme original = getOriginal();
+      if (original != null) {
+        return original;
+      }
+    }
+    return parentScheme;
+  }
+
+  private ModifiableFontPreferences ensureEditableFontPreferences() {
+    if (fontPreferences instanceof ModifiableFontPreferences modifiable) {
+      return modifiable;
+    }
+    FontPreferencesImpl editableFontPreferences = new FontPreferencesImpl();
+    fontPreferences.copyTo(editableFontPreferences);
+    if (LOG.isDebugEnabled()) {
+      String message = "ensureEditableFontPreferences in %s. %s, size: %d".formatted(
+        debugSchemeName(), editableFontPreferences, editableFontPreferences.getSize(editableFontPreferences.getFontFamily()));
+      Throwable stack = new Throwable(message);
+      LOG.debug(message, stack);
+    }
+    fontPreferences = editableFontPreferences;
+    editableFontPreferences.addChangeListener((_) -> initFonts());
+    return editableFontPreferences;
+  }
+
+  @Override
+  public @NotNull FontPreferences getConsoleFontPreferences() {
+    AppConsoleFontOptions consoleFontOptions = AppConsoleFontOptions.getInstance();
+    return consoleFontOptions.isUseEditorFont() ? consoleFontPreferences : consoleFontOptions.getFontPreferences();
+  }
+
+  @Override
+  public void setConsoleFontPreferences(@NotNull FontPreferences preferences) {
+    preferences.copyTo(ensureEditableConsoleFontPreferences());
+    initFonts();
+  }
+
+  @Override
+  public void setUseEditorFontPreferencesInConsole() {
+    consoleFontPreferences = new DelegatingFontPreferences(() -> fontPreferences);
+    initFonts();
+  }
+
+  @Override
+  public boolean isUseEditorFontPreferencesInConsole() {
+    return consoleFontPreferences instanceof DelegatingFontPreferences;
+  }
+
+  @Override
+  public @NotNull @NlsSafe String getConsoleFontName() {
+    return getConsoleFontPreferences().getFontFamily();
+  }
+
+  @Override
+  public void setConsoleFontName(String fontName) {
+    ModifiableFontPreferences consolePreferences = ensureEditableConsoleFontPreferences();
+    float consoleFontSize = getConsoleFontSize2D();
+    consolePreferences.clear();
+    consolePreferences.register(fontName, consoleFontSize);
+  }
+
+  private ModifiableFontPreferences ensureEditableConsoleFontPreferences() {
+    if (consoleFontPreferences instanceof ModifiableFontPreferences modifiablePreferences) {
+      return modifiablePreferences;
+    }
+    ModifiableFontPreferences editableFontPreferences = new FontPreferencesImpl();
+    consoleFontPreferences.copyTo(editableFontPreferences);
+    consoleFontPreferences = editableFontPreferences;
+    return editableFontPreferences;
+  }
+
+  @Override
+  public int getConsoleFontSize() {
+    return (int)(getConsoleFontSize2D() + 0.5);
+  }
+
+  @Override
+  public void setConsoleFontSize(int fontSize) {
+    setConsoleFontSize((float)fontSize);
+  }
+
+  @Override
+  public void setConsoleFontSize(float fontSize) {
+    ModifiableFontPreferences consoleFontPreferences = ensureEditableConsoleFontPreferences();
+    fontSize = EditorFontsConstants.checkAndFixEditorFontSize(fontSize);
+    consoleFontPreferences.register(getConsoleFontName(), fontSize);
+    initFonts();
+  }
+
+  @Override
+  public float getConsoleFontSize2D() {
+    String font = getConsoleFontName();
+    UISettings uiSettings = UISettings.getInstanceOrNull();
+    if ((uiSettings == null || !uiSettings.getPresentationMode()) && getConsoleFontPreferences().hasSize(font)) {
+      return getConsoleFontPreferences().getSize2D(font);
+    }
+    return getEditorFontSize2D();
+  }
+
+  @Override
+  public float getConsoleLineSpacing() {
+    return getConsoleFontPreferences().getLineSpacing();
+  }
+
+  @Override
+  public void setConsoleLineSpacing(float lineSpacing) {
+    ensureEditableConsoleFontPreferences().setLineSpacing(lineSpacing);
+  }
+
+  protected @Nullable TextAttributes getFallbackAttributes(@NotNull TextAttributesKey fallbackKey) {
+    TextAttributesKey cur = fallbackKey;
+    while (true) {
+      TextAttributes attrs = getDirectlyDefinedAttributes(cur);
+      TextAttributesKey next = cur.getFallbackAttributeKey();
+      if (attrs != null && (attrs != INHERITED_ATTRS_MARKER || next == null)) {
+        return attrs;
+      }
+      if (next == null) return null;
+      cur = next;
+    }
+  }
+
+  protected @Nullable Color getFallbackColor(@NotNull ColorKey fallbackKey) {
+    ColorKey cur = fallbackKey;
+    while (true) {
+      Color color = getDirectlyDefinedColor(cur);
+      if (color == NULL_COLOR_MARKER) return null;
+      ColorKey next = cur.getFallbackColorKey();
+      if (color != null && (color != INHERITED_COLOR_MARKER || next == null)) {
+        return color;
+      }
+      if (next == null) {
+        return null;
+      }
+      cur = next;
+    }
+  }
+
+  /**
+   * Looks for explicitly specified attributes either in the scheme or its parent scheme. No fallback keys are used.
+   *
+   * @param key The key to use for search.
+   * @return Explicitly defined attribute or {@code null} if not found.
+   */
+  public @Nullable TextAttributes getDirectlyDefinedAttributes(@NotNull TextAttributesKey key) {
+    TextAttributes attributes = attributesMap.get(key.getExternalName());
+    if (attributes != null) {
+      return attributes;
+    }
+    return parentScheme instanceof AbstractColorsScheme absScheme ? absScheme.getDirectlyDefinedAttributes(key) : null;
+  }
+
+  /**
+   * Looks for explicitly specified color either in the scheme or its parent scheme. No fallback keys are used.
+   *
+   * @param key The key to use for search.
+   * @return Explicitly defined color or {@code null} if not found.
+   */
+  public @Nullable Color getDirectlyDefinedColor(@NotNull ColorKey key) {
+    Color color = colorMap.get(key);
+    if (color != null) {
+      return color;
+    }
+    return parentScheme instanceof AbstractColorsScheme absScheme ? absScheme.getDirectlyDefinedColor(key) : null;
+  }
+
+  @Override
+  public abstract @NotNull SchemeState getSchemeState();
+
+  public void setSaveNeeded(boolean value) {
+  }
+
+  @Override
+  public @NotNull Properties getMetaProperties() {
+    return metaInfo;
+  }
+
+  public boolean canBeDeleted() {
+    return canBeDeleted;
+  }
+
+  public void setCanBeDeleted(boolean canBeDeleted) {
+    this.canBeDeleted = canBeDeleted;
+  }
+
+  public abstract boolean isVisible();
+
+  @SuppressWarnings("StaticNonFinalField") @VisibleForTesting
+  public static @NotNull Function<String, EditorColorsScheme> getSchemeById = it -> EditorColorsManager.getInstance().getScheme(it);
+
+  public @Nullable AbstractColorsScheme getOriginal() {
+    String originalSchemeName = getMetaProperties().getProperty(META_INFO_ORIGINAL);
+    if (originalSchemeName != null) {
+      EditorColorsScheme originalScheme = getSchemeById.apply(originalSchemeName);
+      if (originalScheme != this && originalScheme instanceof AbstractColorsScheme abs) {
+        return abs;
+      }
+    }
+    return null;
+  }
+
+  public EditorColorsScheme getParentScheme() {
+    return parentScheme;
+  }
+
+  @Override
+  public @NotNull Element writeScheme() {
+    Element root = new Element("scheme");
+    writeExternal(root);
+    return root;
+  }
+
+  public boolean settingsEqual(Object other) {
+    return settingsEqual(other, null);
+  }
+
+  public boolean settingsEqual(Object other, @Nullable Predicate<? super ColorKey> colorKeyFilter) {
+    return settingsEqual(other, colorKeyFilter, false);
+  }
+
+  public boolean settingsEqual(Object other, @Nullable Predicate<? super ColorKey> colorKeyFilter, boolean ignoreMetaInfo) {
+    return settingsEqual(other, colorKeyFilter, false, true);
+  }
+
+  public boolean settingsEqual(Object other, @Nullable Predicate<? super ColorKey> colorKeyFilter, boolean ignoreMetaInfo, boolean useDefaults) {
+    if (!(other instanceof AbstractColorsScheme otherScheme)) {
+      return false;
+    }
+
+    // parent is used only for default schemes (e.g., Darcula bundled in all IDEs (opposite to IDE-specific, like Cobalt))
+    if (getBaseDefaultScheme(this) != getBaseDefaultScheme(otherScheme)) {
+      return false;
+    }
+
+    for (String propertyName : metaInfo.stringPropertyNames()) {
+      if (ignoreMetaInfo ||
+          propertyName.equals(META_INFO_CREATION_TIME) ||
+          propertyName.equals(META_INFO_MODIFIED_TIME) ||
+          propertyName.equals(META_INFO_IDE) ||
+          propertyName.equals(META_INFO_IDE_VERSION) ||
+          propertyName.equals(META_INFO_ORIGINAL)
+      ) {
+        continue;
+      }
+
+      if (!Objects.equals(metaInfo.getProperty(propertyName), otherScheme.metaInfo.getProperty(propertyName))) {
+        return false;
+      }
+    }
+
+    return areDelegatingOrEqual(fontPreferences, otherScheme.getFontPreferences()) &&
+           areDelegatingOrEqual(consoleFontPreferences, otherScheme.getConsoleFontPreferences()) &&
+           attributesEqual(otherScheme, useDefaults) &&
+           colorsEqual(otherScheme, colorKeyFilter);
+  }
+
+  protected boolean attributesEqual(AbstractColorsScheme otherScheme, boolean useDefaults) {
+    return attributesMap.equals(otherScheme.attributesMap);
+  }
+
+  protected boolean colorsEqual(AbstractColorsScheme otherScheme, @Nullable Predicate<? super ColorKey> colorKeyFilter) {
+    if (colorMap.size() != otherScheme.colorMap.size()) return false;
+    for (Map.Entry<ColorKey, Color> entry : colorMap.entrySet()) {
+      Color c1 = entry.getValue();
+      ColorKey key = entry.getKey();
+      Color c2 = otherScheme.colorMap.get(key);
+      if (!colorsEqual(c1, c2)) return false;
+    }
+    return true;
+  }
+
+  public void setParent(@NotNull EditorColorsScheme newParent) {
+    assert newParent.isReadOnly() : "New parent scheme must be read-only";
+    parentScheme = newParent;
+  }
+
+  @ApiStatus.Internal
+  public void resolveParent(@NotNull Function<? super String, ? extends EditorColorsScheme> nameResolver) {
+    if (parentScheme instanceof TemporaryParent temporaryParent) {
+      String parentName = temporaryParent.getParentName();
+      EditorColorsScheme newParent = nameResolver.apply(parentName);
+      if (newParent == null || !newParent.isReadOnly()) {
+        throw new InvalidDataException(parentName);
+      }
+      parentScheme = newParent;
+    }
+    else {
+      String originalSchemeName = getMetaProperties().getProperty(META_INFO_ORIGINAL);
+      String isPartial = getMetaProperties().getProperty(META_INFO_PARTIAL);
+      if (originalSchemeName != null && Boolean.parseBoolean(isPartial)) {
+        EditorColorsScheme original = nameResolver.apply(originalSchemeName);
+        if (original == null) {
+          throw new InvalidDataException(originalSchemeName);
+        }
+      }
+    }
+  }
+
+  @ApiStatus.Internal
+  public void copyMissingAttributes(@NotNull AbstractColorsScheme sourceScheme) {
+    sourceScheme.colorMap.forEach((key, color) -> colorMap.putIfAbsent(key, color));
+    sourceScheme.attributesMap.forEach((key, attributes) -> attributesMap.putIfAbsent(key, attributes));
+  }
+
+  private String debugSchemeName() {
+    try {
+      if (schemeName != null) {
+        return schemeName;
+      }
+      if (parentScheme == null) {
+        return null;
+      }
+      return parentScheme.getName();
+    } catch (Throwable e) {
+      LOG.warn("An exception occurred while trying to get scheme name", e);
+      return "null(e)";
+    }
+  }
+
+  private static @NotNull EditorColorsScheme getDefaultScheme(@NotNull String name) {
+    DefaultColorSchemesManager manager = DefaultColorSchemesManager.getInstance();
+    EditorColorsScheme defaultScheme = manager.getScheme(name);
+    if (defaultScheme == null) {
+      defaultScheme = new TemporaryParent(name);
+    }
+    return defaultScheme;
   }
 
   private static void writeLigaturesPreferences(Element parentNode, FontPreferences preferences, String optionName) {
@@ -619,288 +1122,59 @@ public abstract class AbstractColorsScheme implements EditorColorsScheme, Serial
     for (String fontFamily : preferences.getRealFontFamilies()) {
       Element element = new Element(key);
       JdomKt.addOptionTag(element, EDITOR_FONT_NAME, fontFamily);
+      // Write font size as integer for compatibility
       JdomKt.addOptionTag(element, EDITOR_FONT_SIZE, String.valueOf(preferences.getSize(fontFamily)));
       parent.addContent(element);
     }
   }
 
-  private boolean isParentOverwritingInheritance(@NotNull TextAttributesKey key) {
-    TextAttributes parentAttributes =
-      myParentScheme instanceof AbstractColorsScheme ? ((AbstractColorsScheme)myParentScheme).getDirectlyDefinedAttributes(key) : null;
-    return parentAttributes != null && parentAttributes != USE_INHERITED_MARKER;
+  private static boolean hasExplicitlyDefinedAttributes(@NotNull EditorColorsScheme scheme, @NotNull TextAttributesKey key) {
+    TextAttributes directAttrs = scheme instanceof DefaultColorsScheme defaultScheme ? defaultScheme.getDirectlyDefinedAttributes(key) : null;
+    return directAttrs != null && directAttrs != INHERITED_ATTRS_MARKER;
   }
 
-  private void writeAttributes(@NotNull Element attrElements) throws WriteExternalException {
-    List<TextAttributesKey> list = new ArrayList<>(myAttributesMap.keySet());
-    list.sort(null);
-    for (TextAttributesKey key : list) {
-      TextAttributes attributes = myAttributesMap.get(key);
-      TextAttributesKey baseKey = key.getFallbackAttributeKey();
-      if (attributes == USE_INHERITED_MARKER) {
-        // do not store if  inheritance = on in the parent scheme (https://youtrack.jetbrains.com/issue/IDEA-162774)
-        if (baseKey != null && isParentOverwritingInheritance(key)) {
-          attrElements.addContent(new Element(OPTION_ELEMENT)
-                                    .setAttribute(NAME_ATTR, key.getExternalName())
-                                    .setAttribute(BASE_ATTRIBUTES_ATTR, baseKey.getExternalName()));
-        }
-        continue;
-      }
-
-      if (myParentScheme != null) {
-        // fallback attributes must be not used, otherwise derived scheme as copy will not have such key
-        TextAttributes parentAttributes = myParentScheme instanceof AbstractColorsScheme
-                                          ? ((AbstractColorsScheme)myParentScheme).getDirectlyDefinedAttributes(key)
-                                          : myParentScheme.getAttributes(key);
-        if (parentAttributes != null && attributes.equals(parentAttributes)) {
-          continue;
-        }
-      }
-
-      Element valueElement = new Element(VALUE_ELEMENT);
-      attributes.writeExternal(valueElement);
-      attrElements.addContent(new Element(OPTION_ELEMENT).setAttribute(NAME_ATTR, key.getExternalName()).addContent(valueElement));
-    }
+  private static boolean hasExplicitlyDefinedColors(@NotNull EditorColorsScheme scheme, @NotNull ColorKey key) {
+    Color directColor = scheme instanceof DefaultColorsScheme defaultScheme ? defaultScheme.getDirectlyDefinedColor(key) : null;
+    return directColor != null && directColor != INHERITED_COLOR_MARKER;
   }
 
-  public void optimizeAttributeMap() {
-    EditorColorsScheme parentScheme = myParentScheme;
-    if (parentScheme == null) {
-      return;
-    }
-
-    for (TextAttributesKey key : new ArrayList<>(myAttributesMap.keySet())) {
-      TextAttributes attributes = myAttributesMap.get(key);
-      if (attributes == USE_INHERITED_MARKER) {
-        if (key.getFallbackAttributeKey() == null) {
-          myAttributesMap.remove(key);
-        }
-        continue;
-      }
-
-      TextAttributes parentAttributes = parentScheme instanceof DefaultColorsScheme
-                                        ? ((DefaultColorsScheme)parentScheme).getAttributes(key, false)
-                                        : parentScheme.getAttributes(key);
-      if (Comparing.equal(parentAttributes, attributes)) {
-        myAttributesMap.remove(key);
-      }
-    }
-  }
-  
-  @NotNull
-  private Element metaInfoToElement() {
-    Element metaInfoElement = new Element(META_INFO_ELEMENT);
-    myMetaInfo.setProperty(META_INFO_MODIFIED_TIME, META_INFO_DATE_FORMAT.format(new Date()));
-    List<String> sortedPropertyNames = new ArrayList<>(myMetaInfo.stringPropertyNames());
-    sortedPropertyNames.sort(null);
-    for (String propertyName : sortedPropertyNames) {
-      String value = myMetaInfo.getProperty(propertyName);
-      Element propertyInfo = new Element(PROPERTY_ELEMENT);
-      propertyInfo.setAttribute(PROPERTY_NAME_ATTR, propertyName);
-      propertyInfo.setText(value);
-      metaInfoElement.addContent(propertyInfo);
-    }
-    return metaInfoElement;
-  }
-
-  protected Color getOwnColor(ColorKey key) {
-    return myColorsMap.get(key);
-  }
-
-  private void writeColors(Element colorElements) {
-    List<ColorKey> list = new ArrayList<>(myColorsMap.keySet());
-    list.sort(null);
-    for (ColorKey key : list) {
-      if (haveToWrite(key)) {
-        Color value = myColorsMap.get(key);
-        String value1 = value == null ? "" : Integer.toString(value.getRGB() & 0xFFFFFF, 16);
-        JdomKt.addOptionTag(colorElements, key.getExternalName(), value1);
-      }
-    }
-  }
-
-  private boolean haveToWrite(@NotNull ColorKey key) {
-    Color value = myColorsMap.get(key);
-    if (myParentScheme != null) {
-      if (myParentScheme instanceof AbstractColorsScheme) {
-        if (Comparing.equal(((AbstractColorsScheme)myParentScheme).getOwnColor(key), value) && ((AbstractColorsScheme)myParentScheme).myColorsMap.containsKey(key)) {
-          return false;
-        }
-      }
-      else if (Comparing.equal((myParentScheme).getColor(key), value)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  @NotNull
-  @Override
-  public FontPreferences getConsoleFontPreferences() {
-    return myConsoleFontPreferences;
-  }
-
-  @Override
-  public void setConsoleFontPreferences(@NotNull FontPreferences preferences) {
-    preferences.copyTo(myConsoleFontPreferences);
-    initFonts();
-  }
-
-  @Override
-  public String getConsoleFontName() {
-    return myConsoleFontPreferences.getFontFamily();
-  }
-
-  @Override
-  public void setConsoleFontName(String fontName) {
-    int consoleFontSize = getConsoleFontSize();
-    myConsoleFontPreferences.clear();
-    myConsoleFontPreferences.register(fontName, consoleFontSize);
-  }
-
-  @Override
-  public int getConsoleFontSize() {
-    String font = getConsoleFontName();
-    UISettings uiSettings = UISettings.getInstance();
-    if ((uiSettings == null || !uiSettings.PRESENTATION_MODE) && myConsoleFontPreferences.hasSize(font)) {
-      return myConsoleFontPreferences.getSize(font);
-    }
-    return getEditorFontSize();
-  }
-
-  @Override
-  public void setConsoleFontSize(int fontSize) {
-    fontSize = EditorFontsConstants.checkAndFixEditorFontSize(fontSize);
-    myConsoleFontPreferences.register(getConsoleFontName(), fontSize);
-    initFonts();
-  }
-
-  @Override
-  public float getConsoleLineSpacing() {
-    float consoleLineSpacing = myConsoleLineSpacing;
-    if (consoleLineSpacing == -1) {
-      return getLineSpacing();
-    }
-    return consoleLineSpacing;
-  }
-
-  @Override
-  public void setConsoleLineSpacing(float lineSpacing) {
-    myConsoleLineSpacing = lineSpacing;
-  }
-
-  protected TextAttributes getFallbackAttributes(@NotNull TextAttributesKey fallbackKey) {
-    TextAttributes fallbackAttributes = getDirectlyDefinedAttributes(fallbackKey);
-    TextAttributesKey fallbackKeyFallbackKey = fallbackKey.getFallbackAttributeKey();
-    if (fallbackAttributes != null && (fallbackAttributes != USE_INHERITED_MARKER || fallbackKeyFallbackKey == null)) {
-      return fallbackAttributes;
-    }
-    return fallbackKeyFallbackKey == null ? null : getFallbackAttributes(fallbackKeyFallbackKey);
-  }
-
-  /**
-   * Looks for explicitly specified attributes either in the scheme or its parent scheme. No fallback keys are used.
-   *
-   * @param key The key to use for search.
-   * @return Explicitly defined attribute or <code>null</code> if not found.
-   */
-  @Nullable
-  public TextAttributes getDirectlyDefinedAttributes(@NotNull TextAttributesKey key) {
-    TextAttributes attributes = myAttributesMap.get(key);
-    if (attributes != null) {
-      return attributes;
-    }
-    return myParentScheme instanceof AbstractColorsScheme ? ((AbstractColorsScheme)myParentScheme).getDirectlyDefinedAttributes(key) : null;
-  }
-
-  public boolean isSaveNeeded() {
-    return myIsSaveNeeded;
-  }
-
-  public void setSaveNeeded(boolean isSaveNeeded) {
-    myIsSaveNeeded = isSaveNeeded;
-  }
-  
-  public boolean isReadOnly() { return  false; }
-
-  @NotNull
-  @Override
-  public Properties getMetaProperties() {
-    return myMetaInfo;
-  }
-  
-  public boolean canBeDeleted() {
-    return myCanBeDeleted;
-  }
-  
-  public void setCanBeDeleted(boolean canBeDeleted) {
-    myCanBeDeleted = canBeDeleted;
-  }
-  
-  public boolean isVisible() {
-    return true;
+  protected static boolean colorsEqual(@Nullable Color c1, @Nullable Color c2) {
+    if (c1 == NULL_COLOR_MARKER) return c1 == c2;
+    return Comparing.equal(c1, c2 == NULL_COLOR_MARKER ? null : c2);
   }
 
   public static boolean isVisible(@NotNull EditorColorsScheme scheme) {
-    return !(scheme instanceof AbstractColorsScheme) || ((AbstractColorsScheme)scheme).isVisible();
-  }
-  
-  public static String getDisplayName(@NotNull EditorColorsScheme scheme) {
-    String schemeName = scheme.getName();
-    return 
-      schemeName.startsWith(SchemeManager.EDITABLE_COPY_PREFIX) ?
-      schemeName.substring(SchemeManager.EDITABLE_COPY_PREFIX.length()) :
-      schemeName; 
+    return !(scheme instanceof AbstractColorsScheme absScheme) || absScheme.isVisible();
   }
 
-  @Nullable
-  public AbstractColorsScheme getOriginal() {
-    String originalSchemeName = getMetaProperties().getProperty(META_INFO_ORIGINAL);
-    if (originalSchemeName != null) {
-      EditorColorsScheme originalScheme = EditorColorsManager.getInstance().getScheme(originalSchemeName);
-      if (originalScheme instanceof AbstractColorsScheme) return (AbstractColorsScheme)originalScheme;
+  protected static boolean areDelegatingOrEqual(@NotNull FontPreferences preferences1, @NotNull FontPreferences preferences2) {
+    boolean isDelegating1 = preferences1 instanceof DelegatingFontPreferences;
+    boolean isDelegating2 = preferences2 instanceof DelegatingFontPreferences;
+    return isDelegating1 || isDelegating2 ? isDelegating1 && isDelegating2 : preferences1.equals(preferences2);
+  }
+
+  private static @Nullable EditorColorsScheme getBaseDefaultScheme(@NotNull EditorColorsScheme scheme) {
+    if (!(scheme instanceof AbstractColorsScheme absScheme)) {
+      return null;
     }
-    return null;
+    if (scheme instanceof DefaultColorsScheme) {
+      return scheme;
+    }
+    EditorColorsScheme parent = absScheme.parentScheme;
+    return parent != null ? getBaseDefaultScheme(parent) : null;
   }
 
-  @NotNull
-  @Override
-  public Element writeScheme() {
-    Element root = new Element("scheme");
-    writeExternal(root);
-    return root;
-  }
+  private static class TemporaryParent extends EditorColorsSchemeImpl {
 
-  public boolean isEqualToBundled(AbstractColorsScheme bundledScheme) {
-    // parent is used only for default schemes (e.g. Darcula — bundled in all ide (opposite to IDE-specific, like Cobalt))
-    if (myParentScheme != bundledScheme.myParentScheme && myParentScheme != bundledScheme) {
-      return false;
+    private final String myParentName;
+
+    TemporaryParent(@NotNull String parentName) {
+      super(EmptyColorScheme.getEmptyScheme());
+      myParentName = parentName;
     }
 
-    for (String propertyName : myMetaInfo.stringPropertyNames()) {
-      if (propertyName.equals(META_INFO_CREATION_TIME) ||
-          propertyName.equals(META_INFO_MODIFIED_TIME) ||
-          propertyName.equals(META_INFO_IDE) ||
-          propertyName.equals(META_INFO_IDE_VERSION) ||
-          propertyName.equals(META_INFO_ORIGINAL)
-        ) {
-        continue;
-      }
-
-      if (!Comparing.equal(myMetaInfo.getProperty(propertyName), bundledScheme.myMetaInfo.getProperty(propertyName))) {
-        return false;
-      }
+    public @NonNls String getParentName() {
+      return myParentName;
     }
-
-    return getLineSpacing() == bundledScheme.getLineSpacing() &&
-           getConsoleLineSpacing() == bundledScheme.getConsoleLineSpacing() &&
-           getQuickDocFontSize() == bundledScheme.getQuickDocFontSize() &&
-           myFontPreferences.getRealFontFamilies().equals(bundledScheme.myFontPreferences.getRealFontFamilies()) &&
-           myFontPreferences.useLigatures() == bundledScheme.myFontPreferences.useLigatures() &&
-           myConsoleFontPreferences.useLigatures() == bundledScheme.myConsoleFontPreferences.useLigatures() &&
-           myConsoleFontPreferences.getRealFontFamilies().equals(bundledScheme.myConsoleFontPreferences.getRealFontFamilies()) &&
-           myColorsMap.equals(bundledScheme.myColorsMap) &&
-           myAttributesMap.equals(bundledScheme.myAttributesMap) &&
-           myFontPreferences.equals(bundledScheme.myFontPreferences) &&
-           myConsoleFontPreferences.equals(bundledScheme.myConsoleFontPreferences);
   }
 }

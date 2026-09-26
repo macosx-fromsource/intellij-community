@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.actions.generate.missing;
 
 import com.intellij.codeInsight.generation.ClassMember;
@@ -21,12 +7,11 @@ import com.intellij.codeInsight.generation.GenerationInfo;
 import com.intellij.ide.fileTemplates.FileTemplate;
 import com.intellij.ide.fileTemplates.FileTemplateManager;
 import com.intellij.ide.fileTemplates.JavaTemplateUtil;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.CommonClassNames;
 import com.intellij.psi.PsiClass;
@@ -35,7 +20,7 @@ import com.intellij.psi.PsiParameter;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.plugins.groovy.actions.generate.GroovyCodeInsightBundle;
+import org.jetbrains.plugins.groovy.GroovyBundle;
 import org.jetbrains.plugins.groovy.actions.generate.GroovyGenerationInfo;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyPsiElementFactory;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
@@ -60,9 +45,8 @@ public class GroovyGeneratePropertyMissingHandler extends GenerateMembersHandler
     return ClassMember.EMPTY_ARRAY;
   }
 
-  @NotNull
   @Override
-  protected List<? extends GenerationInfo> generateMemberPrototypes(PsiClass aClass, ClassMember[] members)
+  protected @NotNull List<? extends GenerationInfo> generateMemberPrototypes(PsiClass aClass, ClassMember[] members)
     throws IncorrectOperationException {
 
     final String templName = JavaTemplateUtil.TEMPLATE_FROM_USAGE_METHOD_BODY;
@@ -78,10 +62,9 @@ public class GroovyGeneratePropertyMissingHandler extends GenerateMembersHandler
     return result;
   }
 
-  @Nullable
-  private static GrMethod genGetter(PsiClass aClass, FileTemplate template) {
+  private static @Nullable GrMethod genGetter(PsiClass aClass, FileTemplate template) {
     Properties properties = FileTemplateManager.getInstance(aClass.getProject()).getDefaultProperties();
-    properties.setProperty(FileTemplate.ATTRIBUTE_RETURN_TYPE, "java.lang.Object");
+    properties.setProperty(FileTemplate.ATTRIBUTE_RETURN_TYPE, CommonClassNames.JAVA_LANG_OBJECT);
     properties.setProperty(FileTemplate.ATTRIBUTE_DEFAULT_RETURN_VALUE, "null");
     properties.setProperty(FileTemplate.ATTRIBUTE_CALL_SUPER, "");
     properties.setProperty(FileTemplate.ATTRIBUTE_CLASS_NAME, aClass.getQualifiedName());
@@ -99,8 +82,7 @@ public class GroovyGeneratePropertyMissingHandler extends GenerateMembersHandler
       .createMethodFromText("def propertyMissing(String name) {\n" + bodyText + "\n}");
   }
 
-  @Nullable
-  private static GrMethod genSetter(PsiClass aClass, FileTemplate template) {
+  private static @Nullable GrMethod genSetter(PsiClass aClass, FileTemplate template) {
     Properties properties = FileTemplateManager.getInstance(aClass.getProject()).getDefaultProperties();
     properties.setProperty(FileTemplate.ATTRIBUTE_RETURN_TYPE, "void");
     properties.setProperty(FileTemplate.ATTRIBUTE_DEFAULT_RETURN_VALUE, "");
@@ -127,13 +109,7 @@ public class GroovyGeneratePropertyMissingHandler extends GenerateMembersHandler
   }
 
   @Override
-  public boolean startInWriteAction() {
-    return true;
-  }
-
-  @Nullable
-  @Override
-  protected ClassMember[] chooseOriginalMembers(PsiClass aClass, Project project) {
+  protected ClassMember @Nullable [] chooseOriginalMembers(PsiClass aClass, Project project) {
     final PsiMethod[] missings = aClass.findMethodsByName("propertyMissing", true);
 
     PsiMethod getter = null;
@@ -153,25 +129,22 @@ public class GroovyGeneratePropertyMissingHandler extends GenerateMembersHandler
       }
     }
     if (setter != null && getter != null) {
-      String text = GroovyCodeInsightBundle.message("generate.property.missing.already.defined.warning");
+      String text = GroovyBundle.message("generate.property.missing.already.defined.warning");
 
       if (Messages.showYesNoDialog(project, text,
-                                   GroovyCodeInsightBundle.message("generate.property.missing.already.defined.title"),
+                                   GroovyBundle.message("generate.property.missing.already.defined.title"),
                                    Messages.getQuestionIcon()) == Messages.YES) {
         final PsiMethod finalGetter = getter;
         final PsiMethod finalSetter = setter;
-        if (!ApplicationManager.getApplication().runWriteAction(new Computable<Boolean>() {
-          @Override
-          public Boolean compute() {
-            try {
-              finalSetter.delete();
-              finalGetter.delete();
-              return Boolean.TRUE;
-            }
-            catch (IncorrectOperationException e) {
-              LOG.error(e);
-              return Boolean.FALSE;
-            }
+        if (!WriteAction.compute(() -> {
+          try {
+            finalSetter.delete();
+            finalGetter.delete();
+            return Boolean.TRUE;
+          }
+          catch (IncorrectOperationException e) {
+            LOG.error(e);
+            return Boolean.FALSE;
           }
         }).booleanValue()) {
           return null;
@@ -190,13 +163,12 @@ public class GroovyGeneratePropertyMissingHandler extends GenerateMembersHandler
            parameter.getType().equalsToText(CommonClassNames.JAVA_LANG_OBJECT);
   }
 
-  @Nullable
   @Override
-  protected ClassMember[] chooseMembers(ClassMember[] members,
-                                        boolean allowEmptySelection,
-                                        boolean copyJavadocCheckbox,
-                                        Project project,
-                                        @Nullable Editor editor) {
+  protected ClassMember @Nullable [] chooseMembers(ClassMember[] members,
+                                                   boolean allowEmptySelection,
+                                                   boolean copyJavadocCheckbox,
+                                                   Project project,
+                                                   @Nullable Editor editor) {
     return ClassMember.EMPTY_ARRAY;
   }
 }

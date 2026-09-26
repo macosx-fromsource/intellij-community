@@ -28,15 +28,10 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrCodeBlock;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 08.08.2008
- */
 public class GrMethodBodyFixer extends SmartEnterProcessorWithFixers.Fixer<GroovySmartEnterProcessor> {
   @Override
   public void apply(@NotNull Editor editor, @NotNull GroovySmartEnterProcessor processor, @NotNull PsiElement psiElement) {
-    if (!(psiElement instanceof GrMethod)) return;
-    GrMethod method = (GrMethod) psiElement;
+    if (!(psiElement instanceof GrMethod method)) return;
     final PsiClass aClass = method.getContainingClass();
     if (aClass != null && aClass.isInterface() || method.hasModifierProperty(PsiModifier.ABSTRACT)) return;
     final GrCodeBlock body = method.getBlock();

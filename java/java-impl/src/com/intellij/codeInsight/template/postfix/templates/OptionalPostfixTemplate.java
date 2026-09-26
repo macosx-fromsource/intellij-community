@@ -1,57 +1,73 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.template.postfix.templates;
 
-import com.intellij.codeInsight.template.postfix.util.JavaPostfixTemplatesUtils;
+import com.intellij.codeInsight.Nullability;
+import com.intellij.codeInsight.template.Template;
+import com.intellij.codeInsight.template.impl.TextExpression;
+import com.intellij.codeInsight.template.postfix.templates.editable.JavaEditablePostfixTemplate;
+import com.intellij.codeInsight.template.postfix.templates.editable.JavaPostfixTemplateExpressionCondition;
+import com.intellij.codeInspection.dataFlow.NullabilityUtil;
+import com.intellij.openapi.project.DumbAware;
+import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiExpression;
 import com.intellij.psi.PsiPrimitiveType;
 import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypes;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-import static com.intellij.codeInsight.template.postfix.util.JavaPostfixTemplatesUtils.IS_NON_VOID;
-import static com.intellij.codeInsight.template.postfix.util.JavaPostfixTemplatesUtils.selectorTopmost;
+import java.util.Collections;
 
-public class OptionalPostfixTemplate extends StringBasedPostfixTemplate {
-  public OptionalPostfixTemplate() {
-    super("opt", "Optional.ofNullable(expr)", JavaPostfixTemplatesUtils.atLeastJava8Selector(selectorTopmost(IS_NON_VOID)));
+public class OptionalPostfixTemplate extends JavaEditablePostfixTemplate implements DumbAware {
+  public OptionalPostfixTemplate(@NotNull JavaPostfixTemplateProvider provider) {
+    super("opt",
+          "java.util.$OPTIONAL_CLASS$.$OPTIONAL_METHOD$($EXPR$)",
+          "Optional.ofNullable(expr)",
+          Collections.singleton(new JavaPostfixTemplateExpressionCondition.JavaPostfixTemplateNonVoidExpressionCondition()),
+          LanguageLevel.JDK_1_8, false, provider);
   }
 
-  @Nullable
   @Override
-  public String getTemplateString(@NotNull PsiElement element) {
+  public boolean isBuiltin() {
+    return true;
+  }
+
+
+  @Override
+  public boolean isApplicableForModCommand() {
+    return true;
+  }
+
+
+  @Override
+  protected void addTemplateVariables(@NotNull PsiElement element, @NotNull Template template) {
+    super.addTemplateVariables(element, template);
+    template.addVariable("OPTIONAL_CLASS", new TextExpression(getClassName(element)), false);
+    template.addVariable("OPTIONAL_METHOD", new TextExpression(getMethodName(element)), false);
+  }
+
+  private static String getMethodName(@NotNull PsiElement element) {
+    if (element instanceof PsiExpression && Nullability.NOT_NULL == NullabilityUtil.getExpressionNullability((PsiExpression)element, true)) {
+      return "of";
+    }
+    return "ofNullable";
+  }
+
+  private static @NotNull String getClassName(@NotNull PsiElement element) {
     String className = "Optional";
-    String methodName = "ofNullable";
-    
-    if (element instanceof PsiExpression) {
-      PsiType type = ((PsiExpression)element).getType();
-      if (type instanceof PsiPrimitiveType) {
-        if (PsiType.INT.equals(type)) {
-          className = "OptionalInt";
-        }
-        else if (PsiType.DOUBLE.equals(type)) {
-          className = "OptionalDouble";
-        }
-        else if (PsiType.LONG.equals(type)) {
-          className = "OptionalLong";
-        }
-        methodName = "of";
+
+    PsiType type = element instanceof PsiExpression ? ((PsiExpression)element).getType() : null;
+    if (type instanceof PsiPrimitiveType) {
+      if (PsiTypes.intType().equals(type)) {
+        className = "OptionalInt";
+      }
+      else if (PsiTypes.doubleType().equals(type)) {
+        className = "OptionalDouble";
+      }
+      else if (PsiTypes.longType().equals(type)) {
+        className = "OptionalLong";
       }
     }
-    return "java.util." + className + "." + methodName + "($expr$)";
+    return className;
   }
 }

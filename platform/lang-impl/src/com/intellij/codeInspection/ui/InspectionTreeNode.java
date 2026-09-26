@@ -1,157 +1,144 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInspection.ui;
 
 import com.intellij.codeHighlighting.HighlightDisplayLevel;
 import com.intellij.codeInspection.reference.RefEntity;
-import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.vcs.FileStatus;
-import com.intellij.util.containers.FactoryMap;
-import com.intellij.util.ui.tree.TreeUtil;
+import com.intellij.lang.annotation.HighlightSeverity;
+import com.intellij.util.containers.BidirectionalMap;
+import com.intellij.util.containers.HashingStrategy;
+import com.intellij.util.containers.Interner;
+import com.intellij.util.containers.WeakInterner;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import javax.swing.tree.DefaultMutableTreeNode;
-import javax.swing.tree.MutableTreeNode;
+import javax.swing.Icon;
 import javax.swing.tree.TreeNode;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.List;
 
 /**
- * @author max
+ * Represents nodes of the {@link InspectionTree}.
+ *
+ * <ul>
+ *   <li>Nodes for sorting:</li>
+ *     <ul>
+ *       <li>{@link InspectionRootNode}</li>
+ *       <li>{@link InspectionPackageNode}</li>
+ *       <li>{@link InspectionModuleNode}</li>
+ *       <li>{@link InspectionSeverityGroupNode}</li>
+ *       <li>{@link InspectionGroupNode} for <b>Editor | Inspections</b> categories</li>
+ *     </ul>
+ *   <li>Nodes for inspection tools:</li>
+ *     <ul>
+ *       <li> {@link InspectionNode}</li>
+ *     </ul>
+ *   <li>Nodes for problems:</li>
+ *     <ul>
+ *       <li>{@link SuppressableInspectionTreeNode}</li>
+ *       <ul>
+ *         <li>{@link RefElementNode} for the element concerned by the problem</li>
+ *         <li>{@link ProblemDescriptionNode} for the description of the problem</li>
+ *         <li>{@link com.intellij.codeInspection.offlineViewer.OfflineProblemDescriptorNode}</li>
+ *       </ul>
+ *     </ul>
+ * </ul>
  */
-public abstract class InspectionTreeNode extends DefaultMutableTreeNode {
-  protected volatile InspectionTreeUpdater myUpdater;
-  protected InspectionTreeNode  (Object userObject) {
-    super(userObject);
+public abstract class InspectionTreeNode implements TreeNode {
+  private static final Interner<LevelAndCount[]> LEVEL_AND_COUNT_INTERNER = new WeakInterner<>(new HashingStrategy<>() {
+    @Override
+    public int hashCode(LevelAndCount[] object) {
+      return Arrays.hashCode(object);
+    }
+
+    @Override
+    public boolean equals(LevelAndCount[] o1, LevelAndCount[] o2) {
+      return Arrays.equals(o1, o2);
+    }
+  });
+
+  final ProblemLevels myProblemLevels = new ProblemLevels();
+  volatile @Nullable Children myChildren;
+  final InspectionTreeNode myParent;
+
+  protected InspectionTreeNode(InspectionTreeNode parent) {
+    myParent = parent;
   }
 
-  @Nullable
-  public Icon getIcon(boolean expanded) {
+  protected boolean doesNeedInternProblemLevels() {
+    return false;
+  }
+
+  public @Nullable Icon getIcon(boolean expanded) {
     return null;
   }
 
-  public void visitProblemSeverities(FactoryMap<HighlightDisplayLevel, Integer> counter) {
-    Enumeration enumeration = children();
-    while (enumeration.hasMoreElements()) {
-      InspectionTreeNode child = (InspectionTreeNode)enumeration.nextElement();
-      child.visitProblemSeverities(counter);
+  LevelAndCount @NotNull [] getProblemLevels() {
+    return myProblemLevels.getValue();
+  }
+
+  void dropProblemCountCaches() {
+    InspectionTreeNode current = this;
+    while (current != null) {
+      current.myProblemLevels.drop();
+      current = current.getParent();
     }
   }
 
-  public int getProblemCount(boolean allowSuppressed) {
-    int sum = 0;
-    Enumeration enumeration = children();
-    while (enumeration.hasMoreElements()) {
-      InspectionTreeNode child = (InspectionTreeNode)enumeration.nextElement();
-      sum += child.getProblemCount(allowSuppressed);
+  protected void visitProblemSeverities(@NotNull Object2IntMap<HighlightDisplayLevel> counter) {
+    for (InspectionTreeNode child : getChildren()) {
+      for (LevelAndCount levelAndCount : child.getProblemLevels()) {
+        counter.mergeInt(levelAndCount.getLevel(), levelAndCount.getCount(), Math::addExact);
+      }
     }
-    return sum;
   }
 
   public boolean isValid() {
     return true;
   }
 
-  public boolean isExcluded(ExcludedInspectionTreeNodesManager excludedManager) {
-    return excludedManager.isExcluded(this);
+  public boolean isExcluded() {
+    List<? extends InspectionTreeNode> children = getChildren();
+    for (InspectionTreeNode child : children) {
+      if (!child.isExcluded()) {
+        return false;
+      }
+    }
+
+    return !children.isEmpty() ;
   }
 
   public boolean appearsBold() {
     return false;
   }
 
-  @Nullable
-  public String getCustomizedTailText() {
+  public @Nullable @Nls(capitalization = Nls.Capitalization.Sentence) String getTailText() {
     return null;
   }
 
-  public FileStatus getNodeStatus() {
-    return FileStatus.NOT_CHANGED;
-  }
-
-  public void excludeElement(ExcludedInspectionTreeNodesManager excludedManager) {
-    excludedManager.exclude(this);
-    Enumeration enumeration = children();
-    while (enumeration.hasMoreElements()) {
-      InspectionTreeNode child = (InspectionTreeNode)enumeration.nextElement();
-      child.excludeElement(excludedManager);
+  public void excludeElement() {
+    for (InspectionTreeNode child : getChildren()) {
+      child.excludeElement();
     }
+    dropProblemCountCaches();
   }
 
-  public void amnestyElement(ExcludedInspectionTreeNodesManager excludedManager) {
-    excludedManager.amnesty(this);
-    Enumeration enumeration = children();
-    while (enumeration.hasMoreElements()) {
-      InspectionTreeNode child = (InspectionTreeNode)enumeration.nextElement();
-      child.amnestyElement(excludedManager);
+  public void amnestyElement() {
+    for (InspectionTreeNode child : getChildren()) {
+      child.amnestyElement();
     }
-  }
-
-  public InspectionTreeNode insertByOrder(InspectionTreeNode child, boolean allowDuplication) {
-    return ReadAction.compute(() -> {
-      if (!allowDuplication) {
-        int index = getIndex(child);
-        if (index != -1) {
-          return (InspectionTreeNode)getChildAt(index);
-        }
-      }
-      int index = TreeUtil.indexedBinarySearch(this, child, InspectionResultsViewComparator.getInstance());
-      if (!allowDuplication && index >= 0){
-        return (InspectionTreeNode)getChildAt(index);
-      }
-      insert(child, Math.abs(index + 1));
-      return child;
-    });
-  }
-
-  @Override
-  public void add(MutableTreeNode newChild) {
-    super.add(newChild);
-    if (myUpdater != null) {
-      ((InspectionTreeNode)newChild).propagateUpdater(myUpdater);
-      myUpdater.updateWithPreviewPanel(this);
-    }
-  }
-
-  @Override
-  public void insert(MutableTreeNode newChild, int childIndex) {
-    super.insert(newChild, childIndex);
-    if (myUpdater != null) {
-      ((InspectionTreeNode)newChild).propagateUpdater(myUpdater);
-      myUpdater.updateWithPreviewPanel(this);
-    }
-  }
-
-  private void propagateUpdater(InspectionTreeUpdater updater) {
-    if (myUpdater != null) return;
-    myUpdater = updater;
-    Enumeration enumeration = children();
-    while (enumeration.hasMoreElements()) {
-      InspectionTreeNode child = (InspectionTreeNode)enumeration.nextElement();
-      child.propagateUpdater(updater);
-    }
+    dropProblemCountCaches();
   }
 
   public RefEntity getContainingFileLocalEntity() {
-    final Enumeration children = children();
     RefEntity current = null;
-    while (children.hasMoreElements()) {
-      InspectionTreeNode child = (InspectionTreeNode)children.nextElement();
-      final RefEntity entity = child.getContainingFileLocalEntity();
+    for (InspectionTreeNode child : getChildren()) {
+      RefEntity entity = child.getContainingFileLocalEntity();
       if (entity == null || current != null) {
         return null;
       }
@@ -161,12 +148,91 @@ public abstract class InspectionTreeNode extends DefaultMutableTreeNode {
   }
 
   @Override
-  public synchronized TreeNode getParent() {
-    return super.getParent();
+  public boolean isLeaf() {
+    return getChildren().isEmpty();
+  }
+
+  public abstract @Nls String getPresentableText();
+
+  public @NotNull List<? extends InspectionTreeNode> getChildren() {
+    Children children = myChildren;
+    return children == null ? Collections.emptyList() : List.of(children.myChildren);
   }
 
   @Override
-  public synchronized void setParent(MutableTreeNode newParent) {
-    super.setParent(newParent);
+  public InspectionTreeNode getParent() {
+    return myParent;
+  }
+
+  @Override
+  public int getChildCount() {
+    return getChildren().size();
+  }
+
+  @Override
+  public InspectionTreeNode getChildAt(int idx) {
+    return getChildren().get(idx);
+  }
+
+  @Override
+  public int getIndex(TreeNode node) {
+    return Collections.binarySearch(getChildren(), (InspectionTreeNode)node, InspectionResultsViewComparator.INSTANCE);
+  }
+
+  @Override
+  public boolean getAllowsChildren() {
+    return true;
+  }
+
+  @Override
+  public Enumeration<? extends TreeNode> children() {
+    return Collections.enumeration(getChildren());
+  }
+
+  @Override
+  public String toString() {
+    return getPresentableText();
+  }
+
+  static final class Children {
+    private static final InspectionTreeNode[] EMPTY_ARRAY = new InspectionTreeNode[0];
+
+    volatile InspectionTreeNode[] myChildren = EMPTY_ARRAY;
+    final BidirectionalMap<Object, InspectionTreeNode> myUserObject2Node = new BidirectionalMap<>();
+
+    void clear() {
+      myChildren = EMPTY_ARRAY;
+      myUserObject2Node.clear();
+    }
+  }
+
+  final class ProblemLevels {
+    private volatile LevelAndCount[] myLevels;
+
+    private LevelAndCount @NotNull [] compute() {
+      Object2IntMap<HighlightDisplayLevel> counter=new Object2IntOpenHashMap<>();
+      visitProblemSeverities(counter);
+      LevelAndCount[] arr = new LevelAndCount[counter.size()];
+      int i = 0;
+      for (Object2IntMap.Entry<HighlightDisplayLevel> entry : counter.object2IntEntrySet()) {
+        arr[i++] = new LevelAndCount(entry.getKey(), entry.getIntValue());
+      }
+      Comparator<LevelAndCount> comparator =
+        Comparator.<LevelAndCount, HighlightSeverity>comparing(levelAndCount -> levelAndCount.getLevel().getSeverity()).reversed();
+      Arrays.sort(arr, comparator);
+      return doesNeedInternProblemLevels() ? LEVEL_AND_COUNT_INTERNER.intern(arr) : arr;
+    }
+
+    public LevelAndCount @NotNull [] getValue() {
+      LevelAndCount[] result = myLevels;
+      if (result == null) {
+        myLevels = result = compute();
+      }
+      return result;
+    }
+
+    public void drop() {
+      myLevels = null;
+    }
   }
 }

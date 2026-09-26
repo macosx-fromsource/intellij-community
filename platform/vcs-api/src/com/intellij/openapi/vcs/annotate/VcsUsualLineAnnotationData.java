@@ -17,11 +17,6 @@ package com.intellij.openapi.vcs.annotate;
 
 import com.intellij.openapi.vcs.history.VcsRevisionNumber;
 
-/**
- * @author irengrig
- *         Date: 3/10/11
- *         Time: 4:14 PM
- */
 public class VcsUsualLineAnnotationData implements VcsLineAnnotationData {
   private final VcsRevisionNumber[] myData;
 
@@ -29,6 +24,7 @@ public class VcsUsualLineAnnotationData implements VcsLineAnnotationData {
     myData = new VcsRevisionNumber[size];
   }
 
+  @Override
   public void put(final int lineNumber, final VcsRevisionNumber revisionNumber) {
     assert lineNumber >= 0 && myData.length > lineNumber;
     myData[lineNumber] = revisionNumber;

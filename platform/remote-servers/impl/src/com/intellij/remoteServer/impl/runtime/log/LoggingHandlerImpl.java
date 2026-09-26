@@ -1,27 +1,40 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.remoteServer.impl.runtime.log;
 
 import com.intellij.execution.filters.BrowserHyperlinkInfo;
 import com.intellij.execution.filters.HyperlinkInfo;
+import com.intellij.execution.filters.TextConsoleBuilder;
 import com.intellij.execution.filters.TextConsoleBuilderFactory;
+import com.intellij.execution.process.AnsiEscapeDecoder;
 import com.intellij.execution.process.ProcessHandler;
+import com.intellij.execution.process.ProcessOutputTypes;
 import com.intellij.execution.ui.ConsoleView;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.Key;
 import com.intellij.remoteServer.runtime.log.LoggingHandler;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.JComponent;
 
-/**
- * @author nik
- */
 public class LoggingHandlerImpl extends LoggingHandlerBase implements LoggingHandler {
   private final ConsoleView myConsole;
+  private boolean myClosed = false;
 
   public LoggingHandlerImpl(String presentableName, @NotNull Project project) {
+    this(presentableName, project, false);
+  }
+
+  public LoggingHandlerImpl(String presentableName, @NotNull Project project, boolean isViewer) {
     super(presentableName);
-    myConsole = TextConsoleBuilderFactory.getInstance().createBuilder(project).getConsole();
+
+    final TextConsoleBuilder builder = TextConsoleBuilderFactory.getInstance().createBuilder(project);
+
+    builder.setViewer(isViewer);
+
+    myConsole = builder.getConsole();
+
     Disposer.register(this, myConsole);
   }
 
@@ -30,14 +43,17 @@ public class LoggingHandlerImpl extends LoggingHandlerBase implements LoggingHan
     return myConsole.getComponent();
   }
 
-  @NotNull
-  public ConsoleView getConsole() {
+  public @NotNull ConsoleView getConsole() {
     return myConsole;
   }
 
   @Override
   public void print(@NotNull String s) {
-    myConsole.print(s, ConsoleViewContentType.NORMAL_OUTPUT);
+    printText(s, ConsoleViewContentType.NORMAL_OUTPUT);
+  }
+
+  protected void printText(@NotNull String text, @NotNull ConsoleViewContentType contentType) {
+    myConsole.print(text, contentType);
   }
 
   @Override
@@ -51,12 +67,17 @@ public class LoggingHandlerImpl extends LoggingHandlerBase implements LoggingHan
   }
 
   public void printlnSystemMessage(@NotNull String s) {
-    myConsole.print(s + "\n", ConsoleViewContentType.SYSTEM_OUTPUT);
+    printText(s + "\n", ConsoleViewContentType.SYSTEM_OUTPUT);
   }
 
   @Override
   public void attachToProcess(@NotNull ProcessHandler handler) {
     myConsole.attachToProcess(handler);
+  }
+
+  @Override
+  public void scrollTo(int offset) {
+    myConsole.scrollTo(offset);
   }
 
   @Override
@@ -66,6 +87,33 @@ public class LoggingHandlerImpl extends LoggingHandlerBase implements LoggingHan
 
   @Override
   public boolean isClosed() {
-    return false;
+    return myClosed;
+  }
+
+  @Override
+  public void close() {
+    myClosed = true;
+  }
+
+  public static class Colored extends LoggingHandlerImpl {
+
+    private final AnsiEscapeDecoder myAnsiEscapeDecoder = new AnsiEscapeDecoder();
+
+    public Colored(String presentableName, @NotNull Project project) {
+      super(presentableName, project);
+    }
+
+    public Colored(String presentableName, @NotNull Project project, boolean isViewer) {
+      super(presentableName, project, isViewer);
+    }
+
+    @Override
+    public void print(@NotNull String s) {
+      myAnsiEscapeDecoder.escapeText(s, ProcessOutputTypes.STDOUT, this::printTextWithOutputKey);
+    }
+
+    private void printTextWithOutputKey(@NotNull String text, Key outputType) {
+      printText(text, ConsoleViewContentType.getConsoleViewType(outputType));
+    }
   }
 }

@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 /*
  * @author max
@@ -20,18 +6,17 @@
 package com.intellij.psi.impl.source.codeStyle;
 
 import com.intellij.lang.ASTNode;
-import com.intellij.openapi.fileTypes.FileType;
-import com.intellij.openapi.project.Project;
 import com.intellij.psi.JavaTokenType;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.impl.source.tree.CompositeElement;
 import com.intellij.psi.impl.source.tree.JavaElementType;
 import com.intellij.psi.impl.source.tree.TreeUtil;
+import org.jetbrains.annotations.NotNull;
 
-public class JavaIndentHelper extends IndentHelperImpl {
+public final class JavaIndentHelper extends IndentHelperImpl {
   @Override
-  protected int getIndentInner(Project project,
-                               FileType fileType,
-                               final ASTNode element,
+  protected int getIndentInner(@NotNull PsiFile file,
+                               final @NotNull ASTNode element,
                                final boolean includeNonSpace,
                                final int recursionLevel) {
     if (recursionLevel > TOO_BIG_WALK_THRESHOLD) return 0;
@@ -42,7 +27,7 @@ public class JavaIndentHelper extends IndentHelperImpl {
         ASTNode lastCompositePrev = prev;
         prev = prev.getLastChildNode();
         if (prev == null) { // element.prev is "empty composite"
-          return getIndentInner(project, fileType, lastCompositePrev, includeNonSpace, recursionLevel + 1);
+          return getIndentInner(file, lastCompositePrev, includeNonSpace, recursionLevel + 1);
         }
       }
 
@@ -50,11 +35,11 @@ public class JavaIndentHelper extends IndentHelperImpl {
       int index = Math.max(text.lastIndexOf('\n'), text.lastIndexOf('\r'));
 
       if (index >= 0) {
-        return getIndent(project, fileType, text.substring(index + 1), includeNonSpace);
+        return getIndent(file, text.substring(index + 1), includeNonSpace);
       }
 
       if (includeNonSpace) {
-        return getIndentInner(project, fileType, prev, includeNonSpace, recursionLevel + 1) + getIndent(project, fileType, text, includeNonSpace);
+        return getIndentInner(file, prev, true, recursionLevel + 1) + getIndent(file, text, true);
       }
 
       if (element.getElementType() == JavaElementType.CODE_BLOCK) {
@@ -65,12 +50,12 @@ public class JavaIndentHelper extends IndentHelperImpl {
         if (parent.getElementType() != JavaElementType.CODE_BLOCK) {
           //Q: use some "anchor" part of parent for some elements?
           // e.g. for method it could be declaration start, not doc-comment
-          return getIndentInner(project, fileType, parent, includeNonSpace, recursionLevel + 1);
+          return getIndentInner(file, parent, false, recursionLevel + 1);
         }
       }
       else {
         if (element.getElementType() == JavaTokenType.LBRACE) {
-          return getIndentInner(project, fileType, element.getTreeParent(), includeNonSpace, recursionLevel + 1);
+          return getIndentInner(file, element.getTreeParent(), false, recursionLevel + 1);
         }
       }
       //Q: any other cases?
@@ -84,21 +69,21 @@ public class JavaIndentHelper extends IndentHelperImpl {
       }
 
       if (parent == null) {
-        return getIndent(project, fileType, text, includeNonSpace);
+        return getIndent(file, text, false);
       }
       else {
         if (prev.getTreeParent().getElementType() == JavaElementType.LABELED_STATEMENT) {
-          return getIndentInner(project, fileType, prev, true, recursionLevel + 1) + getIndent(project, fileType, text, true);
+          return getIndentInner(file, prev, true, recursionLevel + 1) + getIndent(file, text, true);
         }
         else
-          return getIndentInner(project, fileType, prev, includeNonSpace, recursionLevel + 1);
+          return getIndentInner(file, prev, false, recursionLevel + 1);
       }
     }
     else {
       if (element.getTreeParent() == null) {
         return 0;
       }
-      return getIndentInner(project, fileType, element.getTreeParent(), includeNonSpace, recursionLevel + 1);
+      return getIndentInner(file, element.getTreeParent(), includeNonSpace, recursionLevel + 1);
     }
   }
 }

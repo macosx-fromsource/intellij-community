@@ -1,44 +1,25 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * Created by IntelliJ IDEA.
- * User: Maxim.Mossienko
- * Date: Sep 8, 2006
- * Time: 3:40:30 PM
- */
 package com.intellij.codeInsight;
 
 import com.intellij.codeInsight.daemon.quickFix.LightQuickFixTestCase;
 import com.intellij.ide.DataManager;
 import com.intellij.openapi.editor.actionSystem.EditorActionManager;
 import com.intellij.testFramework.IdeaTestUtil;
+import com.intellij.testFramework.PerformanceUnitTest;
 import com.intellij.testFramework.PlatformTestUtil;
+import com.intellij.tools.ide.metrics.benchmark.Benchmark;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Set;
 
 /**
- * @by Maxim.Mossienko
+ * @author Maxim.Mossienko
  */
+@PerformanceUnitTest
 public class XmlPerformanceTest extends LightQuickFixTestCase {
-  private final Set<String> ourTestsWithFolding = new HashSet<>(Arrays.asList("IndentUnindent2"));
+  private static final Set<String> ourTestsWithFolding = Set.of("IndentUnindent2");
 
   @Override
   protected String getBasePath() {
@@ -56,11 +37,11 @@ public class XmlPerformanceTest extends LightQuickFixTestCase {
     Class clazz = IdeaTestUtil.class;
   }
 
-  public void testIndentUnindent() throws Exception {
+  public void testIndentUnindent() {
     doIndentTest(2000);
   }
 
-  public void testIndentUnindent2() throws Exception {
+  public void testIndentUnindent2() {
     doIndentTest(2001);
   }
 
@@ -72,15 +53,17 @@ public class XmlPerformanceTest extends LightQuickFixTestCase {
   private void doIndentTest(int time) {
     configureByFile(getBasePath() + getTestName(false)+".xml");
     doHighlighting();
-    myEditor.getSelectionModel().setSelection(0,myEditor.getDocument().getTextLength());
+    getEditor().getSelectionModel().setSelection(0, getEditor().getDocument().getTextLength());
 
-    PlatformTestUtil.startPerformanceTest("Fix long indent/unindent "+time, time, () -> {
-      EditorActionManager.getInstance().getActionHandler("EditorIndentSelection").execute(myEditor, DataManager.getInstance().getDataContext());
+    Benchmark.newBenchmark("indent/unindent " + time, () -> {
+      EditorActionManager.getInstance().getActionHandler("EditorIndentSelection").execute(getEditor(), null,
+                                                                                          DataManager.getInstance().getDataContext());
 
-      EditorActionManager.getInstance().getActionHandler("EditorUnindentSelection").execute(myEditor, DataManager.getInstance().getDataContext());
-    }).cpuBound().useLegacyScaling().assertTiming();
-    final int startOffset = myEditor.getCaretModel().getOffset();
-    myEditor.getSelectionModel().setSelection(startOffset,startOffset);
+      EditorActionManager.getInstance().getActionHandler("EditorUnindentSelection").execute(getEditor(), null,
+                                                                                            DataManager.getInstance().getDataContext());
+    }).start();
+    final int startOffset = getEditor().getCaretModel().getOffset();
+    getEditor().getSelectionModel().setSelection(startOffset, startOffset);
     checkResultByFile(getBasePath() + getTestName(false)+".xml");
   }
 }

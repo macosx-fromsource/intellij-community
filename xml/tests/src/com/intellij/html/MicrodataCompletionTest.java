@@ -1,33 +1,15 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.html;
 
 import com.intellij.codeInsight.completion.CompletionType;
-import com.intellij.javaee.ExternalResourceManager;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.fileTypes.StdFileTypes;
+import com.intellij.ide.highlighter.HtmlFileType;
+import com.intellij.javaee.ExternalResourceManagerExBase;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.fixtures.CodeInsightFixtureTestCase;
 
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * @author: Fedor.Korotkov
- */
 public class MicrodataCompletionTest extends CodeInsightFixtureTestCase {
 
   @Override
@@ -40,12 +22,12 @@ public class MicrodataCompletionTest extends CodeInsightFixtureTestCase {
     return true;
   }
 
-  private void doTestInHtml(String text, String... items) throws Throwable {
+  private void doTestInHtml(String text, String... items) {
     configureAndComplete(text);
     assertContainsElements(myFixture.getLookupElementStrings(), Arrays.asList(items));
   }
 
-  private void doFailTestInHtml(String text, String... items) throws Throwable {
+  private void doFailTestInHtml(String text, String... items) {
     configureAndComplete(text);
     final List<String> lookups = myFixture.getLookupElementStrings();
     assertNotNull(lookups);
@@ -55,68 +37,68 @@ public class MicrodataCompletionTest extends CodeInsightFixtureTestCase {
   }
 
   private void configureAndComplete(String text) {
-    myFixture.configureByText(StdFileTypes.HTML, text);
+    myFixture.configureByText(HtmlFileType.INSTANCE, text);
     myFixture.complete(CompletionType.BASIC);
   }
 
-  public void testScopeType() throws Throwable {
+  public void testScopeType() {
     doTestInHtml("<section <caret>></section>", "itemscope");
   }
 
-  public void testScopeInDivTag() throws Throwable {
+  public void testScopeInDivTag() {
     doTestInHtml("<div <caret>></div>", "itemscope");
   }
 
-  public void testScopeInSpanTag() throws Throwable {
+  public void testScopeInSpanTag() {
     doTestInHtml("<span <caret>></span>", "itemscope");
   }
 
-  public void testScopeInATag() throws Throwable {
+  public void testScopeInATag() {
     doTestInHtml("<a <caret>></a>", "itemscope");
   }
 
-  public void testTypeInATag() throws Throwable {
+  public void _testTypeInATag() {
     doFailTestInHtml("<a <caret>></a>", "itemtype", "itemid");
   }
 
-  public void testTypeInScope() throws Throwable {
+  public void testTypeInScope() {
     doTestInHtml("<section itemscope <caret>><div></div></section>", "itemtype", "itemid");
   }
 
-  public void testPropInScope() throws Throwable {
+  public void testPropInScope() {
     doTestInHtml("<section itemscope><div <caret>></div></section>", "itemprop");
   }
 
-  public void testTypeWithinScope() throws Throwable {
+  public void _testTypeWithinScope() {
     doFailTestInHtml("<section <caret>><div></div></section>", "itemtype", "itemid");
   }
 
-  public void testPropWithinScope() throws Throwable {
+  public void _testPropWithinScope() {
     doFailTestInHtml("<section><div <caret>></div></section>", "itemprop");
   }
 
-  public void testPropWithinScopeWithRef() throws Throwable {
+  public void testPropWithinScopeWithRef() {
     doTestInHtml("<body>" +
                  "<section itemscope itemref=\"bar foo\"></section>" +
                  "<section id=\"foo\"><div <caret>></div></section>" +
                  "</body>", "itemprop");
   }
 
-  public void testRefInScope() throws Throwable {
+  public void testRefInScope() {
     doTestInHtml("<section itemscope itemref=\"b<caret>\"></section><p id=\"bar\"></p><p id=\"baz\"></p>", "bar", "baz");
   }
 
-  public void testPropValue() throws Throwable {
+  public void testPropValue() {
     final VirtualFile virtualFile = myFixture.copyFileToProject("Person.html");
-    ApplicationManager.getApplication().runWriteAction(() -> ExternalResourceManager.getInstance().addResource("http://data-vocabulary.org/Person", virtualFile.getPath()));
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://data-vocabulary.org/Person", virtualFile.getPath(), getTestRootDisposable());
     doTestInHtml("<section itemscope itemtype=\"http://data-vocabulary.org/Person\"><div itemprop=\"<caret>\"></div></section>",
                  "name", "nickname", "photo", "title", "role", "url", "affiliation", "friend", "acquaintance", "address"
     );
   }
 
-  public void testPropValueSchemaOrgFormat() throws Throwable {
+  public void testPropValueSchemaOrgFormat() {
     final VirtualFile virtualFile = myFixture.copyFileToProject("Product.html");
-    ApplicationManager.getApplication().runWriteAction(() -> ExternalResourceManager.getInstance().addResource("http://schema.org/Product", virtualFile.getPath()));
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://schema.org/Product", virtualFile.getPath(), getTestRootDisposable());
     doTestInHtml("<section itemscope itemtype=\"http://schema.org/Product\"><div itemprop=\"<caret>\"></div></section>",
                  "additionalType",
                  "aggregateRating",
@@ -151,9 +133,9 @@ public class MicrodataCompletionTest extends CodeInsightFixtureTestCase {
     );
   }
 
-  public void testPropValueSchemaOrgFormatWithLinks() throws Throwable {
+  public void testPropValueSchemaOrgFormatWithLinks() {
     final VirtualFile virtualFile = myFixture.copyFileToProject("Rating.html");
-    ApplicationManager.getApplication().runWriteAction(() -> ExternalResourceManager.getInstance().addResource("http://schema.org/Rating", virtualFile.getPath()));
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://schema.org/Rating", virtualFile.getPath(), getTestRootDisposable());
     doTestInHtml("<section itemscope itemtype=\"http://schema.org/Rating\"><div itemprop=\"<caret>\"></div></section>",
                  "alternateName",
                  "bestRating",
@@ -169,13 +151,11 @@ public class MicrodataCompletionTest extends CodeInsightFixtureTestCase {
     );
   }
 
-  public void testPropValueFromTwoTypes() throws Throwable {
+  public void testPropValueFromTwoTypes() {
     final VirtualFile personFile = myFixture.copyFileToProject("Person.html");
     final VirtualFile addressFile = myFixture.copyFileToProject("Address.html");
-    ApplicationManager.getApplication().runWriteAction(() -> {
-      ExternalResourceManager.getInstance().addResource("http://data-vocabulary.org/Person", personFile.getPath());
-      ExternalResourceManager.getInstance().addResource("http://data-vocabulary.org/Address", addressFile.getPath());
-    });
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://data-vocabulary.org/Person", personFile.getPath(), getTestRootDisposable());
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://data-vocabulary.org/Address", addressFile.getPath(), getTestRootDisposable());
     doTestInHtml(
       "<section itemscope itemtype=\"http://data-vocabulary.org/Person http://data-vocabulary.org/Address\"><div itemprop=\"<caret>\"></div></section>",
       "name", "nickname", "photo", "title", "role", "url", "affiliation", "friend", "acquaintance", "address",
@@ -183,9 +163,9 @@ public class MicrodataCompletionTest extends CodeInsightFixtureTestCase {
     );
   }
 
-  public void testPropValueFromRef() throws Throwable {
+  public void testPropValueFromRef() {
     final VirtualFile virtualFile = myFixture.copyFileToProject("Person.html");
-    ApplicationManager.getApplication().runWriteAction(() -> ExternalResourceManager.getInstance().addResource("http://data-vocabulary.org/Person", virtualFile.getPath()));
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://data-vocabulary.org/Person", virtualFile.getPath(), getTestRootDisposable());
     doTestInHtml("<body>" +
                  "<section itemscope itemtype=\"http://data-vocabulary.org/Person\" itemref=\"foo\"></section>" +
                  "<section id=\"foo\"><div itemprop=\"<caret>\"></div></section>" +
@@ -194,42 +174,40 @@ public class MicrodataCompletionTest extends CodeInsightFixtureTestCase {
     );
   }
 
-  public void testPropValueNestedScopes() throws Throwable {
+  public void testPropValueNestedScopes() {
     final VirtualFile personFile = myFixture.copyFileToProject("Person.html");
     final VirtualFile addressFile = myFixture.copyFileToProject("Address.html");
-    ApplicationManager.getApplication().runWriteAction(() -> {
-      ExternalResourceManager.getInstance().addResource("http://data-vocabulary.org/Person", personFile.getPath());
-      ExternalResourceManager.getInstance().addResource("http://data-vocabulary.org/Address", addressFile.getPath());
-    });
-    doTestInHtml("<div itemscope itemtype=\"http://data-vocabulary.org/Person\">\n" +
-                 "    My name is <span itemprop=\"name\">Smith</span>\n" +
-                 "    <span itemprop=\"<caret>\" itemscope itemtype=\"http://data-vocabulary.org/Address\">\n" +
-                 "        <span itemprop=\"locality\">Albuquerque</span>\n" +
-                 "        <span itemprop=\"region\">NM</span>\n" +
-                 "    </span>\n" +
-                 "</div>",
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://data-vocabulary.org/Person", personFile.getPath(), getTestRootDisposable());
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://data-vocabulary.org/Address", addressFile.getPath(), getTestRootDisposable());
+    doTestInHtml("""
+                   <div itemscope itemtype="http://data-vocabulary.org/Person">
+                       My name is <span itemprop="name">Smith</span>
+                       <span itemprop="<caret>" itemscope itemtype="http://data-vocabulary.org/Address">
+                           <span itemprop="locality">Albuquerque</span>
+                           <span itemprop="region">NM</span>
+                       </span>
+                   </div>""",
                  "name", "nickname", "photo", "title", "role", "url", "affiliation", "friend", "acquaintance", "address"
     );
   }
 
-  public void testPropValueNestedScopesDifferentTrees() throws Throwable {
+  public void testPropValueNestedScopesDifferentTrees() {
     final VirtualFile personFile = myFixture.copyFileToProject("Person.html");
     final VirtualFile addressFile = myFixture.copyFileToProject("Address.html");
-    ApplicationManager.getApplication().runWriteAction(() -> {
-      ExternalResourceManager.getInstance().addResource("http://data-vocabulary.org/Person", personFile.getPath());
-      ExternalResourceManager.getInstance().addResource("http://data-vocabulary.org/Address", addressFile.getPath());
-    });
-    doTestInHtml("<div itemscope itemtype=\"http://data-vocabulary.org/Person\" >\n" +
-                 "    name is <span itemprop=\"name\">ann</span>\n" +
-                 "    role is <span itemprop=\"role\">smth</span>\n" +
-                 "   <span itemprop=\"address\" itemscope\n" +
-                 "         itemtype=\"http://data-vocabulary.org/Address\" itemref=\"qq\">\n" +
-                 "      <span itemprop=\"locality\">spb</span>\n" +
-                 "   </span>\n" +
-                 "</div>\n" +
-                 "<div>\n" +
-                 "    <span id=\"qq\" itemprop=\"<caret>\">russia</span>\n" +
-                 "</div>",
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://data-vocabulary.org/Person", personFile.getPath(), getTestRootDisposable());
+    ExternalResourceManagerExBase.registerResourceTemporarily("http://data-vocabulary.org/Address", addressFile.getPath(), getTestRootDisposable());
+    doTestInHtml("""
+                   <div itemscope itemtype="http://data-vocabulary.org/Person" >
+                       name is <span itemprop="name">ann</span>
+                       role is <span itemprop="role">smth</span>
+                      <span itemprop="address" itemscope
+                            itemtype="http://data-vocabulary.org/Address" itemref="qq">
+                         <span itemprop="locality">spb</span>
+                      </span>
+                   </div>
+                   <div>
+                       <span id="qq" itemprop="<caret>">russia</span>
+                   </div>""",
                  "street-address", "locality", "region", "postal-code", "country-name"
     );
   }

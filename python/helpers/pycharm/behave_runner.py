@@ -7,27 +7,144 @@ Each feature could be file, folder with feature files or folder with "features" 
 Other args are tag expressionsin format (--tags=.. --tags=..).
 See https://pythonhosted.org/behave/behave.html#tag-expression
 """
+
 import functools
 import glob
+import re
 import sys
-import os
 import traceback
-
 from behave.formatter.base import Formatter
 from behave.model import Step, ScenarioOutline, Feature, Scenario
+from behave.formatter import _registry
 from behave.tag_expression import TagExpression
-import re
-
+from behave.step_registry import registry as the_step_registry
+from _jb_django_behave import run_as_django_behave
 import _bdd_utils
-from distutils import version
-from behave import __version__ as behave_version
+import tcmessages
 from _jb_utils import VersionAgnosticUtils
+
 _MAX_STEPS_SEARCH_FEATURES = 5000  # Do not look for features in folder that has more that this number of children
 _FEATURES_FOLDER = 'features'  # "features" folder name.
+try:
+    # Python 3.3+
+    from importlib.machinery import EXTENSION_SUFFIXES as _EXTENSION_SUFFIXES
+    _EXT_SUFFIXES = tuple(_EXTENSION_SUFFIXES)  # .pyd, .so, ABI-tagged variants
+except ImportError:
+    # Python 2.7 fallback: imp.get_suffixes() yields (suffix, mode, type) tuples
+    import imp
+    _EXT_SUFFIXES = tuple(s for s, _, t in imp.get_suffixes() if t == imp.C_EXTENSION)
 
 __author__ = 'Ilya.Kazakevich'
 
 from behave import configuration, runner
+
+import os
+
+
+def _step_definition_files(step_registry):
+    """
+    Collects absolute paths of files that registered step definitions.
+
+    :param step_registry behave step registry to inspect
+    :return: set of absolute file paths
+    :rtype: set
+    """
+    files = set()
+    for matchers in step_registry.steps.values():
+        for matcher in matchers:
+            path = None
+            # "location" is a lazy property on behave 1.2.6 and a cached one on 1.3.x
+            location = getattr(matcher, 'location', None)
+            if location is not None:
+                path = getattr(location, 'filename', None)
+            if path is None:
+                # Fall back to the step function itself if the matcher has no location
+                func = getattr(matcher, 'func', None)
+                code = getattr(func, '__code__', None) or getattr(func, 'func_code', None)
+                path = getattr(code, 'co_filename', None)
+            if path:
+                files.add(os.path.normcase(os.path.abspath(path)))
+    return files
+
+
+def _may_be_reimported(module):
+    """
+    Checks that a module can be safely removed from sys.modules and imported again.
+
+    Extension modules must not: their initializers register types in process-global
+    registries, so a second import raises "type X is already registered" (PY-89290).
+    Modules without a file (builtin, frozen, namespace) can't be reexecuted either.
+
+    :param module module to check
+    :return: true if the module may be reimported
+    """
+    path = getattr(module, '__file__', None)
+    if not path:
+        return False
+    return not path.endswith(_EXT_SUFFIXES)
+
+
+def _modules_to_reimport(old_modules, step_files):
+    """
+    Picks modules imported during the dry run that have to be imported again.
+
+    Only modules that registered steps qualify: everything else the dry run
+    happened to import must be imported exactly once per process. A module is
+    taken together with its descendants, and the whole subtree is skipped unless
+    every part of it may be reimported -- dropping a package while keeping one of
+    its already imported children leaves the package desynchronized, so the
+    reimported parent no longer exposes that child as an attribute (PY-91210).
+
+    :param old_modules sys.modules snapshot taken before the dry run
+    :type old_modules dict
+    :param step_files absolute paths of files that registered steps
+    :type step_files set
+    :return: set of module names
+    :rtype: set
+    """
+    result = set()
+    for (name, module) in list(sys.modules.items()):
+        if name in old_modules or module is None:
+            continue
+        path = getattr(module, '__file__', None)
+        if not path:
+            continue
+        if path.endswith('.pyc'):  # Python 2
+            path = path[:-1]
+        if os.path.normcase(os.path.abspath(path)) not in step_files:
+            continue
+        subtree = [name]
+        prefix = name + '.'
+        for (child_name, child) in list(sys.modules.items()):
+            if child_name.startswith(prefix) and child_name not in old_modules and child is not None:
+                subtree.append(child_name)
+        if all(_may_be_reimported(sys.modules[module_name]) for module_name in subtree):
+            result.update(subtree)
+    return result
+
+
+def _drop_modules(module_names):
+    """
+    Removes modules from sys.modules so that the next import reexecutes them.
+
+    A submodule is also unbound from its package: "from package import module" is
+    served from the "module" attribute of an already imported "package" without
+    consulting sys.modules at all, so dropping the submodule alone changes nothing.
+
+    :param module_names names of modules to drop
+    """
+    # Children first, so that a package is still around when its children are unbound
+    for name in sorted(module_names, reverse=True):
+        module = sys.modules.pop(name, None)
+        (package_name, _, attribute) = name.rpartition('.')
+        if not package_name:
+            continue
+        package = sys.modules.get(package_name)
+        if package is not None and getattr(package, attribute, None) is module:
+            try:
+                delattr(package, attribute)
+            except AttributeError:
+                pass
 
 
 def _get_dirs_to_run(base_dir_to_search):
@@ -74,7 +191,7 @@ class _RunnerWrapper(runner.Runner):
         """
         :type config configuration.Configuration
         :param config behave configuration
-        :type hooks dict
+        :type hooks dict or empty if new runner mode
         :param hooks hooks in format "before_scenario" => f(context, scenario) to load after/before hooks, provided by user
         """
         super(_RunnerWrapper, self).__init__(config)
@@ -118,13 +235,18 @@ class _RunnerWrapper(runner.Runner):
         self.dry_run = False
         self.hooks.clear()
         self.features = []
+        if self.step_registry is None:
+            if hasattr(the_step_registry, 'clear'):
+                the_step_registry.clear()
+        else:
+            if hasattr(self.step_registry, 'clear'):
+                self.step_registry.clear()
 
 
 class _BehaveRunner(_bdd_utils.BddRunner):
     """
     BddRunner for behave
     """
-
 
     def __process_hook(self, is_started, context, element):
         """
@@ -152,7 +274,7 @@ class _BehaveRunner(_bdd_utils.BddRunner):
                 error_message = element.error_message
                 fetch_log = not error_message  # If no error_message provided, need to fetch log manually
                 trace = ""
-                if isinstance(element.exception, AssertionError):
+                if isinstance(element.exception, AssertionError) or not error_message:
                     trace = self._collect_trace(element, utils)
 
                 # May be empty https://github.com/behave/behave/issues/468 for some exceptions
@@ -168,7 +290,12 @@ class _BehaveRunner(_bdd_utils.BddRunner):
                     error_message = element.exception
                 message_as_string = utils.to_unicode(error_message)
                 if fetch_log and self.__real_runner.config.log_capture:
-                    message_as_string += u"\n" + utils.to_unicode(self.__real_runner.log_capture.getvalue())
+                    try:
+                        capture = self.__real_runner.log_capture  # 1.2.5
+                    except AttributeError:
+                        capture = self.__real_runner.capture_controller.log_capture  # 1.2.6
+
+                    message_as_string += u"\n" + utils.to_unicode(capture.getvalue())
                 self._test_failed(step_name, message_as_string, trace, duration=duration_ms)
             elif element.status == 'undefined':
                 self._test_undefined(step_name, element.location)
@@ -189,7 +316,7 @@ class _BehaveRunner(_bdd_utils.BddRunner):
     def _collect_trace(self, element, utils):
         return u"".join([utils.to_unicode(l) for l in traceback.format_tb(element.exc_traceback)])
 
-    def __init__(self, config, base_dir):
+    def __init__(self, config, base_dir, use_old_runner):
         """
         :type config configuration.Configuration
         """
@@ -203,11 +330,10 @@ class _BehaveRunner(_bdd_utils.BddRunner):
             "after_scenario": functools.partial(self.__process_hook, False),
             "before_step": functools.partial(self.__process_hook, True),
             "after_step": functools.partial(self.__process_hook, False)
-        })
+        } if use_old_runner else dict())
 
     def _run_tests(self):
         self.__real_runner.run()
-
 
     def __filter_scenarios_by_args(self, scenario):
         """
@@ -216,7 +342,6 @@ class _BehaveRunner(_bdd_utils.BddRunner):
         :return true if should pass
         """
         assert isinstance(scenario, Scenario), scenario
-        # TODO: share with lettuce_runner.py#_get_features_to_run
         expected_tags = self.__config.tags
         scenario_name_re = self.__config.name_re
         if scenario_name_re and not scenario_name_re.match(scenario.name):
@@ -225,10 +350,22 @@ class _BehaveRunner(_bdd_utils.BddRunner):
             return True  # No tags nor names are required
         return isinstance(expected_tags, TagExpression) and expected_tags.check(scenario.tags)
 
-
     def _get_features_to_run(self):
+        old_modules = sys.modules.copy()
         self.__real_runner.dry_run = True
         self.__real_runner.run()
+        # During the dry run we can import some modules with steps in nested
+        # directories. And since we then clear step registry, there's no way to
+        # get those steps back without reimport. So we drop the modules that
+        # registered steps to support such scenario (PY-86174).
+        # Nothing else may be dropped. Reimporting a module reexecutes its body,
+        # which breaks anything that has to be imported once per process:
+        # module-level state of project and library code (PY-89530, PY-90761),
+        # stdlib types other packages captured at import time (PY-90800),
+        # C extensions (PY-89290) and packages whose parent is pure Python while
+        # their children are compiled (PY-91210).
+        step_registry = self.__real_runner.step_registry or the_step_registry
+        _drop_modules(_modules_to_reimport(old_modules, _step_definition_files(step_registry)))
         features_to_run = self.__real_runner.features
         self.__real_runner.clean()  # To make sure nothing left after dry run
 
@@ -236,30 +373,64 @@ class _BehaveRunner(_bdd_utils.BddRunner):
         for feature in features_to_run:
             assert isinstance(feature, Feature), feature
             scenarios = []
-            for scenario in feature.scenarios:
+            for scenario in feature.walk_scenarios():
+                try:
+                    scenario.tags.extend(feature.tags)
+                except AttributeError:
+                    pass
                 if isinstance(scenario, ScenarioOutline):
                     scenarios.extend(scenario.scenarios)
                 else:
                     scenarios.append(scenario)
-            feature.scenarios = filter(self.__filter_scenarios_by_args, scenarios)
+            # A list, not a lazy "filter": "scenarios" is read more than once, and on
+            # Python 3 an iterator would be empty from the second read on
+            feature.scenarios = [scenario for scenario in scenarios if self.__filter_scenarios_by_args(scenario)]
 
         return features_to_run
 
 
-if __name__ == "__main__":
-    # TODO: support all other params instead
-
+def _register_null_formatter(format_name):
     class _Null(Formatter):
         """
         Null formater to prevent stdout output
         """
         pass
 
+    _registry.register_as(format_name, _Null)
+
+
+def _register_teamcity_formatter(format_name, base_dir):
+    custom_messages = tcmessages.TeamcityServiceMessages()
+
+    # Not safe to import it in old mode
+    from teamcity.jb_behave_formatter import TeamcityFormatter
+
+    class TeamcityFormatterWithLocation(TeamcityFormatter):
+
+        def _report_suite_started(self, suite, suite_name):
+            location = suite.location
+            custom_messages.testSuiteStarted(
+                suite_name,
+                _bdd_utils.get_location(base_dir, location.filename, location.line)
+            )
+
+        def _report_test_started(self, test, test_name):
+            location = test.location
+            custom_messages.testStarted(
+                test_name,
+                _bdd_utils.get_location(base_dir, location.filename, location.line)
+            )
+
+    _registry.register_as(format_name, TeamcityFormatterWithLocation)
+
+
+def main():
+    # TODO: support all other params instead
     command_args = list(filter(None, sys.argv[1:]))
     if command_args:
         if "--junit" in command_args:
             raise Exception("--junit report type for Behave is unsupported in PyCharm. \n "
-            "See: https://youtrack.jetbrains.com/issue/PY-14219")
+                            "See: https://youtrack.jetbrains.com/issue/PY-14219")
         _bdd_utils.fix_win_drive(command_args[0])
     (base_dir, scenario_names, what_to_run) = _bdd_utils.get_what_to_run_by_env(os.environ)
 
@@ -268,16 +439,16 @@ if __name__ == "__main__":
 
     my_config = configuration.Configuration(command_args=command_args)
 
-    # Temporary workaround to support API changes in 1.2.5
-    if version.LooseVersion(behave_version) >= version.LooseVersion("1.2.5"):
-        from behave.formatter import _registry
-        _registry.register_as("com.intellij.python.null",_Null)
+    # New version supports 1.2.6 only
+    use_old_runner = "PYCHARM_BEHAVE_OLD_RUNNER" in os.environ
+
+    format_name = "com.jetbrains.pycharm.formatter"
+    if use_old_runner:
+        _register_null_formatter(format_name)
     else:
-        from behave.formatter import formatters
-        formatters.register_as(_Null, "com.intellij.python.null")
+        _register_teamcity_formatter(format_name, base_dir)
 
-
-    my_config.format = ["com.intellij.python.null"]  # To prevent output to stdout
+    my_config.format = [format_name]  # To prevent output to stdout
     my_config.reporters = []  # To prevent summary to stdout
     my_config.stdout_capture = False  # For test output
     my_config.stderr_capture = False  # For test output
@@ -291,4 +462,11 @@ if __name__ == "__main__":
     my_config.paths = list(features)
     if what_to_run and not my_config.paths:
         raise Exception("Nothing to run in {0}".format(what_to_run))
-    _BehaveRunner(my_config, base_dir).run()
+
+    # Run as Django if supported, run plain otherwise
+    if not run_as_django_behave(format_name, what_to_run, command_args):
+        _BehaveRunner(my_config, base_dir, use_old_runner).run()
+
+
+if __name__ == "__main__":
+    main()

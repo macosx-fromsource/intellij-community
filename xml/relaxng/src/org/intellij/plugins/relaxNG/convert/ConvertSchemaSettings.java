@@ -20,11 +20,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-/**
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 17.11.2007
- */
 public interface ConvertSchemaSettings {
   @NotNull
   SchemaType getOutputType();
@@ -37,5 +32,5 @@ public interface ConvertSchemaSettings {
 
   String getOutputDestination();
 
-  void addAdvancedSettings(List<String> inputParams, List<String> outputParams);
+  void addAdvancedSettings(List<? super String> inputParams, List<? super String> outputParams);
 }

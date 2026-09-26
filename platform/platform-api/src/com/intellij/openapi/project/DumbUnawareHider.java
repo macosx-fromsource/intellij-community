@@ -1,42 +1,30 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.project;
 
-import org.jetbrains.annotations.NonNls;
+import com.intellij.ide.IdeBundle;
+import com.intellij.ui.components.JBPanelWithEmptyText;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import java.awt.BorderLayout;
 
-/**
- * @author peter
- */
-public class DumbUnawareHider extends JPanel {
-  @NonNls private static final String CONTENT = "content";
-  @NonNls private static final String EXCUSE = "excuse";
+public final class DumbUnawareHider extends JBPanelWithEmptyText {
+  private final JComponent myDumbUnawareContent;
 
-  public DumbUnawareHider(JComponent dumbUnawareContent) {
-    super(new CardLayout());
-    add(dumbUnawareContent, CONTENT);
-    final JLabel label = new JLabel("This view is not available until indices are built");
-    label.setHorizontalAlignment(SwingConstants.CENTER);
-    add(label, EXCUSE);
+  public DumbUnawareHider(@NotNull JComponent dumbUnawareContent) {
+    super(new BorderLayout());
+    this.myDumbUnawareContent = dumbUnawareContent;
+    getEmptyText().setText(IdeBundle.message("empty.text.this.view.is.not.available.until.indices.are.built"));
+    add(dumbUnawareContent, BorderLayout.CENTER);
+  }
+
+  public @NotNull JComponent getContent() {
+    return myDumbUnawareContent;
   }
 
   public void setContentVisible(boolean show) {
-    ((CardLayout)getLayout()).show(this, show ? CONTENT : EXCUSE);
+    for (int i = 0, count = getComponentCount(); i < count; i++) {
+      getComponent(i).setVisible(show);
+    }
   }
 }

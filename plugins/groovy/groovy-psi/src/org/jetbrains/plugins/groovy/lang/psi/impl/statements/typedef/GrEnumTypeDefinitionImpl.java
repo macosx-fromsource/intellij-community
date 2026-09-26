@@ -1,69 +1,66 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.psi.impl.statements.typedef;
 
 import com.intellij.lang.ASTNode;
-import com.intellij.psi.*;
+import com.intellij.openapi.util.Key;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiArrayType;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementFactory;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiSubstitutor;
+import com.intellij.psi.PsiTypeParameter;
 import com.intellij.psi.impl.PsiManagerEx;
 import com.intellij.psi.impl.light.LightMethodBuilder;
-import com.intellij.psi.scope.ElementClassHint;
-import com.intellij.psi.scope.NameHint;
-import com.intellij.psi.scope.PsiScopeProcessor;
-import com.intellij.psi.util.CachedValueProvider;
-import com.intellij.psi.util.CachedValuesManager;
-import com.intellij.util.ArrayUtil;
+import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.GroovyLanguage;
-import org.jetbrains.plugins.groovy.lang.parser.GroovyElementTypes;
+import org.jetbrains.plugins.groovy.lang.lexer.GroovyTokenTypes;
+import org.jetbrains.plugins.groovy.lang.parser.GroovyEmptyStubElementTypes;
+import org.jetbrains.plugins.groovy.lang.parser.GroovyStubElementTypes;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyElementVisitor;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrField;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrEnumDefinitionBody;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrEnumTypeDefinition;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinitionBody;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrEnumConstant;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrEnumConstantList;
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.TypesUtil;
 import org.jetbrains.plugins.groovy.lang.psi.stubs.GrTypeDefinitionStub;
-import org.jetbrains.plugins.groovy.lang.psi.util.GroovyCommonClassNames;
-import org.jetbrains.plugins.groovy.lang.resolve.ResolveUtil;
+import org.jetbrains.plugins.groovy.transformations.TransformationContext;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static com.intellij.psi.CommonClassNames.JAVA_LANG_ENUM;
 
 /**
  * @author Dmitry.Krasilschikov
- * @date 18.03.2007
  */
 public class GrEnumTypeDefinitionImpl extends GrTypeDefinitionImpl implements GrEnumTypeDefinition {
+
+  private static final @NotNull Key<Boolean> PREDEFINED_ENUM_METHOD = Key.create("PREDEFINED_ENUM_METHOD");
 
   public GrEnumTypeDefinitionImpl(@NotNull ASTNode node) {
     super(node);
   }
 
   public GrEnumTypeDefinitionImpl(GrTypeDefinitionStub stub) {
-    super(stub, GroovyElementTypes.ENUM_DEFINITION);
+    super(stub, GroovyStubElementTypes.ENUM_TYPE_DEFINITION);
   }
 
+  @Override
   public String toString() {
     return "Enumeration definition";
   }
 
   @Override
   public GrEnumDefinitionBody getBody() {
-    return getStubOrPsiChild(GroovyElementTypes.ENUM_BODY);
+    return getStubOrPsiChild(GroovyEmptyStubElementTypes.ENUM_BODY);
   }
 
   @Override
@@ -72,9 +69,8 @@ public class GrEnumTypeDefinitionImpl extends GrTypeDefinitionImpl implements Gr
   }
 
   @Override
-  @NotNull
-  public PsiClassType[] getExtendsListTypes(boolean includeSynthetic) {
-    return new PsiClassType[]{createEnumType(), createGroovyObjectSupportType()};
+  public PsiClassType @NotNull [] getExtendsListTypes(boolean includeSynthetic) {
+    return new PsiClassType[]{createEnumType()};
   }
 
   private PsiClassType createEnumType() {
@@ -93,86 +89,75 @@ public class GrEnumTypeDefinitionImpl extends GrTypeDefinitionImpl implements Gr
     return TypesUtil.createTypeByFQClassName(JAVA_LANG_ENUM, this);
   }
 
-  private PsiClassType createGroovyObjectSupportType() {
-    return TypesUtil.createTypeByFQClassName(GroovyCommonClassNames.GROOVY_OBJECT_SUPPORT, this);
-  }
-
-  @Override
-  @NotNull
-  public GrField[] getFields() {
-    GrField[] bodyFields = super.getFields();
-    GrEnumConstant[] enumConstants = getEnumConstants();
-    if (bodyFields.length == 0) return enumConstants;
-    if (enumConstants.length == 0) return bodyFields;
-    return ArrayUtil.mergeArrays(bodyFields, enumConstants);
-  }
-
-  @Override
-  public boolean processDeclarations(@NotNull PsiScopeProcessor processor,
-                                     @NotNull ResolveState state,
-                                     @Nullable PsiElement lastParent,
-                                     @NotNull PsiElement place) {
-    if (ResolveUtil.shouldProcessMethods(processor.getHint(ElementClassHint.KEY))) {
-      final NameHint nameHint = processor.getHint(NameHint.KEY);
-      final String name = nameHint == null ? null : nameHint.getName(state);
-      for (PsiMethod method : getDefEnumMethods()) {
-        if (name == null || name.equals(method.getName())) {
-          if (!processor.execute(method, state)) return false;
-        }
-      }
-    }
-
-    return super.processDeclarations(processor, state, lastParent, place);
-  }
-
-  private PsiMethod[] getDefEnumMethods() {
-    return CachedValuesManager.getCachedValue(this, () -> {
-      PsiMethod[] defMethods = new PsiMethod[4];
-      final PsiManagerEx manager = getManager();
-      final PsiElementFactory factory = JavaPsiFacade.getElementFactory(getProject());
-      defMethods[0] = new LightMethodBuilder(manager, GroovyLanguage.INSTANCE, "values")
-        .setMethodReturnType(factory.createTypeFromText(CommonClassNames.JAVA_UTIL_COLLECTION + "<" + getName() + ">", this))
+  @ApiStatus.Internal
+  public List<PsiMethod> getDefEnumMethods(@NotNull TransformationContext context) {
+    PsiManagerEx manager = getManager();
+    PsiElementFactory factory = JavaPsiFacade.getElementFactory(getProject());
+    PsiClassType thisType = context.eraseClassType(factory.createType(this, PsiSubstitutor.EMPTY));
+    List<PsiMethod> result = Arrays.asList(
+      new LightMethodBuilder(manager, GroovyLanguage.INSTANCE, "values")
+        .setMethodReturnType(new PsiArrayType(thisType))
         .setContainingClass(this)
         .addModifier(PsiModifier.PUBLIC)
-        .addModifier(PsiModifier.STATIC);
-
-      defMethods[1] = new LightMethodBuilder(manager, GroovyLanguage.INSTANCE, "next")
-        .setMethodReturnType(factory.createType(this))
+        .addModifier(PsiModifier.STATIC),
+      new LightMethodBuilder(manager, GroovyLanguage.INSTANCE, "next")
+        .setMethodReturnType(thisType)
         .setContainingClass(this)
-        .addModifier(PsiModifier.PUBLIC);
-
-      defMethods[2] = new LightMethodBuilder(manager, GroovyLanguage.INSTANCE, "previous")
-        .setMethodReturnType(factory.createType(this))
+        .addModifier(PsiModifier.PUBLIC),
+      new LightMethodBuilder(manager, GroovyLanguage.INSTANCE, "previous")
+        .setMethodReturnType(thisType)
         .setContainingClass(this)
-        .addModifier(PsiModifier.PUBLIC);
-
-      defMethods[3] = new LightMethodBuilder(manager, GroovyLanguage.INSTANCE, "valueOf")
-        .setMethodReturnType(factory.createType(this))
+        .addModifier(PsiModifier.PUBLIC),
+      new LightMethodBuilder(manager, GroovyLanguage.INSTANCE, "valueOf")
+        .setMethodReturnType(thisType)
         .setContainingClass(this)
         .addParameter("name", CommonClassNames.JAVA_LANG_STRING)
         .addModifier(PsiModifier.PUBLIC)
-        .addModifier(PsiModifier.STATIC);
+        .addModifier(PsiModifier.STATIC)
+    );
+    for (PsiMethod method : result) {
+      method.putUserData(PREDEFINED_ENUM_METHOD, true);
+    }
+    return result;
+  }
 
-      return CachedValueProvider.Result.create(defMethods, this);
-    });
+  public boolean isPredefinedEnumMethod(@NotNull PsiMethod method) {
+    return method.getUserData(PREDEFINED_ENUM_METHOD) != null;
   }
 
   @Override
-  public GrEnumConstant[] getEnumConstants() {
-    GrEnumConstantList list = getEnumConstantList();
-    if (list != null) return list.getEnumConstants();
-    return GrEnumConstant.EMPTY_ARRAY;
+  public GrEnumConstant @NotNull [] getEnumConstants() {
+    GrEnumDefinitionBody body = getBody();
+    return body == null ? GrEnumConstant.EMPTY_ARRAY : body.getEnumConstants();
   }
 
   @Override
   public GrEnumConstantList getEnumConstantList() {
     GrEnumDefinitionBody enumDefinitionBody = getBody();
-    if (enumDefinitionBody != null) return enumDefinitionBody.getEnumConstantList();
-    return null;
+    return enumDefinitionBody == null ? null : enumDefinitionBody.getEnumConstantList();
   }
 
   @Override
-  public void accept(GroovyElementVisitor visitor) {
+  public void accept(@NotNull GroovyElementVisitor visitor) {
     visitor.visitEnumDefinition(this);
+  }
+
+  @Override
+  public PsiElement add(@NotNull PsiElement psiElement) throws IncorrectOperationException {
+    if (!(psiElement instanceof GrEnumConstant)) return super.add(psiElement);
+    final GrTypeDefinitionBody body = getBody();
+    assert body != null;
+    GrEnumConstantList list = getEnumConstantList();
+    if (list != null) {
+      GrEnumConstant[] constants = list.getEnumConstants();
+      if (constants.length > 0) {
+        list.getNode().addLeaf(GroovyTokenTypes.mCOMMA, ",", null);
+        list.getNode().addLeaf(GroovyTokenTypes.mNLS, "\n", null);
+        return list.add(psiElement);
+      }
+    }
+
+    PsiElement brace = body.getLBrace();
+    return body.addAfter(psiElement, brace);
   }
 }

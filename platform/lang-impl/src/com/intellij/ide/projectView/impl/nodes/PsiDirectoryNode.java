@@ -1,32 +1,22 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.projectView.impl.nodes;
 
-import com.intellij.ide.IconProvider;
+import com.intellij.codeInsight.multiverse.CodeInsightContexts;
+import com.intellij.ide.projectView.NodeSortOrder;
+import com.intellij.ide.projectView.NodeSortSettings;
 import com.intellij.ide.projectView.PresentationData;
-import com.intellij.ide.projectView.ProjectView;
 import com.intellij.ide.projectView.ViewSettings;
+import com.intellij.ide.projectView.impl.CompoundIconProvider;
 import com.intellij.ide.projectView.impl.ProjectRootsUtil;
-import com.intellij.ide.projectView.impl.ProjectViewImpl;
 import com.intellij.ide.util.treeView.AbstractTreeNode;
+import com.intellij.ide.util.treeView.PathElementIdProvider;
 import com.intellij.idea.ActionsBundle;
-import com.intellij.openapi.extensions.Extensions;
+import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.fileTypes.FileTypeRegistry;
 import com.intellij.openapi.module.Module;
-import com.intellij.openapi.module.ModuleUtil;
+import com.intellij.openapi.module.ModuleGrouperKt;
+import com.intellij.openapi.module.ModuleType;
+import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.OrderEntry;
 import com.intellij.openapi.roots.ProjectFileIndex;
@@ -35,9 +25,12 @@ import com.intellij.openapi.roots.libraries.LibraryUtil;
 import com.intellij.openapi.roots.ui.configuration.ProjectSettingsService;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.registry.Registry;
-import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.platform.eel.provider.EelPathDescriptorKt;
+import com.intellij.platform.eel.provider.LocalEelDescriptor;
 import com.intellij.pom.NavigatableWithText;
 import com.intellij.projectImport.ProjectAttachProcessor;
 import com.intellij.psi.PsiDirectory;
@@ -45,30 +38,46 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.impl.file.PsiDirectoryFactory;
 import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.util.ArrayUtil;
 import com.intellij.util.IconUtil;
-import com.intellij.util.PathUtil;
 import com.intellij.util.PlatformUtils;
+import com.intellij.util.SlowOperations;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.SmartHashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.Icon;
+import java.nio.file.Path;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 
-public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements NavigatableWithText {
+import static com.intellij.openapi.vfs.newvfs.NewVirtualFile.asCacheAvoiding;
+
+public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements NavigatableWithText, PathElementIdProvider, NodeWithMeasurableExpand {
+  // the chain from a parent directory to this one usually contains only one virtual file
+  private final Set<VirtualFile> chain = new SmartHashSet<>();
 
   private final PsiFileSystemItemFilter myFilter;
 
-  public PsiDirectoryNode(Project project, PsiDirectory value, ViewSettings viewSettings) {
+  public PsiDirectoryNode(Project project, @NotNull PsiDirectory value, ViewSettings viewSettings) {
     this(project, value, viewSettings, null);
   }
 
-  public PsiDirectoryNode(Project project, PsiDirectory value, ViewSettings viewSettings, @Nullable PsiFileSystemItemFilter filter) {
+  public PsiDirectoryNode(Project project, @NotNull PsiDirectory value, ViewSettings viewSettings, @Nullable PsiFileSystemItemFilter filter) {
     super(project, value, viewSettings);
     myFilter = filter;
   }
 
-  @Nullable
-  public PsiFileSystemItemFilter getFilter() {
+  public PsiDirectoryNode(PsiDirectoryNode original) {
+    super(original.getProject(), original.getValue(), original.getSettings());
+    setParent(original.getParent());
+    myFilter = original.getFilter();
+  }
+
+  public @Nullable PsiFileSystemItemFilter getFilter() {
     return myFilter;
   }
 
@@ -81,81 +90,164 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
   }
 
   @Override
-  protected void updateImpl(PresentationData data) {
+  public boolean shouldBeInitiallyExpanded() {
+    return true;
+  }
+
+  @Override
+  protected void updateImpl(@NotNull PresentationData data) {
     Project project = getProject();
     assert project != null : this;
     PsiDirectory psiDirectory = getValue();
     assert psiDirectory != null : this;
     VirtualFile directoryFile = psiDirectory.getVirtualFile();
     Object parentValue = getParentValue();
+    data.setTooltip(null);
+    synchronized (chain) {
+      if (chain.isEmpty()) {
+        VirtualFile ancestor = getVirtualFile(parentValue);
+        if (ancestor != null) {
+          for (VirtualFile file = directoryFile; file != null && VfsUtilCore.isAncestor(ancestor, file, true); file = file.getParent()) {
+            chain.add(file);
+          }
+        }
+        if (chain.isEmpty()) chain.add(directoryFile);
+      }
+    }
 
     if (ProjectRootsUtil.isModuleContentRoot(directoryFile, project)) {
       ProjectFileIndex fi = ProjectRootManager.getInstance(project).getFileIndex();
-      Module module = fi.getModuleForFile(directoryFile);
+      List<Module> modules;
+      if (CodeInsightContexts.isSharedSourceSupportEnabled(project)) {
+        modules = ContainerUtil.filter(fi.getModulesForFile(directoryFile, true), module -> !ModuleType.isInternal(module));
+      }
+      else {
+        modules = Collections.singletonList(fi.getModuleForFile(directoryFile));
+      }
 
-      data.setPresentableText(directoryFile.getName());
-      if (module != null) {
+      var directoryName = getPossiblyCompactedDirectoryName();
+      data.setPresentableText(directoryName);
+      if (!modules.isEmpty()) {
         if (!(parentValue instanceof Module)) {
-          if (!shouldShowModuleName()) {
-            data.addText(directoryFile.getName() + " ", SimpleTextAttributes.REGULAR_ATTRIBUTES);
-          }
-          else if (Comparing.equal(module.getName(), directoryFile.getName())) {
-            data.addText(directoryFile.getName(), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+          if (modules.size() == 1) {
+            Module module = modules.iterator().next();
+            if (!shouldShowModuleName()) {
+              data.addText(directoryName + " ", SimpleTextAttributes.REGULAR_ATTRIBUTES);
+            }
+            else if (moduleNameMatchesDirectoryName(module, directoryFile, fi)) {
+              data.addText(directoryName, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+            }
+            else {
+              data.addText(directoryName + " ", SimpleTextAttributes.REGULAR_ATTRIBUTES);
+              data.addText("[" + module.getName() + "]", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+            }
           }
           else {
-            data.addText(directoryFile.getName() + " ", SimpleTextAttributes.REGULAR_ATTRIBUTES);
-            data.addText("[" + module.getName() + "]", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+            // todo IJPL-339 implement this logic carefully, add support for internal module, support more nodes
+            if (shouldShowModuleName()) {
+              data.addText(directoryName + " ", SimpleTextAttributes.REGULAR_ATTRIBUTES);
+              String moduleNames = "[" + StringUtil.join(modules, module -> module.getName(), ", ") + "]";
+              data.addText(moduleNames, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES);
+            }
+            else {
+              data.addText(directoryName, SimpleTextAttributes.REGULAR_ATTRIBUTES);
+            }
           }
         }
         else {
-          data.addText(directoryFile.getName(), SimpleTextAttributes.REGULAR_ATTRIBUTES);
+          data.addText(directoryName, SimpleTextAttributes.REGULAR_ATTRIBUTES);
         }
 
-        boolean shouldShowUrl = parentValue instanceof Module || parentValue instanceof Project;
-        data.setLocationString(ProjectViewDirectoryHelper.getInstance(project).getLocationString(psiDirectory, 
-                                                                                                 shouldShowUrl, 
-                                                                                                 shouldShowSourcesRoot()));
+        boolean shouldShowUrl = getSettings().isShowURL() && (parentValue instanceof Module || parentValue instanceof Project);
+        data.setLocationString(ProjectViewDirectoryHelper.getInstance(project).getLocationString(psiDirectory,
+                                                                                                 shouldShowUrl,
+                                                                                                 shouldShowSourcesRoot(),
+                                                                                                 shouldShowModuleName()));
         setupIcon(data, psiDirectory);
 
         return;
       }
     }
 
-    String name = parentValue instanceof Project
-                  ? psiDirectory.getVirtualFile().getPresentableUrl()
-                  : ProjectViewDirectoryHelper.getInstance(psiDirectory.getProject()).getNodeName(getSettings(), parentValue, psiDirectory);
-    if (name == null) {
-      setValue(null);
-      return;
-    }
-
+    String name = ProjectViewDirectoryHelper.getInstance(psiDirectory.getProject()).getNodeName(getSettings(), parentValue, psiDirectory);
     data.setPresentableText(name);
-    data.setLocationString(ProjectViewDirectoryHelper.getInstance(project).getLocationString(psiDirectory, false, false));
+    data.setLocationString(ProjectViewDirectoryHelper.getInstance(project).getLocationString(psiDirectory, parentValue instanceof Project, false));
 
     setupIcon(data, psiDirectory);
+  }
+
+  private @NotNull String getPossiblyCompactedDirectoryName() {
+    if (chain.isEmpty()) throw new IllegalStateException("The chain of compacted parent directories should be computed first");
+    // Normally it's just one element, but when the Compact/Hide Empty/Middle Packages option is on,
+    // there may be compacted directories in the chain.
+    // Usually it's handled by the ProjectViewDirectoryHelper.getNodeName call above, but that only works for Java packages.
+    // In exotic cases directories may be compacted even if they're content roots.
+    // See BAZEL-1879 for example.
+    return StringUtil.join(chain, VirtualFile::getName, ".");
+  }
+
+  @Override
+  public @NotNull String getPathElementId() {
+    if (shouldUseSimplifiedProjectTreeState()) {
+      String name = getName();
+      return name == null ? "<noname>" : name;
+    }
+    else {
+      var value = getEqualityObject();
+      return value == null ? "" : value.toString();
+    }
+  }
+
+  @Override
+  public @Nullable String getPathElementType() {
+    if (shouldUseSimplifiedProjectTreeState()) {
+      return GENERIC_PROJECT_VIEW_NODE_TYPE;
+    } else {
+      return null;
+    }
+  }
+
+  protected static boolean canRealModuleNameBeHidden() {
+    return Registry.is("ide.hide.real.module.name");
+  }
+
+  private static boolean moduleNameMatchesDirectoryName(@NotNull Module module, @NotNull VirtualFile directoryFile, @NotNull ProjectFileIndex fileIndex) {
+    if (canRealModuleNameBeHidden()) return true;
+    String moduleName = module.getName();
+    String directoryName = directoryFile.getName();
+    if (moduleName.equalsIgnoreCase(directoryName)) {
+      return true;
+    }
+    if (ModuleGrouperKt.isQualifiedModuleNamesEnabled(module.getProject()) && StringUtil.endsWithIgnoreCase(moduleName, directoryName)) {
+      int parentPrefixLength = moduleName.length() - directoryName.length() - 1;
+      if (parentPrefixLength > 0 && moduleName.charAt(parentPrefixLength) == '.') {
+        VirtualFile parentDirectory = directoryFile.getParent();
+        if (ProjectRootsUtil.isModuleContentRoot(parentDirectory, module.getProject())) {
+          Module parentModule = fileIndex.getModuleForFile(parentDirectory);
+          if (parentModule != null && parentModule.getName().length() == parentPrefixLength
+              && moduleName.startsWith(parentModule.getName())) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   protected void setupIcon(PresentationData data, PsiDirectory psiDirectory) {
     final VirtualFile virtualFile = psiDirectory.getVirtualFile();
     if (PlatformUtils.isAppCode()) {
       final Icon icon = IconUtil.getIcon(virtualFile, 0, myProject);
-      if (icon != null) {
-        data.setIcon(icon);
-      }
+      data.setIcon(icon);
     }
     else {
-      for (final IconProvider provider : Extensions.getExtensions(IconProvider.EXTENSION_POINT_NAME)) {
-        final Icon icon = provider.getIcon(psiDirectory, 0);
-        if (icon != null) {
-          data.setIcon(icon);
-          return;
-        }
-      }
+      Icon icon = CompoundIconProvider.findIcon(psiDirectory, 0);
+      if (icon != null) data.setIcon(icon);
     }
   }
 
   @Override
-  public Collection<AbstractTreeNode> getChildrenImpl() {
+  public Collection<AbstractTreeNode<?>> getChildrenImpl() {
     return ProjectViewDirectoryHelper.getInstance(myProject).getDirectoryChildren(getValue(), getSettings(), true, getFilter());
   }
 
@@ -177,8 +269,8 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
     }
 
     VirtualFile directory = value.getVirtualFile();
-    if (directory.getFileSystem() instanceof LocalFileSystem) {
-      file = PathUtil.getLocalFile(file);
+    if (directory.isInLocalFileSystem()) {
+      file = VfsUtil.getLocalFile(file);
     }
 
     if (!VfsUtilCore.isAncestor(directory, file, false)) {
@@ -204,19 +296,38 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
     }
   }
 
-  @Override
-  public VirtualFile getVirtualFile() {
-    PsiDirectory directory = getValue();
-    if (directory == null) return null;
-    return directory.getVirtualFile();
+  /**
+   * @return a virtual file that identifies the given element
+   */
+  private static @Nullable VirtualFile getVirtualFile(Object element) {
+    if (element instanceof PsiDirectory directory) {
+      return directory.getVirtualFile();
+    }
+    return element instanceof VirtualFile ? (VirtualFile)element : null;
   }
 
   @Override
   public boolean canRepresent(final Object element) {
+    VirtualFile file = getVirtualFile(element);
+    if (file != null) {
+      synchronized (chain) {
+        if (chain.contains(file)) return true;
+      }
+    }
     if (super.canRepresent(element)) return true;
     PsiDirectory directory = getValue();
-    if (directory == null) return false;
-    return ProjectViewDirectoryHelper.getInstance(getProject()).canRepresent(element, directory);
+    Object owner = getParentValue();
+    if (file == null || directory == null) return false;
+    ProjectViewDirectoryHelper helper = ProjectViewDirectoryHelper.getInstance(directory.getProject());
+    return helper.canRepresent(file, directory) ||
+    owner instanceof PsiDirectory && helper.canRepresent(file, directory, (PsiDirectory)owner, getSettings());
+  }
+
+  @Override
+  public boolean isValid() {
+    if (!super.isValid()) return false;
+    return ProjectViewDirectoryHelper.getInstance(getProject())
+      .isValidDirectory(getValue(), getParentValue(), getSettings(), getFilter());
   }
 
   @Override
@@ -225,9 +336,9 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
     Project project = getProject();
 
     ProjectSettingsService service = ProjectSettingsService.getInstance(myProject);
-    return file != null && ((ProjectRootsUtil.isModuleContentRoot(file, project) && service.canOpenModuleSettings()) ||
-                            (ProjectRootsUtil.isModuleSourceRoot(file, project)  && service.canOpenContentEntriesSettings()) ||
-                            (ProjectRootsUtil.isLibraryRoot(file, project) && service.canOpenModuleLibrarySettings()));
+    return file != null && (ProjectRootsUtil.isModuleContentRoot(file, project) && service.canOpenModuleSettings() ||
+                            ProjectRootsUtil.isModuleSourceRoot(file, project)  && service.canOpenContentEntriesSettings() ||
+                            ProjectRootsUtil.isLibraryRoot(file, project) && service.canOpenModuleLibrarySettings());
   }
 
   @Override
@@ -237,24 +348,27 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
 
   @Override
   public void navigate(final boolean requestFocus) {
-    Module module = ModuleUtil.findModuleForPsiElement(getValue());
-    if (module != null) {
-      final VirtualFile file = getVirtualFile();
-      final Project project = getProject();
-      ProjectSettingsService service = ProjectSettingsService.getInstance(myProject);
-      if (ProjectRootsUtil.isModuleContentRoot(file, project)) {
-        service.openModuleSettings(module);
+    Project project = getProject();
+    ProjectSettingsService service = ProjectSettingsService.getInstance(project);
+    Runnable runnable;
+    VirtualFile file = getVirtualFile();
+    try (AccessToken ignore = SlowOperations.knownIssue("IJPL-162972")) {
+      Module module = ModuleUtilCore.findModuleForPsiElement(getValue());
+      if (module == null) {
+        runnable = null;
+      }
+      else if (ProjectRootsUtil.isModuleContentRoot(file, project)) {
+        runnable = () -> service.openModuleSettings(module);
       }
       else if (ProjectRootsUtil.isLibraryRoot(file, project)) {
-        final OrderEntry orderEntry = LibraryUtil.findLibraryEntry(file, module.getProject());
-        if (orderEntry != null) {
-          service.openLibraryOrSdkSettings(orderEntry);
-        }
+        OrderEntry orderEntry = LibraryUtil.findLibraryEntry(file, module.getProject());
+        runnable = orderEntry == null ? null : () -> service.openLibraryOrSdkSettings(orderEntry);
       }
       else {
-        service.openContentEntriesSettings(module);
+        runnable = () -> service.openContentEntriesSettings(module);
       }
     }
+    if (runnable != null) runnable.run();
   }
 
   @Override
@@ -276,8 +390,8 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
 
   @Override
   public int getWeight() {
-    final ProjectView projectView = ProjectView.getInstance(myProject);
-    if (projectView instanceof ProjectViewImpl && !((ProjectViewImpl)projectView).isFoldersAlwaysOnTop()) {
+    ViewSettings settings = getSettings();
+    if (settings == null || settings.isFoldersAlwaysOnTop()) {
       return 20;
     }
     return isFQNameShown() ? 70 : 0;
@@ -293,6 +407,11 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
   }
 
   @Override
+  public @NotNull NodeSortOrder getSortOrder(@NotNull NodeSortSettings settings) {
+    return settings.isFoldersAlwaysOnTop() ? NodeSortOrder.FOLDER : super.getSortOrder(settings);
+  }
+
+  @Override
   public Comparable getSortKey() {
     if (ProjectAttachProcessor.canAttachToProject()) {
       // primary module is always on top; attached modules are sorted alphabetically
@@ -300,7 +419,7 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
       if (Comparing.equal(file, myProject.getBaseDir())) {
         return "";    // sorts before any other name
       }
-      return getTitle();
+      return toString();
     }
     return null;
   }
@@ -308,13 +427,8 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
   @Override
   public Comparable getTypeSortKey() {
     VirtualFile file = getVirtualFile();
-    if (file != null) {
-      String extension = file.getExtension();
-      if (extension != null) {
-        return new PsiFileNode.ExtensionSortKey(extension);
-      }
-    }
-    return null;
+    String extension = file == null ? null : file.getExtension();
+    return extension == null ? null : new PsiFileNode.ExtensionSortKey(extension);
   }
 
   @Override
@@ -336,6 +450,26 @@ public class PsiDirectoryNode extends BasePsiNode<PsiDirectory> implements Navig
   @Override
   public boolean isAlwaysShowPlus() {
     final VirtualFile file = getVirtualFile();
-    return file == null || file.getChildren().length > 0;
+    if (file == null || !file.isValid()) return false;
+
+    final boolean mayLoadChildren;
+    if (Registry.is("ide.project.view.skip.loading.children.for.remote.directories", true)) {
+      Path nioPath = file.getFileSystem().getNioPath(file);
+      mayLoadChildren = nioPath == null || LocalEelDescriptor.INSTANCE.equals(EelPathDescriptorKt.getEelDescriptor(nioPath));
+    }
+    else {
+      mayLoadChildren = true;
+    }
+
+    if (mayLoadChildren) {
+      VirtualFile[] children = asCacheAvoiding(file).getChildren();
+      if (ArrayUtil.isEmpty(children)) return false;
+      if (ContainerUtil.exists(children, child -> !child.isDirectory())) return true;
+      ViewSettings settings = getSettings();
+      return settings == null || !settings.isFlattenPackages();
+    }
+    else {
+      return true;
+    }
   }
 }

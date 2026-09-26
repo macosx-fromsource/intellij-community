@@ -1,3 +1,4 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon.impl.analysis;
 
 import com.intellij.ide.highlighter.HtmlFileType;
@@ -26,19 +27,18 @@ import java.util.Collections;
  * @author Dennis.Ushakov
  */
 public class HtmlFileReferenceHelper extends FileReferenceHelper {
-  @NotNull
   @Override
-  public Collection<PsiFileSystemItem> getContexts(Project project, @NotNull VirtualFile vFile) {
-    final PsiFile file = PsiManager.getInstance(project).findFile(vFile);
-    final Module module = file != null ? ModuleUtilCore.findModuleForPsiElement(file) : null;
-    if (module == null || !(file instanceof XmlFile)) return Collections.emptyList();
-    final String basePath = HtmlUtil.getHrefBase((XmlFile)file);
+  public @NotNull Collection<PsiFileSystemItem> getContexts(@NotNull Project project, @NotNull VirtualFile vFile) {
+    final PsiFile psiFile = PsiManager.getInstance(project).findFile(vFile);
+    final Module module = psiFile != null ? ModuleUtilCore.findModuleForPsiElement(psiFile) : null;
+    if (module == null || !(psiFile instanceof XmlFile)) return Collections.emptyList();
+    final String basePath = HtmlUtil.getHrefBase((XmlFile)psiFile);
     if (basePath != null && !HtmlUtil.hasHtmlPrefix(basePath)) {
       for (VirtualFile virtualFile : getBaseRoots(module)) {
         final VirtualFile base = virtualFile.findFileByRelativePath(basePath);
         final PsiDirectory result = base != null ? PsiManager.getInstance(project).findDirectory(base) : null;
         if (result != null) {
-          return Collections.<PsiFileSystemItem>singletonList(result);
+          return Collections.singletonList(result);
         }
       }
     }
@@ -50,9 +50,10 @@ public class HtmlFileReferenceHelper extends FileReferenceHelper {
   }
 
   @Override
-  public boolean isMine(Project project, @NotNull VirtualFile file) {
+  public boolean isMine(@NotNull Project project, @NotNull VirtualFile file) {
+    if (!ProjectRootManager.getInstance(project).getFileIndex().isInContent(file)) return false;
+
     final FileType fileType = file.getFileType();
-    return ProjectRootManager.getInstance(project).getFileIndex().isInContent(file) &&
-           fileType == HtmlFileType.INSTANCE || fileType == XHtmlFileType.INSTANCE;
+    return fileType == HtmlFileType.INSTANCE || fileType == XHtmlFileType.INSTANCE;
   }
 }

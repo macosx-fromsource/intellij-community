@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.plugins.groovy.refactoring;
 
@@ -44,10 +30,7 @@ import org.jetbrains.plugins.groovy.refactoring.introduce.field.GrIntroduceField
 import org.jetbrains.plugins.groovy.refactoring.introduce.parameter.GrIntroduceParameterHandler;
 import org.jetbrains.plugins.groovy.refactoring.introduce.variable.GrIntroduceVariableHandler;
 
-/**
- * @author ilyas
- */
-public class GroovyRefactoringSupportProvider extends RefactoringSupportProvider {
+public final class GroovyRefactoringSupportProvider extends RefactoringSupportProvider {
 
   public static final GroovyRefactoringSupportProvider INSTANCE = new GroovyRefactoringSupportProvider();
 
@@ -62,14 +45,12 @@ public class GroovyRefactoringSupportProvider extends RefactoringSupportProvider
    * @return handler for introducing local variables in Groovy
    */
   @Override
-  @Nullable
-  public RefactoringActionHandler getIntroduceVariableHandler() {
+  public @Nullable RefactoringActionHandler getIntroduceVariableHandler() {
     return new GrIntroduceVariableHandler();
   }
 
   @Override
-  @Nullable
-  public RefactoringActionHandler getExtractMethodHandler() {
+  public @Nullable RefactoringActionHandler getExtractMethodHandler() {
     return new GroovyExtractMethodHandler();
   }
 
@@ -86,7 +67,7 @@ public class GroovyRefactoringSupportProvider extends RefactoringSupportProvider
     if (!(elementToRename instanceof GrLabeledStatement)) {
       return false;
     }
-    SearchScope useScope = PsiSearchHelper.SERVICE.getInstance(elementToRename.getProject()).getUseScope(elementToRename);
+    SearchScope useScope = PsiSearchHelper.getInstance(elementToRename.getProject()).getUseScope(elementToRename);
     if (!(useScope instanceof LocalSearchScope)) return false;
     PsiElement[] scopeElements = ((LocalSearchScope)useScope).getScope();
     if (scopeElements.length > 1) {
@@ -111,7 +92,7 @@ public class GroovyRefactoringSupportProvider extends RefactoringSupportProvider
 
     //don't try to inplace rename aliased imported references
     if (parent instanceof GrReferenceElement) {
-      GroovyResolveResult result = ((GrReferenceElement)parent).advancedResolve();
+      GroovyResolveResult result = ((GrReferenceElement<?>)parent).advancedResolve();
       PsiElement fileResolveContext = result.getCurrentFileResolveContext();
       if (fileResolveContext instanceof GrImportStatement && ((GrImportStatement)fileResolveContext).isAliasedImport()) {
         return false;
@@ -135,16 +116,8 @@ public class GroovyRefactoringSupportProvider extends RefactoringSupportProvider
     return new GrIntroduceConstantHandler();
   }
 
-  @Nullable
   @Override
-  public RefactoringActionHandler getPullUpHandler() {
+  public @Nullable RefactoringActionHandler getPullUpHandler() {
     return new JavaPullUpHandler();
-  }
-
-  @Nullable
-  @Override
-  public RefactoringActionHandler getExtractInterfaceHandler() {
-    //return new ExtractInterfaceHandler();
-    return null;
   }
 }

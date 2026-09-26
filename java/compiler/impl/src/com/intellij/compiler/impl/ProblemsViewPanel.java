@@ -1,39 +1,37 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.compiler.impl;
 
 import com.intellij.ide.errorTreeView.NewErrorTreeViewPanel;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.compiler.JavaCompilerBundle;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-public class ProblemsViewPanel extends NewErrorTreeViewPanel {
-  public ProblemsViewPanel(Project project) {
-    super(project, "reference.problems.tool.window", false, true, null);
-    myTree.getEmptyText().setText("No compilation problems found");
+public final class ProblemsViewPanel extends NewErrorTreeViewPanel {
+  public ProblemsViewPanel(@NotNull Project project) {
+    super(project, null, false, true, null);
+
+    myTree.getEmptyText().setText(JavaCompilerBundle.message("no.compilation.problems.found"));
+    setProgress("", 0.0f); // hack: this will pre-initialize progress UI
   }
 
   @Override
   protected void fillRightToolbarGroup(DefaultActionGroup group) {
     super.fillRightToolbarGroup(group);
+    group.addSeparator();
     group.add(new CompilerPropertiesAction());
   }
 
   @Override
   protected void addExtraPopupMenuActions(DefaultActionGroup group) {
-    group.add(new ExcludeFromCompileAction(myProject, this));
+    group.add(new ExcludeFromCompileAction(project) {
+      @Override
+      protected @Nullable VirtualFile getFile() {
+        return getSelectedFile();
+      }
+    });
     // todo: do we need compiler's popup actions here?
     //ActionGroup popupGroup = (ActionGroup)ActionManager.getInstance().getAction(IdeActions.GROUP_COMPILER_ERROR_VIEW_POPUP);
     //if (popupGroup != null) {
@@ -41,11 +39,6 @@ public class ProblemsViewPanel extends NewErrorTreeViewPanel {
     //    group.add(action);
     //  }
     //}
-  }
-
-  @Override
-  protected boolean shouldShowFirstErrorInEditor() {
-    return false;
   }
 
   @Override

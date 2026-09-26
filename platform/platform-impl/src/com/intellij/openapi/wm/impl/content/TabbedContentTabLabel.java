@@ -1,129 +1,116 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.wm.impl.content;
 
 import com.intellij.ide.IdeEventQueue;
+import com.intellij.openapi.ui.popup.ActiveIcon;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
-import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.Pair;
-import com.intellij.reference.SoftReference;
-import com.intellij.ui.ClickListener;
-import com.intellij.ui.components.JBList;
+import com.intellij.openapi.ui.popup.JBPopupListener;
+import com.intellij.openapi.ui.popup.LightweightWindowEvent;
+import com.intellij.openapi.ui.popup.ListPopup;
+import com.intellij.openapi.wm.impl.content.tabActions.ContentTabAction;
 import com.intellij.ui.content.TabbedContent;
-import com.intellij.util.NotNullFunction;
-import com.intellij.util.ui.UIUtil;
+import com.intellij.ui.popup.PopupState;
+import com.intellij.util.ui.JBUI;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import java.awt.*;
-import java.awt.event.MouseEvent;
-import java.lang.ref.Reference;
-import java.lang.ref.WeakReference;
-import java.util.ArrayList;
+import java.util.List;
 
 /**
  * @author Konstantin Bulenkov
  */
-public class TabbedContentTabLabel extends ContentTabLabel {
-  private final ComboIcon myComboIcon = new ComboIcon() {
-    @Override
-    public Rectangle getIconRec() {
-      return new Rectangle(getWidth() - getIconWidth() - 3, 0, getIconWidth(), getHeight());
-    }
+@ApiStatus.Internal
+public final class TabbedContentTabLabel extends ContentTabLabel {
+  private final PopupState<JBPopup> myPopupState = PopupState.forPopup();
 
-    @Override
-    public boolean isActive() {
-      return true;
-    }
-  };
-  private final TabbedContent myContent;
-  private Reference<JBPopup> myPopupReference = null;
-
-  public TabbedContentTabLabel(TabbedContent content, TabContentLayout layout) {
+  public TabbedContentTabLabel(@NotNull TabbedContent content, @NotNull TabContentLayout layout) {
     super(content, layout);
-    myContent = content;
-    new ClickListener() {
-      @Override
-      public boolean onClick(@NotNull MouseEvent event, int clickCount) {
-        showPopup();
-        return true;
-      }
-    }.installOn(this);
   }
 
-  private void showPopup() {
+  private boolean isPopupShown() {
+    return myPopupState.isShowing();
+  }
+
+  @Override
+  protected void selectContent() {
     IdeEventQueue.getInstance().getPopupManager().closeAllPopups();
-    ArrayList<String> names = new ArrayList<String>();
-    for (Pair<String, JComponent> tab : myContent.getTabs()) {
-      names.add(tab.first);
-    }
-    final JBList list = new JBList(names);
-    list.installCellRenderer(new NotNullFunction<Object, JComponent>() {
-      private final JLabel label = new JLabel();
-      {
-        label.setBorder(new EmptyBorder(UIUtil.getListCellPadding()));
-      }
-      @NotNull
-      @Override
-      public JComponent fun(Object dom) {
-        label.setText(dom.toString());
-        return label;
-      }
-    });
-    final JBPopup popup = JBPopupFactory.getInstance().createListPopupBuilder(list)
-      .setItemChoosenCallback(() -> {
-        int index = list.getSelectedIndex();
-        if (index != -1) {
-          myContent.selectContent(index);
+    super.selectContent();
+
+    if (hasMultipleTabs()) {
+      if (myPopupState.isRecentlyHidden()) return; // do not show new popup
+      final SelectContentTabStep step = new SelectContentTabStep(getContent());
+      final ListPopup popup = JBPopupFactory.getInstance().createListPopup(step);
+      myPopupState.prepareToShow(popup);
+      popup.showUnderneathOf(this);
+      popup.addListener(new JBPopupListener() {
+        @Override
+        public void onClosed(@NotNull LightweightWindowEvent event) {
+          repaint();
         }
-      }).createPopup();
-    myPopupReference = new WeakReference<JBPopup>(popup);
-    popup.showUnderneathOf(this);
+      });
+    }
+
   }
 
   @Override
   public void update() {
     super.update();
-    if (myContent != null) {
-      setText(myContent.getTabName());
-    }
-    setHorizontalAlignment(LEFT);
+    //noinspection DialogTitleCapitalization
+    setText(myContent.getDisplayName());
   }
 
   @Override
-  public Dimension getPreferredSize() {
-    final Dimension size = super.getPreferredSize();
-    return new Dimension(size.width + 12, size.height);
+  protected void fillActions(@NotNull List<? super ContentTabAction> actions) {
+    actions.add(new SelectContentTabAction());
+    super.fillActions(actions);
   }
 
   @Override
-  protected void paintComponent(Graphics g) {
-    super.paintComponent(g);
-    myComboIcon.paintIcon(this, g);
+  protected @NotNull AdditionalIcon createIcon(@NotNull ContentTabAction action) {
+    return new TabbedContentTabAdditionalIcon(action);
   }
 
   @Override
   public void removeNotify() {
     super.removeNotify();
-    JBPopup popup = SoftReference.dereference(myPopupReference);
-    if (popup != null) {
-      Disposer.dispose(popup);
-      myPopupReference = null;
+    myPopupState.hidePopup();
+  }
+
+  @Override
+  public @NotNull TabbedContent getContent() {
+    return (TabbedContent)super.getContent();
+  }
+
+  private boolean hasMultipleTabs() {
+    return getContent().hasMultipleTabs();
+  }
+
+  private final class SelectContentTabAction extends ContentTabAction {
+    private SelectContentTabAction() {
+      super(new ActiveIcon(JBUI.CurrentTheme.ToolWindow.comboTabIcon(true),
+                           JBUI.CurrentTheme.ToolWindow.comboTabIcon(false)));
+    }
+
+    @Override
+    public boolean getAvailable() {
+      return hasMultipleTabs();
+    }
+
+    @Override
+    public void runAction() {
+      selectContent();
+    }
+  }
+
+  protected final class TabbedContentTabAdditionalIcon extends ContentAdditionalIcon {
+    public TabbedContentTabAdditionalIcon(@NotNull ContentTabAction action) {
+      super(action);
+    }
+
+    @Override
+    public boolean getActive() {
+      return super.getActive() || isPopupShown();
     }
   }
 }

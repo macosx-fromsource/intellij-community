@@ -1,45 +1,72 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.spellchecker.inspection;
 
+import com.intellij.grazie.spellchecker.inspection.SpellcheckerInspectionTestCase;
 import com.intellij.openapi.application.PluginPathManager;
-import com.intellij.testFramework.fixtures.LightCodeInsightFixtureTestCase;
+import com.intellij.openapi.util.registry.Registry;
+import com.intellij.testFramework.DumbModeTestUtils;
+import com.intellij.testFramework.LightProjectDescriptor;
+import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase;
+import com.intellij.testFramework.fixtures.impl.CodeInsightTestFixtureImpl;
+import org.jetbrains.annotations.NotNull;
 
-public class JavaSpellcheckerInspectionTest extends LightCodeInsightFixtureTestCase {
+public class JavaSpellcheckerInspectionTest extends LightJavaCodeInsightFixtureTestCase {
   @Override
   protected String getBasePath() {
     return PluginPathManager.getPluginHomePathRelative("java-i18n") + "/testData/inspections/spellchecker";
   }
 
-  public void testCorrectJava() { doTest(); }
-  public void testTypoInJava() { doTest(); }
-  public void testVarArg() { doTest(); }
-  public void testJapanese() { doTest(); }
+  @Override
+  protected @NotNull LightProjectDescriptor getProjectDescriptor() {
+    return JAVA_21;
+  }
 
-  public void testClassName() { doTest(); }
-  public void testFieldName() { doTest(); }
-  public void testMethodName() { doTest(); }
-  public void testLocalVariableName() { doTest(); }
-  public void testDocComment() { doTest(); }
-  public void testStringLiteral() { doTest(); }
-  public void testStringLiteralEscaping() { doTest(); }
-  public void testSuppressions() { doTest(); }
+  @Override
+  protected void setUp() throws Exception {
+    super.setUp();
+    Registry.get("spellchecker.grazie.enabled").setValue(true, getTestRootDisposable());
+  }
 
-  private void doTest() {
+  public void testCorrectJava() { doTestInAllModes(); }
+  public void testTypoInJava() { doTestInAllModes(); }
+  public void testVarArg() { doTestInAllModes(); }
+  public void testJapanese() { doTestInAllModes(); }
+
+  public void testClassName() { doTestInAllModes(); }
+  public void testFieldName() { doTestInAllModes(); }
+  public void testMethodName() { doTestInAllModes(); }
+  public void testConstructorIgnored() { doTestInAllModes();}
+  public void testLocalVariableName() { doTestInAllModes(); }
+  public void testDocComment() { doTestInAllModes(); }
+  public void testStringLiteral() { doTestInAllModes(); }
+  public void testStringLiteralEscaping() { doTestInAllModes(); }
+  public void testSuppressions() { doTest(false); }
+
+  // suppression by @NonNls
+  public void testMethodReturnTypeWithNonNls() { doTestInAllModes(); }
+  public void testMethodReturnTypeWithNonNlsReturnsLiteral() { doTestInAllModes(); }
+  public void testNonNlsField() { doTestInAllModes(); }
+  public void testNonNlsField2() { doTestInAllModes(); }
+  public void testNonNlsLocalVariable() { doTestInAllModes(); }
+  public void testNonNlsLocalVariableAndComment() { doTest(false); }
+  public void testNonNlsLocalVariableAndCommentDumb() { doTest(true); }
+  public void testFieldComment() { doTestInAllModes(); }
+  public void testDoNotCheckDerivedNames() { doTestInAllModes(); }
+  public void testSkipDateTime() { doTestInAllModes(); }
+
+  private void doTestInAllModes() {
+    doTest(false);
+    doTest(true);
+  }
+
+  private void doTest(boolean inDumbMode) {
     myFixture.enableInspections(SpellcheckerInspectionTestCase.getInspectionTools());
-    myFixture.testHighlighting(false, false, true, getTestName(false) + ".java");
+    if (inDumbMode) {
+      CodeInsightTestFixtureImpl.mustWaitForSmartMode(false, getTestRootDisposable());
+      DumbModeTestUtils.runInDumbModeSynchronously(getProject(),
+                                                   () -> myFixture.testHighlighting(false, false, true, getTestName(false) + ".java"));
+    } else {
+      myFixture.testHighlighting(false, false, true, getTestName(false) + ".java");
+    }
   }
 }

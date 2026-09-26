@@ -1,55 +1,54 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.diff.impl.dir;
 
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.util.NlsContexts;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JFrame;
 
-/**
- * @author Konstantin Bulenkov
- */
-public class DirDiffWindow {
-  private final DirDiffDialog myDialog;
-  private final DirDiffFrame myFrame;
+@ApiStatus.Internal
+public interface DirDiffWindow {
+  @NotNull
+  Disposable getDisposable();
 
-  public DirDiffWindow(DirDiffDialog dialog) {
-    myDialog = dialog;
-    myFrame = null;
-  }
+  void setTitle(@NotNull @NlsContexts.DialogTitle String title);
 
-  public DirDiffWindow(DirDiffFrame frame) {
-    myFrame = frame;
-    myDialog = null;
-  }
 
-  public Window getWindow() {
-    return myDialog == null ? myFrame.getFrame() : myDialog.getWindow();
-  }
+  class Dialog implements DirDiffWindow {
+    private final @NotNull DirDiffDialog myDialog;
 
-  public Disposable getDisposable() {
-    return myDialog == null ? myFrame : myDialog.getDisposable();
-  }
+    public Dialog(@NotNull DirDiffDialog dialog) {
+      myDialog = dialog;
+    }
 
-  public void setTitle(String title) {
-    if (myDialog == null) {
-      ((JFrame)myFrame.getFrame()).setTitle(title);
-    } else {
+    @Override
+    public @NotNull Disposable getDisposable() {
+      return myDialog.getDisposable();
+    }
+
+    @Override
+    public void setTitle(@NotNull @NlsContexts.DialogTitle String title) {
       myDialog.setTitle(title);
+    }
+  }
+
+  class Frame implements DirDiffWindow {
+    private final @NotNull DirDiffFrame myFrame;
+
+    public Frame(@NotNull DirDiffFrame frame) {
+      myFrame = frame;
+    }
+
+    @Override
+    public @NotNull Disposable getDisposable() {
+      return myFrame;
+    }
+
+    @Override
+    public void setTitle(@NotNull String title) {
+      ((JFrame)myFrame.getFrame()).setTitle(title);
     }
   }
 }

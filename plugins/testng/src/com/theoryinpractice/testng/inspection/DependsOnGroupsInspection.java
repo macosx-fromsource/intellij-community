@@ -1,66 +1,54 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.theoryinpractice.testng.inspection;
 
-import com.intellij.codeInspection.*;
+import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
+import com.intellij.codeInspection.InspectionManager;
+import com.intellij.codeInspection.LocalQuickFix;
+import com.intellij.codeInspection.ProblemDescriptor;
+import com.intellij.codeInspection.ProblemHighlightType;
+import com.intellij.codeInspection.options.OptPane;
+import com.intellij.codeInspection.options.OptionController;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.LabeledComponent;
 import com.intellij.openapi.util.JDOMExternalizableStringList;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.profile.codeInspection.ProjectInspectionProfileManager;
-import com.intellij.psi.*;
-import com.intellij.ui.DocumentAdapter;
-import com.intellij.util.ArrayUtil;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiAnnotationMemberValue;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiNameValuePair;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.containers.ContainerUtil;
+import com.theoryinpractice.testng.TestngBundle;
 import com.theoryinpractice.testng.util.TestNGUtil;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import javax.swing.event.DocumentEvent;
-import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
+public class DependsOnGroupsInspection extends AbstractBaseJavaLocalInspectionTool {
   private static final Logger LOGGER = Logger.getInstance("TestNG Runner");
   private static final Pattern PATTERN = Pattern.compile("\"([a-zA-Z0-9_\\-\\(\\)]*)\"");
 
   public JDOMExternalizableStringList groups = new JDOMExternalizableStringList();
-  @NonNls public static final String SHORT_NAME = "groupsTestNG";
+  public static final @NonNls String SHORT_NAME = "groupsTestNG";
 
-  @NotNull
   @Override
-  public String getGroupDisplayName() {
-    return "TestNG";
+  public @NotNull String getGroupDisplayName() {
+    return TestNGUtil.TESTNG_GROUP_NAME;
   }
 
-  @NotNull
   @Override
-  public String getDisplayName() {
-    return "Groups problem";
-  }
-
-  @NotNull
-  @Override
-  public String getShortName() {
+  public @NotNull String getShortName() {
     return SHORT_NAME;
   }
 
@@ -70,30 +58,28 @@ public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
   }
 
   @Override
-  @Nullable
-  public JComponent createOptionsPanel() {
-    final LabeledComponent<JTextField> definedGroups = new LabeledComponent<>();
-    definedGroups.setText("&Defined Groups");
-    final JTextField textField = new JTextField(StringUtil.join(ArrayUtil.toStringArray(groups), ","));
-    textField.getDocument().addDocumentListener(new DocumentAdapter() {
-      @Override
-      protected void textChanged(final DocumentEvent e) {
-        groups.clear();
-        String text = textField.getText();
-        if (!StringUtil.isEmptyOrSpaces(text)) {
-          ContainerUtil.addAll(groups, text.split("[, ]"));
-        }
-      }
-    });
-    definedGroups.setComponent(textField);
-    final JPanel optionsPanel = new JPanel(new BorderLayout());
-    optionsPanel.add(definedGroups, BorderLayout.NORTH);
-    return optionsPanel;
+  public @NotNull OptPane getOptionsPane() {
+    return OptPane.pane(
+      OptPane.string("groups", TestngBundle.message("inspection.depends.on.groups.defined.groups.panel.title"),
+                     30)
+    );
   }
 
   @Override
-  @Nullable
-  public ProblemDescriptor[] checkClass(@NotNull PsiClass psiClass, @NotNull InspectionManager manager, boolean isOnTheFly) {
+  public @NotNull OptionController getOptionController() {
+    return super.getOptionController().onValue(
+      "groups",
+      () -> StringUtil.join(ArrayUtilRt.toStringArray(groups), ","),
+      value -> {
+        groups.clear();
+        if (!StringUtil.isEmptyOrSpaces(value)) {
+          ContainerUtil.addAll(groups, value.split("[, ]"));
+        }
+      });
+  }
+
+  @Override
+  public ProblemDescriptor @Nullable [] checkClass(@NotNull PsiClass psiClass, @NotNull InspectionManager manager, boolean isOnTheFly) {
 
     if (!psiClass.getContainingFile().isWritable()) return null;
 
@@ -133,7 +119,7 @@ public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
             String methodName = matcher.group(1);
             if (!groups.contains(methodName)) {
               LOGGER.debug("group doesn't exist:" + methodName);
-              ProblemDescriptor descriptor = manager.createProblemDescriptor(annotation, "Group '" + methodName + "' is undefined.",
+              ProblemDescriptor descriptor = manager.createProblemDescriptor(annotation, TestngBundle.message("inspection.depends.on.groups.undefined.group.problem", methodName),
                                                                              new GroupNameQuickFix(methodName),
                                                                              ProblemHighlightType.GENERIC_ERROR_OR_WARNING, isOnTheFly);
               problemDescriptors.add(descriptor);
@@ -150,20 +136,18 @@ public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
 
     String myGroupName;
 
-    public GroupNameQuickFix(@NotNull String groupName) {
+    GroupNameQuickFix(@NotNull String groupName) {
       myGroupName = groupName;
     }
 
     @Override
-    @NotNull
-    public String getName() {
-      return "Add '" + myGroupName + "' as a defined test group.";
+    public @NotNull String getName() {
+      return TestngBundle.message("inspection.depends.on.groups.add.as.defined.test.group.fix", myGroupName);
     }
 
     @Override
-    @NotNull
-    public String getFamilyName() {
-      return "TestNG";
+    public @NotNull String getFamilyName() {
+      return TestngBundle.message("inspection.depends.on.groups.family.name");
     }
 
     @Override
@@ -180,6 +164,11 @@ public class DependsOnGroupsInspection extends BaseJavaLocalInspectionTool {
         Messages.showErrorDialog(project, e.getMessage(), CommonBundle.getErrorTitle());
       }
       */
+    }
+
+    @Override
+    public boolean startInWriteAction() {
+      return false;
     }
   }
 }

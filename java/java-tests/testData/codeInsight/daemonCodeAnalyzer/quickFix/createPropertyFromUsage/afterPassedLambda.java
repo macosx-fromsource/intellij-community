@@ -1,9 +1,9 @@
-// "Create property" "true"
+// "Create property" "true-preview"
 class Calculator {
     private Object i;
 
     {
-      setI(() -> {}); 
+      setI(() -> {});
     }
 
     public void setI(Object i) {

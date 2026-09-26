@@ -1,192 +1,210 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl;
 
-import com.intellij.AppTopics;
+import com.intellij.ide.IdeEventQueue;
 import com.intellij.injected.editor.DocumentWindow;
-import com.intellij.injected.editor.DocumentWindowImpl;
-import com.intellij.injected.editor.EditorWindowImpl;
+import com.intellij.lang.ASTNode;
+import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.components.SettingsSavingComponent;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.EditorFactory;
-import com.intellij.openapi.editor.event.DocumentEvent;
-import com.intellij.openapi.editor.ex.DocumentBulkUpdateListener;
+import com.intellij.openapi.editor.impl.event.EditorEventMulticasterImpl;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
-import com.intellij.openapi.fileEditor.FileDocumentManagerAdapter;
-import com.intellij.openapi.fileEditor.impl.FileDocumentManagerImpl;
+import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectLocator;
-import com.intellij.openapi.project.impl.ProjectImpl;
-import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.util.Segment;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.pom.core.impl.PomModelImpl;
 import com.intellij.psi.FileViewProvider;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.PsiManager;
 import com.intellij.psi.impl.source.PostprocessReformattingAspect;
-import com.intellij.psi.impl.source.tree.injected.MultiHostRegistrarImpl;
+import com.intellij.psi.impl.source.tree.injected.InjectedLanguageManagerImpl;
+import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil;
+import com.intellij.psi.impl.source.tree.mvcc.InternalPsiVersioning;
+import com.intellij.util.ArrayUtil;
 import com.intellij.util.FileContentUtil;
-import com.intellij.util.Processor;
-import com.intellij.util.messages.MessageBus;
-import com.intellij.util.messages.MessageBusConnection;
+import com.intellij.util.InjectionUtils;
+import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.TestOnly;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 //todo listen & notifyListeners readonly events?
-public class PsiDocumentManagerImpl extends PsiDocumentManagerBase implements SettingsSavingComponent {
-  private final DocumentCommitProcessor myDocumentCommitThread;
-  private final boolean myUnitTestMode = ApplicationManager.getApplication().isUnitTestMode();
+public final class PsiDocumentManagerImpl extends PsiDocumentManagerBase {
 
-  public PsiDocumentManagerImpl(@NotNull final Project project,
-                                @NotNull PsiManager psiManager,
-                                @NotNull EditorFactory editorFactory,
-                                @NotNull MessageBus bus,
-                                @NonNls @NotNull final DocumentCommitProcessor documentCommitThread) {
-    super(project, psiManager, bus, documentCommitThread);
-    myDocumentCommitThread = documentCommitThread;
-    editorFactory.getEventMulticaster().addDocumentListener(this, project);
-    MessageBusConnection busConnection = bus.connect();
-    busConnection.subscribe(AppTopics.FILE_DOCUMENT_SYNC, new FileDocumentManagerAdapter() {
-      @Override
-      public void fileContentLoaded(@NotNull final VirtualFile virtualFile, @NotNull Document document) {
-        PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
-          (Computable<PsiFile>)() -> myProject.isDisposed() || !virtualFile.isValid() ? null : getCachedPsiFile(virtualFile));
-        fireDocumentCreated(document, psiFile);
-      }
-    });
-    busConnection.subscribe(DocumentBulkUpdateListener.TOPIC, new DocumentBulkUpdateListener.Adapter() {
-      @Override
-      public void updateFinished(@NotNull Document doc) {
-        documentCommitThread.commitAsynchronously(project, doc, "Bulk update finished", ApplicationManager.getApplication().getDefaultModalityState());
-      }
-    });
+  public PsiDocumentManagerImpl(@NotNull Project project) {
+    super(project);
+
+    EditorFactory editorFactory = EditorFactory.getInstance();
+    editorFactory.getEventMulticaster().addDocumentListener(this, this);
+    ((EditorEventMulticasterImpl)editorFactory.getEventMulticaster()).addPrioritizedDocumentListener(new PriorityEventCollector(), this);
   }
 
-  @Nullable
   @Override
-  public PsiFile getPsiFile(@NotNull Document document) {
+  public @Nullable PsiFile getPsiFile(@NotNull Document document) {
     final PsiFile psiFile = super.getPsiFile(document);
     if (myUnitTestMode) {
-      final VirtualFile virtualFile = FileDocumentManager.getInstance().getFile(document);
-      if (virtualFile != null && virtualFile.isValid()) {
-        Collection<Project> projects = ProjectLocator.getInstance().getProjectsForFile(virtualFile);
-        if (!projects.isEmpty() && !projects.contains(myProject)) {
-          LOG.error("Trying to get PSI for an alien project. VirtualFile=" + virtualFile +
-                    ";\n myProject=" + myProject +
-                    ";\n projects returned: " + projects);
-        }
+      VirtualFile virtualFile = FileDocumentManager.getInstance().getFile(document);
+      if (virtualFile != null) {
+        assertFileIsFromCorrectProject(virtualFile);
       }
     }
     return psiFile;
   }
 
   @Override
-  public void documentChanged(DocumentEvent event) {
-    super.documentChanged(event);
-    // optimisation: avoid documents piling up during batch processing
-    if (FileDocumentManagerImpl.areTooManyDocumentsInTheQueue(myUncommittedDocuments)) {
-      if (myUnitTestMode) {
-        myStopTrackingDocuments = true;
-        try {
-          LOG.error("Too many uncommitted documents for " + myProject + "(" +myUncommittedDocuments.size()+")"+
-                    ":\n" + StringUtil.join(myUncommittedDocuments, "\n") +
-                    "\n\n Project creation trace: " + myProject.getUserData(ProjectImpl.CREATION_TRACE));
-        }
-        finally {
-          //noinspection TestOnlyProblems
-          clearUncommittedDocuments();
-        }
-      }
-      // must not commit during document save
-      if (PomModelImpl.isAllowPsiModification()) {
-        commitAllDocuments();
+  public void assertFileIsFromCorrectProject(@NotNull VirtualFile virtualFile) {
+    if (InternalPsiVersioning.isInsideVersioningButNotLocks()) {
+      return;
+    }
+    if (myUnitTestMode && virtualFile.isValid()) {
+      Project preferredProject = ProjectLocator.getPreferredProject(virtualFile);
+      Collection<Project> projects = preferredProject == null ? ProjectLocator.getInstance().getProjectsForFile(virtualFile)
+                                                              : Collections.singleton(preferredProject);
+      boolean isMyProject = projects.isEmpty() || projects.contains(myProject)
+                            // set aside the use-case for lazy developers who just don't care to retrieve the correct project for the file
+                            // and use DefaultProjectFactory.getDefaultProject() because why bother
+                            || myProject.isDefault();
+      if (!isMyProject) {
+        Logger.getInstance(getClass()).error(
+          "Trying to get PSI for a file that is not included in the project model of this project.\n" +
+          "virtualFile=" + virtualFile + ";\n" +
+          "project=" + myProject + " (" + myProject.getBasePath() + ");\n" +
+          "The file actually belongs to\n  " + StringUtil.join(projects, p -> p + " (" + p.getBasePath() + ")", "\n  ") + "\n" +
+          "Note:\n" +
+          "This error happens if ProjectLocatorImpl#isUnder(project, file) returns false, which means that the file is not included\n" +
+          "in the project model of the project. And usually, projects should not touch such files.\n" +
+          "Feel free to reach out to IntelliJ Code Platform team if you have questions or concerns.");
       }
     }
   }
 
   @Override
-  protected void beforeDocumentChangeOnUnlockedDocument(@NotNull final FileViewProvider viewProvider) {
-    PostprocessReformattingAspect.getInstance(myProject).beforeDocumentChanged(viewProvider);
+  protected void beforeDocumentChangeOnUnlockedDocument(final @NotNull FileViewProvider viewProvider) {
+    PostprocessReformattingAspect.getInstance(myProject).assertDocumentChangeIsAllowed(viewProvider);
     super.beforeDocumentChangeOnUnlockedDocument(viewProvider);
   }
 
+
   @Override
-  protected boolean finishCommitInWriteAction(@NotNull Document document,
-                                              @NotNull List<Processor<Document>> finishProcessors,
-                                              boolean synchronously) {
+  protected boolean finishCommitWithPublishing(@NotNull Document document,
+                                               @NotNull List<? extends BooleanRunnable> finishProcessors,
+                                               @NotNull List<? extends BooleanRunnable> reparseInjectedProcessors,
+                                               @NotNull DocumentCommitKind commitKind) {
+    boolean success = super.finishCommitWithPublishing(document, finishProcessors, reparseInjectedProcessors, commitKind);
+    PsiFile file = getCachedPsiFile(document);
+    if (file != null) {
+      InjectedLanguageManagerImpl.clearInvalidInjections(file);
+    }
     if (ApplicationManager.getApplication().isWriteAccessAllowed()) { // can be false for non-physical PSI
-      EditorWindowImpl.disposeInvalidEditors();
+      InjectedLanguageManagerImpl.disposeInvalidEditors();
     }
-    return super.finishCommitInWriteAction(document, finishProcessors, synchronously);
+    return success;
   }
 
   @Override
-  public boolean isDocumentBlockedByPsi(@NotNull Document doc) {
-    final FileViewProvider viewProvider = getCachedViewProvider(doc);
-    return viewProvider != null && PostprocessReformattingAspect.getInstance(myProject).isViewProviderLocked(viewProvider);
-  }
+  public boolean isDocumentBlockedByPsi(@NotNull Document document) {
+    final List<FileViewProvider> viewProviders = getCachedViewProviders(document);
+    if (viewProviders.isEmpty()) return false;
 
-  @Override
-  public void doPostponedOperationsAndUnblockDocument(@NotNull Document doc) {
-    if (doc instanceof DocumentWindow) doc = ((DocumentWindow)doc).getDelegate();
-    final PostprocessReformattingAspect component = myProject.getComponent(PostprocessReformattingAspect.class);
-    final FileViewProvider viewProvider = getCachedViewProvider(doc);
-    if (viewProvider != null && component != null) component.doPostponedFormatting(viewProvider);
-  }
-
-  @Override
-  public void save() {
-    // Ensure all documents are committed on save so file content dependent indices, that use PSI to build have consistent content.
-    try {
-      commitAllDocuments();
+    PostprocessReformattingAspect aspect = PostprocessReformattingAspect.getInstance(myProject);
+    for (FileViewProvider viewProvider : viewProviders) {
+      if (aspect.isViewProviderLocked(viewProvider)) {
+        return true;
+      }
     }
-    catch (Exception e) {
-      LOG.error(e);
+    return false;
+    // todo IJPL-339 is it correct?
+  }
+
+  @Override
+  public void doPostponedOperationsAndUnblockDocument(@NotNull Document document) {
+    PostprocessReformattingAspect component = PostprocessReformattingAspect.getInstance(myProject);
+    if (component == null) return;
+
+    List<FileViewProvider> viewProviders;
+    if (document instanceof DocumentWindow) {
+      // todo IJPL-339 implement it
+      Document topDoc = ((DocumentWindow)document).getDelegate();
+      List<FileViewProvider> topViewProviders = getCachedViewProviders(topDoc);
+      if (ContainerUtil.exists(topViewProviders, topViewProvider -> InjectionUtils.shouldFormatOnlyInjectedCode(topViewProvider))) { // todo is it correct?
+        viewProviders = getCachedViewProviders(document);
+      }
+      else {
+        viewProviders = topViewProviders;
+      }
+    }
+    else {
+      viewProviders = getCachedViewProviders(document);
+    }
+
+    // todo IJPL-339 is it correct?
+    for (FileViewProvider viewProvider : viewProviders) {
+      component.doPostponedFormatting(viewProvider);
     }
   }
 
+  @ApiStatus.Internal
+  @NotNull
   @Override
-  @TestOnly
-  public void clearUncommittedDocuments() {
-    super.clearUncommittedDocuments();
-    ((DocumentCommitThread)myDocumentCommitThread).clearQueue();
+  public List<BooleanRunnable> reparseChangedInjectedFragments(@NotNull Document hostDocument,
+                                                               @NotNull PsiFile hostPsiFile,
+                                                               @NotNull TextRange hostChangedRange,
+                                                               @NotNull ProgressIndicator indicator,
+                                                               @NotNull ASTNode oldRoot,
+                                                               @NotNull ASTNode newRoot) {
+    List<DocumentWindow> changedInjected = InjectedLanguageManager.getInstance(myProject).getCachedInjectedDocumentsInRange(hostPsiFile, hostChangedRange);
+    if (changedInjected.isEmpty()) return Collections.emptyList();
+    FileViewProvider hostViewProvider = hostPsiFile.getViewProvider();
+    List<DocumentWindow> fromLast = new ArrayList<>(changedInjected);
+    // make sure modifications do not ruin all document offsets after
+    fromLast.sort(Collections.reverseOrder(Comparator.comparingInt(doc -> ArrayUtil.getLastElement(doc.getHostRanges()).getEndOffset())));
+    List<BooleanRunnable> result = new ArrayList<>(changedInjected.size());
+    for (DocumentWindow document : fromLast) {
+      Segment[] ranges = document.getHostRanges();
+      if (ranges.length != 0) {
+        // host document change has left something valid in this document window place. Try to reparse.
+        PsiFile injectedPsiFile = getCachedPsiFile(document);
+        if (injectedPsiFile  == null || !injectedPsiFile.isValid()) continue;
+
+        BooleanRunnable runnable = InjectedLanguageUtil.reparse(injectedPsiFile, document, hostPsiFile, hostDocument, hostViewProvider, indicator, oldRoot, newRoot, this);
+        ContainerUtil.addIfNotNull(result, runnable);
+      }
+    }
+
+    return result;
   }
 
-  @NonNls
   @Override
-  public String toString() {
+  public @NonNls String toString() {
     return super.toString() + " for the project " + myProject + ".";
   }
 
   @Override
-  public void reparseFiles(@NotNull Collection<VirtualFile> files, boolean includeOpenFiles) {
+  public void reparseFiles(@NotNull Collection<? extends VirtualFile> files, boolean includeOpenFiles) {
     FileContentUtil.reparseFiles(myProject, files, includeOpenFiles);
   }
 
-  @NotNull
   @Override
-  protected DocumentWindow freezeWindow(@NotNull DocumentWindow document) {
-    return MultiHostRegistrarImpl.freezeWindow((DocumentWindowImpl)document);
+  protected @NotNull DocumentWindow freezeWindow(@NotNull DocumentWindow document) {
+    return InjectedLanguageManager.getInstance(myProject).freezeWindow(document);
+  }
+
+  @Override
+  public boolean commitAllDocumentsUnderProgress() {
+    int eventCount = IdeEventQueue.getInstance().getEventCount();
+    boolean success = super.commitAllDocumentsUnderProgress();
+    IdeEventQueue.getInstance().setEventCount(eventCount);
+    return success;
   }
 }

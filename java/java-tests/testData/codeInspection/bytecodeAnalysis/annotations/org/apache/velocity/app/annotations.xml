@@ -1,7 +1,4 @@
 <root>
-    <item name='org.apache.velocity.app.FieldMethodizer java.lang.Object get(java.lang.String)'>
-        <annotation name='org.jetbrains.annotations.Nullable'/>
-    </item>
     <item name='org.apache.velocity.app.FieldMethodizer void addObject(java.lang.Object) 0'>
         <annotation name='org.jetbrains.annotations.NotNull'/>
     </item>
@@ -18,12 +15,12 @@
     </item>
     <item name='org.apache.velocity.app.Velocity boolean mergeTemplate(java.lang.String, java.lang.String, org.apache.velocity.context.Context, java.io.Writer)'>
         <annotation name='org.jetbrains.annotations.Contract'>
-            <val val="&quot;!null,_,_,_-&gt;true;_,!null,_,_-&gt;true;_,_,!null,_-&gt;true;_,_,_,!null-&gt;true;_,_,_,null-&gt;true;_,_,null,_-&gt;true;_,null,_,_-&gt;true;null,_,_,_-&gt;true&quot;"/>
+            <val val="&quot;_,_,_,_-&gt;true&quot;"/>
         </annotation>
     </item>
     <item name='org.apache.velocity.app.Velocity boolean mergeTemplate(java.lang.String, org.apache.velocity.context.Context, java.io.Writer)'>
         <annotation name='org.jetbrains.annotations.Contract'>
-            <val val="&quot;!null,_,_-&gt;true;_,!null,_-&gt;true;_,_,!null-&gt;true;_,_,null-&gt;true;_,null,_-&gt;true;null,_,_-&gt;true&quot;"/>
+            <val val="&quot;_,_,_-&gt;true&quot;"/>
         </annotation>
     </item>
     <item name='org.apache.velocity.app.VelocityEngine boolean evaluate(org.apache.velocity.context.Context, java.io.Writer, java.lang.String, java.io.InputStream) 3'>
@@ -31,7 +28,7 @@
     </item>
     <item name='org.apache.velocity.app.VelocityEngine boolean mergeTemplate(java.lang.String, java.lang.String, org.apache.velocity.context.Context, java.io.Writer)'>
         <annotation name='org.jetbrains.annotations.Contract'>
-            <val val="&quot;!null,_,_,_-&gt;true;_,!null,_,_-&gt;true;_,_,!null,_-&gt;true;_,_,_,!null-&gt;true;_,_,_,null-&gt;true;_,_,null,_-&gt;true;_,null,_,_-&gt;true;null,_,_,_-&gt;true&quot;"/>
+            <val val="&quot;_,_,_,_-&gt;true&quot;"/>
         </annotation>
     </item>
 </root>

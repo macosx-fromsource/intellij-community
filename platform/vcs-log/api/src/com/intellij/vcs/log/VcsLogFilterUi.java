@@ -1,10 +1,12 @@
 package com.intellij.vcs.log;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 /**
  * Graphical UI for filtering commits in the log.
  */
+@ApiStatus.Experimental
 public interface VcsLogFilterUi {
 
   /**
@@ -12,10 +14,4 @@ public interface VcsLogFilterUi {
    */
   @NotNull
   VcsLogFilterCollection getFilters();
-
-  /**
-   * Sets the given filter to the given value and updates the log view. <br/>
-   * <b>Note:</b> only VcsLogBranchFilter and VcsLogStructureFilter are currently supported.
-   */
-  void setFilter(@NotNull VcsLogFilter filter);
 }

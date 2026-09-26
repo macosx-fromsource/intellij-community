@@ -1,67 +1,83 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.wm.impl.content;
 
 import com.intellij.ide.ui.AntialiasingType;
 import com.intellij.openapi.wm.ToolWindow;
+import com.intellij.ui.DirtyUI;
 import com.intellij.ui.EngravedTextGraphics;
-import com.intellij.ui.Gray;
+import com.intellij.ui.ExperimentalUI;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.OffsetIcon;
 import com.intellij.ui.content.Content;
+import com.intellij.util.ui.GraphicsUtil;
+import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.util.ui.WatermarkIcon;
-import sun.swing.SwingUtilities2;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.accessibility.AccessibleContext;
+import javax.swing.Icon;
+import javax.swing.JLabel;
+import java.awt.Color;
+import java.awt.ComponentOrientation;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
 
+@DirtyUI
 public class BaseLabel extends JLabel {
   protected ToolWindowContentUi myUi;
 
   private Color myActiveFg;
   private Color myPassiveFg;
+  private Color myTabColor;
   private boolean myBold;
 
-  public BaseLabel(ToolWindowContentUi ui, boolean bold) {
+  public BaseLabel(@NotNull ToolWindowContentUi ui, boolean bold) {
     myUi = ui;
     setOpaque(false);
     myBold = bold;
+    addFocusListener(new FocusListener() {
+      @Override
+      public void focusGained(FocusEvent e) {
+        repaint();
+      }
+      @Override
+      public void focusLost(FocusEvent e) {
+        repaint();
+      }
+    });
+    GraphicsUtil.setAntialiasingType(this, AntialiasingType.getAATextInfoForSwingComponent());
+
+    if (ExperimentalUI.isNewUI()) {
+      setBorder(JBUI.Borders.empty(JBUI.CurrentTheme.ToolWindow.headerLabelLeftRightInsets()));
+    }
   }
 
   @Override
   public void updateUI() {
     setActiveFg(JBColor.foreground());
-    setPassiveFg(new JBColor(Gray._75, UIUtil.getLabelDisabledForeground()));
+    setPassiveFg(JBColor.foreground());
     super.updateUI();
   }
 
   @Override
   public Font getFont() {
-    Font f = UIUtil.getLabelFont();
-    f = f.deriveFont(f.getStyle(), Math.max(11, f.getSize() - 2));
+    Font font = getLabelFont();
     if (myBold) {
-      f = f.deriveFont(Font.BOLD);
+      font = font.deriveFont(Font.BOLD);
     }
 
-    return f;
+    return font;
   }
 
   public static Font getLabelFont() {
-    Font f = UIUtil.getLabelFont();
-    return f.deriveFont(f.getStyle(), Math.max(11, f.getSize() - 2));
+    Font font = JBUI.CurrentTheme.ToolWindow.headerFont();
+    return font.deriveFont(font.getSize() + JBUI.CurrentTheme.ToolWindow.overrideHeaderFontSizeOffset());
   }
 
   public void setActiveFg(final Color fg) {
@@ -72,11 +88,15 @@ public class BaseLabel extends JLabel {
     myPassiveFg = passiveFg;
   }
 
+  @Override
   protected void paintComponent(final Graphics g) {
-    final Color fore = myUi.myWindow.isActive() ? myActiveFg : myPassiveFg;
+    final Color fore = myUi.window.isActive() ? myActiveFg : myPassiveFg;
     setForeground(fore);
-    putClientProperty(SwingUtilities2.AA_TEXT_PROPERTY_KEY, AntialiasingType.getAAHintForSwingComponent());
     super.paintComponent(_getGraphics((Graphics2D)g));
+
+    if (isFocusOwner()) {
+      UIUtil.drawLabelDottedRectangle(this, g);
+    }
   }
 
   protected Graphics _getGraphics(Graphics2D g) {
@@ -101,36 +121,67 @@ public class BaseLabel extends JLabel {
     return myPassiveFg;
   }
 
-  protected void updateTextAndIcon(Content content, boolean isSelected) {
+  protected void updateTextAndIcon(Content content, boolean isSelected, boolean isBold) {
     if (content == null) {
       setText(null);
       setIcon(null);
+      myTabColor = null;
     }
     else {
-      setText(content.getDisplayName());
+      setText(showLabelText(content) ? content.getDisplayName() : null);
       setActiveFg(getActiveFg(isSelected));
       setPassiveFg(getPassiveFg(isSelected));
+      myTabColor = content.getTabColor();
 
       setToolTipText(content.getDescription());
 
       final boolean show = Boolean.TRUE.equals(content.getUserData(ToolWindow.SHOW_CONTENT_ICON));
       if (show) {
+        ComponentOrientation componentOrientation = content.getUserData(Content.TAB_LABEL_ORIENTATION_KEY);
+        if(componentOrientation != null) {
+          setComponentOrientation(componentOrientation);
+        }
+        Icon icon = OffsetIcon.getOriginalIcon(content.getIcon());
         if (isSelected) {
-          setIcon(content.getIcon());
+          setIcon(icon);
         }
         else {
-          setIcon(content.getIcon() != null ? new WatermarkIcon(content.getIcon(), .5f) : null);
+          var userValueIsTransparent = content.getUserData(ToolWindowContentUi.NOT_SELECTED_TAB_ICON_TRANSPARENT);
+          var isTransparent = userValueIsTransparent != null ? userValueIsTransparent : true;
+
+          var labelIcon = icon != null ? (isTransparent ? new WatermarkIcon(icon, .5f) : icon) : null;
+          setIcon(labelIcon);
         }
       }
       else {
         setIcon(null);
       }
 
-      myBold = false; //isSelected;
+      myBold = isBold;
     }
   }
 
-  public Content getContent() {
+  boolean showLabelText(@NotNull Content content) {
+    return true;
+  }
+
+  public @Nullable Color getTabColor() {
+    return myTabColor;
+  }
+
+  public @Nullable Content getContent() {
     return null;
+  }
+
+  @Override
+  public AccessibleContext getAccessibleContext() {
+    if (accessibleContext == null) {
+      accessibleContext = new AccessibleBaseLabel();
+    }
+    return accessibleContext;
+  }
+
+  @ApiStatus.Internal
+  protected class AccessibleBaseLabel extends AccessibleJLabel {
   }
 }

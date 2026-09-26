@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2009 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,14 @@
  */
 package com.intellij.ui;
 
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.util.ui.accessibility.AccessibleContextDelegateWithContextMenu;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.accessibility.AccessibleContext;
+import javax.swing.JTable;
+import java.awt.Container;
+import java.awt.Graphics;
 
 public class SimpleColoredRenderer extends SimpleColoredComponent {
   private TableCellState myCellState = new TableCellState();
@@ -27,8 +31,14 @@ public class SimpleColoredRenderer extends SimpleColoredComponent {
     myCellState.collectState(table, isSelected, hasFocus, row, column);
   }
 
+  @Override
   public void append(@NotNull String fragment, @NotNull SimpleTextAttributes attributes, boolean isMainText) {
     super.append(fragment, modifyAttributes(attributes), isMainText);
+  }
+
+  @Override
+  protected void revalidateAndRepaint() {
+    // no need for this in a renderer
   }
 
   protected SimpleTextAttributes modifyAttributes(final SimpleTextAttributes attributes) {
@@ -47,6 +57,7 @@ public class SimpleColoredRenderer extends SimpleColoredComponent {
     return true;
   }
 
+  @Override
   protected void paintComponent(Graphics g) {
     if (shouldPaintBackground()) {
       g.setColor(getBackground());
@@ -54,5 +65,23 @@ public class SimpleColoredRenderer extends SimpleColoredComponent {
     }
 
     super.paintComponent(g);
+  }
+
+  @Override
+  public AccessibleContext getAccessibleContext() {
+    if (accessibleContext == null) {
+      accessibleContext = new AccessibleContextDelegateWithContextMenu(super.getAccessibleContext()) {
+        @Override
+        protected void doShowContextMenu() {
+          ActionManager.getInstance().tryToExecute(ActionManager.getInstance().getAction("ShowPopupMenu"), null, null, null, true);
+        }
+
+        @Override
+        protected Container getDelegateParent() {
+          return getParent();
+        }
+      };
+    }
+    return accessibleContext;
   }
 }

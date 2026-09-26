@@ -1,46 +1,39 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.util;
 
+import com.intellij.ide.ui.UISettings;
 import com.intellij.navigation.NavigationItem;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
+import com.intellij.openapi.fileTypes.BinaryFileTypeDecompilers;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.GeneratedSourcesFilter;
 import com.intellij.openapi.util.UserDataHolder;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.VFileProperty;
 import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.platform.ide.navigation.NavigateUtil;
+import com.intellij.platform.ide.navigation.NavigationOptions;
 import com.intellij.pom.Navigatable;
 import com.intellij.pom.PomTargetPsiElement;
+import com.intellij.psi.NavigatablePsiElement;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.SmartPointerManager;
+import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.util.PsiUtilCore;
-import com.intellij.util.ObjectUtils;
-import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.ApiStatus.Internal;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collections;
-import java.util.List;
+import java.util.function.Function;
 
-public class EditSourceUtil {
+public final class EditSourceUtil {
   private EditSourceUtil() { }
 
-  @Nullable
-  public static Navigatable getDescriptor(@NotNull PsiElement element) {
+  public static @Nullable Navigatable getDescriptor(@NotNull PsiElement element) {
     PsiElement original = getNavigatableOriginalElement(element);
     if (original != null) {
       element = original;
@@ -55,24 +48,39 @@ public class EditSourceUtil {
     if (navigationElement instanceof PomTargetPsiElement) {
       return ((PomTargetPsiElement)navigationElement).getTarget();
     }
-    final int offset = navigationElement instanceof PsiFile ? -1 : navigationElement.getTextOffset();
     final VirtualFile virtualFile = PsiUtilCore.getVirtualFile(navigationElement);
     if (virtualFile == null || !virtualFile.isValid()) {
       return null;
     }
-    OpenFileDescriptor desc = new OpenFileDescriptor(navigationElement.getProject(), virtualFile, offset);
+    Project project = navigationElement.getProject();
+    OpenFileDescriptor desc;
+    if (BinaryFileTypeDecompilers.getInstance().hasDecompiler(virtualFile) &&
+        FileDocumentManager.getInstance().getCachedDocument(virtualFile) == null &&
+        Registry.is("hyperlink.ide.decompiler.open.file")) {
+      SmartPsiElementPointer<PsiElement> pointer =
+        SmartPointerManager.getInstance(project).createSmartPsiElementPointer(navigationElement);
+      desc = new OpenFileDescriptor(project, virtualFile, () -> {
+        if (FileDocumentManager.getInstance().getCachedDocument(virtualFile) == null) {
+          return -1;
+        }
+        PsiElement fromPointer = pointer.getElement();
+        return fromPointer == null || fromPointer instanceof PsiFile ? -1 : fromPointer.getTextOffset();
+      });
+    }
+    else {
+      final int offset = navigationElement instanceof PsiFile ? -1 : navigationElement.getTextOffset();
+      desc = new OpenFileDescriptor(project, virtualFile, offset);
+    }
     desc.setUseCurrentWindow(FileEditorManager.USE_CURRENT_WINDOW.isIn(navigationElement));
+    if (UISettings.getInstance().getOpenInPreviewTabIfPossible() && Registry.is("editor.preview.tab.navigation")) {
+      desc.setUsePreviewTab(true);
+    }
     return desc;
   }
 
-  private static PsiElement getNavigatableOriginalElement(@NotNull PsiElement element) {
-    final List<? extends PsiElement> originalElements = collectAllOriginalElements(element);
-    for (PsiElement original: originalElements) {
-      if (canNavigate(original)) {
-        return original;
-      }
-    }
-    return null;
+  @Internal
+  public static PsiElement getNavigatableOriginalElement(@NotNull PsiElement element) {
+    return processAllOriginalElements(element, original -> canNavigate(original) ? original : null);
   }
 
   public static boolean canNavigate(PsiElement element) {
@@ -97,21 +105,28 @@ public class EditSourceUtil {
   /**
    * Collect original elements from all filters.
    */
-  @NotNull
-  private static List<? extends PsiElement> collectAllOriginalElements(@NotNull PsiElement element) {
-    List<PsiElement> result = null;
-    for (GeneratedSourcesFilter filter : GeneratedSourcesFilter.EP_NAME.getExtensions()) {
-      result = addAll(filter.getOriginalElements(element), result);
+  private static PsiElement processAllOriginalElements(@NotNull PsiElement element, @NotNull Function<? super PsiElement, ? extends PsiElement> processor) {
+    for (GeneratedSourcesFilter filter : GeneratedSourcesFilter.EP_NAME.getExtensionList()) {
+      for (PsiElement originalElement: filter.getOriginalElements(element)) {
+        PsiElement apply = processor.apply(originalElement);
+        if (apply != null) return apply;
+      }
     }
-    return ObjectUtils.notNull(result, Collections.<PsiElement>emptyList());
+    return null;
   }
 
-  @NotNull
-  private static <T> List<T> addAll(@NotNull List<? extends T> elements, List<T> result) {
-    if (result == null) {
-      return ContainerUtil.newArrayList(elements);
+  public static boolean navigateToPsiElement(@NotNull PsiElement element) {
+    return navigateToPsiElement(element, NavigationOptions.requestFocus());
+  }
+
+  @Internal
+  public static boolean navigateToPsiElement(@NotNull PsiElement element, @NotNull NavigationOptions options) {
+    // the element's NavigationRequest is preferred over potentially plain one from OpenFileDescriptor
+    Navigatable navigatable = element instanceof NavigatablePsiElement navigatableElement ? navigatableElement : getDescriptor(element);
+    if (navigatable != null && navigatable.canNavigate()) {
+      Project project = element.getProject();
+      NavigateUtil.requestNavigate(project, navigatable, options, null);
     }
-    result.addAll(elements);
-    return result;
+    return true;
   }
 }

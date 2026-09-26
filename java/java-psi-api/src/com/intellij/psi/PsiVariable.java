@@ -1,25 +1,14 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi;
 
 import com.intellij.pom.PomRenameableTarget;
+import com.intellij.pom.java.LanguageLevel;
+import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.NonNls;
 
 /**
  * Represents a Java local variable, method parameter or field.
@@ -45,14 +34,14 @@ public interface PsiVariable extends PsiModifierListOwner, PsiNameIdentifierOwne
    * Returns the initializer for the variable.
    *
    * @return the initializer expression, or null if it has no initializer.
-   * @see {@link #hasInitializer()}
+   * @see #hasInitializer()
    */
   @Nullable
   PsiExpression getInitializer();
 
   /**
    * <p>Checks if the variable has an initializer.</p>
-   * <p>Please note that even when {@link #hasInitializer()} returns true, {@link #getInitializer()} still can return null,
+   * <p>Please note that even when {@code hasInitializer()} returns true, {@link #getInitializer()} still can return null,
    * e.g. for implicit initializer in case of enum constant declaration.</p>
    *
    * @return true if the variable has an initializer, false otherwise.
@@ -60,10 +49,21 @@ public interface PsiVariable extends PsiModifierListOwner, PsiNameIdentifierOwne
   boolean hasInitializer();
 
   /**
+   * Adds initializer to the variable declaration statement or, if {@code initializer}
+   * parameter is null, removes initializer from variable.
+   *
+   * @param initializer the initializer to add.
+   * @throws IncorrectOperationException if the modifications fails, or if this variable does not support initializers (e.g. parameters).
+   */
+  default void setInitializer(@Nullable PsiExpression initializer) throws IncorrectOperationException {
+    throw new IncorrectOperationException();
+  }
+
+  /**
    * Ensures that the variable declaration is not combined in the same statement with
    * other declarations. Also, if the variable is an array, ensures that the array
-   * brackets are used in Java style (<code>int[] a</code>)
-   * and not in C style (<code> int a[]</code>).
+   * brackets are used in Java style ({@code int[] a})
+   * and not in C style ({@code int a[]}).
    *
    * @throws IncorrectOperationException if the modification fails for some reason.
    */
@@ -89,4 +89,16 @@ public interface PsiVariable extends PsiModifierListOwner, PsiNameIdentifierOwne
 
   @Override
   PsiElement setName(@NonNls @NotNull String name) throws IncorrectOperationException;
+
+  /**
+   * @return true if the variable is an unnamed variable, according to the Java specification
+   */
+  @ApiStatus.Experimental
+  default boolean isUnnamed() {
+    return "_".equals(getName()) &&
+           !(this instanceof PsiCompiledElement) &&
+           // Treat _ as unsupported unnamed variable since JDK 1.9, 
+           // so we can get a proper suggestion to update language level
+           PsiUtil.getLanguageLevel(this).isAtLeast(LanguageLevel.JDK_1_9);
+  }
 }

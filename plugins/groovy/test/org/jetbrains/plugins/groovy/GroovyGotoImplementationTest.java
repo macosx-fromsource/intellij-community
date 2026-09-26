@@ -17,7 +17,6 @@
 package org.jetbrains.plugins.groovy;
 
 
-import com.intellij.openapi.application.Result;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -29,27 +28,20 @@ import com.intellij.testFramework.fixtures.CodeInsightTestUtil;
 import com.intellij.testFramework.fixtures.JavaCodeInsightFixtureTestCase;
 import com.intellij.testFramework.fixtures.TempDirTestFixture;
 import com.intellij.testFramework.fixtures.impl.TempDirTestFixtureImpl;
-import org.jetbrains.annotations.NotNull;
 
-/**
- * @author peter
- */
 public class GroovyGotoImplementationTest extends JavaCodeInsightFixtureTestCase {
 
   public void testNoGotoImplementationOutsideSourceRoot() throws Throwable {
     final TempDirTestFixture dirFixture = new TempDirTestFixtureImpl();
     dirFixture.setUp();
 
-    new WriteCommandAction(getProject()) {
-      @Override
-      protected void run(@NotNull Result result) throws Throwable {
-        final VirtualFile outside = dirFixture.getFile("").createChildDirectory(this, "outside");
-        PsiTestUtil.addContentRoot(myModule, outside);
-        VirtualFile out = outside.createChildData(this, "Outside.groovy");
-        VfsUtil.saveText(out, "class Bar {}\n class Goo extends Bar {}");
-        PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
-      }
-    }.execute();
+    WriteCommandAction.writeCommandAction(getProject()).run(() -> {
+      final VirtualFile outside = dirFixture.getFile("").createChildDirectory(this, "outside");
+      PsiTestUtil.addContentRoot(getModule(), outside);
+      VirtualFile out = outside.createChildData(this, "Outside.groovy");
+      VfsUtil.saveText(out, "class Bar {}\n class Goo extends Bar {}");
+      PsiDocumentManager.getInstance(getProject()).commitAllDocuments();
+    });
 
     try {
       PsiFile inProject = myFixture.addFileToProject("Foo.groovy", "class <caret>Foo {}\n class Bar extends Foo {}");

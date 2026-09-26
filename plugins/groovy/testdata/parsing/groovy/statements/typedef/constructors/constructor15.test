@@ -14,6 +14,8 @@ Groovy script
       <empty list>
     Implements clause
       <empty list>
+    Permits clause
+      <empty list>
     PsiWhiteSpace(' ')
     Type definition body
       PsiElement({)('{')
@@ -22,8 +24,8 @@ Groovy script
         Modifiers
           <empty list>
         PsiElement(identifier)('LogPipeBuilder')
-        PsiElement(()('(')
         Parameter list
+          PsiElement(()('(')
           Parameter
             Modifiers
               <empty list>
@@ -38,20 +40,12 @@ Groovy script
                   PsiElement(>)('>')
             PsiWhiteSpace(' ')
             PsiElement(identifier)('transformer')
-        PsiErrorElement:')' expected
-          <empty list>
+          PsiErrorElement:'==' unexpected
+            PsiElement(==)('==')
+          PsiElement())(')')
         Throw clause
           <empty list>
-      PsiElement(==)('==')
-      PsiErrorElement:';', '}' or new line expected
-        <empty list>
-      PsiElement())(')')
-      PsiErrorElement:';', '}' or new line expected
-        <empty list>
-      PsiWhiteSpace(' ')
-      Class initializer
-        Modifiers
-          <empty list>
+        PsiWhiteSpace(' ')
         Open block
           PsiElement({)('{')
           PsiWhiteSpace('\n    ')

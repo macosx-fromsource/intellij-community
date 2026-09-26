@@ -13,13 +13,14 @@ class TryWithResources {
     final AutoCloseable r1 = null;
     AutoCloseable r2 = null;
     AutoCloseable r3 = null;
-    try (r1; r2; <error descr="Variable used as a try-with-resources resource should be final or effectively final">r3</error>) { }
+    AutoCloseable r4; r4 = null;
+    try (r1; r2; r4; <error descr="Variable used as a try-with-resources resource should be final or effectively final">r3</error>) { }
     r3 = null;
   }
 
   void testType() throws Exception {
     String s = "";
-    try (<error descr="Incompatible types. Found: 'java.lang.String', required: 'java.lang.AutoCloseable'">s</error>;
+    try (<error descr="Incompatible types. Found: 'java.lang.String', required: 'java.lang.AutoCloseable'">s;</error>
          <error descr="Incompatible types. Found: 'TryWithResources', required: 'java.lang.AutoCloseable'">this</error>) { }
   }
 
@@ -51,7 +52,7 @@ class TryWithResources {
   }
 
   void testMoreUsefulParseForIncorrectExpression() {
-    try (<error descr="Declaration, final or effectively final variable expected">new Resource()</error>) {}
-    try (<error descr="Declaration, final or effectively final variable expected">Resource.create()</error>) {}
+    try (<error descr="Declaration, final, or effectively final variable expected">new Resource()</error>) {}
+    try (<error descr="Declaration, final, or effectively final variable expected">Resource.create()</error>) {}
   }
 }

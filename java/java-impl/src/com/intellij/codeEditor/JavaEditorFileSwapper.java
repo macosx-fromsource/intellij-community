@@ -1,83 +1,64 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeEditor;
 
+import com.intellij.openapi.fileEditor.impl.EditorComposite;
 import com.intellij.openapi.fileEditor.impl.EditorFileSwapper;
-import com.intellij.openapi.fileEditor.impl.EditorWithProviderComposite;
 import com.intellij.openapi.fileEditor.impl.text.TextEditorImpl;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassOwner;
+import com.intellij.psi.PsiCompiledFile;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.PsiNameIdentifierOwner;
 import com.intellij.psi.impl.compiled.ClsClassImpl;
 import com.intellij.psi.util.PsiTreeUtil;
+import kotlin.Pair;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class JavaEditorFileSwapper extends EditorFileSwapper {
+public final class JavaEditorFileSwapper implements EditorFileSwapper {
   @Override
-  public Pair<VirtualFile, Integer> getFileToSwapTo(Project project, EditorWithProviderComposite editor) {
-    VirtualFile file = editor.getFile();
+  public Pair<VirtualFile, @Nullable Integer> getFileToSwapTo(Project project, EditorComposite composite) {
+    VirtualFile file = composite.getFile();
     VirtualFile sourceFile = findSourceFile(project, file);
-    if (sourceFile == null) return null;
+    if (sourceFile == null) {
+      return null;
+    }
 
     Integer position = null;
 
-    TextEditorImpl oldEditor = findSinglePsiAwareEditor(editor.getEditors());
+    TextEditorImpl oldEditor = EditorFileSwapper.findSinglePsiAwareEditor(composite.getAllEditors());
     if (oldEditor != null) {
       PsiCompiledFile clsFile = (PsiCompiledFile)PsiManager.getInstance(project).findFile(file);
       assert clsFile != null;
 
       int offset = oldEditor.getEditor().getCaretModel().getOffset();
-
       PsiElement elementAt = clsFile.findElementAt(offset);
       PsiMember member = PsiTreeUtil.getParentOfType(elementAt, PsiMember.class, false);
-
-      if (member instanceof PsiClass) {
-        boolean isFirstMember = true;
-
-        for (PsiElement e = member.getFirstChild(); e != null; e = e.getNextSibling()) {
-          if (e instanceof PsiMember) {
-            if (offset < e.getTextRange().getEndOffset()) {
-              if (!isFirstMember) {
-                member = (PsiMember)e;
-              }
-
-              break;
-            }
-
-            isFirstMember = false;
-          }
-        }
-      }
-
       if (member != null) {
-        PsiElement navigationElement = member.getNavigationElement();
+        PsiElement navigationElement = member.getOriginalElement().getNavigationElement();
         if (Comparing.equal(navigationElement.getContainingFile().getVirtualFile(), sourceFile)) {
           position = navigationElement.getTextOffset();
+          if (navigationElement instanceof PsiNameIdentifierOwner navigatableNameIdentifierOwner &&
+              navigatableNameIdentifierOwner.getNameIdentifier() != null &&
+              member instanceof PsiNameIdentifierOwner nameIdentifierOwner &&
+              nameIdentifierOwner.getNameIdentifier() != null &&
+              nameIdentifierOwner.getNameIdentifier().getTextRange().getEndOffset() == offset) {
+            position += navigatableNameIdentifierOwner.getNameIdentifier().getTextLength();
+          }
         }
       }
     }
 
-    return Pair.create(sourceFile, position);
+    return new Pair<>(sourceFile, position);
   }
 
-  @Nullable
-  public static VirtualFile findSourceFile(@NotNull Project project, @NotNull VirtualFile file) {
+  public static @Nullable VirtualFile findSourceFile(@NotNull Project project, @NotNull VirtualFile file) {
     PsiFile psiFile = PsiManager.getInstance(project).findFile(file);
     if (psiFile instanceof PsiCompiledFile && psiFile instanceof PsiClassOwner) {
       PsiClass[] classes = ((PsiClassOwner)psiFile).getClasses();

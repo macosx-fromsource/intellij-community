@@ -1,85 +1,41 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy;
 
-import com.intellij.openapi.editor.colors.EditorColorsScheme;
-import com.intellij.openapi.editor.highlighter.EditorHighlighter;
-import com.intellij.openapi.fileTypes.EditorHighlighterProvider;
 import com.intellij.openapi.fileTypes.FileType;
-import com.intellij.openapi.fileTypes.FileTypeEditorHighlighterProviders;
+import com.intellij.openapi.fileTypes.FileTypeManager;
 import com.intellij.openapi.fileTypes.LanguageFileType;
-import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.util.containers.ContainerUtil;
 import icons.JetgroovyIcons;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.plugins.groovy.highlighter.GroovyEditorHighlighter;
 
-import javax.swing.*;
-import java.util.ArrayList;
-import java.util.List;
+import javax.swing.Icon;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 
-/**
- * Represents Groovy file properites, such as extension etc.
- *
- * @author ilyas
- */
-public class GroovyFileType extends LanguageFileType {
-  public static final List<FileType> GROOVY_FILE_TYPES = new ArrayList<>();
+public final class GroovyFileType extends LanguageFileType {
   public static final @NotNull GroovyFileType GROOVY_FILE_TYPE = new GroovyFileType();
-  @NonNls public static final String DEFAULT_EXTENSION = "groovy";
+  public static final @NonNls String DEFAULT_EXTENSION = "groovy";
+
+  private static final @NlsSafe String GROOVY_DESCRIPTION = "Groovy";
 
   private GroovyFileType() {
     super(GroovyLanguage.INSTANCE);
-    FileTypeEditorHighlighterProviders.INSTANCE.addExplicitExtension(this, new EditorHighlighterProvider() {
-      @Override
-      public EditorHighlighter getEditorHighlighter(@Nullable Project project,
-                                                    @NotNull FileType fileType, @Nullable VirtualFile virtualFile,
-                                                    @NotNull EditorColorsScheme colors) {
-        return new GroovyEditorHighlighter(colors);
-      }
-    });
-    GROOVY_FILE_TYPES.add(this);
-  }
-
-  @NotNull
-  public static FileType[] getGroovyEnabledFileTypes() {
-    return GROOVY_FILE_TYPES.toArray(new FileType[GROOVY_FILE_TYPES.size()]);
   }
 
   @Override
-  @NotNull
-  @NonNls
-  public String getName() {
+  public @NotNull @NonNls String getName() {
     return "Groovy";
   }
 
   @Override
-  @NonNls
-  @NotNull
-  public String getDescription() {
-    return "Groovy Files";
+  public @NotNull String getDescription() {
+    return GROOVY_DESCRIPTION;
   }
 
   @Override
-  @NotNull
-  @NonNls
-  public String getDefaultExtension() {
+  public @NotNull @NonNls String getDefaultExtension() {
     return DEFAULT_EXTENSION;
   }
 
@@ -91,5 +47,19 @@ public class GroovyFileType extends LanguageFileType {
   @Override
   public boolean isJVMDebuggingSupported() {
     return true;
+  }
+
+  public static @NotNull FileType @NotNull [] getGroovyEnabledFileTypes() {
+    Collection<FileType> result = new LinkedHashSet<>();
+    result.addAll(ContainerUtil.filter(
+      FileTypeManager.getInstance().getRegisteredFileTypes(),
+      GroovyFileType::isGroovyEnabledFileType
+    ));
+    return result.toArray(FileType.EMPTY_ARRAY);
+  }
+
+  private static boolean isGroovyEnabledFileType(FileType ft) {
+    return ft instanceof GroovyEnabledFileType ||
+           ft instanceof LanguageFileType && ((LanguageFileType)ft).getLanguage() == GroovyLanguage.INSTANCE;
   }
 }

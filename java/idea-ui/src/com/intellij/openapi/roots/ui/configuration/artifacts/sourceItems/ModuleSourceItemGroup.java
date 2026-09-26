@@ -1,22 +1,9 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.roots.ui.configuration.artifacts.sourceItems;
 
 import com.intellij.ide.projectView.PresentationData;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleGrouper;
 import com.intellij.openapi.module.ModuleType;
 import com.intellij.openapi.roots.DependencyScope;
 import com.intellij.openapi.roots.ModuleOrderEntry;
@@ -25,7 +12,11 @@ import com.intellij.packaging.artifacts.Artifact;
 import com.intellij.packaging.artifacts.ArtifactType;
 import com.intellij.packaging.elements.PackagingElement;
 import com.intellij.packaging.elements.PackagingElementFactory;
-import com.intellij.packaging.ui.*;
+import com.intellij.packaging.ui.ArtifactEditorContext;
+import com.intellij.packaging.ui.PackagingSourceItem;
+import com.intellij.packaging.ui.PackagingSourceItemsProvider;
+import com.intellij.packaging.ui.SourceItemPresentation;
+import com.intellij.packaging.ui.SourceItemWeights;
 import com.intellij.ui.SimpleTextAttributes;
 import org.jetbrains.annotations.NotNull;
 
@@ -34,9 +25,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * @author nik
- */
 public class ModuleSourceItemGroup extends PackagingSourceItem {
   private final Module myModule;
 
@@ -46,21 +34,22 @@ public class ModuleSourceItemGroup extends PackagingSourceItem {
   }
 
   @Override
-  public SourceItemPresentation createPresentation(@NotNull ArtifactEditorContext context) {
+  public @NotNull SourceItemPresentation createPresentation(@NotNull ArtifactEditorContext context) {
     return new ModuleSourceItemPresentation(myModule, context);
   }
 
+  @Override
   public boolean equals(Object obj) {
     return obj instanceof ModuleSourceItemGroup && myModule.equals(((ModuleSourceItemGroup)obj).myModule);
   }
 
+  @Override
   public int hashCode() {
     return myModule.hashCode();
   }
 
   @Override
-  @NotNull
-  public List<? extends PackagingElement<?>> createElements(@NotNull ArtifactEditorContext context) {
+  public @NotNull List<? extends PackagingElement<?>> createElements(@NotNull ArtifactEditorContext context) {
     final Set<Module> modules = new LinkedHashSet<>();
     collectDependentModules(myModule, modules, context);
 
@@ -89,12 +78,11 @@ public class ModuleSourceItemGroup extends PackagingSourceItem {
     return result;
   }
 
-  private static void collectDependentModules(final Module module, Set<Module> modules, ArtifactEditorContext context) {
+  private static void collectDependentModules(final Module module, Set<? super Module> modules, ArtifactEditorContext context) {
     if (!modules.add(module)) return;
     
     for (OrderEntry entry : context.getModulesProvider().getRootModel(module).getOrderEntries()) {
-      if (entry instanceof ModuleOrderEntry) {
-        final ModuleOrderEntry moduleEntry = (ModuleOrderEntry)entry;
+      if (entry instanceof ModuleOrderEntry moduleEntry) {
         final Module dependency = moduleEntry.getModule();
         final DependencyScope scope = moduleEntry.getScope();
         if (dependency != null && scope.isForProductionRuntime()) {
@@ -104,8 +92,7 @@ public class ModuleSourceItemGroup extends PackagingSourceItem {
     }
   }
 
-  @NotNull
-  public Module getModule() {
+  public @NotNull Module getModule() {
     return myModule;
   }
 
@@ -113,21 +100,21 @@ public class ModuleSourceItemGroup extends PackagingSourceItem {
     private final Module myModule;
     private final ArtifactEditorContext myContext;
 
-    public ModuleSourceItemPresentation(@NotNull Module module, ArtifactEditorContext context) {
+    ModuleSourceItemPresentation(@NotNull Module module, ArtifactEditorContext context) {
       myModule = module;
       myContext = context;
     }
 
     @Override
     public String getPresentableName() {
-      return myModule.getName();
+      return ModuleGrouper.instanceFor(myContext.getProject(), myContext.getModifiableModuleModel()).getShortenedName(myModule);
     }
 
     @Override
     public void render(@NotNull PresentationData presentationData, SimpleTextAttributes mainAttributes,
                        SimpleTextAttributes commentAttributes) {
       presentationData.setIcon(ModuleType.get(myModule).getIcon());
-      presentationData.addText(myModule.getName(), mainAttributes);
+      presentationData.addText(getPresentableName(), mainAttributes);
     }
 
     @Override

@@ -24,15 +24,10 @@ import org.jetbrains.plugins.groovy.lang.completion.smartEnter.GroovySmartEnterP
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrBlockStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrWhileStatement;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 12.08.2008
- */
 public class GrWhileBodyFixer extends SmartEnterProcessorWithFixers.Fixer<GroovySmartEnterProcessor> {
   @Override
   public void apply(@NotNull Editor editor, @NotNull GroovySmartEnterProcessor processor, @NotNull PsiElement psiElement) {
-    if (!(psiElement instanceof GrWhileStatement)) return;
-    GrWhileStatement whileStatement = (GrWhileStatement) psiElement;
+    if (!(psiElement instanceof GrWhileStatement whileStatement)) return;
 
     final Document doc = editor.getDocument();
 

@@ -1,81 +1,69 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.ui;
 
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.CustomShortcutSet;
+import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.actionSystem.ShortcutSet;
+import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.keymap.Keymap;
 import com.intellij.openapi.keymap.KeymapManager;
 import com.intellij.openapi.keymap.KeymapManagerListener;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.util.ui.update.Activatable;
 import com.intellij.util.ui.update.UiNotifyConnector;
+import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import java.lang.ref.Reference;
+import java.lang.ref.WeakReference;
+import java.util.Collection;
 
-public final class ShadowAction implements Disposable {
-
+public final class ShadowAction {
   private final AnAction myAction;
   private AnAction myCopyFromAction;
-  private final JComponent myComponent;
+  private final Reference<JComponent> myComponent;
 
-  private final KeymapManagerListener myKeymapManagerListener;
-
-  private ShortcutSet myShortcutSet;
   private String myActionId;
 
-  private final Keymap.Listener myKeymapListener;
-  private Keymap myKeymap;
+  private final Presentation myPresentation;
+  private final Disposable myParentDisposable;
 
-  private Presentation myPresentation;
-  private final UiNotifyConnector myUiNotify;
+  private Disposable listenerDisposable;
+  private Disposable shortcutSetDisposable;
 
-  public ShadowAction(AnAction action, AnAction copyFromAction, JComponent component, Presentation presentation) {
-    this(action, copyFromAction, component);
-    myPresentation = presentation;
+  public ShadowAction(AnAction action, AnAction copyFromAction, JComponent component, Presentation presentation, @NotNull Disposable parentDisposable) {
+    this(action, copyFromAction, ActionManager.getInstance().getId(copyFromAction), presentation, component, parentDisposable);
   }
 
-  public ShadowAction(AnAction action, AnAction copyFromAction, JComponent component) {
+  // force passing parentDisposable to avoid code like new ShadowAction(this, original, c) (without Disposer.register)
+  public ShadowAction(AnAction action, AnAction copyFromAction, JComponent component, @NotNull Disposable parentDisposable) {
+    this(action, copyFromAction, ActionManager.getInstance().getId(copyFromAction), null, component, parentDisposable);
+  }
+
+  public ShadowAction(AnAction action, @NlsSafe String actionId, JComponent component, @NotNull Disposable parentDisposable) {
+    this(action, ActionManager.getInstance().getAction(actionId), actionId, null, component, parentDisposable);
+  }
+
+  private ShadowAction(AnAction action, AnAction copyFromAction, @NlsSafe String actionId, @Nullable Presentation presentation,
+                       JComponent component, @NotNull Disposable parentDisposable) {
     myAction = action;
+    myParentDisposable = parentDisposable;
+    myPresentation = presentation;
 
     myCopyFromAction = copyFromAction;
-    myComponent = component;
-    myActionId = ActionManager.getInstance().getId(myCopyFromAction);
+    myComponent = new WeakReference<>(component);
+    myActionId = actionId;
 
     myAction.getTemplatePresentation().copyFrom(copyFromAction.getTemplatePresentation());
 
-    myKeymapListener = new Keymap.Listener() {
-      @Override
-      public void onShortcutChanged(final String actionId) {
-        if (myActionId == null || actionId.equals(myActionId)) {
-          rebound();
-        }
-      }
-    };
-
-    myKeymapManagerListener = new KeymapManagerListener() {
-      @Override
-      public void activeKeymapChanged(final Keymap keymap) {
-        rebound();
-      }
-    };
-
-    myUiNotify = new UiNotifyConnector(myComponent, new Activatable() {
+    Disposer.register(parentDisposable, UiNotifyConnector.installOn(component, new Activatable() {
       @Override
       public void showNotify() {
         _connect();
@@ -83,82 +71,90 @@ public final class ShadowAction implements Disposable {
 
       @Override
       public void hideNotify() {
-        disconnect();
+        disposeListeners();
       }
-    });
+    }));
   }
 
   private void _connect() {
-    disconnect();
-    final KeymapManager mgr = getKeymapManager();
-    if (mgr == null) return;
+    Application application = ApplicationManager.getApplication();
+    if (application == null) {
+      return;
+    }
 
+    if (listenerDisposable == null) {
+      listenerDisposable = Disposer.newDisposable();
+      Disposer.register(myParentDisposable, listenerDisposable);
+      application.getMessageBus().connect(listenerDisposable).subscribe(KeymapManagerListener.TOPIC, new KeymapManagerListener() {
+        @Override
+        public void activeKeymapChanged(@Nullable Keymap keymap) {
+          rebound();
+        }
 
-    mgr.addKeymapManagerListener(myKeymapManagerListener);
+        @Override
+        public void shortcutsChanged(@NotNull Keymap keymap, @NonNls @NotNull Collection<String> actionIds, boolean fromSettings) {
+          if (myActionId == null || actionIds.contains(myActionId)) {
+            rebound();
+          }
+        }
+      });
+    }
+
     rebound();
   }
 
-  private void disconnect() {
-    final KeymapManager mgr = getKeymapManager();
-    if (mgr == null) return;
-
-
-    mgr.removeKeymapManagerListener(myKeymapManagerListener);
-    if (myKeymap != null) {
-      myKeymap.removeShortcutChangeListener(myKeymapListener);
+  private void disposeListeners() {
+    Disposable disposable = listenerDisposable;
+    if (disposable != null) {
+      listenerDisposable = null;
+      Disposer.dispose(disposable);
     }
+
+    disposeShortcutSetListener();
   }
 
   private void rebound() {
-    final KeymapManager mgr = getKeymapManager();
-    if (mgr == null) return;
+    disposeShortcutSetListener();
+
+    final KeymapManager keymapManager = getKeymapManager();
+    if (keymapManager == null) {
+      return;
+    }
 
     myActionId = ActionManager.getInstance().getId(myCopyFromAction);
     if (myPresentation == null) {
       myAction.copyFrom(myCopyFromAction);
-    } else {
+    }
+    else {
       myAction.getTemplatePresentation().copyFrom(myPresentation);
       myAction.copyShortcutFrom(myCopyFromAction);
     }
 
-    unregisterAll();
-
-    myKeymap = mgr.getActiveKeymap();
-    myKeymap.addShortcutChangeListener(myKeymapListener);
-
-    if (myActionId == null) return;
-
-    final Shortcut[] shortcuts = myKeymap.getShortcuts(myActionId);
-    myShortcutSet = new CustomShortcutSet(shortcuts);
-    myAction.registerCustomShortcutSet(myShortcutSet, myComponent);
-  }
-
-  private void unregisterAll() {
-    if (myShortcutSet != null) {
-      myAction.unregisterCustomShortcutSet(myComponent);
+    if (myActionId == null) {
+      return;
     }
 
-    if (myKeymap != null) {
-      myKeymap.removeShortcutChangeListener(myKeymapListener);
+    Keymap keymap = keymapManager.getActiveKeymap();
+
+    ShortcutSet shortcutSet = new CustomShortcutSet(keymap.getShortcuts(myActionId));
+    shortcutSetDisposable = Disposer.newDisposable();
+    Disposer.register(myParentDisposable, shortcutSetDisposable);
+    myAction.registerCustomShortcutSet(shortcutSet, myComponent.get(), shortcutSetDisposable);
+  }
+
+  private void disposeShortcutSetListener() {
+    Disposable disposable = shortcutSetDisposable;
+    if (disposable != null) {
+      shortcutSetDisposable = null;
+      Disposer.dispose(disposable);
     }
   }
 
-
-  @Override
-  public void dispose() {
-    unregisterAll();
-    myUiNotify.dispose();
-    disconnect();
-  }
-
-  @Nullable
-  private static KeymapManager getKeymapManager() {
-    if (ApplicationManager.getApplication().isDisposed()) return null;
-    return KeymapManager.getInstance();
+  private static @Nullable KeymapManager getKeymapManager() {
+    return ApplicationManager.getApplication().isDisposed() ? null : KeymapManager.getInstance();
   }
 
   public void reconnect(AnAction copyFromAction) {
-    disconnect();
     myCopyFromAction = copyFromAction;
     _connect();
   }

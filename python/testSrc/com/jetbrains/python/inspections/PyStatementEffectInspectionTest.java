@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2015 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +15,30 @@
  */
 package com.jetbrains.python.inspections;
 
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
 import com.jetbrains.python.fixtures.PyInspectionTestCase;
-import com.jetbrains.python.psi.LanguageLevel;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * @author vlan
- */
+@Subsystems.Inspections
+@Layers.Functional
 public class PyStatementEffectInspectionTest extends PyInspectionTestCase {
   public void testBasic() {
     doTest();
   }
 
   public void testAwait() {
-    doTest(LanguageLevel.PYTHON35);
+    doTest();
   }
 
-  private void doTest(@NotNull LanguageLevel level) {
-    runWithLanguageLevel(level, () -> doTest());
+  public void testComparison() {
+    doTest();
+  }
+
+  // PY-23057
+  public void testFunctionWithEllipsis() {
+    doTest();
   }
 
   @NotNull

@@ -1,97 +1,172 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.updater;
 
-import com.intellij.openapi.application.ex.PathManagerEx;
-import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.testFramework.rules.TempDirectory;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.ExtensionContext;
 
-import java.io.File;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.DosFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Random;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.zip.CRC32;
 
-public abstract class UpdaterTestCase {
-  protected static final UpdaterUI TEST_UI = new ConsoleUpdaterUI(){
-    @Override public void startProcess(String title) { }
-    @Override public void setStatus(String status) { }
-    @Override public void setDescription(String oldBuildDesc, String newBuildDesc) { }
-    @Override public boolean showWarning(String message) { return false; }
-  };
+import static org.assertj.core.api.Assertions.assertThat;
 
-  @Rule public TempDirectory myTempDir = new TempDirectory();
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@ExtendWith(UpdaterTestCase.class)
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@interface UpdaterTest { }
 
-  protected CheckSums CHECKSUMS;
+@Target(ElementType.FIELD)
+@Retention(RetentionPolicy.RUNTIME)
+@interface UpdaterTestData { }
 
-  @Before
-  public void setUp() throws Exception {
-    FileUtil.copyDir(PathManagerEx.findFileUnderCommunityHome("updater/testData"), getDataDir());
+final class UpdaterTestCase implements BeforeAllCallback, AfterEachCallback {
+  static final long README_TXT = 7256327L;
+  static final long IDEA_BAT = 1681106766L;
+  static final long ANNOTATIONS_JAR = 2525796836L;
+  static final long ANNOTATIONS_CHANGED_JAR = 2587736223L;
+  static final long BOOT_JAR = 2697993201L;
+  static final long BOOT_CHANGED_JAR = 2957038758L;
+  static final long BOOTSTRAP_JAR = 2745721972L;
+  static final long BOOTSTRAP_DELETED_JAR = 811764767L;
+  static final long LINK_TO_README_TXT = 2305843011042707672L;
+  static final long LINK_TO_DOT_README_TXT_DOS = 2305843011210142148L;
+  static final long LINK_TO_DOT_README_TXT_UNIX = 2305843009503057206L;
 
-    Runner.checkCaseSensitivity(getDataDir().getPath());
-    Runner.initLogger();
+  private static Path ourDataDir;
 
-    boolean windowsLineEnds = new File(getDataDir(), "Readme.txt").length() == 7132;
-    CHECKSUMS = new CheckSums(windowsLineEnds);
+  @Override
+  public void beforeAll(ExtensionContext context) throws Exception {
+    System.setProperty("idea.required.space", Long.toString(20_000_000));
+
+    if (ourDataDir == null) {
+      var dir = Path.of("community/updater/testData");
+      if (!Files.exists(dir)) dir = Path.of("updater/testData");
+      if (!Files.exists(dir)) dir = Path.of("testData");
+      if (!Files.exists(dir)) throw new IllegalStateException("Cannot find test data directory under " + Path.of(".").toAbsolutePath());
+      ourDataDir = dir.toAbsolutePath();
+    }
+
+    Runner.checkCaseSensitivity(ourDataDir.toString());
+
+    @SuppressWarnings("OptionalGetWithoutIsPresent") var testInstance = context.getTestInstance().get();
+    var testClass = testInstance.getClass();
+    while (!testClass.isAnnotationPresent(UpdaterTest.class)) testClass = testClass.getSuperclass();
+    for (var field : testClass.getDeclaredFields()) {
+      if (field.isAnnotationPresent(UpdaterTestData.class)) {
+        field.set(testInstance, ourDataDir);
+      }
+    }
   }
 
-  @After
-  public void tearDown() throws Exception {
+  @Override
+  public void afterEach(ExtensionContext context) throws Exception {
     Utils.cleanup();
   }
 
-  public File getDataDir() {
-    return getTempFile("data");
-  }
-
-  public File getTempFile(String fileName) {
-    return new File(myTempDir.getRoot(), fileName);
-  }
-
-  protected static class CheckSums {
-    public final long README_TXT;
-    public final long IDEA_BAT;
-    public final long ANNOTATIONS_JAR;
-    public final long BOOTSTRAP_JAR;
-    public final long BOOTSTRAP_JAR_BINARY;
-    public final long FOCUS_KILLER_DLL;
-    public final long ANNOTATIONS_JAR_NORM;
-    public final long ANNOTATIONS_CHANGED_JAR_NORM;
-    public final long BOOT_JAR_NORM;
-    public final long BOOT2_JAR_NORM;
-    public final long BOOT2_CHANGED_WITH_UNCHANGED_CONTENT_JAR_NORM;
-    public final long BOOT_WITH_DIRECTORY_BECOMES_FILE_JAR_NORM;
-    public final long BOOTSTRAP_JAR_NORM;
-    public final long BOOTSTRAP_DELETED_JAR_NORM;
-
-    public CheckSums(boolean windowsLineEnds) {
-      README_TXT = windowsLineEnds ? 1272723667L : 7256327L;
-      IDEA_BAT = windowsLineEnds ? 3088608749L : 1493936069L;
-      ANNOTATIONS_JAR = 2119442657L;
-      BOOTSTRAP_JAR = 2082851308L;
-      FOCUS_KILLER_DLL = 1991212227L;
-      BOOTSTRAP_JAR_BINARY = 2745721972L;
-
-      ANNOTATIONS_JAR_NORM = 2119442657L;
-      ANNOTATIONS_CHANGED_JAR_NORM = 4088078858L;
-      BOOT_JAR_NORM = 3018038682L;
-      BOOT2_JAR_NORM = 2406818996L;
-      BOOT2_CHANGED_WITH_UNCHANGED_CONTENT_JAR_NORM = 2406818996L;
-      BOOT_WITH_DIRECTORY_BECOMES_FILE_JAR_NORM = 1972168924;
-      BOOTSTRAP_JAR_NORM = 2082851308;
-      BOOTSTRAP_DELETED_JAR_NORM = 544883981L;
+  static void setReadOnly(Path file) throws IOException {
+    if (Utils.IS_WINDOWS) {
+      Files.getFileAttributeView(file, DosFileAttributeView.class).setReadOnly(true);
     }
+    else {
+      Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("r--------"));
+    }
+  }
+
+  final static class Directories {
+    final Path oldDir, newDir;
+
+    Directories(Path oldDir, Path newDir) {
+      this.oldDir = oldDir;
+      this.newDir = newDir;
+    }
+  }
+
+  static Directories prepareDirectories(Path tempDir, Path dataDir, boolean mangle) throws IOException {
+    var oldDir = Files.createDirectory(tempDir.resolve("oldDir"));
+    Utils.copyDirectory(dataDir, oldDir);
+    Files.writeString(oldDir.resolve("Readme.txt"), Files.readString(dataDir.resolve("Readme.txt")).replace("\r\n", "\n"));
+    Files.writeString(oldDir.resolve("bin/idea.bat"), Files.readString(dataDir.resolve("bin/idea.bat")).replace("\r\n", "\n"));
+    Files.delete(oldDir.resolve("lib/annotations_changed.jar"));
+    Files.delete(oldDir.resolve("lib/bootstrap_deleted.jar"));
+
+    var newDir = Files.createDirectory(tempDir.resolve("newDir"));
+    if (mangle) {
+      Utils.copyDirectory(dataDir, newDir);
+      Files.writeString(newDir.resolve("Readme.txt"), "hello");
+      Files.delete(newDir.resolve("bin/idea.bat"));
+      Utils.writeString(newDir.resolve("newDir/newFile.txt"), "hello");
+      Files.delete(newDir.resolve("lib/annotations.jar"));
+      Files.move(newDir.resolve("lib/annotations_changed.jar"), newDir.resolve("lib/annotations.jar"));
+      Files.delete(newDir.resolve("lib/bootstrap.jar"));
+      Files.move(newDir.resolve("lib/bootstrap_deleted.jar"), newDir.resolve("lib/bootstrap.jar"));
+    }
+    else {
+      Utils.copyDirectory(oldDir, newDir);
+    }
+
+    return new Directories(oldDir, newDir);
+  }
+
+  static PatchSpec createPatchSpec(Path oldDir, Path newDir) {
+    return new PatchSpec()
+      .setOldFolder(oldDir.toString()).setOldVersionDescription("<old>")
+      .setNewFolder(newDir.toString()).setNewVersionDescription("<new>");
+  }
+
+  static List<PatchAction> sortActions(List<PatchAction> actions) {
+    return sort(actions, a -> a.getClass().getSimpleName().charAt(0), Comparator.comparing(PatchAction::getPath));
+  }
+
+  static List<ValidationResult> sortResults(List<ValidationResult> results) {
+    return sort(results, r -> r.action, Comparator.comparing(r -> r.path));
+  }
+
+  private static <T> List<T> sort(List<T> list, Function<T, ?> classifier, Comparator<T> sorter) {
+    // splits the list into groups
+    var groups = list.stream().collect(Collectors.groupingBy(classifier, LinkedHashMap::new, Collectors.toList())).values();
+    // verifies the list is monotonic
+    assertThat(list).isEqualTo(groups.stream().flatMap(Collection::stream).collect(Collectors.toList()));
+    // sorts group elements and concatenates groups into a list
+    return groups.stream()
+      .flatMap(elements -> elements.stream().sorted(sorter))
+      .collect(Collectors.toList());
+  }
+
+  static long randomFile(Path file) throws IOException {
+    var rnd = new Random();
+    var size = (1 + rnd.nextInt(1023)) * 1024;
+    var data = new byte[size];
+    rnd.nextBytes(data);
+
+    Files.createDirectories(file.getParent());
+    Files.write(file, data);
+
+    var crc32 = new CRC32();
+    crc32.update(data);
+    return crc32.getValue();
+  }
+
+  static long linkHash(String target) throws IOException {
+    return Digester.digestStream(new ByteArrayInputStream(target.getBytes(StandardCharsets.UTF_8))) | Digester.SYM_LINK;
   }
 }

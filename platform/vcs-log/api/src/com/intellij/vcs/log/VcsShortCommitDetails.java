@@ -1,5 +1,6 @@
 package com.intellij.vcs.log;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
@@ -9,7 +10,7 @@ import java.util.List;
  * Returns the basic level of commit meta-data: author, time, subject. These details will be displayed in the log table.
  * <p/>
  * An instance of this object can be obtained via
- * {@link VcsLogObjectsFactory#createShortDetails(Hash, List, long, VirtualFile, String, String, String)
+ * {@link VcsLogObjectsFactory#createShortDetails(Hash, List, long, VirtualFile, String, String, String, String, String, long)
  * VcsLogObjectsFactory#createShortDetails}.
  * <p/>
  * It is not recommended to create a custom implementation of this interface, but if you need it, <b>make sure to implement {@code equals()}
@@ -25,6 +26,7 @@ public interface VcsShortCommitDetails extends TimedVcsCommit {
   VirtualFile getRoot();
 
   @NotNull
+  @NlsSafe
   String getSubject();
 
   @NotNull

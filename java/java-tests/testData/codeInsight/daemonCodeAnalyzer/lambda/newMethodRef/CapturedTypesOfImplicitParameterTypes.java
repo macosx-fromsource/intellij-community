@@ -7,7 +7,7 @@ interface B<BT> {
 
 class Test {
   public static void test() {
-    method1(Test::<error descr="Invalid method reference: A<capture of ? super M> cannot be converted to A<? super String>">method2</error>);
+    method1<error descr="'method1(B<A<? super M>>)' in 'Test' cannot be applied to '(<method reference>)'">(Test::method2)</error>;
   }
 
   static <M> void method1(B<A<? super M>> arg) { }

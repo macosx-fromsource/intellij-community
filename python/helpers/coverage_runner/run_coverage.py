@@ -45,9 +45,20 @@ sys.argv = argv
 
 cwd = os.getcwd()
 
-try:
-    main()
-finally:
-    if run_cov:
-        os.chdir(cwd)
-        main(["xml", "-o", coverage_file + ".xml", "--ignore-errors"])
+run_xml = os.getenv('PYCHARM_RUN_COVERAGE_XML')
+argv = ["xml", "-o", coverage_file + ".xml", "--ignore-errors"]
+rcfile = cwd + "/.coveragerc"
+if os.path.exists(rcfile):
+    print("Loading rcfile: %s\n" % rcfile)
+    argv += ["--rcfile", rcfile]
+
+if run_xml:
+    os.chdir(cwd)
+    main(argv)
+else:
+    try:
+        main()
+    finally:
+        if run_cov:
+            os.chdir(cwd)
+            main(argv)

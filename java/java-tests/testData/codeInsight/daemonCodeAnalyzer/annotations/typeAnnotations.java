@@ -49,9 +49,11 @@ class Outer {
     static class StaticInner {
       void test() {
         @TA StaticInner v1;
+        StaticMiddle.@TA StaticInner @TA [] @TA [] va;
         <error descr="Static member qualifying type may not be annotated">@TA</error> StaticMiddle.@TA StaticInner v2;
         <error descr="Static member qualifying type may not be annotated">@TA</error> Outer.<error descr="Static member qualifying type may not be annotated">@TA</error> StaticMiddle.@TA StaticInner v3;
-        List<@TA Outer.<error descr="Static member qualifying type may not be annotated">@TA</error> StaticMiddle.@TA StaticInner> l;
+        List<Outer.<error descr="Static member qualifying type may not be annotated">@TA</error> StaticMiddle.@TA StaticInner> l1;
+        List<<error descr="Static member qualifying type may not be annotated">@TA</error> Outer.StaticMiddle.@TA StaticInner> l2;
       }
     }
   }
@@ -66,8 +68,10 @@ class Outer {
 
     @A Map.@TA Entry e1;
     @A <error descr="Static member qualifying type may not be annotated">@TA</error> Map.@TA Entry e2;
-    @A java.<error descr="Annotation not applicable to this kind of reference">@TA</error> util.Map.@TA Entry e3;
-    @A List<java.<error descr="Annotation not applicable to this kind of reference">@TA</error> lang.@TA String> l1;
+    @A java.<error descr="Annotation is not applicable to this kind of reference">@TA</error> util.Map.@TA Entry e3;
+    @A <error descr="Annotation is not applicable to this kind of reference">@TA</error> java.util.Map.@TA Entry e4;
+    @A List<java.<error descr="Annotation is not applicable to this kind of reference">@TA</error> lang.@TA String> l1;
+    @A List<<error descr="Annotation is not applicable to this kind of reference">@TA</error> java.lang.String> l2;
 
     Object obj = "str";
     @TA String str = (@TA String)obj;
@@ -127,6 +131,23 @@ class Outer {
   static class This extends Super {
     void superField() {
       IntFunction<Super> f = Outer.<error descr="Annotations are not allowed here">@TA</error> This.super::getField;
+    }
+  }
+
+  void testAnnotation() {
+    <error descr="Static member qualifying type may not be annotated">@TA</error> T.Y.U.I.O o2;
+    T.<error descr="Static member qualifying type may not be annotated">@TA</error> Y.U.I.O o;
+    T.Y.<error descr="Static member qualifying type may not be annotated">@TA</error> U.I.O o3;
+    T.Y.U.<error descr="Static member qualifying type may not be annotated">@TA</error> I.O o4;
+  }
+
+  public class T {
+    public static class Y {
+      public class U {
+        public class I {
+          public static class O { }
+        }
+      }
     }
   }
 }

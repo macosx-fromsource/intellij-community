@@ -1,46 +1,43 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.types;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiType;
+import com.intellij.psi.ResolveState;
+import com.intellij.psi.impl.source.tree.java.PsiInstanceOfExpressionImpl;
+import com.intellij.psi.scope.PsiScopeProcessor;
+import com.intellij.psi.tree.TokenSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyElementVisitor;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrPatternVariable;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrInstanceOfExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeElement;
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.GrExpressionImpl;
 
-/**
- * @author ven
- */
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.KW_INSTANCEOF;
+import static org.jetbrains.plugins.groovy.lang.psi.GroovyElementTypes.T_NOT_INSTANCEOF;
+import static org.jetbrains.plugins.groovy.lang.resolve.ResolveUtilKt.shouldProcessLocals;
+import static org.jetbrains.plugins.groovy.lang.resolve.ResolveUtilKt.shouldProcessPatternVariables;
+
 public class GrInstanceofExpressionImpl extends GrExpressionImpl implements GrInstanceOfExpression {
+
+  private static final TokenSet INSTANCEOF_TOKENS = TokenSet.create(KW_INSTANCEOF, T_NOT_INSTANCEOF);
 
   public GrInstanceofExpressionImpl(@NotNull ASTNode node) {
     super(node);
   }
 
   @Override
-  public void accept(GroovyElementVisitor visitor) {
+  public void accept(@NotNull GroovyElementVisitor visitor) {
     visitor.visitInstanceofExpression(this);
   }
 
+  @Override
   public String toString() {
     return "Instanceof expression";
   }
@@ -51,14 +48,31 @@ public class GrInstanceofExpressionImpl extends GrExpressionImpl implements GrIn
   }
 
   @Override
-  @Nullable
-  public GrTypeElement getTypeElement() {
+  public @Nullable GrTypeElement getTypeElement() {
     return findChildByClass(GrTypeElement.class);
   }
 
   @Override
-  @NotNull
-  public GrExpression getOperand() {
+  public boolean processDeclarations(@NotNull PsiScopeProcessor processor,
+                                     @NotNull ResolveState state,
+                                     PsiElement lastParent,
+                                     @NotNull PsiElement place) {
+    if (!shouldProcessLocals(processor) || !shouldProcessPatternVariables(state)) return true;
+    return PsiInstanceOfExpressionImpl.processDeclarationsWithPattern(processor, state, lastParent, place, this::getPatternVariable);
+  }
+
+  @Override
+  public @NotNull PsiElement getOperationToken() {
+    return findNotNullChildByType(INSTANCEOF_TOKENS);
+  }
+
+  @Override
+  public @NotNull GrExpression getOperand() {
     return findNotNullChildByClass(GrExpression.class);
+  }
+
+  @Override
+  public @Nullable GrPatternVariable getPatternVariable() {
+    return findChildByClass(GrPatternVariable.class);
   }
 }

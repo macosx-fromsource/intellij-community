@@ -1,44 +1,45 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.xdebugger;
 
-import com.intellij.testFramework.PlatformLiteFixture;
-import com.intellij.util.xmlb.XmlSerializer;
+import com.intellij.configurationStore.XmlSerializer;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.testFramework.ExtensionTestUtil;
+import com.intellij.testFramework.junit5.TestApplication;
+import com.intellij.testFramework.junit5.TestDisposable;
 import com.intellij.util.xmlb.annotations.Attribute;
 import com.intellij.xdebugger.impl.XDebuggerUtilImpl;
 import com.intellij.xdebugger.impl.settings.XDebuggerSettingManagerImpl;
 import com.intellij.xdebugger.settings.XDebuggerSettings;
 import com.intellij.xdebugger.settings.XDebuggerSettingsManager;
 import org.jdom.Element;
+import org.jetbrains.annotations.NotNull;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
-/**
- * @author nik
- */
-public class XDebuggerSettingsTest extends PlatformLiteFixture {
-  @Override
-  protected void setUp() throws Exception {
-    super.setUp();
-    initApplication();
-    registerExtensionPoint(XDebuggerSettings.EXTENSION_POINT, XDebuggerSettings.class);
-    registerExtension(XDebuggerSettings.EXTENSION_POINT, new MyDebuggerSettings());
-    getApplication().registerService(XDebuggerUtil.class, XDebuggerUtilImpl.class);
-    getApplication().registerService(XDebuggerSettingsManager.class, XDebuggerSettingManagerImpl.class);
+import java.util.List;
+
+import static com.intellij.testFramework.ServiceContainerUtil.registerOrReplaceServiceInstance;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+@TestApplication
+public class XDebuggerSettingsTest {
+
+  @TestDisposable
+  private Disposable testDisposable;
+
+  @BeforeEach
+  public void setUp() {
+    var application = ApplicationManager.getApplication();
+    ExtensionTestUtil.addExtensions(XDebuggerSettingManagerImpl.getSettingsEP(), List.of(new MyDebuggerSettings()), testDisposable);
+    registerOrReplaceServiceInstance(application, XDebuggerUtil.class, new XDebuggerUtilImpl(), testDisposable);
+    registerOrReplaceServiceInstance(application, XDebuggerSettingsManager.class, new XDebuggerSettingManagerImpl(), testDisposable);
   }
 
-  public void testSerialize() throws Exception {
+  @Test
+  public void testSerialize() {
     XDebuggerSettingManagerImpl settingsManager = XDebuggerSettingManagerImpl.getInstanceImpl();
 
     MyDebuggerSettings settings = MyDebuggerSettings.getInstance();
@@ -51,11 +52,10 @@ public class XDebuggerSettingsTest extends PlatformLiteFixture {
     settings.myOption = "42";
     assertSame(settings, MyDebuggerSettings.getInstance());
 
-    settingsManager.loadState(XmlSerializer.deserialize(element, XDebuggerSettingManagerImpl.SettingsState.class));
+    settingsManager.loadState(com.intellij.configurationStore.XmlSerializer.deserialize(element, XDebuggerSettingManagerImpl.SettingsState.class));
     assertSame(settings, MyDebuggerSettings.getInstance());
     assertEquals("239", settings.myOption);
   }
-
 
   public static class MyDebuggerSettings extends XDebuggerSettings<MyDebuggerSettings> {
     @Attribute("option")
@@ -75,7 +75,7 @@ public class XDebuggerSettingsTest extends PlatformLiteFixture {
     }
 
     @Override
-    public void loadState(final MyDebuggerSettings state) {
+    public void loadState(@NotNull final MyDebuggerSettings state) {
       myOption = state.myOption;
     }
   }

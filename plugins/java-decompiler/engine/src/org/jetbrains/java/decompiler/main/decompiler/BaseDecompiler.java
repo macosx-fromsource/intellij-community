@@ -1,47 +1,43 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.main.decompiler;
 
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.java.decompiler.main.CancellationManager;
 import org.jetbrains.java.decompiler.main.Fernflower;
 import org.jetbrains.java.decompiler.main.extern.IBytecodeProvider;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.Map;
 
+@SuppressWarnings("unused")
 public class BaseDecompiler {
+  private final Fernflower engine;
 
-  private final Fernflower fernflower;
-
-  public BaseDecompiler(IBytecodeProvider provider, IResultSaver saver, Map<String, Object> options, IFernflowerLogger logger) {
-    fernflower = new Fernflower(provider, saver, options, logger);
+  public BaseDecompiler(IBytecodeProvider provider, IResultSaver saver, @Nullable Map<String, Object> options, IFernflowerLogger logger) {
+    this(provider, saver, options, logger, null);
   }
 
-  public void addSpace(File file, boolean isOwn) throws IOException {
-    fernflower.getStructContext().addSpace(file, isOwn);
+  public BaseDecompiler(IBytecodeProvider provider, IResultSaver saver, @Nullable Map<String, Object> options, IFernflowerLogger logger,
+                        @Nullable CancellationManager cancellationManager) {
+    engine = new Fernflower(provider, saver, options, logger, cancellationManager);
+  }
+
+  public void addSource(File source) {
+    engine.addSource(source);
+  }
+
+  public void addLibrary(File library) {
+    engine.addLibrary(library);
   }
 
   public void decompileContext() {
     try {
-      fernflower.decompileContext();
+      engine.decompileContext();
     }
     finally {
-      fernflower.clearContext();
+      engine.clearContext();
     }
   }
 }

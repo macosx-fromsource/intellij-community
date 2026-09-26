@@ -1,38 +1,33 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.ex;
 
 import com.intellij.util.containers.PeekableIterator;
+import org.jetbrains.annotations.NotNull;
 
+import java.util.Comparator;
 import java.util.NoSuchElementException;
 
 /**
- * An iterator you must to {@link #dispose()} after use
+ * An iterator which you must {@link #dispose()} after use.
+ * Alternatively and more preferably, use try-with-resources, e.g.
+ * <pre>
+ * {@code try (MarkupIterator<RangeHighlighterEx> it = markupModel.overlappingIterator(0, 1)) {
+ *     useIterator(it);
+ * }
+ * }
+ * </pre>
  */
-public interface MarkupIterator<T> extends PeekableIterator<T> {
+public interface MarkupIterator<T> extends PeekableIterator<T>, AutoCloseable {
   void dispose();
 
-  MarkupIterator EMPTY = new MarkupIterator() {
+  MarkupIterator<?> EMPTY = new MarkupIterator<Object>() {
     @Override
     public void dispose() {
     }
 
     @Override
     public Object peek() {
-      return null;
+      throw new NoSuchElementException();
     }
 
     @Override
@@ -49,5 +44,70 @@ public interface MarkupIterator<T> extends PeekableIterator<T> {
     public void remove() {
       throw new NoSuchElementException();
     }
+
+    @Override
+    public String toString() {
+      return "EMPTY";
+    }
   };
+  static <T> @NotNull MarkupIterator<T> emptyIterator() {
+    //noinspection unchecked
+    return (MarkupIterator<T>)EMPTY;
+  }
+
+  static @NotNull <T> MarkupIterator<T> mergeIterators(final @NotNull MarkupIterator<T> iterator1,
+                                                       final @NotNull MarkupIterator<T> iterator2,
+                                                       final @NotNull Comparator<? super T> comparator) {
+    if (iterator1 == EMPTY) {
+      return iterator2;
+    }
+    if (iterator2 == EMPTY) {
+      return iterator1;
+    }
+    return new MarkupIterator<T>() {
+      @Override
+      public void dispose() {
+        iterator1.dispose();
+        iterator2.dispose();
+      }
+
+      @Override
+      public boolean hasNext() {
+        return iterator1.hasNext() || iterator2.hasNext();
+      }
+
+      @Override
+      public T next() {
+        return choose().next();
+      }
+
+      private @NotNull MarkupIterator<T> choose() {
+        T t1 = iterator1.hasNext() ? iterator1.peek() : null;
+        if (t1 == null) {
+          return iterator2;
+        }
+        T t2 = iterator2.hasNext() ? iterator2.peek() : null;
+        if (t2 == null) {
+          return iterator1;
+        }
+        int compare = comparator.compare(t1, t2);
+        return compare < 0 ? iterator1 : iterator2;
+      }
+
+      @Override
+      public void remove() {
+        throw new NoSuchElementException();
+      }
+
+      @Override
+      public T peek() {
+        return choose().peek();
+      }
+    };
+  }
+
+  @Override
+  default void close() {
+    dispose();
+  }
 }

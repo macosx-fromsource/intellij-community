@@ -1,27 +1,17 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.lang.properties.references;
 
 import com.intellij.lang.injection.InjectedLanguageManager;
+import com.intellij.lang.properties.BundleNameEvaluator;
 import com.intellij.lang.properties.IProperty;
 import com.intellij.lang.properties.PropertiesFileProcessor;
 import com.intellij.lang.properties.PropertiesReferenceManager;
 import com.intellij.lang.properties.psi.PropertiesFile;
+import com.intellij.lang.properties.psi.PropertyKeyValueFormat;
 import com.intellij.lang.properties.xml.XmlPropertiesFile;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.roots.ProjectRootManager;
@@ -30,21 +20,25 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
-public class I18nUtil {
-  @NotNull
-  public static List<PropertiesFile> propertiesFilesByBundleName(final String resourceBundleName, final PsiElement context) {
+public final class I18nUtil {
+  public static @NotNull List<PropertiesFile> propertiesFilesByBundleName(@Nullable String resourceBundleName, @NotNull PsiElement context) {
+    if (resourceBundleName == null) return Collections.emptyList();
     PsiFile containingFile = context.getContainingFile();
     PsiElement containingFileContext = InjectedLanguageManager.getInstance(containingFile.getProject()).getInjectionHost(containingFile);
     if (containingFileContext != null) containingFile = containingFileContext.getContainingFile();
-    
+
     VirtualFile virtualFile = containingFile.getVirtualFile();
     if (virtualFile == null) {
       virtualFile = containingFile.getOriginalFile().getVirtualFile();
@@ -60,40 +54,65 @@ public class I18nUtil {
     return Collections.emptyList();
   }
 
-  public static void createProperty(final Project project,
-                                    final Collection<PropertiesFile> propertiesFiles,
-                                    final String key,
-                                    final String value) throws IncorrectOperationException {
+  public static void createProperty(@NotNull Project project,
+                                    @NotNull Collection<? extends PropertiesFile> propertiesFiles,
+                                    @NotNull String key,
+                                    @NotNull String value) throws IncorrectOperationException {
+    createProperty(project, propertiesFiles, key, value, false);
+  }
+
+  public static void createProperty(@NotNull Project project,
+                                    @NotNull Collection<? extends PropertiesFile> propertiesFiles,
+                                    @NotNull String key,
+                                    @NotNull String value,
+                                    boolean replaceIfExist) throws IncorrectOperationException {
     for (PropertiesFile file : propertiesFiles) {
       PsiDocumentManager documentManager = PsiDocumentManager.getInstance(project);
-      documentManager.commitDocument(documentManager.getDocument(file.getContainingFile()));
+      Document document = documentManager.getDocument(file.getContainingFile());
+      if (document != null) {
+        documentManager.commitDocument(document);
+      }
 
       IProperty existingProperty = file.findPropertyByKey(key);
       if (existingProperty == null) {
-        file.addProperty(key, value);
+        file.addProperty(key, value, PropertyKeyValueFormat.MEMORY);
+      }
+      else if (replaceIfExist) {
+        existingProperty.setValue(value, PropertyKeyValueFormat.MEMORY);
       }
     }
   }
 
-  public static List<String> defaultSuggestPropertiesFiles(Project project) {
-    final List<String> paths = new ArrayList<>();
+  public static @NotNull List<String> defaultSuggestPropertiesFiles(@NotNull Project project,
+                                                                    @NotNull Set<? extends Module> contextModules) {
+    List<String> relevantPaths = new ArrayList<>();
+    List<String> otherPaths = new ArrayList<>();
     final ProjectFileIndex projectFileIndex = ProjectRootManager.getInstance(project).getFileIndex();
 
-    PropertiesReferenceManager.getInstance(project).processAllPropertiesFiles(new PropertiesFileProcessor() {
-
-      @Override
-      public boolean process(String baseName, PropertiesFile propertiesFile) {
-        if (propertiesFile instanceof XmlPropertiesFile) {
-          return true;
-        }
-        VirtualFile virtualFile = propertiesFile.getVirtualFile();
-        if (projectFileIndex.isInContent(virtualFile)) {
-          String path = FileUtil.toSystemDependentName(virtualFile.getPath());
-          paths.add(path);
-        }
+    PropertiesFileProcessor processor = (baseName, propertiesFile) -> {
+      if (propertiesFile instanceof XmlPropertiesFile) {
         return true;
       }
-    });
-    return paths;
+      VirtualFile virtualFile = propertiesFile.getVirtualFile();
+      if (projectFileIndex.isInContent(virtualFile)) {
+        String path = FileUtil.toSystemDependentName(virtualFile.getPath());
+        Module module = ModuleUtilCore.findModuleForFile(virtualFile, project);
+        boolean relevant = contextModules.contains(module);
+        (relevant ? relevantPaths : otherPaths).add(path);
+      }
+      return true;
+    };
+
+    if (contextModules.isEmpty()) {
+      PropertiesReferenceManager.getInstance(project).processAllPropertiesFiles(processor);
+    }
+    else {
+      GlobalSearchScope scope = GlobalSearchScope.union(ContainerUtil.map(contextModules, Module::getModuleWithDependenciesScope));
+      PropertiesReferenceManager.getInstance(project).processPropertiesFiles(scope, processor, BundleNameEvaluator.DEFAULT);
+    }
+    Collections.sort(relevantPaths);
+    Collections.sort(otherPaths);
+    relevantPaths.addAll(otherPaths);
+    return relevantPaths;
   }
 }

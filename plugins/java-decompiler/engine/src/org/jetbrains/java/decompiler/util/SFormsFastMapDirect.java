@@ -1,24 +1,11 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.util;
 
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.util.FastSparseSetFactory.FastSparseSet;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -80,9 +67,7 @@ public class SFormsFastMapDirect {
         int[] arrnext = next[i];
 
         @SuppressWarnings("unchecked") FastSparseSet<Integer>[] arrnew = new FastSparseSet[length];
-        int[] arrnextnew = new int[length];
-
-        System.arraycopy(arrnext, 0, arrnextnew, 0, length);
+        int[] arrnextnew = Arrays.copyOf(arrnext, length);
 
         mapelements[i] = arrnew;
         mapnext[i] = arrnextnew;
@@ -117,10 +102,6 @@ public class SFormsFastMapDirect {
 
   public void put(int key, FastSparseSet<Integer> value) {
     putInternal(key, value, false);
-  }
-
-  public void remove(int key) {
-    putInternal(key, null, true);
   }
 
   public void removeAllFields() {
@@ -328,6 +309,7 @@ public class SFormsFastMapDirect {
     }
   }
 
+  @Override
   public String toString() {
 
     StringBuilder buffer = new StringBuilder("{");
@@ -361,19 +343,22 @@ public class SFormsFastMapDirect {
         if (ent != null) {
           final int key = i == 0 ? ikey : (i == 1 ? ikey + VarExprent.STACK_BASE : -ikey);
 
-          list.add(new Entry<Integer, FastSparseSet<Integer>>() {
+          list.add(new Entry<>() {
 
             private final Integer var = key;
             private final FastSparseSet<Integer> val = ent;
 
+            @Override
             public Integer getKey() {
               return var;
             }
 
+            @Override
             public FastSparseSet<Integer> getValue() {
               return val;
             }
 
+            @Override
             public FastSparseSet<Integer> setValue(FastSparseSet<Integer> newvalue) {
               return null;
             }

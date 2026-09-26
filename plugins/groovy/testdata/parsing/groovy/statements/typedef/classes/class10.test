@@ -10,9 +10,11 @@ Groovy script
     PsiWhiteSpace(' ')
     Extends clause
       PsiElement(extends)('extends')
-      PsiErrorElement:Identifier expected
+      PsiErrorElement:<type> expected, got '{'
         <empty list>
     Implements clause
+      <empty list>
+    Permits clause
       <empty list>
     PsiWhiteSpace(' ')
     Type definition body

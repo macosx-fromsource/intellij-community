@@ -19,7 +19,7 @@ Groovy script
             PsiElement(identifier)('B')
           PsiWhiteSpace(' ')
           PsiElement(&)('&')
-          PsiErrorElement:Type expected
+          PsiErrorElement:<type> expected, got ','
             <empty list>
       PsiWhiteSpace(' ')
       PsiElement(,)(',')
@@ -32,6 +32,8 @@ Groovy script
     Extends clause
       <empty list>
     Implements clause
+      <empty list>
+    Permits clause
       <empty list>
     PsiWhiteSpace(' ')
     Type definition body

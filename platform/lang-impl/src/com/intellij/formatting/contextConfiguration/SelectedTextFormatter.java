@@ -1,41 +1,30 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.formatting.contextConfiguration;
 
+import com.intellij.CodeStyleBundle;
+import com.intellij.application.options.CodeStyle;
+import com.intellij.lang.LangBundle;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.RangeMarker;
 import com.intellij.openapi.editor.SelectionModel;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
-import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import org.jetbrains.annotations.NotNull;
 
-public class SelectedTextFormatter {
-  private Project myProject;
-  private Editor myEditor;
-  private PsiFile myFile;
+public final class SelectedTextFormatter {
+  private final Project myProject;
+  private final Editor myEditor;
+  private final PsiFile myFile;
 
   private final String myTextBefore;
-  private final int mySelectionStart;
-  private final int mySelectionEnd;
+  private final RangeMarker mySelectionRangeMarker;
 
 
   public SelectedTextFormatter(Project project, Editor editor, PsiFile file) {
@@ -44,30 +33,27 @@ public class SelectedTextFormatter {
     myFile = file;
 
     myTextBefore = myEditor.getSelectionModel().getSelectedText();
-    mySelectionStart = myEditor.getSelectionModel().getSelectionStart();
-    mySelectionEnd = myEditor.getSelectionModel().getSelectionEnd();
+    mySelectionRangeMarker = myEditor.getDocument().createRangeMarker(myEditor.getSelectionModel().getSelectionStart(),
+                                                                      myEditor.getSelectionModel().getSelectionEnd());
   }
 
   public void restoreSelectedText() {
     final Document document = myEditor.getDocument();
-    final int start = myEditor.getSelectionModel().getSelectionStart();
-    final int end = myEditor.getSelectionModel().getSelectionEnd();
+    if (!mySelectionRangeMarker.isValid()) return;
+    final int start = mySelectionRangeMarker.getStartOffset();
+    final int end = mySelectionRangeMarker.getEndOffset();
 
-    ApplicationManager.getApplication().runWriteAction(() -> CommandProcessor.getInstance().executeCommand(myProject, () -> document.replaceString(start, end, myTextBefore), "Configure code style on selected fragment: restore text before", null));
+    WriteCommandAction.writeCommandAction(myProject)
+                      .withName(LangBundle.message("command.name.configure.code.style.on.selected.fragment.restore.text.before"))
+                      .run(() -> document.replaceString(start, end, myTextBefore));
 
-    myEditor.getSelectionModel().setSelection(mySelectionStart, mySelectionEnd);
+    myEditor.getSelectionModel().setSelection(start, start + myTextBefore.length());
   }
 
   void reformatSelectedText(@NotNull CodeStyleSettings reformatSettings) {
     final SelectionModel model = myEditor.getSelectionModel();
     if (model.hasSelection()) {
-      try {
-        CodeStyleSettingsManager.getInstance(myProject).setTemporarySettings(reformatSettings);
-        reformatRange(myFile, getSelectedRange());
-      }
-      finally {
-        CodeStyleSettingsManager.getInstance(myProject).dropTemporarySettings();
-      }
+      CodeStyle.runWithLocalSettings(myProject, reformatSettings, () -> reformatRange(myFile, getSelectedRange()));
     }
   }
 
@@ -77,7 +63,8 @@ public class SelectedTextFormatter {
 
   private static void reformatRange(final @NotNull PsiFile file, final @NotNull TextRange range) {
     final Project project = file.getProject();
-    CommandProcessor.getInstance().executeCommand(project, () -> ApplicationManager.getApplication().runWriteAction(() -> CodeStyleManager.getInstance(project).reformatText(file, range.getStartOffset(), range.getEndOffset())), "Reformat", null);
+    CommandProcessor.getInstance().executeCommand(project, () -> ApplicationManager.getApplication().runWriteAction(() -> CodeStyleManager.getInstance(project).reformatText(file, range.getStartOffset(), range.getEndOffset())),
+                                                  CodeStyleBundle.message("command.name.reformat"), null);
   }
 
   @NotNull

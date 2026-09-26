@@ -1,3 +1,4 @@
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.vcs.log.graph.parser;
 
 import com.intellij.openapi.util.Pair;
@@ -10,7 +11,7 @@ import java.util.List;
 /**
  * @author erokhins
  */
-public class CommitParser {
+public final class CommitParser {
 
   public static final String SEPARATOR = "|-";
 
@@ -33,7 +34,7 @@ public class CommitParser {
     int separatorIndex = nextSeparatorIndex(line, 0);
     String commitHashStr = line.substring(0, separatorIndex);
 
-    String parentHashStr = line.substring(separatorIndex + 2, line.length());
+    String parentHashStr = line.substring(separatorIndex + 2);
     String[] parentsHashes = parentHashStr.split("\\s");
     return Pair.create(commitHashStr, parentsHashes);
   }
@@ -82,5 +83,4 @@ public class CommitParser {
     }
     return vcsCommitParents;
   }
-
 }

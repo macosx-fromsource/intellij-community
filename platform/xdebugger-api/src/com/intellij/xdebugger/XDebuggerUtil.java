@@ -1,48 +1,48 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.xdebugger;
 
 import com.intellij.lang.Language;
 import com.intellij.openapi.actionSystem.DataContext;
-import com.intellij.openapi.components.ServiceManager;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.fileEditor.FileEditor;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.Processor;
-import com.intellij.xdebugger.breakpoints.*;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.xdebugger.breakpoints.InlineBreakpointsDisabler;
+import com.intellij.xdebugger.breakpoints.XBreakpoint;
+import com.intellij.xdebugger.breakpoints.XBreakpointProperties;
+import com.intellij.xdebugger.breakpoints.XBreakpointType;
+import com.intellij.xdebugger.breakpoints.XLineBreakpoint;
+import com.intellij.xdebugger.breakpoints.XLineBreakpointType;
 import com.intellij.xdebugger.breakpoints.ui.XBreakpointGroupingRule;
 import com.intellij.xdebugger.evaluation.EvaluationMode;
+import com.intellij.xdebugger.frame.XSuspendContext;
 import com.intellij.xdebugger.frame.XValueContainer;
 import com.intellij.xdebugger.settings.XDebuggerSettings;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Comparator;
 import java.util.List;
 
-/**
- * @author nik
- */
 public abstract class XDebuggerUtil {
+
   public static XDebuggerUtil getInstance() {
-    return ServiceManager.getService(XDebuggerUtil.class);
+    return ApplicationManager.getApplication().getService(XDebuggerUtil.class);
   }
+
+  public @Nullable FileEditor getSelectedEditor(Project project, VirtualFile file) {
+    return FileEditorManager.getInstance(project).getSelectedEditor(file);
+  }
+
+  public abstract Editor openTextEditor(@NotNull OpenFileDescriptor descriptor);
 
   public abstract XLineBreakpointType<?>[] getLineBreakpointTypes();
 
@@ -78,8 +78,7 @@ public abstract class XDebuggerUtil {
    * @param line 0-based line number
    * @return source position
    */
-  @Nullable
-  public abstract XSourcePosition createPosition(@Nullable VirtualFile file, int line);
+  public abstract @Nullable XSourcePosition createPosition(@Nullable VirtualFile file, int line);
 
   /**
    * Create {@link XSourcePosition} instance by line and column number
@@ -89,8 +88,7 @@ public abstract class XDebuggerUtil {
    * @param column 0-based column number
    * @return source position
    */
-  @Nullable
-  public abstract XSourcePosition createPosition(@Nullable VirtualFile file, int line, int column);
+  public abstract @Nullable XSourcePosition createPosition(@Nullable VirtualFile file, int line, int column);
 
   /**
    * Create {@link XSourcePosition} instance by line number
@@ -98,24 +96,23 @@ public abstract class XDebuggerUtil {
    * @param offset offset from the beginning of file
    * @return source position
    */
-  @Nullable
-  public abstract XSourcePosition createPositionByOffset(@Nullable VirtualFile file, int offset);
+  public abstract @Nullable XSourcePosition createPositionByOffset(@Nullable VirtualFile file, int offset);
 
-  @Nullable
-  public abstract XSourcePosition createPositionByElement(@Nullable PsiElement element);
+  public abstract @Nullable XSourcePosition createPositionByElement(@Nullable PsiElement element);
 
   public abstract <B extends XLineBreakpoint<?>> XBreakpointGroupingRule<B, ?> getGroupingByFileRule();
 
   public abstract <B extends XLineBreakpoint<?>> List<XBreakpointGroupingRule<B, ?>> getGroupingByFileRuleAsList();
 
-  public abstract <B extends XBreakpoint<?>> Comparator<B> getDefaultBreakpointComparator(XBreakpointType<B, ?> type);
-
-  public abstract <P extends XBreakpointProperties> Comparator<XLineBreakpoint<P>> getDefaultLineBreakpointComparator();
-
   public abstract <T extends XDebuggerSettings<?>> T getDebuggerSettings(Class<T> aClass);
 
-  @Nullable
-  public abstract XValueContainer getValueContainer(DataContext dataContext);
+  /**
+   * Returns an {@link com.intellij.xdebugger.frame.XValue} for the currenlty selected node in the debugger tree.
+   *
+   * @deprecated Use {@link com.intellij.xdebugger.impl.ui.tree.actions.XDebuggerTreeActionBase#getSelectedValue} instead.
+   */
+  @Deprecated
+  public abstract @Nullable XValueContainer getValueContainer(DataContext dataContext);
 
   /**
    * Process all {@link PsiElement}s on the specified line
@@ -124,16 +121,24 @@ public abstract class XDebuggerUtil {
    * @param line 0-based line number
    * @param processor processor
    */
-  public abstract void iterateLine(@NotNull Project project, @NotNull Document document, int line, @NotNull Processor<PsiElement> processor);
+  public abstract void iterateLine(@NotNull Project project, @NotNull Document document, int line, @NotNull Processor<? super PsiElement> processor);
 
   /**
    * Disable value lookup in specified editor
    */
   public abstract void disableValueLookup(@NotNull Editor editor);
 
-  @Nullable
-  public abstract PsiElement findContextElement(@NotNull VirtualFile virtualFile, int offset, @NotNull Project project, boolean checkXml);
+  public abstract @Nullable PsiElement findContextElement(@NotNull VirtualFile virtualFile, int offset, @NotNull Project project, boolean checkXml);
 
-  @NotNull
-  public abstract XExpression createExpression(@NotNull String text, Language language, String custom, EvaluationMode mode);
+  public abstract @NotNull XExpression createExpression(@NotNull String text, Language language, String custom, @NotNull EvaluationMode mode);
+
+  public abstract void logStack(@NotNull XSuspendContext suspendContext, @NotNull XDebugSession session);
+
+  public static final String INLINE_BREAKPOINTS_KEY = "debugger.show.breakpoints.inline";
+
+  public static boolean areInlineBreakpointsEnabled(@Nullable VirtualFile file) {
+    return Registry.is(INLINE_BREAKPOINTS_KEY) &&
+           !ContainerUtil.exists(InlineBreakpointsDisabler.Companion.getEP().getExtensionList(),
+                                 disabler -> disabler.areInlineBreakpointsDisabled(file));
+  }
 }

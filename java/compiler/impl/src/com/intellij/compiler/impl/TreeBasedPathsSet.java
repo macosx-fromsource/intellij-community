@@ -15,16 +15,15 @@
  */
 package com.intellij.compiler.impl;
 
-import com.intellij.util.containers.StringInterner;
+import com.intellij.util.containers.Interner;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Jun 19, 2006
  */
 public class TreeBasedPathsSet {
   private final TreeBasedMap<Object> myMap;
 
-  public TreeBasedPathsSet(StringInterner interner, char separator) {
+  public TreeBasedPathsSet(Interner<String> interner, char separator) {
     myMap = new TreeBasedMap<>(interner, separator);
   }
 

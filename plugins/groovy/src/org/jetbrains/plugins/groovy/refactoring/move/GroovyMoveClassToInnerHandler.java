@@ -1,23 +1,13 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.refactoring.move;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiRecursiveElementVisitor;
 import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -37,15 +27,19 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrRefere
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition;
 import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.imports.GrImportStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrCodeReferenceElement;
-import org.jetbrains.plugins.groovy.lang.psi.util.GroovyImportUtil;
-import org.jetbrains.plugins.groovy.refactoring.GroovyChangeContextUtil;
+import org.jetbrains.plugins.groovy.util.GroovyChangeContextUtil;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import static org.jetbrains.plugins.groovy.lang.resolve.imports.GroovyUnusedImportUtil.unusedImports;
 
 /**
  * @author Max Medvedev
  */
-public class GroovyMoveClassToInnerHandler implements MoveClassToInnerHandler {
+public final class GroovyMoveClassToInnerHandler implements MoveClassToInnerHandler {
   private static final Logger LOG = Logger.getInstance(GroovyMoveClassToInnerHandler.class);
 
   @Override
@@ -94,7 +88,7 @@ public class GroovyMoveClassToInnerHandler implements MoveClassToInnerHandler {
     }
     else {
       //rebind imports first
-      Collections.sort(usageInfos, (o1, o2) -> PsiUtil.BY_POSITION.compare(o1.getElement(), o2.getElement()));
+      usageInfos.sort((o1, o2) -> PsiUtil.BY_POSITION.compare(o1.getElement(), o2.getElement()));
     }
     return importStatements;
   }
@@ -113,7 +107,7 @@ public class GroovyMoveClassToInnerHandler implements MoveClassToInnerHandler {
   }
 
   @Override
-  public void retargetClassRefsInMoved(@NotNull final Map<PsiElement, PsiElement> oldToNewElementsMapping) {
+  public void retargetClassRefsInMoved(final @NotNull Map<PsiElement, PsiElement> oldToNewElementsMapping) {
     for (final PsiElement newClass : oldToNewElementsMapping.values()) {
       if (!(newClass instanceof GrTypeDefinition)) continue;
       ((GrTypeDefinition)newClass).accept(new GroovyRecursiveElementVisitor() {
@@ -164,14 +158,14 @@ public class GroovyMoveClassToInnerHandler implements MoveClassToInnerHandler {
   }
 
   @Override
-  public void retargetNonCodeUsages(@NotNull final Map<PsiElement, PsiElement> oldToNewElementMap,
-                                    @NotNull final NonCodeUsageInfo[] nonCodeUsages) {
+  public void retargetNonCodeUsages(final @NotNull Map<PsiElement, PsiElement> oldToNewElementMap,
+                                    final NonCodeUsageInfo @NotNull [] nonCodeUsages) {
     for (PsiElement newClass : oldToNewElementMap.values()) {
       if (!(newClass instanceof GrTypeDefinition)) continue;
 
       newClass.accept(new PsiRecursiveElementVisitor() {
         @Override
-        public void visitElement(final PsiElement element) {
+        public void visitElement(final @NotNull PsiElement element) {
           super.visitElement(element);
           List<NonCodeUsageInfo> list = element.getCopyableUserData(MoveClassToInnerProcessor.ourNonCodeUsageKey);
           if (list != null) {
@@ -192,15 +186,9 @@ public class GroovyMoveClassToInnerHandler implements MoveClassToInnerHandler {
 
   @Override
   public void removeRedundantImports(PsiFile targetClassFile) {
-    if (targetClassFile instanceof GroovyFile) {
-      GroovyFile file = (GroovyFile)targetClassFile;
-      final Set<GrImportStatement> usedImports = GroovyImportUtil.findUsedImports(file);
-      final List<GrImportStatement> validImports = org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil.getValidImportStatements(file);
-      for (GrImportStatement importStatement : validImports) {
-        if (!usedImports.contains(importStatement)) {
-          file.removeImport(importStatement);
-        }
-      }
+    if (!(targetClassFile instanceof GroovyFile file)) return;
+    for (GrImportStatement unusedImport : unusedImports(file)) {
+      file.removeImport(unusedImport);
     }
   }
 }

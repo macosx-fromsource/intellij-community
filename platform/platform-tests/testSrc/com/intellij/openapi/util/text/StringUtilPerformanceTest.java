@@ -15,27 +15,31 @@
  */
 package com.intellij.openapi.util.text;
 
-import com.intellij.openapi.util.SystemInfo;
-import com.intellij.testFramework.PlatformTestUtil;
-import com.intellij.util.ThrowableRunnable;
+import com.intellij.testFramework.PerformanceUnitTest;
+import com.intellij.tools.ide.metrics.benchmark.Benchmark;
 import org.junit.Test;
 
 import java.util.Random;
 
 import static org.junit.Assert.assertTrue;
 
+@PerformanceUnitTest
 public class StringUtilPerformanceTest {
   private static final String TEST_STRING = "0123456789abcdefghijklmnopqrstuvwxyz";
 
   @Test
-  public void containsAnyChar() throws Exception {
+  public void containsAnyChar() {
     assertTrue(StringUtil.containsAnyChar(TEST_STRING, Integer.toString(new Random().nextInt())));
 
-    PlatformTestUtil.startPerformanceTest("StringUtil.containsAnyChar()", SystemInfo.isWindows ? 500 : 200, () -> {
-      for (int i = 0; i < 1000000; i++) {
-        StringUtil.containsAnyChar(TEST_STRING, "XYZ");
-        StringUtil.containsAnyChar("XYZ", TEST_STRING);
+    Benchmark.newBenchmark("StringUtil.containsAnyChar()", () -> {
+      for (int i = 0; i < 1_000_000; i++) {
+        if (StringUtil.containsAnyChar(TEST_STRING, "XYZ")) {
+          throw new AssertionError();
+        }
+        if (StringUtil.containsAnyChar("XYZ", TEST_STRING)) {
+          throw new AssertionError();
+        }
       }
-    }).cpuBound().useLegacyScaling().assertTiming();
+    }).start();
   }
 }

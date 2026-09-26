@@ -1,25 +1,22 @@
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.idea.svn.delete;
 
 import com.intellij.openapi.vcs.VcsException;
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.api.BaseSvnClient;
 import org.jetbrains.idea.svn.api.ProgressTracker;
+import org.jetbrains.idea.svn.api.Target;
+import org.jetbrains.idea.svn.api.Url;
 import org.jetbrains.idea.svn.checkin.CmdCheckinClient;
 import org.jetbrains.idea.svn.commandLine.BaseUpdateCommandListener;
 import org.jetbrains.idea.svn.commandLine.CommandUtil;
 import org.jetbrains.idea.svn.commandLine.SvnCommandName;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.wc2.SvnTarget;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author Konstantin Kolosovsky.
- */
 public class CmdDeleteClient extends BaseSvnClient implements DeleteClient {
 
   @Override
@@ -35,16 +32,16 @@ public class CmdDeleteClient extends BaseSvnClient implements DeleteClient {
       File workingDirectory = CommandUtil.getHomeDirectory();
       BaseUpdateCommandListener listener = new BaseUpdateCommandListener(workingDirectory, handler);
 
-      execute(myVcs, SvnTarget.fromFile(path), workingDirectory, SvnCommandName.delete, parameters, listener);
+      execute(myVcs, Target.on(path), workingDirectory, SvnCommandName.delete, parameters, listener);
 
       listener.throwWrappedIfException();
     }
   }
 
   @Override
-  public long delete(@NotNull SVNURL url, @NotNull String message) throws VcsException {
-    SvnTarget target = SvnTarget.fromURL(url);
-    List<String> parameters = ContainerUtil.newArrayList();
+  public long delete(@NotNull Url url, @NotNull String message) throws VcsException {
+    Target target = Target.on(url);
+    List<String> parameters = new ArrayList<>();
 
     CommandUtil.put(parameters, target);
     parameters.add("--message");

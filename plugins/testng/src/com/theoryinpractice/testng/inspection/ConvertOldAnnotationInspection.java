@@ -1,90 +1,90 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * Created by IntelliJ IDEA.
- * User: amrk
- * Date: 11/09/2006
- * Time: 19:50:29
- */
 package com.theoryinpractice.testng.inspection;
 
-import com.intellij.codeInspection.BaseJavaLocalInspectionTool;
+import com.intellij.codeInsight.FileModificationService;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.codeInspection.AbstractBaseJavaLocalInspectionTool;
 import com.intellij.codeInspection.LocalQuickFix;
 import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.codeInspection.ProblemsHolder;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiAnnotationParameterList;
+import com.intellij.psi.PsiElementFactory;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiModifierList;
+import com.intellij.psi.PsiNameValuePair;
 import com.intellij.psi.codeStyle.JavaCodeStyleManager;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.IncorrectOperationException;
+import com.theoryinpractice.testng.TestngBundle;
 import com.theoryinpractice.testng.util.TestNGUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * @author Hani Suleiman Date: Aug 3, 2005 Time: 4:17:59 PM
+ * @author Hani Suleiman
  */
-public class ConvertOldAnnotationInspection extends BaseJavaLocalInspectionTool {
-  private static final String DISPLAY_NAME = "Convert old @Configuration TestNG annotations";
+public class ConvertOldAnnotationInspection extends AbstractBaseJavaLocalInspectionTool {
 
-  @Nls
-  @NotNull
-  public String getGroupDisplayName() {
+  @Override
+  public @Nls @NotNull String getGroupDisplayName() {
     return TestNGUtil.TESTNG_GROUP_NAME;
   }
 
-  @Nls
-  @NotNull
-  public String getDisplayName() {
-    return DISPLAY_NAME;
-  }
-
-  @NonNls
-  @NotNull
-  public String getShortName() {
+  @Override
+  public @NonNls @NotNull String getShortName() {
     return "ConvertOldAnnotations";
   }
 
-  @NotNull
-  public PsiElementVisitor buildVisitor(@NotNull final ProblemsHolder holder, final boolean isOnTheFly) {
+  @Override
+  public @NotNull PsiElementVisitor buildVisitor(final @NotNull ProblemsHolder holder, final boolean isOnTheFly) {
     return new JavaElementVisitor() {
-      @Override public void visitAnnotation(final PsiAnnotation annotation) {
+      @Override public void visitAnnotation(final @NotNull PsiAnnotation annotation) {
         final String qualifiedName = annotation.getQualifiedName();
         if (Comparing.strEqual(qualifiedName, "org.testng.annotations.Configuration")) {
-          holder.registerProblem(annotation, DISPLAY_NAME, new ConvertOldAnnotationsQuickfix());
+          holder.registerProblem(annotation, TestngBundle.message("inspection.message.old.testng.annotation.configuration.used"), new ConvertOldAnnotationsQuickfix());
         }
       }
     };
   }
 
   private static class ConvertOldAnnotationsQuickfix implements LocalQuickFix {
-    private static final Logger LOG = Logger.getInstance("#" + ConvertOldAnnotationsQuickfix.class.getName());
+    private static final Logger LOG = Logger.getInstance(ConvertOldAnnotationsQuickfix.class);
 
-    @NotNull
-    public String getFamilyName() {
-      return DISPLAY_NAME;
+    @Override
+    public @NotNull String getFamilyName() {
+      return TestngBundle.message("intention.family.name.convert.old.configuration.testng.annotations");
     }
 
-    public void applyFix(@NotNull final Project project, @NotNull final ProblemDescriptor descriptor) {
+    @Override
+    public boolean startInWriteAction() {
+      return false;
+    }
+
+    @Override
+    public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull ProblemDescriptor previewDescriptor) {
+      final PsiAnnotation annotation = (PsiAnnotation)previewDescriptor.getPsiElement();
+      doFix(annotation);
+      return IntentionPreviewInfo.DIFF;
+    }
+
+    @Override
+    public void applyFix(final @NotNull Project project, final @NotNull ProblemDescriptor descriptor) {
       final PsiAnnotation annotation = (PsiAnnotation)descriptor.getPsiElement();
       if (!TestNGUtil.checkTestNGInClasspath(annotation)) return;
+      if (!FileModificationService.getInstance().preparePsiElementsForWrite(annotation)) return;
+      WriteAction.run(() -> doFix(annotation));
+    }
+
+    private static void doFix(PsiAnnotation annotation) {
       final PsiModifierList modifierList = PsiTreeUtil.getParentOfType(annotation, PsiModifierList.class);
       LOG.assertTrue(modifierList != null);
       try {
@@ -113,13 +113,12 @@ public class ConvertOldAnnotationInspection extends BaseJavaLocalInspectionTool 
                                                                 @NonNls String newAnnotation) throws IncorrectOperationException {
 
     PsiAnnotationParameterList list = annotation.getParameterList();
+    Project project = annotation.getProject();
     for (PsiNameValuePair pair : list.getAttributes()) {
       if (attribute.equals(pair.getName())) {
-        final StringBuffer newAnnotationBuffer = new StringBuffer();
-        newAnnotationBuffer.append(newAnnotation).append('(').append(')');
-        final PsiElementFactory factory = JavaPsiFacade.getInstance(annotation.getProject()).getElementFactory();
-        final PsiAnnotation newPsiAnnotation = factory.createAnnotationFromText(newAnnotationBuffer.toString(), modifierList);
-        JavaCodeStyleManager.getInstance(annotation.getProject()).shortenClassReferences(modifierList.addAfter(newPsiAnnotation, null));
+        final PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
+        final PsiAnnotation newPsiAnnotation = factory.createAnnotationFromText(newAnnotation + "()", modifierList);
+        JavaCodeStyleManager.getInstance(project).shortenClassReferences(modifierList.addAfter(newPsiAnnotation, null));
       }
     }
   }

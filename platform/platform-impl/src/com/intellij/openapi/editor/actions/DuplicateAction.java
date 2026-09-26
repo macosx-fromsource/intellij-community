@@ -1,52 +1,32 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
-/*
- * Created by IntelliJ IDEA.
- * User: max
- * Date: May 14, 2002
- * Time: 7:18:30 PM
- * To change template for new class use 
- * Code Style | Class Templates options (Tools | IDE Options).
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.actions;
 
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.actionSystem.Presentation;
-import com.intellij.openapi.editor.*;
+import com.intellij.openapi.editor.Caret;
+import com.intellij.openapi.editor.CaretModel;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.EditorBundle;
+import com.intellij.openapi.editor.ScrollType;
+import com.intellij.openapi.editor.ScrollingModel;
+import com.intellij.openapi.editor.VisualPosition;
 import com.intellij.openapi.editor.actionSystem.EditorAction;
 import com.intellij.openapi.editor.actionSystem.EditorWriteActionHandler;
 import com.intellij.openapi.editor.ex.util.EditorUtil;
-import com.intellij.openapi.util.Couple;
-import com.intellij.openapi.util.Pair;
+import com.intellij.openapi.util.TextRange;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-public class DuplicateAction extends EditorAction {
+@ApiStatus.Internal
+public final class DuplicateAction extends EditorAction {
   public DuplicateAction() {
     super(new Handler());
   }
 
-  private static class Handler extends EditorWriteActionHandler {
-    public Handler() {
-      super(true);
-    }
-
+  private static final class Handler extends EditorWriteActionHandler.ForEachCaret {
     @Override
-    public void executeWriteAction(Editor editor, Caret caret, DataContext dataContext) {
+    public void executeWriteAction(@NotNull Editor editor, @NotNull Caret caret, DataContext dataContext) {
       duplicateLineOrSelectedBlockAtCaret(editor);
     }
 
@@ -54,55 +34,50 @@ public class DuplicateAction extends EditorAction {
     public boolean isEnabledForCaret(@NotNull Editor editor, @NotNull Caret caret, DataContext dataContext) {
       return !editor.isOneLineMode() || editor.getSelectionModel().hasSelection();
     }
+
+    @Override
+    public boolean reverseCaretOrder() {
+      return true;
+    }
   }
 
-  private static void duplicateLineOrSelectedBlockAtCaret(Editor editor) {
+  public static void duplicateLineOrSelectedBlockAtCaret(Editor editor) {
     Document document = editor.getDocument();
     CaretModel caretModel = editor.getCaretModel();
     ScrollingModel scrollingModel = editor.getScrollingModel();
-    if(editor.getSelectionModel().hasSelection()) {
+    if (editor.getSelectionModel().hasSelection()) {
       int start = editor.getSelectionModel().getSelectionStart();
       int end = editor.getSelectionModel().getSelectionEnd();
       String s = document.getCharsSequence().subSequence(start, end).toString();
       document.insertString(end, s);
-      caretModel.moveToOffset(end+s.length());
+      caretModel.moveToOffset(end + s.length());
       scrollingModel.scrollToCaret(ScrollType.RELATIVE);
       editor.getSelectionModel().removeSelection();
       editor.getSelectionModel().setSelection(end, end+s.length());
     }
     else {
-      duplicateLinesRange(editor, document, caretModel.getVisualPosition(), caretModel.getVisualPosition());
+      duplicateLinesRange(editor, caretModel.getVisualPosition(), caretModel.getVisualPosition());
     }
   }
 
-  @Nullable
-  static Couple<Integer> duplicateLinesRange(Editor editor, Document document, VisualPosition rangeStart, VisualPosition rangeEnd) {
-    Pair<LogicalPosition, LogicalPosition> lines = EditorUtil.calcSurroundingRange(editor, rangeStart, rangeEnd);
+  static @NotNull TextRange duplicateLinesRange(@NotNull Editor editor,
+                                                @NotNull VisualPosition rangeStart,
+                                                @NotNull VisualPosition rangeEnd) {
+    TextRange range = EditorUtil.calcSurroundingTextRange(editor, rangeStart, rangeEnd);
+    String s = editor.getDocument().getText(range);
     int offset = editor.getCaretModel().getOffset();
-
-    LogicalPosition lineStart = lines.first;
-    LogicalPosition nextLineStart = lines.second;
-    int start = editor.logicalPositionToOffset(lineStart);
-    int end = editor.logicalPositionToOffset(nextLineStart);
-    if (end <= start) {
-      return null;
-    }
-    String s = document.getCharsSequence().subSequence(start, end).toString();
-    final int lineToCheck = nextLineStart.line - 1;
-
-    int newOffset = end + offset - start;
-    if(lineToCheck == document.getLineCount () /* empty document */
-       || lineStart.line == document.getLineCount() - 1 /* last line*/
-       || document.getLineSeparatorLength(lineToCheck) == 0)
-    {
+    int newOffset = offset + range.getLength();
+    int selectionStart = range.getEndOffset();
+    if (!s.endsWith("\n")) { // last line
       s = "\n"+s;
       newOffset++;
+      selectionStart++;
     }
-    document.insertString(end, s);
+    DocumentGuardedTextUtil.insertString(editor.getDocument(), range.getEndOffset(), s);
 
     editor.getCaretModel().moveToOffset(newOffset);
     editor.getScrollingModel().scrollToCaret(ScrollType.RELATIVE);
-    return Couple.of(end, end + s.length());
+    return TextRange.create(selectionStart, range.getEndOffset() + s.length());
   }
 
   @Override

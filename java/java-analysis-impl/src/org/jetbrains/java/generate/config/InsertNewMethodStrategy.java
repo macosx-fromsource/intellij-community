@@ -22,7 +22,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Interface that defines a policy for dealing with where to insert a new <code>toString()</code>
+ * Interface that defines a policy for dealing with where to insert a new {@code toString()}
  * method in the javafile.
  */
 public interface InsertNewMethodStrategy {
@@ -32,7 +32,6 @@ public interface InsertNewMethodStrategy {
    *
    * @param clazz     PSIClass.
    * @param newMethod new method.
-   * @param editor
    * @return if the policy was executed normally (not cancelled)
    */
   @Nullable

@@ -1,124 +1,106 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.history.integration.ui.views;
 
 import com.intellij.history.core.LocalHistoryFacade;
-import com.intellij.history.core.revisions.RecentChange;
 import com.intellij.history.integration.IdeaGateway;
 import com.intellij.history.integration.LocalHistoryBundle;
+import com.intellij.history.integration.ui.models.RecentChange;
+import com.intellij.history.integration.ui.models.RecentChangeKt;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.progress.ProgressIndicator;
+import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.ui.popup.PopupChooserBuilder;
-import com.intellij.ui.components.JBList;
+import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.platform.lvcs.impl.statistics.LocalHistoryCounter;
 import com.intellij.util.text.DateFormatUtil;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JPanel;
+import javax.swing.ListCellRenderer;
+import javax.swing.ListSelectionModel;
+import javax.swing.SwingConstants;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.util.List;
 
-public class RecentChangesPopup {
-  private final Project myProject;
-  private final IdeaGateway myGateway;
-  private final LocalHistoryFacade myVcs;
-
-  public RecentChangesPopup(Project project, IdeaGateway gw, LocalHistoryFacade vcs) {
-    myProject = project;
-    myGateway = gw;
-    myVcs = vcs;
-  }
-
-  public void show() {
-    List<RecentChange> cc = myVcs.getRecentChanges(myGateway.createTransientRootEntry());
+@ApiStatus.Internal
+public final class RecentChangesPopup {
+  public static void show(Project project, @NotNull IdeaGateway gw, @NotNull LocalHistoryFacade vcs) {
+    List<RecentChange> cc = ProgressManager.getInstance().run(new Task.WithResult<>(project,
+                                                                                    LocalHistoryBundle.message("recent.changes.loading"),
+                                                                                    true) {
+      @Override
+      protected List<RecentChange> compute(@NotNull ProgressIndicator indicator) {
+        return LocalHistoryCounter.INSTANCE.logLoadItems(project, LocalHistoryCounter.Kind.Recent, () -> {
+          return RecentChangeKt.getRecentChanges(vcs, ReadAction.computeBlocking(() -> {
+            return gw.createTransientRootEntry();
+          }));
+        });
+      }
+    });
+    String title = LocalHistoryBundle.message("recent.changes.popup.title");
     if (cc.isEmpty()) {
-      Messages.showInfoMessage(myProject, LocalHistoryBundle.message("recent.changes.to.changes"), getTitle());
+      Messages.showInfoMessage(project, LocalHistoryBundle.message("recent.changes.to.changes"), title);
       return;
     }
 
-    final JList list = new JBList(createModel(cc));
-    list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-    list.setCellRenderer(new RecentChangesListCellRenderer());
-
-    Runnable selectAction = () -> {
-      RecentChange c = (RecentChange)list.getSelectedValue();
-      showRecentChangeDialog(c);
-    };
-
-    showList(list, selectAction);
+    JBPopupFactory.getInstance().createPopupChooserBuilder(cc)
+      .setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
+      .setRenderer(new RecentChangesListCellRenderer())
+      .setTitle(title)
+      .setItemChosenCallback(change -> new RecentChangeDialog(project, gw, change).show())
+      .createPopup()
+      .showCenteredInCurrentWindow(project);
   }
 
-  private ListModel createModel(List<RecentChange> cc) {
-    DefaultListModel m = new DefaultListModel();
-    for (RecentChange c : cc) {
-      m.addElement(c);
-    }
-    return m;
-  }
-
-  private void showList(JList list, Runnable selectAction) {
-    new PopupChooserBuilder(list).
-      setTitle(getTitle()).
-      setItemChoosenCallback(selectAction).
-      createPopup().
-      showCenteredInCurrentWindow(myProject);
-  }
-
-  private void showRecentChangeDialog(RecentChange c) {
-    new RecentChangeDialog(myProject, myGateway, c).show();
-  }
-
-  private String getTitle() {
-    return LocalHistoryBundle.message("recent.changes.popup.title");
-  }
-
-  private static class RecentChangesListCellRenderer implements ListCellRenderer {
-    private final JPanel myPanel = new JPanel(new BorderLayout());
-    private final JLabel myActionLabel = new JLabel("", JLabel.LEFT);
-    private final JLabel myDateLabel = new JLabel("", JLabel.RIGHT);
+  private static final class RecentChangesListCellRenderer implements ListCellRenderer<RecentChange> {
+    private final JPanel myPanel = new JPanel(new FlowLayout(FlowLayout.LEADING, UIUtil.DEFAULT_HGAP, 2));
+    private final JLabel myActionLabel = new JLabel("", SwingConstants.LEFT);
+    private final JLabel myDateLabel = new JLabel("", SwingConstants.LEFT);
     private final JPanel mySpacePanel = new JPanel();
 
-    public RecentChangesListCellRenderer() {
-      myPanel.add(myActionLabel, BorderLayout.WEST);
-      myPanel.add(myDateLabel, BorderLayout.EAST);
-      myPanel.add(mySpacePanel, BorderLayout.CENTER);
+    RecentChangesListCellRenderer() {
+      myPanel.add(myDateLabel);
+      myPanel.add(mySpacePanel);
+      myPanel.add(myActionLabel);
 
-      Dimension d = new Dimension(40, mySpacePanel.getPreferredSize().height);
+      Dimension d = new Dimension(10, mySpacePanel.getPreferredSize().height);
       mySpacePanel.setMinimumSize(d);
       mySpacePanel.setMaximumSize(d);
       mySpacePanel.setPreferredSize(d);
     }
 
-    public Component getListCellRendererComponent(JList l, Object val, int i, boolean isSelected, boolean cellHasFocus) {
-      RecentChange c = (RecentChange)val;
-      myActionLabel.setText(c.getChangeName());
-      myDateLabel.setText(DateFormatUtil.formatPrettyDateTime(c.getTimestamp()));
+    @Override
+    public Component getListCellRendererComponent(JList<? extends RecentChange> list,
+                                                  @NotNull RecentChange value,
+                                                  int index,
+                                                  boolean isSelected,
+                                                  boolean cellHasFocus) {
+      myActionLabel.setText(value.getChangeName());
+      myDateLabel.setText(DateFormatUtil.formatDateTime(value.getTimestamp()));
 
       updateColors(isSelected);
       return myPanel;
     }
 
     private void updateColors(boolean isSelected) {
-      Color bg = isSelected ? UIUtil.getTableSelectionBackground() : UIUtil.getTableBackground();
-      Color fg = isSelected ? UIUtil.getTableSelectionForeground() : UIUtil.getTableForeground();
+      Color bg = isSelected ? UIUtil.getTableSelectionBackground(true) : UIUtil.getTableBackground();
+      Color fg = isSelected ? UIUtil.getTableSelectionForeground(true) : UIUtil.getTableForeground();
 
       setColors(bg, fg, myPanel, myActionLabel, myDateLabel, mySpacePanel);
     }
 
-    private void setColors(Color bg, Color fg, JComponent... cc) {
+    private static void setColors(Color bg, Color fg, JComponent @NotNull ... cc) {
       for (JComponent c : cc) {
         c.setBackground(bg);
         c.setForeground(fg);

@@ -15,6 +15,9 @@
  */
 package org.intellij.images.editor;
 
+import org.intellij.images.options.ZoomOptions;
+import org.jetbrains.annotations.Nullable;
+
 /**
  * Location model presents bounds of image.
  * The zoom it calculated as y = exp(x/2).
@@ -22,54 +25,78 @@ package org.intellij.images.editor;
  * @author <a href="mailto:aefimov.box@gmail.com">Alexey Efimov</a>
  */
 public interface ImageZoomModel {
-    int MACRO_ZOOM_LIMIT = 32;
-    int MICRO_ZOOM_LIMIT = 8;
+  int MACRO_ZOOM_POWER_LIMIT = 5;
+  int MICRO_ZOOM_POWER_LIMIT = 8;
+  double MACRO_ZOOM_RATIO = 2.0d;
+  double MICRO_ZOOM_RATIO = 1.5d;
+  double MACRO_ZOOM_LIMIT = Math.pow(MACRO_ZOOM_RATIO, MACRO_ZOOM_POWER_LIMIT);
+  double MICRO_ZOOM_LIMIT = Math.pow(1 / MICRO_ZOOM_RATIO, MICRO_ZOOM_POWER_LIMIT);
 
-    double getZoomFactor();
+  double getZoomFactor();
 
-    void setZoomFactor(double zoomFactor);
+  void setZoomFactor(double zoomFactor);
 
-    void zoomOut();
+  void fitZoomToWindow();
 
-    void zoomIn();
+  void zoomOut();
 
-    boolean canZoomOut();
+  void zoomIn();
 
-    boolean canZoomIn();
+  void setZoomLevelChanged(boolean value);
 
-    boolean isZoomLevelChanged();
+  boolean canZoomOut();
 
-    ImageZoomModel STUB = new ImageZoomModel() {
-        @Override
-        public double getZoomFactor() {
-            return 1;
-        }
+  boolean canZoomIn();
 
-        @Override
-        public void setZoomFactor(double zoomFactor) {
-        }
+  boolean isZoomLevelChanged();
 
-        @Override
-        public void zoomOut() {
-        }
+  default @Nullable ZoomOptions getCustomZoomOptions() {
+    return null;
+  }
 
-        @Override
-        public void zoomIn() {
-        }
+  default void setCustomZoomOptions(@Nullable ZoomOptions zoomOptions) {
+    // Nothing.
+  }
 
-        @Override
-        public boolean canZoomOut() {
-            return false;
-        }
+  ImageZoomModel STUB = new ImageZoomModel() {
+    @Override
+    public double getZoomFactor() {
+      return 1;
+    }
 
-        @Override
-        public boolean canZoomIn() {
-            return false;
-        }
+    @Override
+    public void setZoomFactor(double zoomFactor) {
+    }
 
-        @Override
-        public boolean isZoomLevelChanged() {
-            return false;
-        }
-    };
+    @Override
+    public void zoomOut() {
+    }
+
+    @Override
+    public void zoomIn() {
+    }
+
+    @Override
+    public void setZoomLevelChanged(boolean value) {
+    }
+
+    @Override
+    public void fitZoomToWindow() {
+    }
+
+    @Override
+    public boolean canZoomOut() {
+      return false;
+    }
+
+    @Override
+    public boolean canZoomIn() {
+      return false;
+    }
+
+    @Override
+    public boolean isZoomLevelChanged() {
+      return false;
+    }
+  };
 }

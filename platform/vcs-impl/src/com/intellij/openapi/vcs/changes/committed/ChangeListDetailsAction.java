@@ -1,108 +1,135 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.changes.committed;
 
 import com.intellij.codeInsight.hint.HintUtil;
 import com.intellij.ide.DataManager;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.openapi.actionSystem.CommonDataKeys;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
-import com.intellij.openapi.vcs.*;
+import com.intellij.openapi.util.text.HtmlBuilder;
+import com.intellij.openapi.util.text.HtmlChunk;
+import com.intellij.openapi.vcs.AbstractVcs;
+import com.intellij.openapi.vcs.CachingCommittedChangesProvider;
+import com.intellij.openapi.vcs.ChangeListColumn;
 import com.intellij.openapi.vcs.changes.ChangeList;
-import com.intellij.openapi.vcs.changes.issueLinks.IssueLinkHtmlRenderer;
 import com.intellij.openapi.vcs.versionBrowser.CommittedChangeList;
 import com.intellij.ui.BrowserHyperlinkListener;
-import com.intellij.ui.ScrollPaneFactory;
-import com.intellij.util.text.DateFormatUtil;
-import com.intellij.util.ui.UIUtil;
-import com.intellij.xml.util.XmlStringUtil;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.ui.StartupUiUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JEditorPane;
+import java.util.List;
+import java.util.Optional;
 
-/**
- * @author yole
- */
-public class ChangeListDetailsAction extends AnAction implements DumbAware {
-  public void actionPerformed(AnActionEvent e) {
-    final Project project = e.getData(CommonDataKeys.PROJECT);
-    final ChangeList[] changeLists = e.getData(VcsDataKeys.CHANGE_LISTS);
-    if (changeLists != null && changeLists.length > 0 && changeLists [0] instanceof CommittedChangeList) {
-      showDetailsPopup(project, (CommittedChangeList) changeLists [0]);
-    }
+import static com.intellij.openapi.actionSystem.CommonDataKeys.PROJECT;
+import static com.intellij.openapi.util.text.StringUtil.join;
+import static com.intellij.openapi.vcs.VcsBundle.message;
+import static com.intellij.openapi.vcs.VcsDataKeys.CHANGE_LISTS;
+import static com.intellij.openapi.vcs.changes.issueLinks.IssueLinkHtmlRenderer.formatTextWithLinks;
+import static com.intellij.ui.ScrollPaneFactory.createScrollPane;
+import static com.intellij.util.containers.ContainerUtil.packNullables;
+import static com.intellij.util.text.DateFormatUtil.formatPrettyDateTime;
+import static com.intellij.util.ui.UIUtil.BR;
+import static com.intellij.util.ui.UIUtil.HTML_MIME;
+import static com.intellij.util.ui.UIUtil.getCssFontDeclaration;
+import static java.lang.String.format;
+
+@ApiStatus.Internal
+public final class ChangeListDetailsAction extends AnAction implements DumbAware {
+  @Override
+  public void actionPerformed(@NotNull AnActionEvent e) {
+    Project project = e.getData(PROJECT);
+    if (project == null) return;
+    ChangeList[] changeLists = e.getData(CHANGE_LISTS);
+    if (changeLists == null || changeLists.length == 0) return;
+
+    showDetailsPopup(project, (CommittedChangeList)changeLists[0]);
   }
 
-  public void update(final AnActionEvent e) {
-    final Project project = e.getData(CommonDataKeys.PROJECT);
-    final ChangeList[] changeLists = e.getData(VcsDataKeys.CHANGE_LISTS);
-    e.getPresentation().setEnabled(project != null && changeLists != null && changeLists.length == 1 &&
-      changeLists [0] instanceof CommittedChangeList);
+  @Override
+  public void update(@NotNull AnActionEvent e) {
+    ChangeList[] changeLists = e.getData(CHANGE_LISTS);
+
+    e.getPresentation().setEnabled(
+      e.getProject() != null && changeLists != null && changeLists.length == 1 && changeLists[0] instanceof CommittedChangeList);
   }
 
-  public static void showDetailsPopup(final Project project, final CommittedChangeList changeList) {
-    StringBuilder detailsBuilder = new StringBuilder("<html><head>");
-    detailsBuilder.append(UIUtil.getCssFontDeclaration(UIUtil.getLabelFont())).append("</head><body>");
-    final AbstractVcs vcs = changeList.getVcs();
-    CachingCommittedChangesProvider provider = null;
-    if (vcs != null) {
-      provider = vcs.getCachingCommittedChangesProvider();
-      if (provider != null && provider.getChangelistTitle() != null) {
-        detailsBuilder.append(provider.getChangelistTitle()).append(" #").append(changeList.getNumber()).append("<br>");
-      }
-    }
-    @NonNls String committer = "<b>" + changeList.getCommitterName() + "</b>";
-    detailsBuilder.append(VcsBundle.message("changelist.details.committed.format", committer,
-                                            DateFormatUtil.formatPrettyDateTime(changeList.getCommitDate())));
-    detailsBuilder.append("<br>");
+  @Override
+  public @NotNull ActionUpdateThread getActionUpdateThread() {
+    return ActionUpdateThread.BGT;
+  }
 
-    if (provider != null) {
-      final CommittedChangeList originalChangeList = ReceivedChangeList.unwrap(changeList);
-      for(ChangeListColumn column: provider.getColumns()) {
-        if (ChangeListColumn.isCustom(column)) {
-          String value = column.getValue(originalChangeList).toString();
-          if (value.length() == 0) {
-            value = "<none>";
-          }
-          detailsBuilder.append(column.getTitle()).append(": ").append(XmlStringUtil.escapeString(value)).append("<br>");
-        }
-      }
-    }
-
-    detailsBuilder.append(IssueLinkHtmlRenderer.formatTextWithLinks(project, changeList.getComment()));
-    detailsBuilder.append("</body></html>");
-
-    JEditorPane editorPane = new JEditorPane(UIUtil.HTML_MIME, detailsBuilder.toString());
+  public static void showDetailsPopup(@NotNull Project project, @NotNull CommittedChangeList changeList) {
+    String htmlFormat = "<html><head>%s</head><body>%s</body></html>"; // NON-NLS
+    String details = format(htmlFormat, getCssFontDeclaration(StartupUiUtil.getLabelFont()), getDetails(project, changeList));
+    JEditorPane editorPane = new JEditorPane(HTML_MIME, details);
     editorPane.setEditable(false);
-    editorPane.setBackground(HintUtil.INFORMATION_COLOR);
+    editorPane.setBackground(HintUtil.getInformationColor());
     editorPane.select(0, 0);
     editorPane.addHyperlinkListener(BrowserHyperlinkListener.INSTANCE);
-    JScrollPane scrollPane = ScrollPaneFactory.createScrollPane(editorPane);
-    final JBPopup hint =
-      JBPopupFactory.getInstance().createComponentPopupBuilder(scrollPane, editorPane)
-        .setDimensionServiceKey(project, "changelist.details.popup", false)
-        .setResizable(true)
-        .setMovable(true)
-        .setRequestFocus(true)
-        .setTitle(VcsBundle.message("changelist.details.title"))
-        .createPopup();
-    hint.showInBestPositionFor(DataManager.getInstance().getDataContext());
+
+    JBPopupFactory.getInstance().createComponentPopupBuilder(createScrollPane(editorPane), editorPane)
+      .setDimensionServiceKey(project, "changelist.details.popup", false)
+      .setResizable(true)
+      .setMovable(true)
+      .setRequestFocus(true)
+      .setTitle(message("changelist.details.title"))
+      .createPopup()
+      .showInBestPositionFor(DataManager.getInstance().getDataContext());
   }
 
+  private static @Nls @NotNull String getDetails(@NotNull Project project, @NotNull CommittedChangeList changeList) {
+    return join(packNullables(
+      getNumber(changeList),
+      getCommitterAndDate(changeList),
+      getCustomDetails(changeList),
+      formatTextWithLinks(project, changeList.getComment())
+    ), BR);
+  }
+
+  private static @Nls @Nullable String getNumber(@NotNull CommittedChangeList changeList) {
+    return Optional.ofNullable(changeList.getVcs())
+      .map(AbstractVcs::getCachingCommittedChangesProvider)
+      .map(CachingCommittedChangesProvider::getChangelistTitle)
+      .map(changeListTitle -> changeListTitle + " #" + changeList.getNumber())
+      .orElse(null);
+  }
+
+  private static @Nls @NotNull String getCommitterAndDate(@NotNull CommittedChangeList changeList) {
+    @NonNls String committer = "<b>" + changeList.getCommitterName() + "</b>";
+    return message("changelist.details.committed.format", committer, formatPrettyDateTime(changeList.getCommitDate()));
+  }
+
+  private static @Nls @Nullable String getCustomDetails(@NotNull CommittedChangeList changeList) {
+    AbstractVcs vcs = changeList.getVcs();
+
+    if (vcs != null && vcs.getCachingCommittedChangesProvider() != null) {
+      CommittedChangeList originalChangeList = ReceivedChangeList.unwrap(changeList);
+
+      List<ChangeListColumn> customColumns = ContainerUtil.filter(vcs.getCachingCommittedChangesProvider().getColumns(),
+                                                                  ChangeListColumn::isCustom);
+      if (customColumns.isEmpty()) return null;
+
+      return new HtmlBuilder()
+        .appendWithSeparators(HtmlChunk.br(), ContainerUtil.map(customColumns, column -> {
+          return HtmlChunk.text(column.getTitle() + ": " + toString(column.getValue(originalChangeList)));
+        }))
+        .toString();
+    }
+
+    return null;
+  }
+
+  private static @Nls @NotNull String toString(@Nullable Object value) {
+    String result = value != null ? value.toString() : ""; //NON-NLS
+    return result.isEmpty() ? message("changes.none") : result;
+  }
 }

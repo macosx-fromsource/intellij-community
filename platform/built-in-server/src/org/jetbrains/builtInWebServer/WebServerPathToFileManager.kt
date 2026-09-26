@@ -1,39 +1,78 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.builtInWebServer
 
-import com.google.common.cache.CacheBuilder
-import com.intellij.ProjectTopics
-import com.intellij.openapi.application.Application
-import com.intellij.openapi.components.ServiceManager
+import com.github.benmanes.caffeine.cache.CacheLoader
+import com.github.benmanes.caffeine.cache.Caffeine
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.runReadActionBlocking
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
+import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.project.rootManager
+import com.intellij.openapi.roots.AdditionalLibraryRootsListener
 import com.intellij.openapi.roots.ModuleRootEvent
 import com.intellij.openapi.roots.ModuleRootListener
-import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.StandardFileSystems
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
-import com.intellij.util.containers.computeOrNull
-import com.intellij.util.io.exists
-import com.intellij.util.io.systemIndependentPath
+import com.intellij.util.SmartList
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
+import kotlin.io.path.exists
+
+private const val cacheSize: Long = 4096 * 4
 
 /**
  * Implement [WebServerRootsProvider] to add your provider
  */
-class WebServerPathToFileManager(application: Application, private val project: Project) {
-  val pathToInfoCache = CacheBuilder.newBuilder().maximumSize(512).expireAfterAccess(10, TimeUnit.MINUTES).build<String, PathInfo>()!!
+@Service(Service.Level.PROJECT)
+class WebServerPathToFileManager(private val project: Project) {
+  internal val pathToInfoCache = Caffeine.newBuilder().maximumSize(cacheSize).expireAfterAccess(10, TimeUnit.MINUTES).build<String, PathInfo>()
+  internal val pathToExistShortTermCache = Caffeine.newBuilder().maximumSize(cacheSize).expireAfterAccess(5, TimeUnit.SECONDS).build<String, Boolean>()
+
   // time to expire should be greater than pathToFileCache
-  private val virtualFileToPathInfo = CacheBuilder.newBuilder().maximumSize(512).expireAfterAccess(11, TimeUnit.MINUTES).build<VirtualFile, PathInfo>()
+  private val virtualFileToPathInfo = Caffeine.newBuilder().maximumSize(cacheSize).expireAfterAccess(11, TimeUnit.MINUTES).build<VirtualFile, PathInfo>()
+
+  /**
+   * Compute suitable roots for the topmost parent (like `web` in `web/foo/my/file.dart`) to avoid linear search -
+   * i.e., to avoid two queries for root when `web/foo` and `web/bar` requested and root doesn't have `web` dir (WEB-25900).
+   */
+  internal val parentToSuitableRoot = Caffeine
+    .newBuilder()
+    .maximumSize(cacheSize).expireAfterAccess(10, TimeUnit.MINUTES)
+    .build<String, List<SuitableRoot>>(CacheLoader { path ->
+      val suitableRoots = SmartList<SuitableRoot>()
+      var moduleQualifier: String? = null
+      val modules = runReadActionBlocking { ModuleManager.getInstance(project).modules }
+      for (rootProvider in RootProvider.entries) {
+        for (module in modules) {
+          if (module.isDisposed) {
+            continue
+          }
+          for (root in rootProvider.getRoots(module.rootManager)) {
+            if (root.findChild(path) != null) {
+              if (moduleQualifier == null) {
+                moduleQualifier = getModuleNameQualifier(project, module)
+              }
+              suitableRoots.add(SuitableRoot(root, moduleQualifier))
+            }
+          }
+        }
+      }
+      suitableRoots
+    })
 
   init {
-    application.messageBus.connect(project).subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener.Adapter() {
+    ApplicationManager.getApplication().messageBus.connect (project).subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
       override fun after(events: List<VFileEvent>) {
         for (event in events) {
           if (event is VFileContentChangeEvent) {
             val file = event.file
-            for (rootsProvider in WebServerRootsProvider.EP_NAME.extensions) {
+            for (rootsProvider in WebServerRootsProvider.EP_NAME.extensionList) {
               if (rootsProvider.isClearCacheOnFileContentChanged(file)) {
                 clearCache()
                 break
@@ -47,44 +86,60 @@ class WebServerPathToFileManager(application: Application, private val project: 
         }
       }
     })
-    project.messageBus.connect().subscribe(ProjectTopics.PROJECT_ROOTS, object : ModuleRootListener {
+    project.messageBus.connect().subscribe(ModuleRootListener.TOPIC, object : ModuleRootListener {
       override fun rootsChanged(event: ModuleRootEvent) {
         clearCache()
       }
     })
+    project.messageBus.connect().subscribe(AdditionalLibraryRootsListener.TOPIC, AdditionalLibraryRootsListener { _, _, _, _ ->
+      clearCache()
+    })
   }
 
   companion object {
-    @JvmStatic fun getInstance(project: Project) = ServiceManager.getService(project, WebServerPathToFileManager::class.java)!!
+    @JvmStatic
+    fun getInstance(project: Project): WebServerPathToFileManager = project.service<WebServerPathToFileManager>()
   }
 
   private fun clearCache() {
     pathToInfoCache.invalidateAll()
     virtualFileToPathInfo.invalidateAll()
+    pathToExistShortTermCache.invalidateAll()
+    parentToSuitableRoot.invalidateAll()
   }
 
-  @JvmOverloads fun findVirtualFile(path: String, cacheResult: Boolean = true): VirtualFile? {
-    val pathInfo = getPathInfo(path, cacheResult) ?: return null
-    return pathInfo.file ?: LocalFileSystem.getInstance().findFileByPath(pathInfo.ioFile!!.systemIndependentPath)
+  @JvmOverloads
+  fun findVirtualFile(path: String, cacheResult: Boolean = true, pathQuery: PathQuery = defaultPathQuery): VirtualFile? {
+    return getPathInfo(path, cacheResult, pathQuery)?.getOrResolveVirtualFile()
   }
 
-  @JvmOverloads fun getPathInfo(path: String, cacheResult: Boolean = true): PathInfo? {
+  @JvmOverloads
+  fun getPathInfo(path: String, cacheResult: Boolean = true, pathQuery: PathQuery = defaultPathQuery): PathInfo? {
     var pathInfo = pathToInfoCache.getIfPresent(path)
     if (pathInfo == null || !pathInfo.isValid) {
-      pathInfo = doFindByRelativePath(path)
-      if (cacheResult && pathInfo != null && pathInfo.isValid) {
-        pathToInfoCache.put(path, pathInfo)
+      if (pathToExistShortTermCache.getIfPresent(path) == false) {
+        return null
+      }
+
+      pathInfo = doFindByRelativePath(path, pathQuery)
+      if (cacheResult) {
+        if (pathInfo != null && pathInfo.isValid) {
+          pathToInfoCache.put(path, pathInfo)
+        }
+        else {
+          pathToExistShortTermCache.put(path, false)
+        }
       }
     }
     return pathInfo
   }
 
-  fun getPath(file: VirtualFile) = getPathInfo(file)?.path
+  fun getPath(file: VirtualFile): String? = getPathInfo(file)?.path
 
   fun getPathInfo(child: VirtualFile): PathInfo? {
     var result = virtualFileToPathInfo.getIfPresent(child)
     if (result == null) {
-      result = WebServerRootsProvider.EP_NAME.extensions.computeOrNull { it.getPathInfo(child, project) }
+      result = WebServerRootsProvider.EP_NAME.extensionList.asSequence().map { it.getPathInfo(child, project) }.find { it != null }
       if (result != null) {
         virtualFileToPathInfo.put(child, result)
       }
@@ -92,44 +147,46 @@ class WebServerPathToFileManager(application: Application, private val project: 
     return result
   }
 
-  internal fun doFindByRelativePath(path: String): PathInfo? {
-    val result = WebServerRootsProvider.EP_NAME.extensions.computeOrNull { it.resolve(path, project) } ?: return null
+  internal fun doFindByRelativePath(path: String, pathQuery: PathQuery): PathInfo? {
+    val result = WebServerRootsProvider.EP_NAME.extensionList.asSequence()
+      .map { it.resolve(path, project, pathQuery) }
+      .find { it != null } ?: return null
     result.file?.let {
       virtualFileToPathInfo.put(it, result)
     }
     return result
   }
 
-  fun getResolver(path: String) = if (path.isEmpty()) EMPTY_PATH_RESOLVER else RELATIVE_PATH_RESOLVER
+  fun getResolver(path: String): FileResolver = if (path.isEmpty()) EMPTY_PATH_RESOLVER else RELATIVE_PATH_RESOLVER
 }
 
 interface FileResolver {
-  fun resolve(path: String, root: VirtualFile, moduleName: String? = null, isLibrary: Boolean = false): PathInfo?
+  fun resolve(path: String, root: VirtualFile, moduleName: String? = null, isLibrary: Boolean = false, pathQuery: PathQuery): PathInfo?
 }
 
 private val RELATIVE_PATH_RESOLVER = object : FileResolver {
-  override fun resolve(path: String, root: VirtualFile, moduleName: String?, isLibrary: Boolean): PathInfo? {
+  override fun resolve(path: String, root: VirtualFile, moduleName: String?, isLibrary: Boolean, pathQuery: PathQuery): PathInfo? {
     // WEB-17691 built-in server doesn't serve files it doesn't have in the project tree
     // temp:// reports isInLocalFileSystem == true, but it is not true
-    if (root.isInLocalFileSystem && root.fileSystem == LocalFileSystem.getInstance()) {
-      val file = Paths.get(root.path, path)
-      if (file.exists()) {
-        return PathInfo(file, null, root, moduleName, isLibrary)
-      }
-      else {
-        return null
-      }
+    if (pathQuery.useVfs || root.fileSystem.protocol != StandardFileSystems.FILE_PROTOCOL || path == ".htaccess" || path == "config.json") {
+      return root.findFileByRelativePath(path)?.let { PathInfo(null, it, root, moduleName, isLibrary) }
+    }
+
+    val file = Paths.get(root.path, path)
+    return if (file.exists()) {
+      PathInfo(file, null, root, moduleName, isLibrary)
     }
     else {
-      val file = root.findFileByRelativePath(path) ?: return null
-      return PathInfo(null, file, root, moduleName, isLibrary)
+      null
     }
   }
 }
 
 private val EMPTY_PATH_RESOLVER = object : FileResolver {
-  override fun resolve(path: String, root: VirtualFile, moduleName: String?, isLibrary: Boolean): PathInfo? {
+  override fun resolve(path: String, root: VirtualFile, moduleName: String?, isLibrary: Boolean, pathQuery: PathQuery): PathInfo? {
     val file = findIndexFile(root) ?: return null
     return PathInfo(null, file, root, moduleName, isLibrary)
   }
 }
+
+internal val defaultPathQuery = PathQuery()

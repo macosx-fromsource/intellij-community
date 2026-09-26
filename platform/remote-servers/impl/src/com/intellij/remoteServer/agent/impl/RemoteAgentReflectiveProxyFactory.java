@@ -1,21 +1,24 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.remoteServer.agent.impl;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.util.containers.hash.HashSet;
+import com.intellij.util.ReflectionUtil;
 import org.jetbrains.annotations.Nullable;
 
-import java.lang.reflect.*;
+import java.lang.reflect.Array;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
  * @author michael.golubev
  */
 public class RemoteAgentReflectiveProxyFactory extends RemoteAgentProxyFactoryBase {
-
-  private static final Logger LOG = Logger.getInstance("#" + RemoteAgentReflectiveProxyFactory.class.getName());
+  private static final Logger LOG = Logger.getInstance(RemoteAgentReflectiveProxyFactory.class);
 
   private final RemoteAgentClassLoaderCache myClassLoaderCache;
 
@@ -29,8 +32,9 @@ public class RemoteAgentReflectiveProxyFactory extends RemoteAgentProxyFactoryBa
   protected ClassLoader createAgentClassLoader(URL[] agentLibraryUrls) throws Exception {
     Set<URL> urls = new HashSet<>();
     urls.addAll(Arrays.asList(agentLibraryUrls));
+
     return myClassLoaderCache == null
-           ? new URLClassLoader(urls.toArray(new URL[urls.size()]), null)
+           ? RemoteAgentClassLoaderCache.createClassLoaderWithoutApplicationParent(urls)
            : myClassLoaderCache.getOrCreateClassLoader(urls);
   }
 
@@ -45,15 +49,14 @@ public class RemoteAgentReflectiveProxyFactory extends RemoteAgentProxyFactoryBa
     private final ClassLoader myTargetClassLoader;
     private final ClassLoader mySourceClassLoader;
 
-    public ReflectiveInvocationHandler(Object target, ClassLoader targetClassLoader, ClassLoader sourceClassLoader) {
+    ReflectiveInvocationHandler(Object target, ClassLoader targetClassLoader, ClassLoader sourceClassLoader) {
       myTarget = target;
       myTargetClassLoader = targetClassLoader;
       mySourceClassLoader = sourceClassLoader;
     }
 
-    @Nullable
     @Override
-    public Object invoke(Object proxy, final Method method, final Object[] args) {
+    public @Nullable Object invoke(Object proxy, final Method method, final Object[] args) {
       ClassLoader initialClassLoader = Thread.currentThread().getContextClassLoader();
       try {
         Thread.currentThread().setContextClassLoader(myTargetClassLoader);
@@ -75,19 +78,7 @@ public class RemoteAgentReflectiveProxyFactory extends RemoteAgentProxyFactoryBa
         Mirror resultMirror = new Mirror(delegateMethod.getReturnType(), result, myTargetClassLoader, mySourceClassLoader);
         return resultMirror.getMirrorValue();
       }
-      catch (IllegalAccessException e) {
-        LOG.error(e);
-        return null;
-      }
-      catch (InvocationTargetException e) {
-        LOG.error(e);
-        return null;
-      }
-      catch (NoSuchMethodException e) {
-        LOG.error(e);
-        return null;
-      }
-      catch (ClassNotFoundException e) {
+      catch (IllegalAccessException | ClassNotFoundException | NoSuchMethodException | InvocationTargetException e) {
         LOG.error(e);
         return null;
       }
@@ -103,7 +94,7 @@ public class RemoteAgentReflectiveProxyFactory extends RemoteAgentProxyFactoryBa
 
     private final Object myMirrorValue;
 
-    public Mirror(Class<?> type, Object value, ClassLoader classLoader, ClassLoader mirrorClassLoader) throws ClassNotFoundException {
+    Mirror(Class<?> type, Object value, ClassLoader classLoader, ClassLoader mirrorClassLoader) throws ClassNotFoundException {
       if (type.isArray()) {
         Class<?> componentType = type.getComponentType();
         Mirror componentMirror = new Mirror(componentType, null, classLoader, mirrorClassLoader);
@@ -116,12 +107,18 @@ public class RemoteAgentReflectiveProxyFactory extends RemoteAgentProxyFactoryBa
         myMirrorType = mirrorValue.getClass();
         myMirrorValue = value == null ? null : mirrorValue;
       }
+      else if (type.isEnum()) {
+        @SuppressWarnings("unchecked")
+        Class<? extends Enum> mirroredEnum = (Class<? extends Enum>)mirrorClassLoader.loadClass(type.getName());
+        myMirrorType = mirroredEnum;
+        //noinspection unchecked
+        myMirrorValue = value == null ? null : Enum.valueOf(mirroredEnum, ((Enum<?>)value).name());
+      }
       else if (type.isInterface()) {
         myMirrorType = mirrorClassLoader.loadClass(type.getName());
         myMirrorValue = value == null ? null
-                                      : Proxy.newProxyInstance(mirrorClassLoader,
-                                                               new Class[]{myMirrorType},
-                                                               new ReflectiveInvocationHandler(value, classLoader, mirrorClassLoader));
+                                      : ReflectionUtil.proxy(myMirrorType,
+                                                             new ReflectiveInvocationHandler(value, classLoader, mirrorClassLoader));
       }
       else {
         myMirrorType = type;

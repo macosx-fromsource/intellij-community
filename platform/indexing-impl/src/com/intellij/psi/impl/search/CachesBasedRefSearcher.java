@@ -1,3 +1,4 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.search;
 
 import com.intellij.openapi.application.QueryExecutorBase;
@@ -15,16 +16,13 @@ import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.util.Processor;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * @author max
- */
-public class CachesBasedRefSearcher extends QueryExecutorBase<PsiReference, ReferencesSearch.SearchParameters> {
+public final class CachesBasedRefSearcher extends QueryExecutorBase<PsiReference, ReferencesSearch.SearchParameters> {
   public CachesBasedRefSearcher() {
     super(true);
   }
 
   @Override
-  public void processQuery(@NotNull ReferencesSearch.SearchParameters p, @NotNull Processor<PsiReference> consumer) {
+  public void processQuery(@NotNull ReferencesSearch.SearchParameters p, @NotNull Processor<? super PsiReference> consumer) {
     final PsiElement refElement = p.getElementToSearch();
     boolean caseSensitive = refElement.getLanguage().isCaseSensitive();
 
@@ -32,10 +30,11 @@ public class CachesBasedRefSearcher extends QueryExecutorBase<PsiReference, Refe
     if (refElement instanceof PsiFileSystemItem && !(refElement instanceof SyntheticFileSystemItem)) {
       final VirtualFile vFile = ((PsiFileSystemItem)refElement).getVirtualFile();
       if (vFile != null) {
-        text = vFile.getNameWithoutExtension();
+        String fileNameWithoutExtension = vFile.getNameWithoutExtension();
+        text = fileNameWithoutExtension.isEmpty() ? vFile.getName() : fileNameWithoutExtension;
       }
-      // We must not look for file references with the file language's case-sensitivity, 
-      // since case-sensitivity of the references themselves depends either on file system 
+      // We must not look for file references with the file language's case-sensitivity,
+      // since case-sensitivity of the references themselves depends either on file system
       // or on the rules of the language of reference
       caseSensitive = false;
     }

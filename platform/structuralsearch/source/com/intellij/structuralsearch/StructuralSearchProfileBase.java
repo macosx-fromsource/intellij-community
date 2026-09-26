@@ -1,60 +1,50 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.structuralsearch;
 
-import com.intellij.dupLocator.PsiElementRole;
 import com.intellij.dupLocator.equivalence.EquivalenceDescriptor;
 import com.intellij.dupLocator.equivalence.EquivalenceDescriptorProvider;
-import com.intellij.dupLocator.equivalence.MultiChildDescriptor;
-import com.intellij.dupLocator.equivalence.SingleChildDescriptor;
-import com.intellij.dupLocator.iterators.FilteringNodeIterator;
 import com.intellij.dupLocator.iterators.NodeIterator;
 import com.intellij.dupLocator.util.DuplocatorUtil;
-import com.intellij.dupLocator.util.NodeFilter;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.Language;
 import com.intellij.lang.LanguageParserDefinitions;
 import com.intellij.lang.ParserDefinition;
-import com.intellij.openapi.fileTypes.FileType;
-import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiRecursiveElementVisitor;
+import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.impl.source.tree.LeafElement;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.tree.TokenSet;
 import com.intellij.structuralsearch.impl.matcher.CompiledPattern;
 import com.intellij.structuralsearch.impl.matcher.GlobalMatchingVisitor;
 import com.intellij.structuralsearch.impl.matcher.MatchContext;
-import com.intellij.structuralsearch.impl.matcher.PatternTreeContext;
 import com.intellij.structuralsearch.impl.matcher.compiler.GlobalCompilingVisitor;
-import com.intellij.structuralsearch.impl.matcher.compiler.PatternCompiler;
-import com.intellij.structuralsearch.impl.matcher.filters.LexicalNodesFilter;
-import com.intellij.structuralsearch.impl.matcher.handlers.*;
+import com.intellij.structuralsearch.impl.matcher.handlers.DelegatingHandler;
+import com.intellij.structuralsearch.impl.matcher.handlers.LightTopLevelMatchingHandler;
+import com.intellij.structuralsearch.impl.matcher.handlers.MatchingHandler;
+import com.intellij.structuralsearch.impl.matcher.handlers.SkippingHandler;
+import com.intellij.structuralsearch.impl.matcher.handlers.SubstitutionHandler;
+import com.intellij.structuralsearch.impl.matcher.handlers.TopLevelMatchingHandler;
 import com.intellij.structuralsearch.impl.matcher.iterators.SsrFilteringNodeIterator;
 import com.intellij.structuralsearch.impl.matcher.strategies.MatchingStrategy;
 import com.intellij.structuralsearch.plugin.replace.ReplaceOptions;
-import com.intellij.structuralsearch.plugin.replace.impl.ReplacementContext;
-import com.intellij.util.ArrayUtil;
-import com.intellij.util.LocalTimeCounter;
-import com.intellij.util.containers.HashSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/**
- * @author Eugene.Kudelevsky
- */
 public abstract class StructuralSearchProfileBase extends StructuralSearchProfile {
-  private static final String DELIMETER_CHARS = ",;.[]{}():";
-  protected static final String PATTERN_PLACEHOLDER = "$$PATTERN_PLACEHOLDER$$";
-  private PsiElementVisitor myLexicalNodesFilter;
+  private static final String DELIMITER_CHARS = ",;.[]{}():";
 
   @Override
-  public void compile(PsiElement[] elements, @NotNull final GlobalCompilingVisitor globalVisitor) {
+  public void compile(PsiElement @NotNull [] elements, final @NotNull GlobalCompilingVisitor globalVisitor) {
     final PsiElement topElement = elements[0].getParent();
     final PsiElement element = elements.length > 1 ? topElement : elements[0];
 
@@ -62,13 +52,13 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
 
     element.accept(new PsiRecursiveElementVisitor() {
       @Override
-      public void visitElement(PsiElement element) {
+      public void visitElement(@NotNull PsiElement element) {
         super.visitElement(element);
         if (DuplocatorUtil.isIgnoredNode(element)) {
           return;
         }
-        CompiledPattern pattern = globalVisitor.getContext().getPattern();
-        MatchingHandler handler = pattern.getHandler(element);
+        final CompiledPattern pattern = globalVisitor.getContext().getPattern();
+        final MatchingHandler handler = pattern.getHandler(element);
 
         if (!(handler instanceof SubstitutionHandler) &&
             !(handler instanceof TopLevelMatchingHandler) &&
@@ -83,7 +73,7 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
         depth matching won't be done!;
          */
         if (handler instanceof LightTopLevelMatchingHandler) {
-          MatchingHandler delegate = ((LightTopLevelMatchingHandler)handler).getDelegate();
+          final MatchingHandler delegate = ((LightTopLevelMatchingHandler)handler).getDelegate();
           if (!(delegate instanceof SubstitutionHandler)) {
             pattern.setHandler(element, new LightTopLevelMatchingHandler(new SkippingHandler(delegate)));
           }
@@ -100,9 +90,9 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
       public boolean continueMatching(PsiElement start) {
         Language language = start.getLanguage();
 
-        PsiFile file = start.getContainingFile();
+        final PsiFile file = start.getContainingFile();
         if (file != null) {
-          Language fileLanguage = file.getLanguage();
+          final Language fileLanguage = file.getLanguage();
           if (fileLanguage.isKindOf(language)) {
             // dialect
             language = fileLanguage;
@@ -119,58 +109,43 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
     });
   }
 
-  @NotNull
   @Override
-  public PsiElementVisitor createMatchingVisitor(@NotNull GlobalMatchingVisitor globalVisitor) {
+  public @NotNull PsiElementVisitor createMatchingVisitor(@NotNull GlobalMatchingVisitor globalVisitor) {
     return new MyMatchingVisitor(globalVisitor);
   }
 
-  @NotNull
   @Override
-  public PsiElementVisitor getLexicalNodesFilter(@NotNull final LexicalNodesFilter filter) {
-    if (myLexicalNodesFilter == null) {
-      myLexicalNodesFilter = new PsiElementVisitor() {
-        @Override
-        public void visitElement(PsiElement element) {
-          super.visitElement(element);
-          if (DuplocatorUtil.isIgnoredNode(element)) {
-            filter.setResult(true);
-          }
-        }
-      };
-    }
-    return myLexicalNodesFilter;
+  public boolean isMatchNode(PsiElement element) {
+    return !DuplocatorUtil.isIgnoredNode(element);
   }
 
-  public static boolean containsOnlyDelimeters(String s) {
+  private static boolean containsOnlyDelimiters(String s) {
     for (int i = 0, n = s.length(); i < n; i++) {
-      if (DELIMETER_CHARS.indexOf(s.charAt(i)) < 0) {
+      if (DELIMITER_CHARS.indexOf(s.charAt(i)) < 0) {
         return false;
       }
     }
     return true;
   }
 
-  @NotNull
-  protected abstract String[] getVarPrefixes();
+  protected abstract String @NotNull [] getVarPrefixes();
 
-  @NotNull
   @Override
-  public CompiledPattern createCompiledPattern() {
+  public @NotNull CompiledPattern createCompiledPattern() {
     return new CompiledPattern() {
 
       @Override
-      protected SubstitutionHandler doCreateSubstitutionHandler(String name, boolean target, int minOccurs, int maxOccurs, boolean greedy) {
+      protected @NotNull SubstitutionHandler doCreateSubstitutionHandler(@NotNull String name, boolean target, int minOccurs, int maxOccurs, boolean greedy) {
         return new MySubstitutionHandler(name, target, minOccurs, maxOccurs, greedy);
       }
 
       @Override
-      public String[] getTypedVarPrefixes() {
+      public String @NotNull [] getTypedVarPrefixes() {
         return getVarPrefixes();
       }
 
       @Override
-      public boolean isTypedVar(String str) {
+      public boolean isTypedVar(@NotNull String str) {
         for (String prefix : getVarPrefixes()) {
           if (str.startsWith(prefix)) {
             return true;
@@ -179,9 +154,8 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
         return false;
       }
 
-      @NotNull
       @Override
-      public String getTypedVarString(PsiElement element) {
+      public @NotNull String getTypedVarString(@NotNull PsiElement element) {
         final PsiElement initialElement = element;
         PsiElement child = SkippingHandler.getOnlyNonWhitespaceChild(element);
 
@@ -195,128 +169,14 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
   }
 
   @Override
-  public boolean isMyLanguage(@NotNull Language language) {
-    return language.isKindOf(getFileType().getLanguage());
-  }
-
-  @NotNull
-  protected abstract LanguageFileType getFileType();
-
-  @NotNull
-  @Override
-  public PsiElement[] createPatternTree(@NotNull String text,
-                                        @NotNull PatternTreeContext context,
-                                        @NotNull FileType fileType,
-                                        @Nullable Language language,
-                                        @Nullable String contextName,
-                                        @Nullable String extension,
-                                        @NotNull Project project,
-                                        boolean physical) {
-    if (context == PatternTreeContext.Block) {
-      final String strContext = getContext(text, language, contextName);
-      return strContext != null ?
-             parsePattern(project, strContext, text, fileType, language, extension, physical) :
-             PsiElement.EMPTY_ARRAY;
-    }
-    return super.createPatternTree(text, context, fileType, language, contextName, extension, project, physical);
-  }
+  public void checkReplacementPattern(@NotNull Project project, @NotNull ReplaceOptions options) {}
 
   @Override
-  public void checkReplacementPattern(Project project, ReplaceOptions options) {
-    final CompiledPattern compiledPattern = PatternCompiler.compilePattern(project, options.getMatchOptions());
-    if (compiledPattern == null) {
-      return;
-    }
-
-    final NodeIterator it = compiledPattern.getNodes();
-    if (!it.hasNext()) {
-      return;
-    }
-
-    final PsiElement root = it.current().getParent();
-
-    if (!checkOptionalChildren(root) ||
-        !checkErrorElements(root)) {
-      throw new UnsupportedPatternException(": Partial and expression patterns are not supported");
-    }
+  public StructuralReplaceHandler getReplaceHandler(@NotNull Project project, @NotNull ReplaceOptions replaceOptions) {
+    return new DocumentBasedReplaceHandler(project);
   }
 
-  private static boolean checkErrorElements(PsiElement element) {
-    final boolean[] result = {true};
-    final int endOffset = element.getTextRange().getEndOffset();
-
-    element.accept(new PsiRecursiveElementWalkingVisitor() {
-      @Override
-      public void visitElement(PsiElement element) {
-        super.visitElement(element);
-
-        if (element instanceof PsiErrorElement && element.getTextRange().getEndOffset() == endOffset) {
-          result[0] = false;
-        }
-      }
-    });
-
-    return result[0];
-  }
-
-  private static boolean checkOptionalChildren(PsiElement root) {
-    final boolean[] result = {true};
-
-    root.accept(new PsiRecursiveElementWalkingVisitor() {
-      @Override
-      public void visitElement(PsiElement element) {
-        super.visitElement(element);
-
-        if (element instanceof LeafElement) {
-          return;
-        }
-
-        final EquivalenceDescriptorProvider provider = EquivalenceDescriptorProvider.getInstance(element);
-        if (provider == null) {
-          return;
-        }
-
-        final EquivalenceDescriptor descriptor = provider.buildDescriptor(element);
-        if (descriptor == null) {
-          return;
-        }
-
-        for (SingleChildDescriptor childDescriptor : descriptor.getSingleChildDescriptors()) {
-          if (childDescriptor.getType() == SingleChildDescriptor.MyType.OPTIONALLY_IN_PATTERN &&
-              childDescriptor.getElement() == null) {
-            result[0] = false;
-          }
-        }
-
-        for (MultiChildDescriptor childDescriptor : descriptor.getMultiChildDescriptors()) {
-          if (childDescriptor.getType() == MultiChildDescriptor.MyType.OPTIONALLY_IN_PATTERN) {
-            PsiElement[] elements = childDescriptor.getElements();
-            if (elements == null || elements.length == 0) {
-              result[0] = false;
-            }
-          }
-        }
-      }
-    });
-    return result[0];
-  }
-
-  @Override
-  public StructuralReplaceHandler getReplaceHandler(@NotNull ReplacementContext context) {
-    return new DocumentBasedReplaceHandler(context.getProject());
-  }
-
-  @NotNull
-  public String[] getContextNames() {
-    return ArrayUtil.EMPTY_STRING_ARRAY;
-  }
-
-  @Nullable
-  protected String getContext(@NotNull String pattern, @Nullable Language language, @Nullable String contextName) {
-    return PATTERN_PLACEHOLDER;
-  }
-
-  private static boolean canBePatternVariable(PsiElement element) {
+  private static boolean canBePatternVariable(@NotNull PsiElement element) {
     // can be leaf element! (ex. var a = 1 <-> var $a$ = 1)
     if (element instanceof LeafElement) {
       return true;
@@ -343,75 +203,19 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
     return false;
   }
 
-  private static boolean canBePatternVariableValue(PsiElement element) {
+  private static boolean canBePatternVariableValue(@NotNull PsiElement element) {
     // can be leaf element! (ex. var a = 1 <-> var $a$ = 1)
-    return !containsOnlyDelimeters(element.getText());
+    return !containsOnlyDelimiters(element.getText());
   }
 
   @Override
-  public boolean canBeVarDelimeter(@NotNull PsiElement element) {
+  public boolean canBeVarDelimiter(@NotNull PsiElement element) {
     final ASTNode node = element.getNode();
     return node != null && getVariableDelimiters().contains(node.getElementType());
   }
 
   protected TokenSet getVariableDelimiters() {
     return TokenSet.EMPTY;
-  }
-
-  public static PsiElement[] parsePattern(Project project,
-                                          String context,
-                                          String pattern,
-                                          FileType fileType,
-                                          Language language,
-                                          String extension,
-                                          boolean physical) {
-    int offset = context.indexOf(PATTERN_PLACEHOLDER);
-
-    final int patternLength = pattern.length();
-    final String patternInContext = context.replace(PATTERN_PLACEHOLDER, pattern);
-
-    final String ext = extension != null ? extension : fileType.getDefaultExtension();
-    final String name = "__dummy." + ext;
-    final PsiFileFactory factory = PsiFileFactory.getInstance(project);
-
-    final PsiFile file = language == null
-                         ? factory.createFileFromText(name, fileType, patternInContext, LocalTimeCounter.currentTime(), physical, true)
-                         : factory.createFileFromText(name, language, patternInContext, physical, true);
-    if (file == null) {
-      return PsiElement.EMPTY_ARRAY;
-    }
-
-    final List<PsiElement> result = new ArrayList<>();
-
-    PsiElement element = file.findElementAt(offset);
-    if (element == null) {
-      return PsiElement.EMPTY_ARRAY;
-    }
-
-    PsiElement topElement = element;
-    element = element.getParent();
-
-    while (element != null) {
-      if (element.getTextRange().getStartOffset() == offset && element.getTextLength() <= patternLength) {
-        topElement = element;
-      }
-      element = element.getParent();
-    }
-
-    if (topElement instanceof PsiFile) {
-      return topElement.getChildren();
-    }
-
-    final int endOffset = offset + patternLength;
-    result.add(topElement);
-    topElement = topElement.getNextSibling();
-
-    while (topElement != null && topElement.getTextRange().getEndOffset() <= endOffset) {
-      result.add(topElement);
-      topElement = topElement.getNextSibling();
-    }
-
-    return result.toArray(new PsiElement[result.size()]);
   }
 
   // todo: support expression patterns
@@ -423,13 +227,13 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
 
     private Pattern[] mySubstitutionPatterns;
 
-    private MyCompilingVisitor(GlobalCompilingVisitor globalVisitor, PsiElement topElement) {
+    MyCompilingVisitor(GlobalCompilingVisitor globalVisitor, PsiElement topElement) {
       myGlobalVisitor = globalVisitor;
       myTopElement = topElement;
     }
 
     @Override
-    public void visitElement(PsiElement element) {
+    public void visitElement(@NotNull PsiElement element) {
       doVisitElement(element);
 
       if (isStringLiteral(element)) {
@@ -437,8 +241,8 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
       }
     }
 
-    private void doVisitElement(PsiElement element) {
-      CompiledPattern pattern = myGlobalVisitor.getContext().getPattern();
+    private void doVisitElement(@NotNull PsiElement element) {
+      final CompiledPattern pattern = myGlobalVisitor.getContext().getPattern();
 
       if (myGlobalVisitor.getCodeBlockLevel() == 0) {
         initTopLevelElement(element);
@@ -448,11 +252,7 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
       if (canBePatternVariable(element) && pattern.isRealTypedVar(element)) {
         myGlobalVisitor.handle(element);
         final MatchingHandler handler = pattern.getHandler(element);
-        handler.setFilter(new NodeFilter() {
-          public boolean accepts(PsiElement other) {
-            return canBePatternVariableValue(other);
-          }
-        });
+        handler.setFilter(other -> canBePatternVariableValue(other));
 
         super.visitElement(element);
 
@@ -462,30 +262,29 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
       super.visitElement(element);
 
       if (myGlobalVisitor.getContext().getSearchHelper().doOptimizing() && element instanceof LeafElement) {
-        ParserDefinition parserDefinition = LanguageParserDefinitions.INSTANCE.forLanguage(element.getLanguage());
+        final ParserDefinition parserDefinition = LanguageParserDefinitions.INSTANCE.forLanguage(element.getLanguage());
         if (parserDefinition != null) {
-          String text = element.getText();
+          final String text = element.getText();
 
           // todo: support variables inside comments
-          boolean flag = true;
-          if (StringUtil.isJavaIdentifier(text) && flag) {
-            myGlobalVisitor.processTokenizedName(text, true, GlobalCompilingVisitor.OccurenceKind.CODE);
+          if (StringUtil.isJavaIdentifier(text)) {
+            myGlobalVisitor.processTokenizedName(text, GlobalCompilingVisitor.OccurenceKind.CODE);
           }
         }
       }
     }
 
     private void visitLiteral(PsiElement literal) {
-      String value = literal.getText();
+      final String value = literal.getText();
 
       if (StringUtil.isQuotedString(value)) {
         if (mySubstitutionPatterns == null) {
           final String[] prefixes = myGlobalVisitor.getContext().getPattern().getTypedVarPrefixes();
-          mySubstitutionPatterns = createPatterns(prefixes);
+          mySubstitutionPatterns = MatchUtil.createPatterns(prefixes);
         }
 
         for (Pattern substitutionPattern : mySubstitutionPatterns) {
-          @Nullable MatchingHandler handler =
+          final @Nullable MatchingHandler handler =
             myGlobalVisitor.processPatternStringWithFragments(value, GlobalCompilingVisitor.OccurenceKind.LITERAL, substitutionPattern);
 
           if (handler != null) {
@@ -496,22 +295,12 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
       }
     }
 
-    private Pattern[] createPatterns(String[] prefixes) {
-      final Pattern[] patterns = new Pattern[prefixes.length];
-
-      for (int i = 0; i < prefixes.length; i++) {
-        final String s = StructuralSearchUtil.shieldSpecialChars(prefixes[i]);
-        patterns[i] = Pattern.compile("\\b(" + s + "\\w+)\\b");
-      }
-      return patterns;
-    }
-
     private void initTopLevelElement(PsiElement element) {
-      CompiledPattern pattern = myGlobalVisitor.getContext().getPattern();
+      final CompiledPattern pattern = myGlobalVisitor.getContext().getPattern();
 
-      PsiElement newElement = SkippingHandler.skipNodeIfNeccessary(element);
+      final PsiElement newElement = SkippingHandler.skipNodeIfNecessary(element);
 
-      if (element != newElement && newElement != null) {
+      if (element != newElement) {
         // way to support partial matching (ex. if ($condition$) )
         newElement.accept(this);
         pattern.setHandler(element, new LightTopLevelMatchingHandler(pattern.getHandler(element)));
@@ -528,7 +317,7 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
           else {
             el.accept(this);
 
-            MatchingHandler matchingHandler = pattern.getHandler(el);
+            final MatchingHandler matchingHandler = pattern.getHandler(el);
             pattern.setHandler(el, element == myTopElement ? new TopLevelMatchingHandler(matchingHandler) :
                                    new LightTopLevelMatchingHandler(matchingHandler));
 
@@ -551,7 +340,7 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
   private class MyMatchingVisitor extends PsiElementVisitor {
     private final GlobalMatchingVisitor myGlobalVisitor;
 
-    private MyMatchingVisitor(GlobalMatchingVisitor globalVisitor) {
+    MyMatchingVisitor(GlobalMatchingVisitor globalVisitor) {
       myGlobalVisitor = globalVisitor;
     }
 
@@ -564,7 +353,7 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
     }
 
     @Override
-    public void visitElement(PsiElement element) {
+    public void visitElement(@NotNull PsiElement element) {
       super.visitElement(element);
 
       final EquivalenceDescriptorProvider descriptorProvider = EquivalenceDescriptorProvider.getInstance(element);
@@ -575,7 +364,7 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
 
         if (descriptor1 != null && descriptor2 != null) {
           final boolean result = DuplocatorUtil
-            .match(descriptor1, descriptor2, myGlobalVisitor, Collections.<PsiElementRole>emptySet(), null);
+            .match(descriptor1, descriptor2, myGlobalVisitor, Collections.emptySet(), null);
           myGlobalVisitor.setResult(result);
           return;
         }
@@ -591,10 +380,10 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
           !shouldIgnoreVarNode(element)) {
 
         PsiElement matchedElement = myGlobalVisitor.getElement();
-        PsiElement newElement = SkippingHandler.skipNodeIfNeccessary(matchedElement);
+        PsiElement newElement = SkippingHandler.skipNodeIfNecessary(matchedElement);
         while (newElement != matchedElement) {
           matchedElement = newElement;
-          newElement = SkippingHandler.skipNodeIfNeccessary(matchedElement);
+          newElement = SkippingHandler.skipNodeIfNecessary(matchedElement);
         }
 
         myGlobalVisitor.setResult(myGlobalVisitor.handleTypedElement(element, matchedElement));
@@ -606,21 +395,20 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
         myGlobalVisitor.setResult(true);
       }
       else {
-        PsiElement patternChild = element.getFirstChild();
-        PsiElement matchedChild = myGlobalVisitor.getElement().getFirstChild();
+        final PsiElement patternChild = element.getFirstChild();
+        final PsiElement matchedChild = myGlobalVisitor.getElement().getFirstChild();
 
-        FilteringNodeIterator patternIterator = new SsrFilteringNodeIterator(patternChild);
-        FilteringNodeIterator matchedIterator = new SsrFilteringNodeIterator(matchedChild);
+        final NodeIterator patternIterator = SsrFilteringNodeIterator.create(patternChild);
+        final NodeIterator matchedIterator = SsrFilteringNodeIterator.create(matchedChild);
 
-        boolean matched = myGlobalVisitor.matchSequentially(patternIterator, matchedIterator);
+        final boolean matched = myGlobalVisitor.matchSequentially(patternIterator, matchedIterator);
         myGlobalVisitor.setResult(matched);
       }
     }
 
     private void visitLiteral(PsiElement literal) {
       final PsiElement l2 = myGlobalVisitor.getElement();
-
-      MatchingHandler handler = (MatchingHandler)literal.getUserData(CompiledPattern.HANDLER_KEY);
+      final MatchingHandler handler = literal.getUserData(CompiledPattern.HANDLER_KEY);
 
       if (handler instanceof SubstitutionHandler) {
         int offset = 0;
@@ -653,21 +441,21 @@ public abstract class StructuralSearchProfileBase extends StructuralSearchProfil
   private static class MySubstitutionHandler extends SubstitutionHandler {
     final Set<PsiElement> myExceptedNodes;
 
-    public MySubstitutionHandler(String name, boolean target, int minOccurs, int maxOccurs, boolean greedy) {
+    MySubstitutionHandler(@NotNull String name, boolean target, int minOccurs, int maxOccurs, boolean greedy) {
       super(name, target, minOccurs, maxOccurs, greedy);
       myExceptedNodes = new HashSet<>();
     }
 
     @Override
-    public boolean matchSequentially(NodeIterator nodes, NodeIterator nodes2, MatchContext context) {
-      if (doMatchSequentially(nodes, nodes2, context)) {
+    public boolean matchSequentially(@NotNull NodeIterator patternNodes, @NotNull NodeIterator matchNodes, @NotNull MatchContext context) {
+      if (doMatchSequentially(patternNodes, matchNodes, context)) {
         return true;
       }
-      final PsiElement current = nodes.current();
+      final PsiElement current = patternNodes.current();
       if (current != null) {
         myExceptedNodes.add(current);
       }
-      final boolean result = doMatchSequentiallyBySimpleHandler(nodes, nodes2, context);
+      final boolean result = doMatchSequentiallyBySimpleHandler(patternNodes, matchNodes, context);
       myExceptedNodes.remove(current);
       return result;
     }

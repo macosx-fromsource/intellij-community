@@ -17,17 +17,14 @@ package com.intellij.openapi.roots.ui.configuration;
 
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleConfigurationEditor;
-import com.intellij.openapi.roots.ModifiableRootModel;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Oct 28, 2004
  */
-public class DefaultModuleConfigurationEditorFactoryImpl extends DefaultModuleConfigurationEditorFactory {
+public final class DefaultModuleConfigurationEditorFactoryImpl extends DefaultModuleConfigurationEditorFactory {
   @Override
   public ModuleConfigurationEditor createModuleContentRootsEditor(ModuleConfigurationState state) {
-    final ModifiableRootModel rootModel = state.getRootModel();
-    final Module module = rootModel.getModule();
+    final Module module = state.getCurrentRootModel().getModule();
     final String moduleName = module.getName();
     return new ContentEntriesEditor(moduleName, state);
   }
@@ -40,5 +37,10 @@ public class DefaultModuleConfigurationEditorFactoryImpl extends DefaultModuleCo
   @Override
   public ModuleConfigurationEditor createOutputEditor(ModuleConfigurationState state) {
     return new OutputEditor(state);
+  }
+
+  @Override
+  public String getOutputEditorDisplayName() {
+    return OutputEditor.getName();
   }
 }

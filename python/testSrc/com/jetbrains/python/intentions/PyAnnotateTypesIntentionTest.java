@@ -1,27 +1,15 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.intentions;
 
-import com.jetbrains.python.PyBundle;
+import com.jetbrains.python.allure.Components;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+import com.jetbrains.python.PyPsiBundle;
 import com.jetbrains.python.psi.LanguageLevel;
-import com.jetbrains.python.psi.impl.PythonLanguageLevelPusher;
 
-/**
- * @author traff
- */
+@Subsystems.CodeInsight
+@Components.Intentions
+@Layers.Functional
 public class PyAnnotateTypesIntentionTest extends PyIntentionTestCase {
   public void testCaretOnDefinition() {
     doTest();
@@ -32,21 +20,98 @@ public class PyAnnotateTypesIntentionTest extends PyIntentionTestCase {
   }
 
   public void testCaretOnImportedInvocation() {
-    PythonLanguageLevelPusher.setForcedLanguageLevel(myFixture.getProject(), LanguageLevel.PYTHON30);
-    try {
-      doIntentionTest(PyBundle.message("INTN.annotate.types"), getTestName(true) + ".py", "foo_decl.py");
-      myFixture.checkResultByFile("foo_decl.py", "foo_decl_after.py", false);
-    }
-    finally {
-      PythonLanguageLevelPusher.setForcedLanguageLevel(myFixture.getProject(), null);
-    }
+    doIntentionTest(PyPsiBundle.message("INTN.NAME.add.type.hints.for.function"), getTestName(true) + ".py", "foo_decl.py");
+    myFixture.checkResultByFile("foo_decl.py", "foo_decl_after.py", false);
   }
 
   public void testTypeComment() {
-    doTest(PyBundle.message("INTN.annotate.types"), LanguageLevel.PYTHON27);
+    doTest(PyPsiBundle.message("INTN.NAME.add.type.hints.for.function"), LanguageLevel.PYTHON27);
   }
-  
+
+  public void testLibraryDefinition() {
+    final String testDir = getTestName(false);
+    myFixture.copyDirectoryToProject(testDir, "");
+    runWithAdditionalClassEntryInSdkRoots(testDir + "/lib", () -> {
+      myFixture.configureByFile(testDir + "/main.py");
+      assertEmpty(myFixture.filterAvailableIntentions(PyPsiBundle.message("INTN.NAME.add.type.hints.for.function")));
+    });
+  }
+
+  // PY-30713
+  public void testResolveAmbiguity() {
+    doNegativeTest();
+  }
+
+  // PY-30825
+  public void testMethodAfterConstructorCall() {
+    doTest(PyPsiBundle.message("INTN.add.type.hints.for.function", "method"), LanguageLevel.PYTHON27);
+  }
+
+  // PY-31369
+  public void testFunctionParameterTypeAnnotationsNotChanged() {
+    doTest();
+  }
+
+  // PY-31369
+  public void testFunctionReturnValueAndFirstParameterTypeAnnotationsNotChanged() {
+    doTest();
+  }
+
+  // PY-31369
+  public void testFunctionReturnValueAndSecondParameterTypeAnnotationsNotChanged() {
+    doTest();
+  }
+
+  // PY-31369
+  public void testFunctionReturnValueTypeAnnotationNotChanged() {
+    doTest();
+  }
+
+  // PY-31369
+  public void testFunctionReturnValueComplexTypeAnnotationNotChanged() {
+    doTest();
+  }
+
+  // PY-31369
+  public void testFunctionAllTypeAnnotationsNoIntention() {
+    doNegativeTest();
+  }
+
+  // PY-31369
+  public void testFunctionHasTypeCommentNoIntention() {
+    doNegativeTest();
+  }
+
+  // PY-31369
+  public void testFunctionHasSameLineTypeCommentNoIntention() {
+    doNegativeTest();
+  }
+
+  // PY-31369
+  public void testFunctionSameLineNotTypeCommentNotBreakNextTypeComment() {
+    doNegativeTest();
+  }
+
+  // PY-31369
+  public void testFunctionSplitTypeCommentNoIntention() {
+    doNegativeTest();
+  }
+
+  private void doNegativeTest() {
+    doNegativeTest(PyPsiBundle.message("INTN.NAME.add.type.hints.for.function"));
+  }
+
+  // PY-41976
+  public void testFunctionKeywordContainerParameter() {
+    doTest();
+  }
+
+  // PY-41976
+  public void testFunctionPositionalAndKeywordContainerParameter() {
+    doTest();
+  }
+
   private void doTest() {
-    doTest(PyBundle.message("INTN.annotate.types"), LanguageLevel.PYTHON30);
+    doIntentionTest(PyPsiBundle.message("INTN.NAME.add.type.hints.for.function"));
   }
 }

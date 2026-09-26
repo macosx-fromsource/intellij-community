@@ -1,23 +1,13 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.literals;
 
 import com.intellij.lang.ASTNode;
-import com.intellij.psi.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.LiteralTextEscaper;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiLanguageInjectionHost;
+import com.intellij.psi.PsiType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.lexer.TokenSets;
 import org.jetbrains.plugins.groovy.lang.parser.GroovyElementTypes;
@@ -31,15 +21,13 @@ import org.jetbrains.plugins.groovy.lang.psi.util.GroovyCommonClassNames;
 
 import java.util.List;
 
-/**
- * @author ilyas
- */
 public class GrStringImpl extends GrAbstractLiteral implements GrString {
 
   public GrStringImpl(@NotNull ASTNode node) {
     super(node);
   }
 
+  @Override
   public String toString() {
     return "Compound Gstring";
   }
@@ -75,17 +63,17 @@ public class GrStringImpl extends GrAbstractLiteral implements GrString {
   @Override
   public GrStringContent[] getContents() {
     final List<PsiElement> parts = findChildrenByType(GroovyElementTypes.GSTRING_CONTENT);
-    return parts.toArray(new GrStringContent[parts.size()]);
+    return parts.toArray(new GrStringContent[0]);
   }
 
   @Override
   public GroovyPsiElement[] getAllContentParts() {
     final List<PsiElement> result = findChildrenByType(TokenSets.GSTRING_CONTENT_PARTS);
-    return result.toArray(new GroovyPsiElement[result.size()]);
+    return result.toArray(GroovyPsiElement.EMPTY_ARRAY);
   }
 
   @Override
-  public void accept(GroovyElementVisitor visitor) {
+  public void accept(@NotNull GroovyElementVisitor visitor) {
     visitor.visitGStringExpression(this);
   }
 
@@ -115,9 +103,8 @@ public class GrStringImpl extends GrAbstractLiteral implements GrString {
     return this;
   }
 
-  @NotNull
   @Override
-  public LiteralTextEscaper<? extends PsiLanguageInjectionHost> createLiteralTextEscaper() {
+  public @NotNull LiteralTextEscaper<? extends PsiLanguageInjectionHost> createLiteralTextEscaper() {
     return new GrLiteralEscaper(this);
   }
 }

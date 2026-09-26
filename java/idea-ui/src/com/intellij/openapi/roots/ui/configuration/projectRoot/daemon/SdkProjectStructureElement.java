@@ -1,20 +1,24 @@
 package com.intellij.openapi.roots.ui.configuration.projectRoot.daemon;
 
+import com.intellij.openapi.project.ProjectBundle;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ui.configuration.projectRoot.StructureConfigurableContext;
+import org.jetbrains.annotations.Nls;
 
 import java.util.Collections;
 import java.util.List;
 
-/**
- * @author nik
- */
 public class SdkProjectStructureElement extends ProjectStructureElement {
   private final Sdk mySdk;
 
   public SdkProjectStructureElement(StructureConfigurableContext context, Sdk sdk) {
     super(context);
-    mySdk = sdk;
+    mySdk = getModifiableSdk(sdk);
+  }
+
+  private Sdk getModifiableSdk(Sdk sdk) {
+    Sdk modifiableSdk = myContext.getModulesConfigurator().getProjectStructureConfigurable().getProjectJdksModel().getProjectSdks().get(sdk);
+    return modifiableSdk != null? modifiableSdk : sdk;
   }
 
   public Sdk getSdk() {
@@ -49,8 +53,8 @@ public class SdkProjectStructureElement extends ProjectStructureElement {
   }
 
   @Override
-  public String getTypeName() {
-    return "SDK";
+  public @Nls(capitalization = Nls.Capitalization.Sentence) String getTypeName() {
+    return ProjectBundle.message("sdk");
   }
 
   @Override

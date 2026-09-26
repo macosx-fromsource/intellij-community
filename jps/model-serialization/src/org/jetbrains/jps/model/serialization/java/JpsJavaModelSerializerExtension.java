@@ -1,49 +1,67 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.jps.model.serialization.java;
 
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.containers.ContainerUtil;
 import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.model.JpsElementFactory;
 import org.jetbrains.jps.model.JpsProject;
+import org.jetbrains.jps.model.JpsSimpleElement;
 import org.jetbrains.jps.model.JpsUrlList;
-import org.jetbrains.jps.model.java.*;
+import org.jetbrains.jps.model.java.ExplodedDirectoryModuleExtension;
+import org.jetbrains.jps.model.java.JavaResourceRootProperties;
+import org.jetbrains.jps.model.java.JavaResourceRootType;
+import org.jetbrains.jps.model.java.JavaSourceRootProperties;
+import org.jetbrains.jps.model.java.JavaSourceRootType;
+import org.jetbrains.jps.model.java.JpsAnnotationRootType;
+import org.jetbrains.jps.model.java.JpsJavaDependencyExtension;
+import org.jetbrains.jps.model.java.JpsJavaDependencyScope;
+import org.jetbrains.jps.model.java.JpsJavaExtensionService;
+import org.jetbrains.jps.model.java.JpsJavaModuleExtension;
+import org.jetbrains.jps.model.java.JpsJavaProjectExtension;
+import org.jetbrains.jps.model.java.JpsNativeLibraryRootType;
+import org.jetbrains.jps.model.java.JpsProductionModuleOutputPackagingElement;
+import org.jetbrains.jps.model.java.JpsProductionModuleSourcePackagingElement;
+import org.jetbrains.jps.model.java.JpsTestModuleOutputPackagingElement;
+import org.jetbrains.jps.model.java.LanguageLevel;
+import org.jetbrains.jps.model.library.JpsMavenRepositoryLibraryDescriptor;
+import org.jetbrains.jps.model.library.JpsMavenRepositoryLibraryDescriptor.ArtifactVerification;
 import org.jetbrains.jps.model.library.JpsOrderRootType;
+import org.jetbrains.jps.model.library.JpsRepositoryLibraryType;
 import org.jetbrains.jps.model.module.JpsDependencyElement;
 import org.jetbrains.jps.model.module.JpsModule;
 import org.jetbrains.jps.model.module.JpsModuleReference;
 import org.jetbrains.jps.model.module.JpsModuleSourceRootType;
 import org.jetbrains.jps.model.serialization.JDomSerializationUtil;
 import org.jetbrains.jps.model.serialization.JpsModelSerializerExtension;
+import org.jetbrains.jps.model.serialization.JpsPathMapper;
 import org.jetbrains.jps.model.serialization.JpsProjectExtensionSerializer;
 import org.jetbrains.jps.model.serialization.artifact.JpsPackagingElementSerializer;
-import org.jetbrains.jps.model.serialization.java.compiler.*;
+import org.jetbrains.jps.model.serialization.java.compiler.JpsCompilerValidationExcludeSerializer;
+import org.jetbrains.jps.model.serialization.java.compiler.JpsEclipseCompilerOptionsSerializer;
+import org.jetbrains.jps.model.serialization.java.compiler.JpsJavaCompilerConfigurationSerializer;
+import org.jetbrains.jps.model.serialization.java.compiler.JpsJavaCompilerNotNullableSerializer;
+import org.jetbrains.jps.model.serialization.java.compiler.JpsJavaCompilerOptionsSerializer;
+import org.jetbrains.jps.model.serialization.java.compiler.JpsJavaCompilerWorkspaceConfigurationSerializer;
+import org.jetbrains.jps.model.serialization.java.compiler.JpsValidationSerializer;
+import org.jetbrains.jps.model.serialization.java.compiler.RmicCompilerOptionsSerializer;
+import org.jetbrains.jps.model.serialization.library.JpsLibraryPropertiesSerializer;
 import org.jetbrains.jps.model.serialization.library.JpsLibraryRootTypeSerializer;
 import org.jetbrains.jps.model.serialization.module.JpsModuleRootModelSerializer;
 import org.jetbrains.jps.model.serialization.module.JpsModuleSourceRootPropertiesSerializer;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
-/**
- * @author nik
- */
-public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension {
+public final class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension {
+  private static final Logger LOG = Logger.getInstance(JpsJavaModelSerializerExtension.class);
+
   public static final String EXPORTED_ATTRIBUTE = "exported";
   public static final String SCOPE_ATTRIBUTE = "scope";
   public static final String OUTPUT_TAG = "output";
@@ -54,14 +72,17 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
   public static final String TEST_OUTPUT_TAG = "output-test";
   public static final String INHERIT_COMPILER_OUTPUT_ATTRIBUTE = "inherit-compiler-output";
   public static final String EXCLUDE_OUTPUT_TAG = "exclude-output";
-  private static final String ANNOTATION_PATHS_TAG = "annotation-paths";
-  private static final String JAVADOC_PATHS_TAG = "javadoc-paths";
-  private static final String MODULE_LANGUAGE_LEVEL_ATTRIBUTE = "LANGUAGE_LEVEL";
+  public static final String ANNOTATION_PATHS_TAG = "annotation-paths";
+  public static final String JAVADOC_PATHS_TAG = "javadoc-paths";
+  public static final String MODULE_LANGUAGE_LEVEL_ATTRIBUTE = "LANGUAGE_LEVEL";
   public static final String ROOT_TAG = "root";
-  private static final String RELATIVE_OUTPUT_PATH_ATTRIBUTE = "relativeOutputPath";
-  private static final String IS_GENERATED_ATTRIBUTE = "generated";
+  public static final String RELATIVE_OUTPUT_PATH_ATTRIBUTE = "relativeOutputPath";
+  public static final String IS_GENERATED_ATTRIBUTE = "generated";
   public static final JavaSourceRootPropertiesSerializer JAVA_SOURCE_ROOT_PROPERTIES_SERIALIZER =
     new JavaSourceRootPropertiesSerializer(JavaSourceRootType.SOURCE, JpsModuleRootModelSerializer.JAVA_SOURCE_ROOT_TYPE_ID);
+  public static final String JAVA_RESOURCE_ROOT_ID = "java-resource";
+  public static final String JAVA_TEST_RESOURCE_ROOT_ID = "java-test-resource";
+  public static final String PRODUCTION_MODULE_NAME_ATTRIBUTE = "production-module";
 
   @Override
   public void loadRootModel(@NotNull JpsModule module, @NotNull Element rootModel) {
@@ -70,27 +91,21 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
   }
 
   @Override
-  public void saveRootModel(@NotNull JpsModule module, @NotNull Element rootModel) {
-    saveExplodedDirectoryExtension(module, rootModel);
-    saveJavaModuleExtension(module, rootModel);
-  }
-
-  @Override
   public void loadModuleOptions(@NotNull JpsModule module, @NotNull Element rootElement) {
     Element testModuleProperties = JDomSerializationUtil.findComponent(rootElement, "TestModuleProperties");
     if (testModuleProperties != null) {
-      String productionModuleName = testModuleProperties.getAttributeValue("production-module");
+      String productionModuleName = testModuleProperties.getAttributeValue(PRODUCTION_MODULE_NAME_ATTRIBUTE);
       if (productionModuleName != null) {
         getService().setTestModuleProperties(module, JpsElementFactory.getInstance().createModuleReference(productionModuleName));
       }
     }
   }
 
-  @NotNull
   @Override
-  public List<? extends JpsProjectExtensionSerializer> getProjectExtensionSerializers() {
+  public @NotNull List<? extends JpsProjectExtensionSerializer> getProjectExtensionSerializers() {
     return Arrays.asList(new JavaProjectExtensionSerializer(),
                          new JpsJavaCompilerConfigurationSerializer(),
+                         new JpsValidationSerializer(),
                          new JpsJavaCompilerNotNullableSerializer(),
                          new JpsCompilerValidationExcludeSerializer(),
                          new JpsJavaCompilerWorkspaceConfigurationSerializer(),
@@ -99,13 +114,12 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
                          new RmicCompilerOptionsSerializer("RmicSettings", "Rmic"));
   }
 
-  @NotNull
   @Override
-  public List<? extends JpsModuleSourceRootPropertiesSerializer<?>> getModuleSourceRootPropertiesSerializers() {
+  public @NotNull List<? extends JpsModuleSourceRootPropertiesSerializer<?>> getModuleSourceRootPropertiesSerializers() {
     return Arrays.asList(JAVA_SOURCE_ROOT_PROPERTIES_SERIALIZER,
                          new JavaSourceRootPropertiesSerializer(JavaSourceRootType.TEST_SOURCE, JpsModuleRootModelSerializer.JAVA_TEST_ROOT_TYPE_ID),
-                         new JavaResourceRootPropertiesSerializer(JavaResourceRootType.RESOURCE, "java-resource"),
-                         new JavaResourceRootPropertiesSerializer(JavaResourceRootType.TEST_RESOURCE, "java-test-resource"));
+                         new JavaResourceRootPropertiesSerializer(JavaResourceRootType.RESOURCE, JAVA_RESOURCE_ROOT_ID),
+                         new JavaResourceRootPropertiesSerializer(JavaResourceRootType.TEST_RESOURCE, JAVA_TEST_RESOURCE_ROOT_ID));
   }
 
   @Override
@@ -126,37 +140,28 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
   }
 
   @Override
-  public void saveModuleDependencyProperties(JpsDependencyElement dependency, Element orderEntry) {
-    JpsJavaDependencyExtension extension = getService().getDependencyExtension(dependency);
-    if (extension != null) {
-      if (extension.isExported()) {
-        orderEntry.setAttribute(EXPORTED_ATTRIBUTE, "");
-      }
-      JpsJavaDependencyScope scope = extension.getScope();
-      if (scope != JpsJavaDependencyScope.COMPILE) {
-        orderEntry.setAttribute(SCOPE_ATTRIBUTE, scope.name());
-      }
-    }
-  }
-
-  @Override
   public List<JpsLibraryRootTypeSerializer> getLibraryRootTypeSerializers() {
     return Arrays.asList(new JpsLibraryRootTypeSerializer("JAVADOC", JpsOrderRootType.DOCUMENTATION, true),
                          new JpsLibraryRootTypeSerializer("ANNOTATIONS", JpsAnnotationRootType.INSTANCE, false),
                          new JpsLibraryRootTypeSerializer("NATIVE", JpsNativeLibraryRootType.INSTANCE, false));
   }
 
-  @NotNull
   @Override
-  public List<JpsLibraryRootTypeSerializer> getSdkRootTypeSerializers() {
+  public @NotNull List<JpsLibraryRootTypeSerializer> getSdkRootTypeSerializers() {
     return Arrays.asList(new JpsLibraryRootTypeSerializer("javadocPath", JpsOrderRootType.DOCUMENTATION, true),
                          new JpsLibraryRootTypeSerializer("annotationsPath", JpsAnnotationRootType.INSTANCE, true));
   }
 
-  @NotNull
   @Override
-  public List<? extends JpsPackagingElementSerializer<?>> getPackagingElementSerializers() {
-    return Arrays.asList(new JpsModuleOutputPackagingElementSerializer(), new JpsTestModuleOutputPackagingElementSerializer());
+  public @NotNull List<? extends JpsPackagingElementSerializer<?>> getPackagingElementSerializers() {
+    return Arrays.asList(new JpsModuleOutputPackagingElementSerializer(),
+                         new JpsTestModuleOutputPackagingElementSerializer(),
+                         new JpsModuleSourcePackagingElementSerializer());
+  }
+
+  @Override
+  public @NotNull List<? extends JpsLibraryPropertiesSerializer<?>> getLibraryPropertiesSerializers() {
+    return Collections.singletonList(new JpsRepositoryLibraryPropertiesSerializer());
   }
 
   private static void loadExplodedDirectoryExtension(JpsModule module, Element rootModelComponent) {
@@ -165,16 +170,6 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
       final ExplodedDirectoryModuleExtension extension = getService().getOrCreateExplodedDirectoryExtension(module);
       extension.setExcludeExploded(rootModelComponent.getChild(EXCLUDE_EXPLODED_TAG) != null);
       extension.setExplodedUrl(exploded.getAttributeValue(URL_ATTRIBUTE));
-    }
-  }
-
-  private static void saveExplodedDirectoryExtension(JpsModule module, Element rootModelElement) {
-    ExplodedDirectoryModuleExtension extension = getService().getExplodedDirectoryExtension(module);
-    if (extension != null) {
-      if (extension.isExcludeExploded()) {
-        rootModelElement.addContent(0, new Element(EXCLUDE_EXPLODED_TAG));
-      }
-      rootModelElement.addContent(0, new Element(EXPLODED_TAG).setAttribute(URL_ATTRIBUTE, extension.getExplodedUrl()));
     }
   }
 
@@ -192,41 +187,11 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
 
     final String languageLevel = rootModelComponent.getAttributeValue(MODULE_LANGUAGE_LEVEL_ATTRIBUTE);
     if (languageLevel != null) {
-      extension.setLanguageLevel(LanguageLevel.valueOf(languageLevel));
+      extension.setLanguageLevel(readLanguageLevel(languageLevel, null));
     }
 
     loadAdditionalRoots(rootModelComponent, ANNOTATION_PATHS_TAG, extension.getAnnotationRoots());
     loadAdditionalRoots(rootModelComponent, JAVADOC_PATHS_TAG, extension.getJavadocRoots());
-  }
-
-  private static void saveJavaModuleExtension(JpsModule module, Element rootModelComponent) {
-    JpsJavaModuleExtension extension = getService().getModuleExtension(module);
-    if (extension == null) return;
-    if (extension.isExcludeOutput()) {
-      rootModelComponent.addContent(0, new Element(EXCLUDE_OUTPUT_TAG));
-    }
-
-    String testOutputUrl = extension.getTestOutputUrl();
-    if (testOutputUrl != null) {
-      rootModelComponent.addContent(0, new Element(TEST_OUTPUT_TAG).setAttribute(URL_ATTRIBUTE, testOutputUrl));
-    }
-
-    String outputUrl = extension.getOutputUrl();
-    if (outputUrl != null) {
-      rootModelComponent.addContent(0, new Element(OUTPUT_TAG).setAttribute(URL_ATTRIBUTE, outputUrl));
-    }
-
-    LanguageLevel languageLevel = extension.getLanguageLevel();
-    if (languageLevel != null) {
-      rootModelComponent.setAttribute(MODULE_LANGUAGE_LEVEL_ATTRIBUTE, languageLevel.name());
-    }
-
-    if (extension.isInheritOutput()) {
-      rootModelComponent.setAttribute(INHERIT_COMPILER_OUTPUT_ATTRIBUTE, "true");
-    }
-
-    saveAdditionalRoots(rootModelComponent, JAVADOC_PATHS_TAG, extension.getJavadocRoots());
-    saveAdditionalRoots(rootModelComponent, ANNOTATION_PATHS_TAG, extension.getAnnotationRoots());
   }
 
   private static void loadAdditionalRoots(Element rootModelComponent, final String rootsTagName, final JpsUrlList result) {
@@ -236,22 +201,11 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
     }
   }
 
-  private static void saveAdditionalRoots(Element rootModelComponent, final String rootsTagName, final JpsUrlList list) {
-    List<String> urls = list.getUrls();
-    if (!urls.isEmpty()) {
-      Element roots = new Element(rootsTagName);
-      for (String url : urls) {
-        roots.addContent(new Element(ROOT_TAG).setAttribute(URL_ATTRIBUTE, url));
-      }
-      rootModelComponent.addContent(roots);
-    }
-  }
-
   private static JpsJavaExtensionService getService() {
     return JpsJavaExtensionService.getInstance();
   }
 
-  private static class JpsModuleOutputPackagingElementSerializer
+  private static final class JpsModuleOutputPackagingElementSerializer
     extends JpsPackagingElementSerializer<JpsProductionModuleOutputPackagingElement> {
     private JpsModuleOutputPackagingElementSerializer() {
       super("module-output", JpsProductionModuleOutputPackagingElement.class);
@@ -262,14 +216,22 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
       JpsModuleReference reference = JpsElementFactory.getInstance().createModuleReference(element.getAttributeValue("name"));
       return getService().createProductionModuleOutput(reference);
     }
+  }
+
+  private static final class JpsModuleSourcePackagingElementSerializer
+    extends JpsPackagingElementSerializer<JpsProductionModuleSourcePackagingElement> {
+    private JpsModuleSourcePackagingElementSerializer() {
+      super("module-source", JpsProductionModuleSourcePackagingElement.class);
+    }
 
     @Override
-    public void save(JpsProductionModuleOutputPackagingElement element, Element tag) {
-      tag.setAttribute("name", element.getModuleReference().getModuleName());
+    public JpsProductionModuleSourcePackagingElement load(Element element) {
+      JpsModuleReference reference = JpsElementFactory.getInstance().createModuleReference(element.getAttributeValue("name"));
+      return getService().createProductionModuleSource(reference);
     }
   }
 
-  private static class JpsTestModuleOutputPackagingElementSerializer extends JpsPackagingElementSerializer<JpsTestModuleOutputPackagingElement> {
+  private static final class JpsTestModuleOutputPackagingElementSerializer extends JpsPackagingElementSerializer<JpsTestModuleOutputPackagingElement> {
     private JpsTestModuleOutputPackagingElementSerializer() {
       super("module-test-output", JpsTestModuleOutputPackagingElement.class);
     }
@@ -279,15 +241,19 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
       JpsModuleReference reference = JpsElementFactory.getInstance().createModuleReference(element.getAttributeValue("name"));
       return getService().createTestModuleOutput(reference);
     }
-
-    @Override
-    public void save(JpsTestModuleOutputPackagingElement element, Element tag) {
-      tag.setAttribute("name", element.getModuleReference().getModuleName());
-    }
   }
 
-  private static class JavaProjectExtensionSerializer extends JpsProjectExtensionSerializer {
-    public JavaProjectExtensionSerializer() {
+  private static LanguageLevel readLanguageLevel(String level, LanguageLevel defaultLevel) {
+    for (LanguageLevel languageLevel : LanguageLevel.values()) {
+      if (level.equals(languageLevel.name())) {
+        return languageLevel;
+      }
+    }
+    return defaultLevel;
+  }
+
+  private static final class JavaProjectExtensionSerializer extends JpsProjectExtensionSerializer {
+    JavaProjectExtensionSerializer() {
       super(null, "ProjectRootManager");
     }
 
@@ -303,34 +269,19 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
       }
       String languageLevel = componentTag.getAttributeValue(LANGUAGE_LEVEL_ATTRIBUTE);
       if (languageLevel != null) {
-        extension.setLanguageLevel(LanguageLevel.valueOf(languageLevel));
+        extension.setLanguageLevel(readLanguageLevel(languageLevel, LanguageLevel.HIGHEST));
       }
-    }
-
-    @Override
-    public void saveExtension(@NotNull JpsProject project, @NotNull Element componentTag) {
-      JpsJavaProjectExtension extension = getService().getProjectExtension(project);
-      if (extension == null) return;
-
-      String outputUrl = extension.getOutputUrl();
-      if (outputUrl != null) {
-        componentTag.addContent(new Element(OUTPUT_TAG).setAttribute(URL_ATTRIBUTE, outputUrl));
-      }
-      LanguageLevel level = extension.getLanguageLevel();
-      componentTag.setAttribute(LANGUAGE_LEVEL_ATTRIBUTE, level.name());
-      componentTag.setAttribute("assert-keyword", Boolean.toString(level.compareTo(LanguageLevel.JDK_1_4) >= 0));
-      componentTag.setAttribute("jdk-15", Boolean.toString(level.compareTo(LanguageLevel.JDK_1_5) >= 0));
     }
   }
 
-  private static class JavaSourceRootPropertiesSerializer extends JpsModuleSourceRootPropertiesSerializer<JavaSourceRootProperties> {
+  private static final class JavaSourceRootPropertiesSerializer extends JpsModuleSourceRootPropertiesSerializer<JavaSourceRootProperties> {
     private JavaSourceRootPropertiesSerializer(JpsModuleSourceRootType<JavaSourceRootProperties> type, String typeId) {
       super(type, typeId);
     }
 
     @Override
     public JavaSourceRootProperties loadProperties(@NotNull Element sourceRootTag) {
-      String packagePrefix = StringUtil.notNullize(sourceRootTag.getAttributeValue(JpsModuleRootModelSerializer.PACKAGE_PREFIX_ATTRIBUTE));
+      String packagePrefix = sourceRootTag.getAttributeValue(JpsModuleRootModelSerializer.PACKAGE_PREFIX_ATTRIBUTE, "");
       boolean isGenerated = Boolean.parseBoolean(sourceRootTag.getAttributeValue(IS_GENERATED_ATTRIBUTE));
       return getService().createSourceRootProperties(packagePrefix, isGenerated);
     }
@@ -349,7 +300,7 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
     }
   }
 
-  private static class JavaResourceRootPropertiesSerializer extends JpsModuleSourceRootPropertiesSerializer<JavaResourceRootProperties> {
+  private static final class JavaResourceRootPropertiesSerializer extends JpsModuleSourceRootPropertiesSerializer<JavaResourceRootProperties> {
     private JavaResourceRootPropertiesSerializer(JpsModuleSourceRootType<JavaResourceRootProperties> type, String typeId) {
       super(type, typeId);
     }
@@ -370,6 +321,76 @@ public class JpsJavaModelSerializerExtension extends JpsModelSerializerExtension
       if (properties.isForGeneratedSources()) {
         sourceRootTag.setAttribute(IS_GENERATED_ATTRIBUTE, Boolean.TRUE.toString());
       }
+    }
+  }
+
+  private static final class JpsRepositoryLibraryPropertiesSerializer extends JpsLibraryPropertiesSerializer<JpsSimpleElement<JpsMavenRepositoryLibraryDescriptor>> {
+    private static final String MAVEN_ID_ATTRIBUTE = "maven-id";
+    private static final String INCLUDE_TRANSITIVE_DEPS_ATTRIBUTE = "include-transitive-deps";
+    private static final String EXCLUDE_TAG = "exclude";
+    private static final String DEPENDENCY_TAG = "dependency";
+
+    private static final String JAR_REPOSITORY_ID_ATTRIBUTE = "jar-repository-id";
+
+    private static final String VERIFICATION_TAG = "verification";
+
+    private static final String ARTIFACT_TAG = "artifact";
+
+    private static final String URL_ATTRIBUTE = "url";
+
+    private static final String SHA256SUM_TAG = "sha256sum";
+
+    JpsRepositoryLibraryPropertiesSerializer() {
+      super(JpsRepositoryLibraryType.INSTANCE, JpsRepositoryLibraryType.INSTANCE.getTypeId());
+    }
+
+    @Override
+    public JpsSimpleElement<JpsMavenRepositoryLibraryDescriptor> loadProperties(@Nullable Element elem, @NotNull JpsPathMapper pathMapper) {
+      return JpsElementFactory.getInstance().createSimpleElement(loadDescriptor(elem, pathMapper));
+    }
+
+    private static @NotNull JpsMavenRepositoryLibraryDescriptor loadDescriptor(@Nullable Element elem, @NotNull JpsPathMapper pathMapper) {
+      if (elem == null) return new JpsMavenRepositoryLibraryDescriptor(null);
+      String mavenId = elem.getAttributeValue(MAVEN_ID_ATTRIBUTE, (String)null);
+
+      boolean includeTransitiveDependencies = Boolean.parseBoolean(elem.getAttributeValue(INCLUDE_TRANSITIVE_DEPS_ATTRIBUTE, "true"));
+      String jarRepositoryId = elem.getAttributeValue(JAR_REPOSITORY_ID_ATTRIBUTE);
+
+
+      Element excludeTag = elem.getChild(EXCLUDE_TAG);
+      List<Element> dependencyTags = excludeTag != null ? excludeTag.getChildren(DEPENDENCY_TAG) : Collections.emptyList();
+      List<String> excludedDependencies = ContainerUtil.map(dependencyTags, it -> it.getAttributeValue(MAVEN_ID_ATTRIBUTE));
+      var verificationProperties = loadArtifactsVerificationProperties(mavenId, elem.getChild(VERIFICATION_TAG), pathMapper);
+      return new JpsMavenRepositoryLibraryDescriptor(mavenId,
+                                                     includeTransitiveDependencies, excludedDependencies,
+                                                     verificationProperties,
+                                                     jarRepositoryId);
+    }
+
+    private static List<ArtifactVerification> loadArtifactsVerificationProperties(@Nullable String mavenId, @Nullable Element element,
+                                                                                  @NotNull JpsPathMapper pathMapper) {
+      if (element == null) {
+        return Collections.emptyList();
+      }
+
+      List<Element> children = element.getChildren(ARTIFACT_TAG);
+
+      List<ArtifactVerification> result = new ArrayList<>(children.size());
+      for (var child : children) {
+        String artifactUrl = child.getAttributeValue(URL_ATTRIBUTE);
+        if (artifactUrl != null) {
+          Element sha256sumElement = child.getChild(SHA256SUM_TAG);
+          String sha256sum = sha256sumElement != null ? sha256sumElement.getText() : null;
+          if (sha256sum == null) {
+            LOG.warn("Missing sha256sum attribute for verification artifact tag for descriptor maven-id=" + mavenId);
+          } else {
+            result.add(new ArtifactVerification(pathMapper.mapUrl(artifactUrl), sha256sum));
+          }
+        } else {
+          LOG.warn("Missing url attribute for verification artifact tag for descriptor maven-id=" + mavenId);
+        }
+      }
+      return result;
     }
   }
 }

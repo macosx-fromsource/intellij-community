@@ -1,88 +1,73 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.navigation.ItemPresentation;
 import com.intellij.navigation.ItemPresentationProviders;
 import com.intellij.psi.PsiElement;
-import com.intellij.psi.PsiType;
-import com.intellij.util.Function;
 import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.plugins.groovy.lang.psi.GroovyElementVisitor;
 import org.jetbrains.plugins.groovy.lang.psi.api.GroovyResolveResult;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.arguments.GrArgumentList;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression;
-import org.jetbrains.plugins.groovy.lang.psi.dataFlow.types.TypeInferenceHelper;
 import org.jetbrains.plugins.groovy.lang.psi.impl.statements.expressions.path.GrCallExpressionImpl;
-import org.jetbrains.plugins.groovy.lang.psi.typeEnhancers.GrCallExpressionTypeCalculator;
+import org.jetbrains.plugins.groovy.lang.resolve.api.GroovyMethodCallReference;
+import org.jetbrains.plugins.groovy.lang.resolve.impl.GrImplicitCallReference;
+import org.jetbrains.plugins.groovy.lang.resolve.references.GrExplicitMethodCallReference;
+
+import static org.jetbrains.plugins.groovy.lang.psi.impl.PsiImplUtilKt.isExplicitCall;
+import static org.jetbrains.plugins.groovy.lang.psi.impl.PsiImplUtilKt.isImplicitCall;
 
 /**
  * @author Maxim.Medvedev
  */
 public abstract class GrMethodCallImpl extends GrCallExpressionImpl implements GrMethodCall {
-  private static final Function<GrMethodCall, PsiType> METHOD_CALL_TYPES_CALCULATOR = callExpression -> {
-    GroovyResolveResult[] resolveResults;
 
-    GrExpression invokedExpression = callExpression.getInvokedExpression();
-    if (invokedExpression instanceof GrReferenceExpression) {
-      resolveResults = ((GrReferenceExpression)invokedExpression).multiResolve(false);
-    }
-    else {
-      resolveResults = GroovyResolveResult.EMPTY_ARRAY;
-    }
-
-    for (GrCallExpressionTypeCalculator typeCalculator : GrCallExpressionTypeCalculator.EP_NAME.getExtensions()) {
-        PsiType res = typeCalculator.calculateReturnType(callExpression, resolveResults);
-      if (res != null) {
-        return res;
-      }
-    }
-
-    return null;
-  };
+  private final GroovyMethodCallReference myImplicitCallReference = new GrImplicitCallReference(this);
+  private final GroovyMethodCallReference myExplicitCallReference = new GrExplicitMethodCallReference(this);
 
   public GrMethodCallImpl(@NotNull ASTNode node) {
     super(node);
   }
 
   @Override
-  @NotNull
-  public GroovyResolveResult[] getCallVariants(@Nullable GrExpression upToArgument) {
-    final GrExpression invoked = getInvokedExpression();
-    if (!(invoked instanceof GrReferenceExpressionImpl)) return GroovyResolveResult.EMPTY_ARRAY;
-
-    return ((GrReferenceExpressionImpl)invoked).getCallVariants(upToArgument);
+  public @Nullable GroovyMethodCallReference getImplicitCallReference() {
+    return isImplicitCall(this) ? myImplicitCallReference : null;
   }
 
   @Override
-  @NotNull
-  public GrExpression getInvokedExpression() {
+  public @Nullable GroovyMethodCallReference getExplicitCallReference() {
+    return isExplicitCall(this) ? myExplicitCallReference : null;
+  }
+
+  @Override
+  public @Nullable GroovyMethodCallReference getCallReference() {
+    GroovyMethodCallReference explicitCallReference = getExplicitCallReference();
+    return explicitCallReference == null ? getImplicitCallReference() : explicitCallReference;
+  }
+
+  @Override
+  public GroovyResolveResult @NotNull [] getCallVariants(@Nullable GrExpression upToArgument) {
+    return getCallVariants(upToArgument, true);
+  }
+
+  @Override
+  public @NotNull GroovyResolveResult[] getCallVariants(@Nullable GrExpression upToArgument, boolean incompleteCode) {
+    final GrExpression invoked = getInvokedExpression();
+    if (!(invoked instanceof GrReferenceExpression)) return GroovyResolveResult.EMPTY_ARRAY;
+    return ((GrReferenceExpression)invoked).multiResolve(incompleteCode);
+  }
+
+  @Override
+  public @NotNull GrExpression getInvokedExpression() {
     for (PsiElement cur = this.getFirstChild(); cur != null; cur = cur.getNextSibling()) {
       if (cur instanceof GrExpression) return (GrExpression)cur;
     }
     throw new IncorrectOperationException("invoked expression must not be null");
-  }
-
-  @Override
-  public PsiType getType() {
-    return TypeInferenceHelper.getCurrentContext().getExpressionType(this, METHOD_CALL_TYPES_CALCULATOR);
   }
 
   @Override
@@ -93,12 +78,17 @@ public abstract class GrMethodCallImpl extends GrCallExpressionImpl implements G
     return ((GrReferenceExpression)expression).getDotToken() == null;
   }
 
-  @NotNull
   @Override
-  public GroovyResolveResult[] multiResolve(boolean incompleteCode) {
-    GrExpression expression = getInvokedExpression();
-    if (!(expression instanceof GrReferenceExpression)) return GroovyResolveResult.EMPTY_ARRAY;
-    return ((GrReferenceExpression)expression).multiResolve(incompleteCode);
+  public GroovyResolveResult @NotNull [] multiResolveGroovy(boolean incompleteCode) {
+    final GroovyMethodCallReference implicitCallReference = getImplicitCallReference();
+    if (implicitCallReference != null) {
+      return implicitCallReference.multiResolve(incompleteCode);
+    }
+    final GroovyMethodCallReference explicitCallReference = getExplicitCallReference();
+    if (explicitCallReference != null) {
+      return explicitCallReference.multiResolve(incompleteCode);
+    }
+    return GroovyResolveResult.EMPTY_ARRAY;
   }
 
   @Override
@@ -106,9 +96,13 @@ public abstract class GrMethodCallImpl extends GrCallExpressionImpl implements G
     return ItemPresentationProviders.getItemPresentation(this);
   }
 
-  @NotNull
   @Override
-  public GrArgumentList getArgumentList() {
+  public @NotNull GrArgumentList getArgumentList() {
     return findNotNullChildByClass(GrArgumentList.class);
+  }
+
+  @Override
+  public void accept(@NotNull GroovyElementVisitor visitor) {
+    visitor.visitMethodCall(this);
   }
 }

@@ -1,45 +1,41 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.find.editorHeaderActions;
 
 import com.intellij.find.SearchSession;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.ide.lightEdit.LightEditCompatible;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.actionSystem.Shortcut;
+import com.intellij.openapi.actionSystem.ShortcutSet;
+import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.List;
 
-public abstract class PrevNextOccurrenceAction extends DumbAwareAction implements ContextAwareShortcutProvider {
+public abstract class PrevNextOccurrenceAction extends DumbAwareAction implements ContextAwareShortcutProvider,
+                                                                                  LightEditCompatible {
   protected final boolean mySearch;
 
-  PrevNextOccurrenceAction(@NotNull String templateActionId, boolean search) {
+  public PrevNextOccurrenceAction(@NotNull String templateActionId, boolean search) {
     mySearch = search;
-    copyFrom(ActionManager.getInstance().getAction(templateActionId));
+    ActionUtil.copyFrom(this, templateActionId);
   }
 
   @Override
-  public final void update(AnActionEvent e) {
-    SearchSession search = e.getData(SearchSession.KEY);
-    boolean invokedByShortcut = !ActionPlaces.isToolbarPlace(e.getPlace());
-    e.getPresentation().setEnabled(search != null && (invokedByShortcut || search.hasMatches()));
+  public @NotNull ActionUpdateThread getActionUpdateThread() {
+    return ActionUpdateThread.EDT;
   }
 
-  @Nullable
+  @Override
+  public void update(@NotNull AnActionEvent e) {
+    SearchSession search = e.getData(SearchSession.KEY);
+    e.getPresentation().setEnabled(search != null && !search.isSearchInProgress() && search.hasMatches());
+  }
+
   @Override
   public final ShortcutSet getShortcut(@NotNull DataContext context) {
     SearchSession search = SearchSession.KEY.getData(context);
@@ -47,9 +43,7 @@ public abstract class PrevNextOccurrenceAction extends DumbAwareAction implement
     return Utils.shortcutSetOf(singleLine ? ContainerUtil.concat(getDefaultShortcuts(), getSingleLineShortcuts()) : getDefaultShortcuts());
   }
 
-  @NotNull
-  protected abstract List<Shortcut> getDefaultShortcuts();
+  protected abstract @NotNull List<Shortcut> getDefaultShortcuts();
 
-  @NotNull
-  protected abstract List<Shortcut> getSingleLineShortcuts();
+  protected abstract @Unmodifiable @NotNull List<Shortcut> getSingleLineShortcuts();
 }

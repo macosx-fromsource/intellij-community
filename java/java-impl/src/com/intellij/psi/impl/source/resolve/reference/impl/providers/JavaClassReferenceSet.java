@@ -1,23 +1,12 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.source.resolve.reference.impl.providers;
 
-import com.intellij.codeInsight.daemon.JavaErrorMessages;
+import com.intellij.codeInsight.daemon.JavaErrorBundle;
+import com.intellij.codeInspection.util.InspectionMessage;
 import com.intellij.lang.xml.XMLLanguage;
 import com.intellij.openapi.util.TextRange;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.pom.java.JavaFeature;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.util.PsiUtil;
@@ -30,13 +19,19 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * @author peter
-*/
+ * Allows injecting a set of references to a {@link PsiElement} representing a fully qualified Java class reference.
+ * </p>
+ * Invoke {@link #reparse(PsiElement, TextRange)} when the psiElement changes
+ */
 public class JavaClassReferenceSet {
   public static final char DOT = '.';
   public static final char DOLLAR = '$';
-  private static final char LT = '<';
-  private static final char COMMA = ',';
+  public static final char LT = '<';
+  public static final char GT = '>';
+  public static final char COMMA = ',';
+  public static final char QUESTION = '?';
+  public static final String EXTENDS = "extends";
+  public static final String SUPER = "super";
 
   private JavaClassReference[] myReferences;
   private List<JavaClassReferenceSet> myNestedGenericParameterReferences;
@@ -45,52 +40,64 @@ public class JavaClassReferenceSet {
   private final int myStartInElement;
   private final JavaClassReferenceProvider myProvider;
 
-  public JavaClassReferenceSet(@NotNull String str, @NotNull PsiElement element, int startInElement, final boolean isStatic, @NotNull JavaClassReferenceProvider provider) {
+  public JavaClassReferenceSet(@NotNull String str,
+                               @NotNull PsiElement element,
+                               int startInElement,
+                               boolean isStatic,
+                               @NotNull JavaClassReferenceProvider provider) {
     this(str, element, startInElement, isStatic, provider, null);
   }
 
-  private JavaClassReferenceSet(@NotNull String str, @NotNull PsiElement element, int startInElement, final boolean isStatic, @NotNull JavaClassReferenceProvider provider,
-                        JavaClassReferenceSet context) {
+  private JavaClassReferenceSet(@NotNull String str,
+                                @NotNull PsiElement element,
+                                int startInElement,
+                                boolean isStatic,
+                                @NotNull JavaClassReferenceProvider provider,
+                                @Nullable JavaClassReferenceSet context) {
     myStartInElement = startInElement;
     myProvider = provider;
     reparse(str, element, isStatic, context);
   }
 
-  @NotNull
-  public JavaClassReferenceProvider getProvider() {
+  public @NotNull JavaClassReferenceProvider getProvider() {
     return myProvider;
   }
 
-  @NotNull
-  public TextRange getRangeInElement() {
+  public @NotNull TextRange getRangeInElement() {
     PsiReference[] references = getReferences();
-    return new TextRange(references[0].getRangeInElement().getStartOffset(), references[references.length - 1].getRangeInElement().getEndOffset());
+    return new TextRange(references[0].getRangeInElement().getStartOffset(),
+                         references[references.length - 1].getRangeInElement().getEndOffset());
   }
 
-  private void reparse(@NotNull String str, @NotNull PsiElement element, final boolean isStaticImport, JavaClassReferenceSet context) {
+  private void reparse(@NotNull String str,
+                       @NotNull PsiElement element,
+                       boolean isStaticImport,
+                       @Nullable JavaClassReferenceSet context) {
     myElement = element;
     myContext = context;
-    final List<JavaClassReference> referencesList = new ArrayList<>();
+    List<JavaClassReference> referencesList = new ArrayList<>();
     int currentDot = -1;
     int referenceIndex = 0;
     boolean allowDollarInNames = isAllowDollarInNames();
+    boolean allowSpaces = isAllowSpaces();
     boolean allowGenerics = false;
+    boolean allowWildCards = JavaClassReferenceProvider.ALLOW_WILDCARDS.getBooleanValue(getOptions());
     boolean allowGenericsCalculated = false;
     boolean parsingClassNames = true;
 
     while (parsingClassNames) {
       int nextDotOrDollar = -1;
-      for(int curIndex = currentDot + 1; curIndex < str.length(); ++curIndex) {
-        final char ch = str.charAt(curIndex);
+      for (int curIndex = currentDot + 1; curIndex < str.length(); ++curIndex) {
+        char ch = str.charAt(curIndex);
 
         if (ch == DOT || ch == DOLLAR && allowDollarInNames) {
           nextDotOrDollar = curIndex;
           break;
         }
-        
+
         if (ch == LT || ch == COMMA) {
           if (!allowGenericsCalculated) {
-            allowGenerics = !isStaticImport && PsiUtil.isLanguageLevel5OrHigher(element);
+            allowGenerics = !isStaticImport && PsiUtil.isAvailable(JavaFeature.STATIC_IMPORTS, element);
             allowGenericsCalculated = true;
           }
 
@@ -103,109 +110,121 @@ public class JavaClassReferenceSet {
 
       if (nextDotOrDollar == -1) {
         nextDotOrDollar = currentDot + 1;
-        for(int i = nextDotOrDollar; i < str.length() && Character.isJavaIdentifierPart(str.charAt(i)); ++i) nextDotOrDollar++;
+        for (int i = nextDotOrDollar; i < str.length() && Character.isJavaIdentifierPart(str.charAt(i)); ++i) nextDotOrDollar++;
         parsingClassNames = false;
-        int j = nextDotOrDollar;
-        while(j < str.length() && Character.isWhitespace(str.charAt(j))) ++j;
+        int j = skipSpaces(nextDotOrDollar, str.length(), str, allowSpaces);
 
         if (j < str.length()) {
           char ch = str.charAt(j);
           boolean recognized = false;
 
           if (ch == '[') {
-            j++;
-            while(j < str.length() && Character.isWhitespace(str.charAt(j))) ++j;
-
-            if (j < str.length()) {
-              ch = str.charAt(j);
-
-              if (ch == ']') {
-                j++;
-                while(j < str.length() && Character.isWhitespace(str.charAt(j))) ++j;
-
-                recognized = j == str.length();
-              }
+            j = skipSpaces(j + 1, str.length(), str, allowSpaces);
+            if (j < str.length() && str.charAt(j) == ']') {
+              j = skipSpaces(j + 1, str.length(), str, allowSpaces);
+              recognized = j == str.length();
             }
           }
 
-          final Boolean aBoolean = JavaClassReferenceProvider.JVM_FORMAT.getValue(getOptions());
-          if (aBoolean == null || !aBoolean.booleanValue()) {
-            if (!recognized) nextDotOrDollar = -1; // nonsensible characters anyway, don't do resolve
+          Boolean aBoolean = JavaClassReferenceProvider.JVM_FORMAT.getValue(getOptions());
+          if (!recognized && (aBoolean == null || !aBoolean.booleanValue())) {
+            nextDotOrDollar = -1; // abort resolve
           }
         }
       }
 
       if (nextDotOrDollar != -1 && nextDotOrDollar < str.length()) {
-        final char c = str.charAt(nextDotOrDollar);
+        char c = str.charAt(nextDotOrDollar);
         if (c == LT) {
-          int end = str.lastIndexOf('>');
-          if (end != -1 && end > nextDotOrDollar) {
+          boolean recognized = false;
+          int start = skipSpaces(nextDotOrDollar + 1, str.length(), str, allowSpaces);
+          int j = str.lastIndexOf(GT);
+          int end = skipSpacesBackward(j, 0, str, allowSpaces);
+          if (end != -1 && end > start) {
             if (myNestedGenericParameterReferences == null) myNestedGenericParameterReferences = new ArrayList<>(1);
-            myNestedGenericParameterReferences.add(
-              new JavaClassReferenceSet(
-                str.substring(nextDotOrDollar + 1, end),
-                myElement,
-                myStartInElement + nextDotOrDollar + 1,
-                isStaticImport,
-                myProvider,
-                this
-              )
-            );
+            myNestedGenericParameterReferences.add(new JavaClassReferenceSet(
+              str.substring(start, end), myElement, myStartInElement + start, isStaticImport, myProvider, this));
             parsingClassNames = false;
-          } else {
-            nextDotOrDollar = -1; // nonsensible characters anyway, don't do resolve
+            j = skipSpaces(j + 1, str.length(), str, allowSpaces);
+            recognized = j == str.length();
           }
-        } else if (COMMA == c && myContext != null) {
+          if (!recognized) {
+            nextDotOrDollar = -1; // abort resolve
+          }
+        }
+        else if (c == COMMA && myContext != null) {
           if (myContext.myNestedGenericParameterReferences == null) myContext.myNestedGenericParameterReferences = new ArrayList<>(1);
-          myContext.myNestedGenericParameterReferences.add(
-            new JavaClassReferenceSet(
-              str.substring(nextDotOrDollar + 1),
-              myElement,
-              myStartInElement + nextDotOrDollar + 1,
-              isStaticImport,
-              myProvider,
-              this
-            )
-          );
+          int start = skipSpaces(nextDotOrDollar + 1, str.length(), str, allowSpaces);
+          myContext.myNestedGenericParameterReferences.add(new JavaClassReferenceSet(
+            str.substring(start), myElement, myStartInElement + start, isStaticImport, myProvider, this));
           parsingClassNames = false;
         }
       }
 
-      int beginIndex = currentDot + 1;
-      while (beginIndex < nextDotOrDollar && Character.isWhitespace(str.charAt(beginIndex))) beginIndex++;
-
-      final String subreferenceText = nextDotOrDollar > 0 ? str.substring(beginIndex, nextDotOrDollar) : str.substring(beginIndex);
-
-      TextRange textRange =
-        new TextRange(myStartInElement + beginIndex, myStartInElement + (nextDotOrDollar > 0 ? nextDotOrDollar : str.length()));
-      JavaClassReference currentContextRef = createReference(referenceIndex, subreferenceText, textRange, isStaticImport);
-      referenceIndex++;
-      referencesList.add(currentContextRef);
+      int maxIndex = nextDotOrDollar > 0 ? nextDotOrDollar : str.length();
+      int beginIndex = skipSpaces(currentDot + 1, maxIndex, str, allowSpaces);
+      int endIndex = skipSpacesBackward(maxIndex, beginIndex, str, allowSpaces);
+      boolean skipReference = false;
+      if (allowWildCards && str.charAt(beginIndex) == QUESTION) {
+        int next = skipSpaces(beginIndex + 1, endIndex, str, allowSpaces);
+        if (next != beginIndex + 1) {
+          String keyword = str.startsWith(EXTENDS, next) ? EXTENDS : str.startsWith(SUPER, next) ? SUPER : null;
+          if (keyword != null) {
+            next = skipSpaces(next + keyword.length(), endIndex, str, allowSpaces);
+            beginIndex = next;
+          }
+        }
+        else if (endIndex == beginIndex + 1) {
+          skipReference = true;
+        }
+      }
+      if (!skipReference) {
+        TextRange textRange = TextRange.create(myStartInElement + beginIndex, myStartInElement + endIndex);
+        JavaClassReference currentContextRef = createReference(
+          referenceIndex, str.substring(beginIndex, endIndex), textRange, isStaticImport);
+        referenceIndex++;
+        referencesList.add(currentContextRef);
+      }
       if ((currentDot = nextDotOrDollar) < 0) {
         break;
-      } 
+      }
     }
 
-    myReferences = referencesList.toArray(new JavaClassReference[referencesList.size()]);
+    myReferences = referencesList.toArray(new JavaClassReference[0]);
   }
 
-  @NotNull
-  protected JavaClassReference createReference(final int referenceIndex, @NotNull String subreferenceText, @NotNull TextRange textRange,
-                                               final boolean staticImport) {
-    return new JavaClassReference(this, textRange, referenceIndex, subreferenceText, staticImport);
+  private static int skipSpaces(int pos, int max, @NotNull String str, boolean allowSpaces) {
+    while (allowSpaces && pos < max && Character.isWhitespace(str.charAt(pos))) ++pos;
+    return pos;
+  }
+
+  private static int skipSpacesBackward(int pos, int min, @NotNull String str, boolean allowSpaces) {
+    while (allowSpaces && pos > min && Character.isWhitespace(str.charAt(pos - 1))) --pos;
+    return pos;
+  }
+
+  protected @NotNull JavaClassReference createReference(int referenceIndex,
+                                                        @NotNull String referenceText,
+                                                        @NotNull TextRange textRange,
+                                                        boolean staticImport) {
+    return new JavaClassReference(this, textRange, referenceIndex, referenceText, staticImport);
   }
 
   public boolean isAllowDollarInNames() {
-    final Boolean aBoolean = myProvider.getOption(JavaClassReferenceProvider.ALLOW_DOLLAR_NAMES);
+    Boolean aBoolean = myProvider.getOption(JavaClassReferenceProvider.ALLOW_DOLLAR_NAMES);
     return !Boolean.FALSE.equals(aBoolean) && myElement.getLanguage() instanceof XMLLanguage;
+  }
+
+  public boolean isAllowSpaces() {
+    return true;
   }
 
   protected boolean isStaticSeparator(char c, boolean strict) {
     return isAllowDollarInNames() ? c == DOLLAR : c == DOT;
   }
 
-  public void reparse(@NotNull PsiElement element, @NotNull TextRange range) {
-    final String text = range.substring(element.getText());
+  public void reparse(@NotNull PsiElement element, @NotNull TextRange rangeInElement) {
+    String text = rangeInElement.substring(element.getText());
     reparse(text, element, false, myContext);
   }
 
@@ -213,11 +232,10 @@ public class JavaClassReferenceSet {
     return myReferences[index];
   }
 
-  @NotNull
-  public JavaClassReference[] getAllReferences() {
+  public JavaClassReference @NotNull [] getAllReferences() {
     JavaClassReference[] result = myReferences;
     if (myNestedGenericParameterReferences != null) {
-      for(JavaClassReferenceSet set:myNestedGenericParameterReferences) {
+      for (JavaClassReferenceSet set : myNestedGenericParameterReferences) {
         result = ArrayUtil.mergeArrays(result, set.getAllReferences());
       }
     }
@@ -227,34 +245,31 @@ public class JavaClassReferenceSet {
   public boolean canReferencePackage(int index) {
     if (index == myReferences.length - 1) return false;
     String text = getElement().getText();
-    return text.charAt(myReferences[index].getRangeInElement().getEndOffset()) != '$';
+    int endOffset = myReferences[index].getRangeInElement().getEndOffset();
+    return !StringUtil.isChar(text, endOffset, DOLLAR);
   }
 
   public boolean isSoft() {
     return myProvider.isSoft();
   }
 
-  @NotNull
-  public PsiElement getElement() {
+  public @NotNull PsiElement getElement() {
     return myElement;
   }
 
-  @NotNull
-  public PsiReference[] getReferences() {
+  public PsiReference @NotNull [] getReferences() {
     return myReferences;
   }
 
-  @Nullable
-  public Map<CustomizableReferenceProvider.CustomizationKey, Object> getOptions() {
+  public @Nullable Map<CustomizableReferenceProvider.CustomizationKey, Object> getOptions() {
     return myProvider.getOptions();
   }
 
-  @SuppressWarnings({"UnresolvedPropertyKey"})
-  @NotNull
-  public String getUnresolvedMessagePattern(int index){
+  @SuppressWarnings("UnresolvedPropertyKey")
+  public @NotNull @InspectionMessage String getUnresolvedMessagePattern(int index) {
     if (canReferencePackage(index)) {
-      return JavaErrorMessages.message("error.cannot.resolve.class.or.package");
+      return JavaErrorBundle.message("error.cannot.resolve.class.or.package");
     }
-    return JavaErrorMessages.message("error.cannot.resolve.class");
+    return JavaErrorBundle.message("error.cannot.resolve.class");
   }
 }

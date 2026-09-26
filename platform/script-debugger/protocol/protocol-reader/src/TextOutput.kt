@@ -1,9 +1,10 @@
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.protocolReader
 
-import java.util.*
+import java.util.Arrays
 
 val EMPTY_CHARS: CharArray = CharArray(0)
-private val indentGranularity = 2
+private const val indentGranularity = 2
 
 class TextOutput(val out: StringBuilder) {
   private var identLevel: Int = 0
@@ -101,9 +102,9 @@ class TextOutput(val out: StringBuilder) {
     return this
   }
 
-  fun comma() = append(',').space()
+  fun comma(): TextOutput = append(',').space()
 
-  fun space() = append(' ')
+  fun space(): TextOutput = append(' ')
 
   fun doc(description: String?): TextOutput {
     if (description == null) {
@@ -112,9 +113,9 @@ class TextOutput(val out: StringBuilder) {
     return append("/**").newLine().append(" * ").append(description).newLine().append(" */").newLine()
   }
 
-  fun quote(s: CharSequence) = append('"').append(s).append('"')
+  fun quote(s: CharSequence): TextOutput = append('"').append(s).append('"')
 
-  fun maybeIndent() {
+  private fun maybeIndent() {
     if (justNewLined) {
       out.append(indents[identLevel])
       justNewLined = false
@@ -133,5 +134,5 @@ class TextOutput(val out: StringBuilder) {
     return this
   }
 
-  operator fun plus(value: String) = append(value)
+  operator fun plus(value: String): TextOutput = append(value)
 }

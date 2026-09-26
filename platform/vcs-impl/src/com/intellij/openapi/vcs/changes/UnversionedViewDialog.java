@@ -1,95 +1,44 @@
-/*
- * Copyright 2000-2010 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.changes;
 
-import com.intellij.openapi.actionSystem.*;
-import com.intellij.openapi.actionSystem.ex.AnActionListener;
-import com.intellij.openapi.actionSystem.impl.PresentationFactory;
-import com.intellij.openapi.actionSystem.impl.Utils;
-import com.intellij.openapi.application.impl.LaterInvocator;
+import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.openapi.vcs.changes.ui.ChangesListView;
-import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.util.List;
+import javax.swing.JComponent;
 
-public class UnversionedViewDialog extends SpecificFilesViewDialog {
+import static com.intellij.diff.util.DiffUtil.recursiveRegisterShortcutSet;
 
-  private AnAction myDeleteActionWithCustomShortcut;
+public final class UnversionedViewDialog extends SpecificFilesViewDialog.SpecificFilePathsViewDialog {
+  private static final String TOOLBAR_GROUP = "Unversioned.Files.Dialog";
+  private static final String POPUP_GROUP = "Unversioned.Files.Dialog.Popup";
 
   public UnversionedViewDialog(@NotNull Project project) {
-    super(project, "Unversioned Files", ChangesListView.UNVERSIONED_FILES_DATA_KEY,
-          ChangeListManagerImpl.getInstanceImpl(project).getUnversionedFiles());
+    super(project, VcsBundle.message("dialog.title.unversioned.files"), ChangesListView.UNVERSIONED_FILE_PATHS_DATA_KEY,
+          () -> ChangeListManager.getInstance(project).getUnversionedFilesPaths());
   }
 
   @Override
-  protected void addCustomActions(@NotNull DefaultActionGroup group, @NotNull ActionToolbar actionToolbar) {
-    List<AnAction> actions = registerUnversionedActionsShortcuts(actionToolbar.getToolbarDataContext(), myView);
-    // special shortcut for deleting a file
-    actions.add(myDeleteActionWithCustomShortcut =
-                  EmptyAction.registerWithShortcutSet("ChangesView.DeleteUnversioned.From.Dialog", CommonShortcuts.getDelete(), myView));
-
-    refreshViewAfterActionPerformed(actions);
-    group.add(getUnversionedActionGroup());
-    final DefaultActionGroup secondGroup = new DefaultActionGroup();
-    secondGroup.addAll(getUnversionedActionGroup());
-
-    myView.setMenuActions(secondGroup);
+  protected void addCustomActions(@NotNull DefaultActionGroup group) {
+    group.add(getUnversionedToolbarGroup());
+    myView.installPopupHandler(registerUnversionedPopupGroup(myView));
   }
 
-  private void refreshViewAfterActionPerformed(@NotNull final List<AnAction> actions) {
-    ActionManager.getInstance().addAnActionListener(new AnActionListener.Adapter() {
-      @Override
-      public void afterActionPerformed(AnAction action, DataContext dataContext, AnActionEvent event) {
-        if (actions.contains(action)) {
-          refreshView();
-          if (myDeleteActionWithCustomShortcut.equals(action)) {
-            // We can not utilize passed "dataContext" here as it results in
-            // "cannot share data context between Swing events" assertion.
-            refreshChanges(myProject, getBrowserBase(myView));
-          }
-        }
-      }
-    }, myDisposable);
+  public static @NotNull ActionGroup getUnversionedToolbarGroup() {
+    return (ActionGroup)ActionManager.getInstance().getAction(TOOLBAR_GROUP);
   }
 
-  @NotNull
-  public static ActionGroup getUnversionedActionGroup() {
-    return (ActionGroup)ActionManager.getInstance().getAction("Unversioned.Files.Dialog");
+  public static @NotNull ActionGroup getUnversionedPopupGroup() {
+    return (ActionGroup)ActionManager.getInstance().getAction(POPUP_GROUP);
   }
 
-  @NotNull
-  public static List<AnAction> registerUnversionedActionsShortcuts(@NotNull DataContext dataContext, @NotNull JComponent component) {
-    ActionManager manager = ActionManager.getInstance();
-    List<AnAction> actions = ContainerUtil.newArrayList();
-
-    Utils.expandActionGroup(LaterInvocator.isInModalContext(), getUnversionedActionGroup(), actions, new PresentationFactory(), dataContext, "", manager);
-    for (AnAction action : actions) {
-      action.registerCustomShortcutSet(action.getShortcutSet(), component);
-    }
-
-    return actions;
-  }
-
-  @NotNull
-  @Override
-  protected List<VirtualFile> getFiles() {
-    return ((ChangeListManagerImpl)myChangeListManager).getUnversionedFiles();
+  public static @NotNull ActionGroup registerUnversionedPopupGroup(@NotNull JComponent component) {
+    ActionGroup popupGroup = getUnversionedPopupGroup();
+    recursiveRegisterShortcutSet(popupGroup, component, null);
+    return popupGroup;
   }
 }

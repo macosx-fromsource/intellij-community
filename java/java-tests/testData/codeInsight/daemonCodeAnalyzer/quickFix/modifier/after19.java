@@ -1,6 +1,6 @@
-// "Make 'f' abstract" "true"
+// "Make 'f()' abstract" "true-preview"
 import java.io.*;
 
-class a {
-  <caret>public abstract void f();
+abstract class a {
+  public abstract void f();
 }

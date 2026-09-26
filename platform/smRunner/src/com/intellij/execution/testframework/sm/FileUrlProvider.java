@@ -1,77 +1,64 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.execution.testframework.sm;
 
 import com.intellij.execution.Location;
 import com.intellij.execution.PsiLocation;
 import com.intellij.execution.testframework.sm.runner.SMTestLocator;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.OpenFileDescriptor;
 import com.intellij.openapi.project.DumbAware;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiPlainText;
+import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.io.URLUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * @author Roman Chernyatchik
- */
 public class FileUrlProvider implements SMTestLocator, DumbAware {
-  private static final Logger LOG = Logger.getInstance(FileUrlProvider.class.getName());
 
   public static final FileUrlProvider INSTANCE = new FileUrlProvider();
 
-  @NotNull
   @Override
-  public List<Location> getLocation(@NotNull String protocol, @NotNull String path, @NotNull Project project, @NotNull GlobalSearchScope scope) {
+  public @NotNull List<Location> getLocation(@NotNull String protocol, @NotNull String path, @NotNull Project project, @NotNull GlobalSearchScope scope) {
     if (!URLUtil.FILE_PROTOCOL.equals(protocol)) {
       return Collections.emptyList();
     }
 
-    final String normalizedPath = path.replace(File.separatorChar, '/');
-
-    final int lineNoSeparatorIndex = normalizedPath.lastIndexOf(':');
-
     final String filePath;
     final int lineNumber;
-    // if line is specified
-    if (lineNoSeparatorIndex > 3) {   // on Windows, paths start with /C: and that colon is not a line number separator 
-      final String lineNumStr = normalizedPath.substring(lineNoSeparatorIndex + 1);
-      int lineNum = 0;
-      try {
-        lineNum = Integer.parseInt(lineNumStr);
-      } catch (NumberFormatException e) {
-        LOG.warn(protocol + ": Malformed location path: " + path, e);
-      }
+    final int columnNumber;
 
-      filePath = normalizedPath.substring(0, lineNoSeparatorIndex);
-      lineNumber = lineNum;
+    int lastColonIndex = path.lastIndexOf(':');
+    if (lastColonIndex > 3) {   // on Windows, paths start with /C: and that colon is not a line number separator
+      int lastValue = StringUtil.parseInt(path.substring(lastColonIndex + 1), -1);
+      int penultimateColonIndex = path.lastIndexOf(':', lastColonIndex - 1);
+      if (penultimateColonIndex > 3) {
+        int penultimateValue = StringUtil.parseInt(path.substring(penultimateColonIndex + 1, lastColonIndex), -1);
+        filePath = path.substring(0, penultimateColonIndex);
+        lineNumber = penultimateValue;
+        columnNumber = lineNumber <= 0 ? -1 : lastValue;
+      }
+      else {
+        filePath = path.substring(0, lastColonIndex);
+        lineNumber = lastValue;
+        columnNumber = -1;
+      }
     } else {
-      // unknown line
-      lineNumber = 1;
-      filePath = normalizedPath;
+      filePath = path;
+      lineNumber = -1;
+      columnNumber = -1;
     }
     // Now we should search file with most suitable path
     // here path may be absolute or relative
@@ -81,24 +68,33 @@ public class FileUrlProvider implements SMTestLocator, DumbAware {
       return Collections.emptyList();
     }
 
-    if (lineNumber < 0) {
-      LOG.warn("Tests location provider: line number should be >= 1. Path: " + path);
-    }
-
     final List<Location> locations = new ArrayList<>(2);
     for (VirtualFile file : virtualFiles) {
-      locations.add(createLocationFor(project, file, lineNumber < 1 ? 1 : lineNumber));
+      locations.add(createLocationFor(project, file, lineNumber, columnNumber));
     }
     return locations;
   }
 
-  @Nullable
-  public static Location createLocationFor(Project project, @NotNull VirtualFile virtualFile, int lineNum) {
-    assert lineNum > 0;
+  public static @Nullable Location createLocationFor(@NotNull Project project, @NotNull VirtualFile virtualFile, int lineNum) {
+    return createLocationFor(project, virtualFile, lineNum, -1);
+  }
 
+  /**
+   * @param project     Project instance
+   * @param virtualFile VirtualFile instance to locate
+   * @param lineNum     one-based line number to locate inside {@code virtualFile},
+   *                    a non-positive line number doesn't change text caret position inside the file
+   * @param columnNum   one-based column number to locate inside {@code virtualFile},
+   *                    a non-positive column number doesn't change text caret position inside the file
+   * @return Location instance, or null if not found
+   */
+  public static @Nullable Location createLocationFor(@NotNull Project project, @NotNull VirtualFile virtualFile, int lineNum, int columnNum) {
     final PsiFile psiFile = PsiManager.getInstance(project).findFile(virtualFile);
     if (psiFile == null) {
       return null;
+    }
+    if (lineNum <= 0) {
+      return PsiLocation.fromPsiElement(psiFile);
     }
 
     final Document doc = PsiDocumentManager.getInstance(project).getDocument(psiFile);
@@ -106,27 +102,48 @@ public class FileUrlProvider implements SMTestLocator, DumbAware {
       return null;
     }
 
-    final int lineCount = doc.getLineCount();
-    final int lineStartOffset;
-    final int endOffset;
-    if (lineNum <= lineCount) {
-      lineStartOffset = doc.getLineStartOffset(lineNum - 1);
-      endOffset = doc.getLineEndOffset(lineNum - 1);
-    } else {
-      // unknown line
-      lineStartOffset = 0;
-      endOffset = doc.getTextLength();
+    if (lineNum > doc.getLineCount()) {
+      return PsiLocation.fromPsiElement(psiFile);
     }
+    
+    final int lineStartOffset = doc.getLineStartOffset(lineNum - 1);
+    final int endOffset = doc.getLineEndOffset(lineNum - 1);
 
-    int offset = lineStartOffset;
+    int offset = Math.min(lineStartOffset + Math.max(columnNum - 1, 0), endOffset);
     PsiElement elementAtLine = null;
     while (offset <= endOffset) {
       elementAtLine = psiFile.findElementAt(offset);
-      if (!(elementAtLine instanceof PsiWhiteSpace)) break;
+      if (elementAtLine == null || isNonBlankLeafPsiElement(elementAtLine)) break;
       int length = elementAtLine.getTextLength();
       offset += length > 1 ? length - 1 : 1;
     }
+    
+    if (elementAtLine instanceof PsiPlainText && offset > 0) {
+      int offsetInPlainTextFile = offset;
+      return new PsiLocation<>(project, (PsiPlainText)elementAtLine) {
+        @Override
+        public @Nullable OpenFileDescriptor getOpenFileDescriptor() {
+          VirtualFile file = getVirtualFile();
+          return file != null ? new OpenFileDescriptor(getProject(), file, offsetInPlainTextFile) : null;
+        }
+      };
+    }
 
     return PsiLocation.fromPsiElement(project, elementAtLine != null ? elementAtLine : psiFile);
+  }
+
+  private static boolean isNonBlankLeafPsiElement(final @NotNull PsiElement element) {
+    if (element instanceof PsiWhiteSpace) {
+      return false;
+    }
+
+    final CharSequence chars = element.getNode().getChars();
+    for (int i = 0; i < chars.length(); i++) {
+      if (!Character.isWhitespace(chars.charAt(i))) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

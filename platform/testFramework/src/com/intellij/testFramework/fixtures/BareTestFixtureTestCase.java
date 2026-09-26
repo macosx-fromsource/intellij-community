@@ -1,65 +1,30 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.testFramework.fixtures;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.testFramework.PlatformTestUtil;
-import com.intellij.testFramework.SkipInHeadlessEnvironment;
-import com.intellij.testFramework.SkipSlowTestLocally;
+import com.intellij.testFramework.TestLoggerFactory;
 import org.jetbrains.annotations.NotNull;
-import org.junit.After;
-import org.junit.Before;
+import org.jetbrains.annotations.TestOnly;
 import org.junit.Rule;
 import org.junit.rules.TestName;
+import org.junit.rules.TestRule;
 
-import static com.intellij.testFramework.PlatformTestUtil.SKIP_HEADLESS;
-import static com.intellij.testFramework.PlatformTestUtil.SKIP_SLOW;
-import static org.junit.Assume.assumeFalse;
-
+@TestOnly
 public abstract class BareTestFixtureTestCase {
-  @Rule public final TestName myNameRule = new TestName();
+  @Rule public final TestFixtureRule testFixtureRule = new TestFixtureRule();
+  @Rule public final TestName testName = new TestName();
+  @Rule public final TestRule testLoggerWatcher = TestLoggerFactory.createTestWatcher();
 
-  private BareTestFixture myFixture;
-
-  @Before
-  public final void setupFixture() throws Exception {
-    boolean headless = SKIP_HEADLESS && getClass().getAnnotation(SkipInHeadlessEnvironment.class) != null;
-    assumeFalse("Class '" + getClass().getName() + "' is skipped because it requires working UI environment", headless);
-    boolean slow = SKIP_SLOW && getClass().getAnnotation(SkipSlowTestLocally.class) != null;
-    assumeFalse("Class '" + getClass().getName() + "' is skipped because it is dog slow", slow);
-
-    myFixture = IdeaTestFixtureFactory.getFixtureFactory().createBareFixture();
-    myFixture.setUp();
+  protected final @NotNull String getTestName(boolean lowercaseFirstLetter) {
+    return PlatformTestUtil.getTestName(testName.getMethodName(), lowercaseFirstLetter);
   }
 
-  @After
-  public final void tearDownFixture() throws Exception {
-    if (myFixture != null) {
-      myFixture.tearDown();
-      myFixture = null;
-    }
+  protected final @NotNull String getQualifiedTestMethodName() {
+    return String.format("%s.%s", testName.getClass().getName(), testName.getMethodName());
   }
 
-  @NotNull
-  protected final String getTestName(boolean lowercaseFirstLetter) {
-    return PlatformTestUtil.getTestName(myNameRule.getMethodName(), lowercaseFirstLetter);
-  }
-
-  @NotNull
-  public final Disposable getTestRootDisposable() {
-    return myFixture.getTestRootDisposable();
+  protected final @NotNull Disposable getTestRootDisposable() {
+    return testFixtureRule.getFixture().getTestRootDisposable();
   }
 }

@@ -25,21 +25,17 @@ import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.GroovyFileType;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 21.05.2008
- */
 public abstract class GrBaseGenerateAction extends BaseGenerateAction {
   public GrBaseGenerateAction(CodeInsightActionHandler handler) {
     super(handler);
   }
 
   @Override
-  protected boolean isValidForFile(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile file) {
-    if (file instanceof PsiCompiledElement) return false;
-    if (!GroovyFileType.GROOVY_FILE_TYPE.equals(file.getFileType())) return false;
+  protected boolean isValidForFile(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile psiFile) {
+    if (psiFile instanceof PsiCompiledElement) return false;
+    if (!GroovyFileType.GROOVY_FILE_TYPE.equals(psiFile.getFileType())) return false;
     
-    PsiClass targetClass = getTargetClass(editor, file);
+    PsiClass targetClass = getTargetClass(editor, psiFile);
     if (targetClass == null) return false;
     if (targetClass.isInterface()) return false; //?
 

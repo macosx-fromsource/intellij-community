@@ -1,3 +1,18 @@
+/*
+ * Copyright 2000-2016 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package hg4idea.test.config;
 
 import com.intellij.openapi.util.io.FileUtil;
@@ -11,9 +26,6 @@ import java.util.Collection;
 
 import static com.intellij.openapi.vcs.Executor.cd;
 
-/**
- * @author Nadya Zabrodina
- */
 public class HgConfigTest extends HgPlatformTest {
 
   @Override
@@ -22,11 +34,7 @@ public class HgConfigTest extends HgPlatformTest {
     try {
       prepareSecondRepository();
     }
-    catch (Exception e) {
-      tearDown();
-      throw e;
-    }
-    catch (Error e) {
+    catch (Exception | Error e) {
       tearDown();
       throw e;
     }
@@ -34,6 +42,7 @@ public class HgConfigTest extends HgPlatformTest {
 
   public void testDefaultPathInClonedRepo() {
     cd(myChildRepo);
+    updateRepoConfig(myProject, myChildRepo);
     final String defaultPath = HgUtil.getRepositoryDefaultPath(myProject, myChildRepo);
     assertNotNull(defaultPath);
     assertEquals(myRepository.getPath(),
@@ -46,8 +55,10 @@ public class HgConfigTest extends HgPlatformTest {
 
   public void testPushPathInClonedRepoWithDebugOption() throws IOException {
     cd(myChildRepo);
-    appendToHgrc(myChildRepo, "\n[ui]\n" +
-                              "debug=True");
+    appendToHgrc(myChildRepo, """
+
+      [ui]
+      debug=True""");
     checkDefaultPushPath();
   }
 
@@ -55,12 +66,15 @@ public class HgConfigTest extends HgPlatformTest {
     cd(myChildRepo);
     String pushPath = "somePath";
     appendToHgrc(myChildRepo, "\n[paths]\n" +
-                              "default-push=" + pushPath);
+                              "default-push = " + pushPath);
+    appendToHgrc(myChildRepo, "\n[paths]\n" +
+                              "default:pushurl = " + pushPath);
     updateRepoConfig(myProject, myChildRepo);
     final String defaultPushPath = HgUtil.getRepositoryDefaultPushPath(myProject, myChildRepo);
     assertNotNull(defaultPushPath);
-    assertEquals(FileUtil.toSystemIndependentName(myChildRepo.getPath() + "/" + pushPath),
-                 FileUtil.toSystemIndependentName(defaultPushPath));
+    String absolutePath = FileUtil.toSystemIndependentName(myChildRepo.getPath() + "/" + pushPath);
+    // after default-push config deprecation around version 3.7 ,hg reports the same value that is contained in hgrc file
+    assertTrue(absolutePath.contains(FileUtil.toSystemIndependentName(defaultPushPath)));
   }
 
   public void testPushPathWithoutAppropriateConfig() {
@@ -88,8 +102,10 @@ public class HgConfigTest extends HgPlatformTest {
 
   public void testLargeExtensionInClonedRepo() throws IOException {
     cd(myChildRepo);
-    appendToHgrc(myChildRepo, "\n[extensions]\n" +
-                              "largefiles =");
+    appendToHgrc(myChildRepo, """
+
+      [extensions]
+      largefiles =""");
     updateRepoConfig(myProject, myChildRepo);
     assertNotNull(HgUtil.getConfig(myProject, myChildRepo, "extensions", "largefiles"));
   }

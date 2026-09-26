@@ -17,15 +17,14 @@ package com.intellij.lang.spi;
 
 import com.intellij.lang.Language;
 
-/**
- * User: anna
- */
 public class SPILanguage extends Language {
   public static final SPILanguage INSTANCE = new SPILanguage();
-  
-  protected SPILanguage() {
-    super("SPI");
+
+  protected SPILanguage(String id) {
+    super(id);
   }
 
-  
+  protected SPILanguage() {
+    this("SPI");
+  }
 }

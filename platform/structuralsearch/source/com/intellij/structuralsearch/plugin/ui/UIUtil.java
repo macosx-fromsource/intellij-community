@@ -1,14 +1,14 @@
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.structuralsearch.plugin.ui;
 
-import com.intellij.codeInsight.hint.TooltipController;
-import com.intellij.codeInsight.hint.TooltipGroup;
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.codeInsight.template.TemplateContextType;
+import com.intellij.codeInsight.template.impl.TemplateContextTypes;
 import com.intellij.codeInsight.template.impl.TemplateEditorUtil;
-import com.intellij.icons.AllIcons;
-import com.intellij.ide.IdeTooltip;
-import com.intellij.ide.IdeTooltipManager;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.lang.Language;
+import com.intellij.lang.injection.InjectedLanguageManager;
+import com.intellij.openapi.application.ReadAction;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
@@ -17,51 +17,61 @@ import com.intellij.openapi.editor.colors.EditorColors;
 import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.ex.EditorEx;
+import com.intellij.openapi.fileTypes.FileType;
+import com.intellij.openapi.fileTypes.FileTypeManager;
+import com.intellij.openapi.fileTypes.FileTypes;
+import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.popup.Balloon;
-import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.text.StringUtil;
-import com.intellij.structuralsearch.*;
-import com.intellij.structuralsearch.plugin.StructuralReplaceAction;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiFileFactory;
+import com.intellij.structuralsearch.MatchOptions;
+import com.intellij.structuralsearch.MatchVariableConstraint;
+import com.intellij.structuralsearch.PatternContext;
+import com.intellij.structuralsearch.ReplacementVariableDefinition;
+import com.intellij.structuralsearch.SSRBundle;
+import com.intellij.structuralsearch.StructuralSearchProfile;
+import com.intellij.structuralsearch.StructuralSearchUtil;
 import com.intellij.structuralsearch.plugin.StructuralSearchAction;
-import com.intellij.structuralsearch.plugin.replace.ui.ReplaceConfiguration;
-import com.intellij.ui.HintHint;
-import com.intellij.util.Producer;
+import com.intellij.structuralsearch.plugin.replace.ReplaceOptions;
+import com.intellij.ui.EditorTextField;
+import com.intellij.util.LocalTimeCounter;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.Color;
 
 /**
  * @author Maxim.Mossienko
- * Date: Apr 21, 2004
- * Time: 7:50:48 PM
  */
-public class UIUtil {
-  static Key<SubstitutionShortInfoHandler> LISTENER_KEY = Key.create("sslistener.key");
-  private static final String MODIFY_EDITOR_CONTENT = SSRBundle.message("modify.editor.content.command.name");
-  private static final TooltipGroup SS_INFO_TOOLTIP_GROUP = new TooltipGroup("SS_INFO_TOOLTIP_GROUP", 0);
-  @NonNls private static final String SS_GROUP = "structuralsearchgroup";
+public final class UIUtil {
+  private static final @NonNls String SS_GROUP = "structuralsearchgroup";
 
-  @NotNull
-  public static Editor createEditor(Document doc, final Project project, boolean editable, @Nullable TemplateContextType contextType) {
-    return createEditor(doc, project, editable, false, contextType);
+  public static final @NonNls String SSR_NOTIFICATION_GROUP_ID = "Structural Search";
+
+  public static final @NonNls String TEXT = "TEXT";
+  public static final @NonNls String TEXT_HIERARCHY = "TEXT HIERARCHY";
+  public static final @NonNls String REFERENCE = "REFERENCE";
+  public static final @NonNls String TYPE = "TYPE";
+  public static final @NonNls String TYPE_REGEX = "TYPE REGEX";
+  public static final @NonNls String EXPECTED_TYPE = "EXPECTED TYPE";
+  public static final @NonNls String MINIMUM_ZERO = "MINIMUM ZERO";
+  public static final @NonNls String MAXIMUM_UNLIMITED = "MAXIMUM UNLIMITED";
+  public static final @NonNls String CONTEXT = "CONTEXT";
+
+  private UIUtil() {
   }
 
-  @NotNull
-  public static Editor createEditor(@NotNull Document doc,
-                                    final Project project,
-                                    boolean editable,
-                                    boolean addToolTipForVariableHandler,
-                                    @Nullable TemplateContextType contextType) {
+  public static @NotNull Editor createEditor(@NotNull Document doc,
+                                             Project project,
+                                             boolean editable,
+                                             @Nullable TemplateContextType contextType) {
     final Editor editor =
         editable ? EditorFactory.getInstance().createEditor(doc, project) : EditorFactory.getInstance().createViewer(doc, project);
 
-    EditorSettings editorSettings = editor.getSettings();
+    final EditorSettings editorSettings = editor.getSettings();
     editorSettings.setVirtualSpace(false);
     editorSettings.setLineMarkerAreaShown(false);
     editorSettings.setIndentGuidesShown(false);
@@ -82,238 +92,166 @@ public class UIUtil {
     else {
       ((EditorEx)editor).setEmbeddedIntoDialogWrapper(true);
     }
-  
+
     TemplateEditorUtil.setHighlighter(editor, contextType);
-
-    if (addToolTipForVariableHandler) {
-      SubstitutionShortInfoHandler handler = new SubstitutionShortInfoHandler(editor);
-      editor.addEditorMouseMotionListener(handler);
-      editor.getDocument().addDocumentListener(handler);
-      editor.getCaretModel().addCaretListener(handler);
-      editor.putUserData(LISTENER_KEY, handler);
-    }
-
     return editor;
   }
 
-  public static JComponent createOptionLine(JComponent[] options) {
-    JPanel tmp = new JPanel();
+  public static void setContent(@NotNull Editor editor, String text) {
+    final String value = text != null ? text : "";
+    final Document document = editor.getDocument();
+    WriteCommandAction.runWriteCommandAction(editor.getProject(), SSRBundle.message("modify.editor.content.command.name"), SS_GROUP,
+                                             () -> document.replaceString(0, document.getTextLength(), value));
+  }
 
-    tmp.setLayout(new BoxLayout(tmp, BoxLayout.X_AXIS));
-    for (int i = 0; i < options.length; i++) {
-      if (i != 0) {
-        tmp.add(Box.createHorizontalStrut(com.intellij.util.ui.UIUtil.DEFAULT_HGAP));
+  public static void setContent(@NotNull EditorTextField editor, @NotNull String text) {
+    final Document document = editor.getDocument();
+    WriteCommandAction.runWriteCommandAction(editor.getProject(), SSRBundle.message("modify.editor.content.command.name"), SS_GROUP,
+                                             () -> document.replaceString(0, document.getTextLength(), text));
+  }
+
+  public static void invokeAction(@NotNull Configuration config, @NotNull SearchContext context) {
+    StructuralSearchAction.triggerAction(config, context, !(config instanceof SearchConfiguration));
+  }
+
+  public static @NotNull MatchVariableConstraint getOrAddVariableConstraint(@NotNull String varName, @NotNull Configuration configuration) {
+    final MatchOptions options = configuration.getMatchOptions();
+    final MatchVariableConstraint varInfo = options.getVariableConstraint(varName);
+
+    return varInfo != null ? varInfo : configuration.getMatchOptions().addNewVariableConstraint(varName);
+  }
+
+  public static @NotNull ReplacementVariableDefinition getOrAddReplacementVariable(@NotNull String varName,
+                                                                                   @NotNull Configuration configuration) {
+    final ReplaceOptions replaceOptions = configuration.getReplaceOptions();
+    ReplacementVariableDefinition definition = replaceOptions.getVariableDefinition(varName);
+
+    return definition != null ? definition : replaceOptions.addNewVariableDefinition(varName);
+  }
+
+  public static @NotNull EditorTextField createTextComponent(@NotNull String text, @NotNull Project project) {
+    return createEditorComponent(text, "1.txt", project);
+  }
+
+  public static @NotNull EditorTextField createRegexComponent(@NotNull String text, @NotNull Project project) {
+    return createEditorComponent(text, "1.regexp", project);
+  }
+
+  public static @NotNull EditorTextField createScriptComponent(@NotNull String text, @NotNull Project project) {
+    return createEditorComponent(text, "1.groovy", project);
+  }
+
+  public static @NotNull EditorTextField createEditorComponent(@NotNull String text, @NotNull String fileName, @NotNull Project project) {
+    final FileType fileType = getFileType(fileName);
+    final Document document = createDocument(fileType, text, project);
+    return new EditorTextField(document, project, fileType);
+  }
+
+  public static @NotNull Document createDocument(@NotNull FileType fileType, @NotNull String text, @NotNull Project project) {
+    final PsiFile file =
+      PsiFileFactory.getInstance(project).createFileFromText("Dummy." + fileType.getDefaultExtension(), fileType, text, -1, true);
+    final Document document = PsiDocumentManager.getInstance(project).getDocument(file);
+    assert document != null;
+    return document;
+  }
+
+  private static @NotNull FileType getFileType(@NotNull String fileName) {
+    FileType fileType = FileTypeManager.getInstance().getFileTypeByFileName(fileName);
+    if (fileType == FileTypes.UNKNOWN) fileType = FileTypes.PLAIN_TEXT;
+    return fileType;
+  }
+
+  public static @NotNull LanguageFileType detectFileType(@NotNull SearchContext searchContext) {
+    final PsiFile file = searchContext.getFile();
+    PsiElement context = null;
+
+    final Editor editor = searchContext.getEditor();
+    if (editor != null && file != null) {
+      final int offset = editor.getCaretModel().getOffset();
+      context = InjectedLanguageManager.getInstance(searchContext.getProject()).findInjectedElementAt(file, offset);
+      if (context == null) {
+        context = file.findElementAt(offset);
       }
-      tmp.add(options[i]);
+      if (context != null) {
+        context = context.getParent();
+      }
+      if (context == null) {
+        context = file;
+      }
     }
-    tmp.add(Box.createHorizontalGlue());
-
-    return tmp;
-  }
-
-  public static JComponent createOptionLine(JComponent option) {
-    return createOptionLine(new JComponent[]{option});
-  }
-
-  public static void setContent(final Editor editor, String val, final int from, final int end, final Project project) {
-    final String value = val != null ? val : "";
-
-    CommandProcessor.getInstance().executeCommand(project, () -> ApplicationManager.getApplication().runWriteAction(() -> editor.getDocument().replaceString(from, (end == -1) ? editor.getDocument().getTextLength() : end, value)), MODIFY_EDITOR_CONTENT, SS_GROUP);
-  }
-
-  static String getShortParamString(Configuration config, String varname) {
-    if (config == null) return "";
-    final MatchOptions options = config.getMatchOptions();
-
-    NamedScriptableDefinition namedScriptableDefinition = options == null ? null : options.getVariableConstraint(varname);
-
-    final ReplacementVariableDefinition replacementVariableDefinition =
-      config instanceof ReplaceConfiguration ? ((ReplaceConfiguration)config).getOptions().getVariableDefinition(varname) : null;
-    if (replacementVariableDefinition != null) namedScriptableDefinition = replacementVariableDefinition;
-
-    return getShortParamString(namedScriptableDefinition);
-  }
-
-  @NotNull
-  public static String getShortParamString(NamedScriptableDefinition namedScriptableDefinition) {
-    if (namedScriptableDefinition == null) {
-      return SSRBundle.message("no.constraints.specified.tooltip.message");
-    }
-
-    final StringBuilder buf = new StringBuilder();
-
-    if (namedScriptableDefinition instanceof MatchVariableConstraint) {
-      final MatchVariableConstraint constraint = (MatchVariableConstraint)namedScriptableDefinition;
-      if (constraint.isPartOfSearchResults()) {
-        append(buf, SSRBundle.message("target.tooltip.message"));
-      }
-      if (constraint.getRegExp() != null && constraint.getRegExp().length() > 0) {
-        append(buf, SSRBundle.message("text.tooltip.message",
-                                      constraint.isInvertRegExp() ? SSRBundle.message("not.tooltip.message") : "", constraint.getRegExp()));
-      }
-      if (constraint.isWithinHierarchy() || constraint.isStrictlyWithinHierarchy()) {
-        append(buf, SSRBundle.message("within.hierarchy.tooltip.message"));
-      }
-
-      if (constraint.isReadAccess()) {
-        append(buf, SSRBundle.message("value.read.tooltip.message",
-                                      constraint.isInvertReadAccess() ? SSRBundle.message("not.tooltip.message") : ""));
-      }
-      if (constraint.isWriteAccess()) {
-        append(buf, SSRBundle.message("value.written.tooltip.message",
-                                      constraint.isInvertWriteAccess() ? SSRBundle.message("not.tooltip.message") : ""));
-      }
-
-      if (constraint.getNameOfExprType() != null && constraint.getNameOfExprType().length() > 0) {
-        append(buf, SSRBundle.message("exprtype.tooltip.message",
-                                     constraint.isInvertExprType() ? SSRBundle.message("not.tooltip.message") : "",
-                                     constraint.getNameOfExprType(),
-                                     constraint.isExprTypeWithinHierarchy() ? SSRBundle.message("supertype.tooltip.message") : ""));
-      }
-
-      if (constraint.getNameOfFormalArgType() != null && constraint.getNameOfFormalArgType().length() > 0) {
-        append(buf, SSRBundle.message("expected.type.tooltip.message",
-                                      constraint.isInvertFormalType() ? SSRBundle.message("not.tooltip.message") : "",
-                                      constraint.getNameOfFormalArgType(),
-                                      constraint.isFormalArgTypeWithinHierarchy() ? SSRBundle.message("supertype.tooltip.message") : ""));
-      }
-
-      if (StringUtil.isNotEmpty(constraint.getWithinConstraint())) {
-        final String text = StringUtil.unquoteString(constraint.getWithinConstraint());
-        append(buf, constraint.isInvertWithinConstraint()
-                    ? SSRBundle.message("not.within.constraints.tooltip.message", text)
-                    : SSRBundle.message("within.constraints.tooltip.message", text));
-      }
-
-      final String name = constraint.getName();
-      if (!Configuration.CONTEXT_VAR_NAME.equals(name)) {
-        if (constraint.getMinCount() == constraint.getMaxCount()) {
-          append(buf, SSRBundle.message("occurs.tooltip.message", constraint.getMinCount()));
+    if (context != null) {
+      final Language language = context.getLanguage();
+      final StructuralSearchProfile profile = StructuralSearchUtil.getProfileByLanguage(language);
+      if (profile != null) {
+        LanguageFileType fileType = profile.detectFileType(context);
+        if (fileType == null) {
+          fileType = language.getAssociatedFileType();
         }
-        else {
-          append(buf, SSRBundle.message("min.occurs.tooltip.message", constraint.getMinCount(),
-                                        constraint.getMaxCount() == Integer.MAX_VALUE ?
-                                        StringUtil.decapitalize(SSRBundle.message("editvarcontraints.unlimited")) :
-                                        constraint.getMaxCount()));
-        }
+        if (fileType != null) return fileType;
       }
     }
-
-    final String script = namedScriptableDefinition.getScriptCodeConstraint();
-    if (script != null && script.length() > 2) {
-      final String str = SSRBundle.message("script.tooltip.message", StringUtil.stripQuotesAroundValue(script));
-      append(buf, str);
-    }
-
-    if (buf.length() == 0) {
-      return SSRBundle.message("no.constraints.specified.tooltip.message");
-    }
-    return buf.toString();
+    return StructuralSearchUtil.getDefaultFileType();
   }
 
-  private static void append(final StringBuilder buf, final String str) {
-    if (buf.length() > 0) buf.append(", ");
-    buf.append(str);
+  public static @NotNull Document createDocument(@NotNull Project project,
+                                                 @Nullable LanguageFileType fileType,
+                                                 Language dialect,
+                                                 PatternContext patternContext,
+                                                 @NotNull String text,
+                                                 @Nullable StructuralSearchProfile profile) {
+    if (fileType != null && profile != null) {
+      final String contextId = (patternContext == null) ? null : patternContext.getId();
+      PsiFile codeFragment = profile.createCodeFragment(project, text, contextId);
+      if (codeFragment == null) {
+        codeFragment = createFileFragment(project, fileType, dialect, text);
+      }
+
+      if (codeFragment != null) {
+        PsiFile f = codeFragment;
+        final Document doc = ReadAction.computeBlocking(() -> f.getViewProvider().getDocument());
+        assert doc != null : "code fragment element should be physical";
+        return doc;
+      }
+    }
+    return EditorFactory.getInstance().createDocument(text);
   }
 
-  public static void invokeAction(Configuration config, SearchContext context) {
-    if (config instanceof SearchConfiguration) {
-      StructuralSearchAction.triggerAction(config, context);
+  public static @NotNull Editor createEditor(@NotNull Project project,
+                                             @NotNull LanguageFileType fileType,
+                                             Language dialect,
+                                             @NotNull String text,
+                                             boolean editable,
+                                             @NotNull StructuralSearchProfile profile) {
+    PsiFile codeFragment = profile.createCodeFragment(project, text, null);
+    if (codeFragment == null) {
+      codeFragment = createFileFragment(project, fileType, dialect, text);
+    }
+
+    final Document doc;
+    if (codeFragment != null) {
+      doc = PsiDocumentManager.getInstance(project).getDocument(codeFragment);
+      assert doc != null : "code fragment element should be physical";
+      DaemonCodeAnalyzer.getInstance(project).setHighlightingEnabled(codeFragment, false);
     }
     else {
-      StructuralReplaceAction.triggerAction(config, context);
+      doc = EditorFactory.getInstance().createDocument("");
     }
+    return createEditor(doc, project, editable, getTemplateContextType(profile, dialect));
   }
 
-  static void showTooltip(@NotNull Editor editor, final int start, int end, @NotNull String text) {
-    final Rectangle visibleArea = editor.getScrollingModel().getVisibleArea();
-    final Point left = editor.logicalPositionToXY(editor.offsetToLogicalPosition(start));
-    final int documentLength = editor.getDocument().getTextLength();
-    if (end >= documentLength) end = documentLength;
-    final Point right = editor.logicalPositionToXY(editor.offsetToLogicalPosition(end));
+  private static PsiFile createFileFragment(@NotNull Project project,
+                                            @NotNull LanguageFileType fileType,
+                                            Language dialect,
+                                            @NotNull String text) {
+    final String name = "__dummy." + fileType.getDefaultExtension();
+    final PsiFileFactory factory = PsiFileFactory.getInstance(project);
 
-    final Point bestPoint = new Point(left.x + (right.x - left.x) / 2, right.y + editor.getLineHeight() / 2);
-
-    if (visibleArea.x > bestPoint.x) {
-      bestPoint.x = visibleArea.x;
-    }
-    else if (visibleArea.x + visibleArea.width < bestPoint.x) {
-      bestPoint.x = visibleArea.x + visibleArea.width - 5;
-    }
-
-    final Point p = SwingUtilities.convertPoint(editor.getContentComponent(), bestPoint,
-                                                editor.getComponent().getRootPane().getLayeredPane());
-    final HintHint hint = new HintHint(editor, bestPoint).setAwtTooltip(true).setHighlighterType(true).setShowImmediately(true)
-      .setCalloutShift(editor.getLineHeight() / 2 - 1);
-    TooltipController.getInstance().showTooltip(editor, p, text, visibleArea.width, false, SS_INFO_TOOLTIP_GROUP, hint);
+    return dialect == null
+           ? factory.createFileFromText(name, fileType, text, LocalTimeCounter.currentTime(), true, true)
+           : factory.createFileFromText(name, dialect, text, true, true);
   }
 
-  public static void updateHighlighter(Editor editor, StructuralSearchProfile profile) {
-    TemplateEditorUtil.setHighlighter(editor, profile.getTemplateContextType());
-  }
-
-  public static MatchVariableConstraint getOrAddVariableConstraint(String varName, Configuration configuration) {
-    MatchVariableConstraint varInfo = configuration.getMatchOptions().getVariableConstraint(varName);
-
-    if (varInfo == null) {
-      varInfo = new MatchVariableConstraint();
-      varInfo.setName(varName);
-      configuration.getMatchOptions().addVariableConstraint(varInfo);
-    }
-    return varInfo;
-  }
-
-  public static boolean isTarget(String varName, MatchOptions matchOptions) {
-    if (Configuration.CONTEXT_VAR_NAME.equals(varName)) {
-      // Complete Match is default target
-      for (String name : matchOptions.getVariableConstraintNames()) {
-        if (!name.equals(Configuration.CONTEXT_VAR_NAME)) {
-          if (matchOptions.getVariableConstraint(name).isPartOfSearchResults()) {
-            return false;
-          }
-        }
-      }
-      return true;
-    }
-    final MatchVariableConstraint constraint = matchOptions.getVariableConstraint(varName);
-    if (constraint == null) {
-      return false;
-    }
-    return constraint.isPartOfSearchResults();
-  }
-
-  @NotNull
-  public static JComponent createCompleteMatchInfo(final Producer<Configuration> configurationProducer) {
-    final JLabel completeMatchInfo = new JLabel(AllIcons.RunConfigurations.Variables);
-    final Point location = completeMatchInfo.getLocation();
-    final JLabel label = new JLabel(SSRBundle.message("complete.match.variable.tooltip.message",
-                                                      SSRBundle.message("no.constraints.specified.tooltip.message")));
-    final IdeTooltip tooltip = new IdeTooltip(completeMatchInfo, location, label);
-    tooltip.setPreferredPosition(Balloon.Position.atRight).setCalloutShift(6).setHint(true).setExplicitClose(true);
-
-    completeMatchInfo.addMouseListener(new MouseAdapter() {
-      @Override
-      public void mouseEntered(MouseEvent e) {
-        final Configuration configuration = configurationProducer.produce();
-        if (configuration == null) {
-          return;
-        }
-        final MatchOptions matchOptions = configuration.getMatchOptions();
-        final MatchVariableConstraint constraint =
-          getOrAddVariableConstraint(Configuration.CONTEXT_VAR_NAME, configuration);
-        if (isTarget(Configuration.CONTEXT_VAR_NAME, matchOptions)) {
-          constraint.setPartOfSearchResults(true);
-        }
-        label.setText(SSRBundle.message("complete.match.variable.tooltip.message", getShortParamString(constraint)));
-        final IdeTooltipManager tooltipManager = IdeTooltipManager.getInstance();
-        tooltipManager.show(tooltip, true);
-      }
-
-      @Override
-      public void mouseExited(MouseEvent e) {
-        IdeTooltipManager.getInstance().hide(tooltip);
-      }
-    });
-    return completeMatchInfo;
+  public static TemplateContextType getTemplateContextType(@NotNull StructuralSearchProfile profile, Language dialect) {
+    return TemplateContextTypes.getByClass(profile.getTemplateContextTypeClass(dialect));
   }
 }

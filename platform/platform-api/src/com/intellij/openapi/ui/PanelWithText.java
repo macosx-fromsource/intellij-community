@@ -14,18 +14,15 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: Anna.Kozlova
- * Date: 16-Jul-2006
- * Time: 17:27:18
- */
 package com.intellij.openapi.ui;
 
 import com.intellij.xml.util.XmlStringUtil;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 
 public class PanelWithText extends JPanel {
   private final JLabel myLabel = new JLabel();

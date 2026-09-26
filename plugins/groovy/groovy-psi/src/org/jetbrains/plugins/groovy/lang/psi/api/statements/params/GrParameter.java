@@ -28,12 +28,11 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpres
 import org.jetbrains.plugins.groovy.lang.psi.api.types.GrTypeElement;
 
 /**
- * @author: Dmitry.Krasilschikov
- * @date: 26.03.2007
+ * @author Dmitry.Krasilschikov
  */
 public interface GrParameter extends PsiParameter, GrVariable, GrCondition {
   GrParameter[] EMPTY_ARRAY = new GrParameter[0];
-  ArrayFactory<GrParameter> ARRAY_FACTORY = count -> new GrParameter[count];
+  ArrayFactory<GrParameter> ARRAY_FACTORY = count -> count == 0 ? EMPTY_ARRAY : new GrParameter[count];
 
   @Override
   @Nullable

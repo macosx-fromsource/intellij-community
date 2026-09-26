@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.profile.codeInspection.ui;
 
 import com.intellij.codeInspection.ex.Descriptor;
@@ -23,16 +9,15 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * @author Dmitry Batkovich
  */
-public class ToolDescriptors {
+public final class ToolDescriptors {
 
-  @NotNull
-  private final Descriptor myDefaultDescriptor;
-  @NotNull
-  private final List<Descriptor> myNonDefaultDescriptors;
+  private final @NotNull Descriptor myDefaultDescriptor;
+  private final @NotNull List<Descriptor> myNonDefaultDescriptors;
 
   private ToolDescriptors(final @NotNull Descriptor defaultDescriptor,
                           final @NotNull List<Descriptor> nonDefaultDescriptors) {
@@ -51,18 +36,19 @@ public class ToolDescriptors {
     return new ToolDescriptors(new Descriptor(state, profile, project), descriptors);
   }
 
-  @NotNull
-  public Descriptor getDefaultDescriptor() {
+  public @NotNull Descriptor getDefaultDescriptor() {
     return myDefaultDescriptor;
   }
 
-  @NotNull
-  public List<Descriptor> getNonDefaultDescriptors() {
+  public @NotNull List<Descriptor> getNonDefaultDescriptors() {
     return myNonDefaultDescriptors;
   }
 
-  @NotNull
-  public ScopeToolState getDefaultScopeToolState() {
+  public @NotNull Stream<Descriptor> getDescriptors() {
+    return Stream.concat(Stream.of(getDefaultDescriptor()), getNonDefaultDescriptors().stream());
+  }
+
+  public @NotNull ScopeToolState getDefaultScopeToolState() {
     return myDefaultDescriptor.getState();
   }
 }

@@ -1,34 +1,23 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.source.tree.java;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.psi.JavaTokenType;
 import com.intellij.psi.impl.source.Constants;
-import com.intellij.psi.impl.source.tree.*;
+import com.intellij.psi.impl.source.tree.ChildRole;
+import com.intellij.psi.impl.source.tree.CompositeElement;
+import com.intellij.psi.impl.source.tree.JavaElementType;
+import com.intellij.psi.impl.source.tree.JavaSourceUtil;
+import com.intellij.psi.impl.source.tree.TreeElement;
 import com.intellij.psi.tree.ChildRoleBase;
 import com.intellij.psi.tree.IElementType;
 import com.intellij.psi.tree.TokenSet;
-import com.intellij.util.IncorrectOperationException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public class ParameterListElement extends CompositeElement implements Constants {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.psi.impl.source.tree.java.ParameterListElement");
+  private static final Logger LOG = Logger.getInstance(ParameterListElement.class);
 
   private static final TokenSet PARAMETER_SET = TokenSet.create(JavaElementType.PARAMETER, JavaElementType.RECEIVER_PARAMETER);
 
@@ -38,6 +27,8 @@ public class ParameterListElement extends CompositeElement implements Constants 
 
   @Override
   public TreeElement addInternal(TreeElement first, ASTNode last, ASTNode anchor, Boolean before) {
+    ensureParenthesisAroundParameterList();
+
     if (anchor == null) {
       if (before == null || before.booleanValue()) {
         anchor = findChildByRole(ChildRole.RPARENTH);
@@ -54,15 +45,16 @@ public class ParameterListElement extends CompositeElement implements Constants 
     if (first == last && PARAMETER_SET.contains(first.getElementType())) {
       JavaSourceUtil.addSeparatingComma(this, first, PARAMETER_SET);
     }
-
-    //todo[max] hack?
-    try {
-      CodeStyleManager.getInstance(getManager().getProject()).reformat(getPsi());
-    }
-    catch (IncorrectOperationException e) {
-      LOG.error(e);
-    }
+    
     return firstAdded;
+  }
+
+  private void ensureParenthesisAroundParameterList() {
+    //lambda parameter without parenthesis
+    if (findChildByRole(ChildRole.LPARENTH) == null) {
+      addLeaf(JavaTokenType.LPARENTH, "(", getFirstChildNode());
+      addLeaf(JavaTokenType.RPARENTH, ")", null);
+    }
   }
 
   @Override
@@ -72,6 +64,7 @@ public class ParameterListElement extends CompositeElement implements Constants 
 
     if (PARAMETER_SET.contains(child.getElementType())) {
       JavaSourceUtil.deleteSeparatingComma(this, child);
+      ensureParenthesisAroundParameterList();
     }
 
     super.deleteChildInternal(child);
@@ -99,23 +92,12 @@ public class ParameterListElement extends CompositeElement implements Constants 
         replaceChild(newFirstNodeInsideParens, (ASTNode)oldFirstNodeInsideParens.clone());
       }
     }
-
-    //todo[max] hack?
-    try {
-      CodeStyleManager.getInstance(getManager().getProject()).reformat(getPsi());
-    }
-    catch (IncorrectOperationException e) {
-      LOG.error(e);
-    }
   }
 
   @Override
   public ASTNode findChildByRole(int role) {
     LOG.assertTrue(ChildRole.isUnique(role));
     switch (role) {
-      default:
-        return null;
-
       case ChildRole.LPARENTH:
         TreeElement firstNode = getFirstChildNode();
         return firstNode.getElementType() == LPARENTH ? firstNode : null;
@@ -123,11 +105,14 @@ public class ParameterListElement extends CompositeElement implements Constants 
       case ChildRole.RPARENTH:
         TreeElement lastNode = getLastChildNode();
         return lastNode.getElementType() == RPARENTH ? lastNode : null;
+
+      default:
+        return null;
     }
   }
 
   @Override
-  public int getChildRole(ASTNode child) {
+  public int getChildRole(@NotNull ASTNode child) {
     LOG.assertTrue(child.getTreeParent() == this);
     IElementType i = child.getElementType();
     if (PARAMETER_SET.contains((i))) {
@@ -148,19 +133,17 @@ public class ParameterListElement extends CompositeElement implements Constants 
   }
 
   /**
-   * @return last node before closing right parenthesis if possible; <code>null</code> otherwise
+   * @return last node before closing right parenthesis if possible; {@code null} otherwise
    */
-  @Nullable
-  private TreeElement getLastNodeInsideParens() {
+  private @Nullable TreeElement getLastNodeInsideParens() {
     TreeElement lastNode = getLastChildNode();
     return lastNode.getElementType() == RPARENTH ? lastNode.getTreePrev() : null;
   }
 
   /**
-   * @return first node after opening left parenthesis if possible; <code>null</code> otherwise
+   * @return first node after opening left parenthesis if possible; {@code null} otherwise
    */
-  @Nullable
-  private TreeElement getFirstNodeInsideParens() {
+  private @Nullable TreeElement getFirstNodeInsideParens() {
     TreeElement firstNode = getFirstChildNode();
     return firstNode.getElementType() == LPARENTH ? firstNode.getTreeNext() : null;
   }

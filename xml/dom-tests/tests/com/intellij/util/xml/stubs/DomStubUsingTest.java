@@ -23,7 +23,12 @@ import com.intellij.psi.impl.PsiManagerEx;
 import com.intellij.psi.xml.XmlAttribute;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
-import com.intellij.util.xml.*;
+import com.intellij.util.xml.DomElement;
+import com.intellij.util.xml.DomFileElement;
+import com.intellij.util.xml.DomManager;
+import com.intellij.util.xml.DomUtil;
+import com.intellij.util.xml.GenericAttributeValue;
+import com.intellij.util.xml.GenericDomValue;
 import com.intellij.util.xml.stubs.model.Bar;
 import com.intellij.util.xml.stubs.model.Foo;
 import com.intellij.util.xml.stubs.model.NotStubbed;
@@ -32,7 +37,6 @@ import java.util.List;
 
 /**
  * @author Dmitry Avdeev
- *         Date: 8/8/12
  */
 public class DomStubUsingTest extends DomStubTest {
 
@@ -123,7 +127,7 @@ public class DomStubUsingTest extends DomStubTest {
 
   public void testFileLoading() {
     XmlFile file = prepareFile("foo.xml");
-    ((PsiManagerEx)getPsiManager()).setAssertOnFileLoadingFilter(VirtualFileFilter.ALL, getTestRootDisposable());
+    ((PsiManagerEx)getPsiManager()).setAssertOnFileLoadingFilter(VirtualFileFilter.ALL, myFixture.getTestRootDisposable());
     DomFileElement<Foo> element = DomManager.getDomManager(getProject()).getFileElement(file, Foo.class);
     assertNotNull(element);
     GenericDomValue<String> id = element.getRootElement().getId();
@@ -148,12 +152,7 @@ public class DomStubUsingTest extends DomStubTest {
     assertNotNull(domElement);
     assertTrue(domElement.exists());
 
-    new WriteCommandAction.Simple(null) {
-      @Override
-      protected void run() throws Throwable {
-        domElement.undefine();
-      }
-    }.execute().throwException();
+    WriteCommandAction.writeCommandAction(null).run(() -> domElement.undefine());
 
     assertFalse(domElement.exists());
   }

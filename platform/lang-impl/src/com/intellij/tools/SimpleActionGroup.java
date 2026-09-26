@@ -19,16 +19,19 @@ package com.intellij.tools;
 import com.intellij.openapi.actionSystem.ActionGroup;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.Presentation;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 
+/** @deprecated Use {@link com.intellij.openapi.actionSystem.DefaultActionGroup} or {@link ActionGroup} directly */
+@Deprecated
 public class SimpleActionGroup extends ActionGroup {
   private final ArrayList<AnAction> myChildren = new ArrayList<>();
 
   public SimpleActionGroup() {
-    super(null, false);
+    super(Presentation.NULL_STRING, false);
   }
 
   public void add(AnAction action) {
@@ -36,9 +39,8 @@ public class SimpleActionGroup extends ActionGroup {
   }
 
   @Override
-  @NotNull
-  public AnAction[] getChildren(@Nullable AnActionEvent e) {
-    return myChildren.toArray(new AnAction[myChildren.size()]);
+  public AnAction @NotNull [] getChildren(@Nullable AnActionEvent e) {
+    return myChildren.toArray(AnAction.EMPTY_ARRAY);
   }
 
   public int getChildrenCount() {

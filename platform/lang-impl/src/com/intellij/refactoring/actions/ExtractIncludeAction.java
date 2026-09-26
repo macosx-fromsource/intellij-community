@@ -1,21 +1,8 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.refactoring.actions;
 
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.TitledHandler;
 import com.intellij.lang.Language;
 import com.intellij.lang.refactoring.RefactoringSupportProvider;
@@ -23,21 +10,19 @@ import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.refactoring.RefactoringActionHandler;
+import com.intellij.refactoring.lang.ExtractIncludeFileBase;
 import com.intellij.refactoring.lang.LanguageExtractInclude;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * @author ven
- */
-public class ExtractIncludeAction extends BasePlatformRefactoringAction {
+public final class ExtractIncludeAction extends BasePlatformRefactoringAction {
   @Override
   public boolean isAvailableInEditorOnly() {
     return true;
   }
 
   @Override
-  public boolean isEnabledOnElements(@NotNull PsiElement[] elements) {
+  public boolean isEnabledOnElements(PsiElement @NotNull [] elements) {
     return false;
   }
 
@@ -47,44 +32,44 @@ public class ExtractIncludeAction extends BasePlatformRefactoringAction {
   }
 
   @Override
-  public void update(final AnActionEvent e) {
+  public void update(final @NotNull AnActionEvent e) {
     super.update(e);
     final RefactoringActionHandler handler = getHandler(e.getDataContext());
     if (handler instanceof TitledHandler) {
       e.getPresentation().setText(((TitledHandler) handler).getActionTitle());
     }
     else {
-      e.getPresentation().setText("Include File...");
+      e.getPresentation().setText(IdeBundle.messagePointer("action.presentation.ExtractIncludeAction.text"));
     }
   }
 
   @Override
   protected boolean isAvailableForFile(PsiFile file) {
-    final Language baseLanguage = file.getViewProvider().getBaseLanguage();
-    return LanguageExtractInclude.INSTANCE.forLanguage(baseLanguage) != null;
+    final RefactoringActionHandler handler = LanguageExtractInclude.INSTANCE.forLanguage(file.getViewProvider().getBaseLanguage());
+    if (handler instanceof ExtractIncludeFileBase<?>) {
+      return ((ExtractIncludeFileBase<?>)handler).isAvailableForFile(file);
+    }
+    return handler != null;
   }
 
-  @Nullable
   @Override
-  protected RefactoringActionHandler getHandler(@NotNull Language language, PsiElement element) {
+  protected @Nullable RefactoringActionHandler getHandler(@NotNull Language language, PsiElement element) {
     RefactoringActionHandler handler = super.getHandler(language, element);
     if (handler != null) return handler;
     return element == null ? null : getHandler(element);
   }
 
-  @Nullable
   @Override
-  protected RefactoringActionHandler getRefactoringHandler(@NotNull RefactoringSupportProvider provider) {
+  protected @Nullable RefactoringActionHandler getRefactoringHandler(@NotNull RefactoringSupportProvider provider) {
     return null;
   }
 
-  @Nullable
-  protected RefactoringActionHandler getRefactoringHandler(@NotNull RefactoringSupportProvider provider, PsiElement element) {
+  @Override
+  protected @Nullable RefactoringActionHandler getRefactoringHandler(@NotNull RefactoringSupportProvider provider, PsiElement element) {
     return getHandler(element);
   }
 
-  @Nullable
-  private static RefactoringActionHandler getHandler(@NotNull PsiElement element) {
+  private static @Nullable RefactoringActionHandler getHandler(@NotNull PsiElement element) {
     PsiFile file = element.getContainingFile();
     if (file == null) return null;
     return LanguageExtractInclude.INSTANCE.forLanguage(file.getViewProvider().getBaseLanguage());

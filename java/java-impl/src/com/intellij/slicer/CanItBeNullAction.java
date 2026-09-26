@@ -15,55 +15,33 @@
  */
 package com.intellij.slicer;
 
-import com.intellij.icons.AllIcons;
-import com.intellij.openapi.actionSystem.AnAction;
-import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiArrayType;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiVariable;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.tree.DefaultMutableTreeNode;
-
-/**
- * User: cdr
- */
-class CanItBeNullAction extends AnAction {
-  private final SliceTreeBuilder myTreeBuilder;
-  private static final String TEXT = "Group by leaf expression nullness";
-
+class CanItBeNullAction extends GroupByNullnessActionBase {
   CanItBeNullAction(@NotNull SliceTreeBuilder treeBuilder) {
-    super(TEXT, "Determine whether null can flow into this expression", AllIcons.Debugger.Db_disabled_breakpoint_process);
-    myTreeBuilder = treeBuilder;
+    super(treeBuilder);
   }
 
   @Override
-  public void update(AnActionEvent e) {
-    e.getPresentation().setText(TEXT + (myTreeBuilder.analysisInProgress ? " (Analysis in progress)" : ""));
-    e.getPresentation().setEnabled(isAvailable());
-  }
-
-  private boolean isAvailable() {
-    if (myTreeBuilder.analysisInProgress) return false;
-    if (!myTreeBuilder.dataFlowToThis) return false;
-    if (myTreeBuilder.splitByLeafExpressions) return false;
-    DefaultMutableTreeNode root = myTreeBuilder.getRootNode();
-    if (root == null) return false;
-    SliceRootNode rootNode = (SliceRootNode)root.getUserObject();
-    PsiElement element = rootNode == null ? null : rootNode.getRootUsage().getUsageInfo().getElement();
+  protected boolean isAvailable() {
+    SliceRootNode rootNode = myTreeBuilder.getRootSliceNode();
+    PsiElement element = rootNode.getRootUsage().getUsageInfo().getElement();
     PsiType type;
-    if (element instanceof PsiVariable) {
-      type = ((PsiVariable)element).getType();
+    if (element instanceof PsiVariable variable) {
+      type = variable.getType();
     }
-    else if (element instanceof PsiExpression) {
-      type = ((PsiExpression)element).getType();
+    else if (element instanceof PsiExpression expression) {
+      type = expression.getType();
     }
     else {
       type = null;
     }
     return type instanceof PsiClassType || type instanceof PsiArrayType;
-  }
-
-  @Override
-  public void actionPerformed(AnActionEvent e) {
-    myTreeBuilder.switchToLeafNulls();
   }
 }

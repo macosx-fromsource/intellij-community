@@ -1,48 +1,33 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * Created by IntelliJ IDEA.
- * User: mike
- * Date: Aug 26, 2002
- * Time: 6:25:08 PM
- * To change template for new class use 
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.psi.impl.source.xml;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.Language;
+import com.intellij.openapi.util.Key;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.psi.TokenType;
 import com.intellij.psi.impl.source.tree.CompositeElement;
 import com.intellij.psi.impl.source.tree.CompositePsiElement;
-import com.intellij.psi.impl.source.tree.TreeElement;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.PsiElementProcessor;
 import com.intellij.psi.search.SearchScope;
+import com.intellij.psi.templateLanguages.OuterLanguageElement;
 import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.xml.XmlElement;
 import com.intellij.psi.xml.XmlElementType;
 import com.intellij.psi.xml.XmlTag;
+import com.intellij.psi.xml.XmlText;
 import com.intellij.xml.util.XmlPsiUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public abstract class XmlElementImpl extends CompositePsiElement implements XmlElement {
+
+  private static final Key<Language> LANGUAGE_KEY = Key.create("html.element.language");
+
   public XmlElementImpl(IElementType type) {
     super(type);
   }
@@ -52,26 +37,8 @@ public abstract class XmlElementImpl extends CompositePsiElement implements XmlE
     return XmlPsiUtil.processXmlElements(this, processor, false);
   }
 
-  public boolean processChildren(PsiElementProcessor processor){
-    return XmlPsiUtil.processXmlElementChildren(this, processor, false);
-  }
-
   public XmlElement findElementByTokenType(final IElementType type){
-    final XmlElement[] result = new XmlElement[1];
-    result[0] = null;
-
-    processElements(new PsiElementProcessor(){
-      @Override
-      public boolean execute(@NotNull PsiElement element){
-        if(element instanceof TreeElement && ((ASTNode)element).getElementType() == type){
-          result[0] = (XmlElement)element;
-          return false;
-        }
-        return true;
-      }
-    }, this);
-
-    return result[0];
+    return XmlPsiUtil.findElement(this, elementType -> elementType == type);
   }
 
   @Override
@@ -86,8 +53,7 @@ public abstract class XmlElementImpl extends CompositePsiElement implements XmlE
   }
 
   @Override
-  @NotNull
-  public PsiElement getNavigationElement() {
+  public @NotNull PsiElement getNavigationElement() {
     if (!isPhysical()) {
       final XmlElement including = getUserData(INCLUDING_ELEMENT);
       if (including != null) {
@@ -102,18 +68,21 @@ public abstract class XmlElementImpl extends CompositePsiElement implements XmlE
   }
 
   @Override
-  public PsiElement getParent(){
+  public PsiElement getParent() {
     return getContext();
   }
 
   @Override
-  @NotNull
-  public Language getLanguage() {
-    return getContainingFile().getLanguage();
+  public @NotNull Language getLanguage() {
+    Language language = getUserData(LANGUAGE_KEY);
+    if (language == null) {
+      language = getParent().getLanguage();
+      putUserData(LANGUAGE_KEY, language);
+    }
+    return language;
   }
 
-  @Nullable
-  protected static String getNameFromEntityRef(final CompositeElement compositeElement, final IElementType xmlEntityDeclStart) {
+  protected static @Nullable String getNameFromEntityRef(final CompositeElement compositeElement, final IElementType xmlEntityDeclStart) {
     final ASTNode node = compositeElement.findChildByType(xmlEntityDeclStart);
     if (node == null) return null;
     ASTNode name = node.getTreeNext();
@@ -127,19 +96,18 @@ public abstract class XmlElementImpl extends CompositePsiElement implements XmlE
 
       ((XmlElement)name.getPsi()).processElements(new PsiElementProcessor() {
         @Override
-        public boolean execute(@NotNull final PsiElement element) {
+        public boolean execute(final @NotNull PsiElement element) {
           builder.append(element.getText());
           return true;
         }
       }, name.getPsi());
-      if (builder.length() > 0) return builder.toString();
+      if (!builder.isEmpty()) return builder.toString();
     }
     return null;
   }
 
   @Override
-  @NotNull
-  public SearchScope getUseScope() {
+  public @NotNull SearchScope getUseScope() {
     return GlobalSearchScope.allScope(getProject());
   }
 
@@ -155,5 +123,43 @@ public abstract class XmlElementImpl extends CompositePsiElement implements XmlE
     }
 
     return false;
+  }
+
+  @Override
+  public boolean skipValidation() {
+    return skipValidation(this);
+  }
+
+  public static boolean skipValidation(@NotNull XmlElement holder) {
+    Boolean doNotValidate = DO_NOT_VALIDATE.get(holder);
+    if (doNotValidate != null) return doNotValidate;
+
+    OuterLanguageElement element = PsiTreeUtil.getChildOfType(holder, OuterLanguageElement.class);
+
+    if (element == null) {
+      // JspOuterLanguageElement is located under XmlText
+      for (PsiElement child = holder.getFirstChild(); child != null; child = child.getNextSibling()) {
+        if (child instanceof XmlText) {
+          element = PsiTreeUtil.getChildOfType(child, OuterLanguageElement.class);
+          if (element != null) {
+            break;
+          }
+        }
+      }
+    }
+    if (element == null) {
+      doNotValidate = false;
+    } else {
+      PsiFile containingFile = holder.getContainingFile();
+      doNotValidate = containingFile.getViewProvider().getBaseLanguage() != containingFile.getLanguage();
+    }
+    holder.putUserData(DO_NOT_VALIDATE, doNotValidate);
+    return doNotValidate;
+  }
+
+  @Override
+  public void clearCaches() {
+    super.clearCaches();
+    putUserData(DO_NOT_VALIDATE, null);
   }
 }

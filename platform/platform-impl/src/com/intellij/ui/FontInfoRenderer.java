@@ -1,61 +1,54 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ui;
 
+import com.intellij.ide.IdeBundle;
 import com.intellij.ide.ui.AntialiasingType;
-import com.intellij.ide.ui.UISettings;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.util.ui.FontInfo;
-import com.intellij.util.ui.UIUtil;
-import sun.swing.SwingUtilities2;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JList;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 
 /**
- * @author Sergey.Malenkov
+ * @deprecated This renderer doesn't support rounded selection.
+ * Use {@link FontComboBox#setupDefaultRenderer(boolean, boolean)} or {@link FontInfoRendererBuilder} instead.
  */
-public class FontInfoRenderer extends ListCellRendererWrapper {
+@Deprecated(forRemoval = true)
+public class FontInfoRenderer extends ColoredListCellRenderer<Object> {
   @Override
-  public void customize(JList list, Object value, int index, boolean selected, boolean focused) {
+  protected void customizeCellRenderer(@NotNull JList<?> list, Object value, int index, boolean selected, boolean focused) {
     Font font = list.getFont();
-    String text = value == null ? "" : value.toString();
-    setText(text);
-    if (value instanceof FontInfo) {
-      FontInfo info = (FontInfo)value;
-      Integer size = getFontSize();
-      Font f = info.getFont(size != null ? size : font.getSize());
+    @NlsSafe String text = value == null ? "" : value.toString();
+    append(text);
+    if (value instanceof FontInfo info) {
+      Font f = info.getFont(font.getSize());
       if (f.canDisplayUpTo(text) == -1) {
-        font = f;
+        setFont(f);
+      }
+      else {
+        append("  " + IdeBundle.message("font.info.renderer.non.latin"), SimpleTextAttributes.GRAYED_ATTRIBUTES);
       }
     }
-    setFont(font);
-    setForeground(list.isEnabled()
-                  ? UIUtil.getListForeground(selected)
-                  : UIUtil.getLabelDisabledForeground());
-
-    AntialiasingType type = getAntialiasingType();
-    if (type == null) type = AntialiasingType.GREYSCALE;
-    setClientProperty(SwingUtilities2.AA_TEXT_PROPERTY_KEY, type.getTextInfo());
   }
 
-  protected Integer getFontSize() {
-    return null;
+  @Override
+  public @NotNull Dimension getPreferredSize() {
+    // Existing usages (e.g., FontComboBox) ignore returned preferred width.
+    // Calculating preferred width can be quite consuming though (in particular, when a large number of fonts is available),
+    // so we avoid such a calculation here.
+    return new Dimension(1, computePreferredHeight());
   }
 
-  protected AntialiasingType getAntialiasingType() {
-    return UISettings.getShadowInstance().IDE_AA_TYPE;
+  @Override
+  protected void applyAdditionalHints(@NotNull Graphics2D g) {
+    g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, AntialiasingType.getKeyForCurrentScope(isEditorFont()));
+  }
+
+  protected boolean isEditorFont() {
+    return false;
   }
 }

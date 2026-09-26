@@ -14,18 +14,11 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: dsl
- * Date: 09.07.2002
- * Time: 15:03:42
- * To change template for new class use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.refactoring.classMembers;
 
 import com.intellij.psi.PsiElement;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.util.Collection;
 
@@ -74,11 +67,11 @@ public abstract class DependencyMemberInfoModel<T extends PsiElement, M extends 
   }
 
   @Override
-  public void memberInfoChanged(MemberInfoChange<T, M> event) {
+  public void memberInfoChanged(@NotNull MemberInfoChange<T, M> event) {
     memberInfoChanged(event.getChangedMembers());
   }
 
-  public void memberInfoChanged(final Collection<M> changedMembers) {
+  public void memberInfoChanged(@Unmodifiable Collection<? extends M> changedMembers) {
     if (myTooltipManager != null) myTooltipManager.invalidate();
     for (M changedMember : changedMembers) {
       myMemberDependencyGraph.memberChanged(changedMember);

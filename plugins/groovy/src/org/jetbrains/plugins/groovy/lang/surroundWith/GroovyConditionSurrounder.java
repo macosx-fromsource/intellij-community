@@ -15,20 +15,19 @@
  */
 package org.jetbrains.plugins.groovy.lang.surroundWith;
 
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypes;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
-import com.intellij.psi.*;
 
-/**
- * User: Dmitry.Krasilschikov
- * Date: 30.07.2007
- */
 public abstract class GroovyConditionSurrounder extends GroovyExpressionSurrounder {
   @Override
   protected boolean isApplicable(@NotNull PsiElement element) {
     if (!GroovyManyStatementsSurrounder.isStatement(element) || !(element instanceof GrExpression)) return false;
 
     PsiType type = ((GrExpression)element).getType();
-    return PsiType.BOOLEAN.equals(type) || PsiType.BOOLEAN.equals(PsiPrimitiveType.getUnboxedType(type));
+    return PsiTypes.booleanType().equals(type) || PsiTypes.booleanType().equals(PsiPrimitiveType.getUnboxedType(type));
   }
 }

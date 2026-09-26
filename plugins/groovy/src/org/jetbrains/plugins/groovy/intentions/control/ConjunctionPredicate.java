@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,21 @@ package org.jetbrains.plugins.groovy.intentions.control;
 
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.tree.IElementType;
-import org.jetbrains.plugins.groovy.lang.psi.util.ErrorUtil;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.intentions.base.PsiElementPredicate;
 import org.jetbrains.plugins.groovy.lang.lexer.GroovyTokenTypes;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrBinaryExpression;
+import org.jetbrains.plugins.groovy.lang.psi.util.ErrorUtil;
 
 class ConjunctionPredicate implements PsiElementPredicate {
 
   @Override
-  public boolean satisfiedBy(PsiElement element) {
-    if (!(element instanceof GrBinaryExpression)) {
-      return false;
+  public boolean satisfiedBy(@NotNull PsiElement element) {
+    if (element instanceof final GrBinaryExpression expression) {
+      final IElementType tokenType = expression.getOperationTokenType();
+      return (tokenType.equals(GroovyTokenTypes.mLAND) || tokenType.equals(GroovyTokenTypes.mLOR)) &&
+             !ErrorUtil.containsError(element);
     }
-    final GrBinaryExpression expression = (GrBinaryExpression) element;
-    final IElementType tokenType =  expression.getOperationTokenType();
-    if (tokenType == null) return false;
-    if (!tokenType.equals(GroovyTokenTypes.mLAND) &&
-        !tokenType.equals(GroovyTokenTypes.mLOR)) {
-      return false;
-    }
-    return !ErrorUtil.containsError(element);
+    return false;
   }
 }

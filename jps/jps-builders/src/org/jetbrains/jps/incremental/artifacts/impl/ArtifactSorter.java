@@ -1,37 +1,31 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.jps.incremental.artifacts.impl;
 
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.Consumer;
-import com.intellij.util.Processor;
-import com.intellij.util.graph.*;
+import com.intellij.util.graph.CachingSemiGraph;
+import com.intellij.util.graph.DFSTBuilder;
+import com.intellij.util.graph.Graph;
+import com.intellij.util.graph.GraphGenerator;
+import com.intellij.util.graph.InboundSemiGraph;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.jps.incremental.artifacts.JpsBuilderArtifactService;
 import org.jetbrains.jps.model.JpsModel;
 import org.jetbrains.jps.model.artifact.JpsArtifact;
 import org.jetbrains.jps.model.artifact.elements.JpsArtifactOutputPackagingElement;
-import org.jetbrains.jps.model.artifact.elements.JpsPackagingElement;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-/**
- * @author nik
- */
-public class ArtifactSorter {
+public final class ArtifactSorter {
   private final JpsModel myModel;
   private Map<JpsArtifact, JpsArtifact> myArtifactToSelfIncludingName;
   private List<JpsArtifact> mySortedArtifacts;
@@ -56,15 +50,14 @@ public class ArtifactSorter {
 
   private List<JpsArtifact> doGetSortedArtifacts() {
     Graph<JpsArtifact> graph = createArtifactsGraph();
-    DFSTBuilder<JpsArtifact> builder = new DFSTBuilder<JpsArtifact>(graph);
-    List<JpsArtifact> names = new ArrayList<JpsArtifact>();
-    names.addAll(graph.getNodes());
-    Collections.sort(names, builder.comparator());
+    DFSTBuilder<JpsArtifact> builder = new DFSTBuilder<>(graph);
+    List<JpsArtifact> names = new ArrayList<>(graph.getNodes());
+    names.sort(builder.comparator());
     return names;
   }
 
   private Map<JpsArtifact, JpsArtifact> computeArtifactToSelfIncludingNameMap() {
-    final Map<JpsArtifact, JpsArtifact> result = new HashMap<JpsArtifact, JpsArtifact>();
+    final Map<JpsArtifact, JpsArtifact> result = new HashMap<>();
     final Graph<JpsArtifact> graph = createArtifactsGraph();
     for (JpsArtifact artifact : graph.getNodes()) {
       final Iterator<JpsArtifact> in = graph.getIn(artifact);
@@ -77,7 +70,7 @@ public class ArtifactSorter {
       }
     }
 
-    final DFSTBuilder<JpsArtifact> builder = new DFSTBuilder<JpsArtifact>(graph);
+    final DFSTBuilder<JpsArtifact> builder = new DFSTBuilder<>(graph);
     if (builder.isAcyclic() && result.isEmpty()) return Collections.emptyMap();
 
     for (Collection<JpsArtifact> component : builder.getComponents()) {
@@ -104,18 +97,17 @@ public class ArtifactSorter {
     return result;
   }
 
-  @NotNull
-  public static Set<JpsArtifact> addIncludedArtifacts(@NotNull Collection<JpsArtifact> artifacts) {
-    Set<JpsArtifact> result = new HashSet<JpsArtifact>();
+  public static @NotNull Set<JpsArtifact> addIncludedArtifacts(@NotNull Collection<? extends JpsArtifact> artifacts) {
+    Set<JpsArtifact> result = new HashSet<>();
     for (JpsArtifact artifact : artifacts) {
-      collectIncludedArtifacts(artifact, new HashSet<JpsArtifact>(), result, true);
+      collectIncludedArtifacts(artifact, new HashSet<>(), result, true);
     }
     return result;
   }
 
   private static void collectIncludedArtifacts(JpsArtifact artifact,
-                                               final Set<JpsArtifact> processed,
-                                               final Set<JpsArtifact> result,
+                                               final Set<? super JpsArtifact> processed,
+                                               final Set<? super JpsArtifact> result,
                                                final boolean withOutputPathOnly) {
     if (!processed.add(artifact)) {
       return;
@@ -124,58 +116,46 @@ public class ArtifactSorter {
       result.add(artifact);
     }
 
-    processIncludedArtifacts(artifact, new Consumer<JpsArtifact>() {
-      @Override
-      public void consume(JpsArtifact included) {
-        collectIncludedArtifacts(included, processed, result, withOutputPathOnly);
-      }
-    });
+    processIncludedArtifacts(artifact, included -> collectIncludedArtifacts(included, processed, result, withOutputPathOnly));
   }
 
   private Graph<JpsArtifact> createArtifactsGraph() {
     return GraphGenerator.generate(CachingSemiGraph.cache(new ArtifactsGraph(myModel)));
   }
 
-  private static void processIncludedArtifacts(JpsArtifact artifact, final Consumer<JpsArtifact> consumer) {
-    JpsArtifactUtil.processPackagingElements(artifact.getRootElement(), new Processor<JpsPackagingElement>() {
-      @Override
-      public boolean process(JpsPackagingElement element) {
-        if (element instanceof JpsArtifactOutputPackagingElement) {
-          JpsArtifact included = ((JpsArtifactOutputPackagingElement)element).getArtifactReference().resolve();
-          if (included != null) {
-            consumer.consume(included);
-          }
-          return false;
+  private static void processIncludedArtifacts(JpsArtifact artifact, final Consumer<? super JpsArtifact> consumer) {
+    JpsArtifactUtil.processPackagingElements(artifact.getRootElement(), element -> {
+      if (element instanceof JpsArtifactOutputPackagingElement) {
+        JpsArtifact included = ((JpsArtifactOutputPackagingElement)element).getArtifactReference().resolve();
+        if (included != null) {
+          consumer.consume(included);
         }
-        return true;
+        return false;
       }
+      return true;
     });
   }
 
-  private static class ArtifactsGraph implements InboundSemiGraph<JpsArtifact> {
+  private static final class ArtifactsGraph implements InboundSemiGraph<JpsArtifact> {
     private final Set<JpsArtifact> myArtifactNodes;
 
-    public ArtifactsGraph(final JpsModel model) {
-      myArtifactNodes = new LinkedHashSet<JpsArtifact>(JpsBuilderArtifactService.getInstance().getArtifacts(model, true));
+    ArtifactsGraph(final JpsModel model) {
+      myArtifactNodes = new LinkedHashSet<>(JpsBuilderArtifactService.getInstance().getArtifacts(model, true));
     }
 
     @Override
-    public Collection<JpsArtifact> getNodes() {
+    public @NotNull Collection<JpsArtifact> getNodes() {
       return myArtifactNodes;
     }
 
     @Override
-    public Iterator<JpsArtifact> getIn(JpsArtifact artifact) {
-      final Set<JpsArtifact> included = new LinkedHashSet<JpsArtifact>();
-      final Consumer<JpsArtifact> consumer = new Consumer<JpsArtifact>() {
-        @Override
-        public void consume(JpsArtifact artifact) {
-          if (myArtifactNodes.contains(artifact)) {
-            included.add(artifact);
-          }
+    public @NotNull Iterator<JpsArtifact> getIn(JpsArtifact artifact) {
+      final Set<JpsArtifact> included = new LinkedHashSet<>();
+      processIncludedArtifacts(artifact, includedArtifact -> {
+        if (myArtifactNodes.contains(includedArtifact)) {
+          included.add(includedArtifact);
         }
-      };
-      processIncludedArtifacts(artifact, consumer);
+      });
       return included.iterator();
     }
   }

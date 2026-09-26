@@ -1,4 +1,4 @@
-from library import foo,<error descr="Unresolved reference 'bar'">bar</error>
+from library import foo,<error descr="Cannot find reference 'bar' in 'library'">bar</error>
 
 
 print(foo)

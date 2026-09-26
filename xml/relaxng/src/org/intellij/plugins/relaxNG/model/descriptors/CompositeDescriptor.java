@@ -16,26 +16,32 @@
 
 package org.intellij.plugins.relaxNG.model.descriptors;
 
-import com.intellij.openapi.util.Condition;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xml.XmlAttributeDescriptor;
 import com.intellij.xml.XmlElementDescriptor;
 import org.jetbrains.annotations.Nullable;
 import org.kohsuke.rngom.digested.DElementPattern;
-import org.kohsuke.rngom.digested.DPattern;
 
 import javax.xml.namespace.QName;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public class CompositeDescriptor extends RngElementDescriptor {
   private final DElementPattern[] myPatterns;
 
   CompositeDescriptor(RngNsDescriptor nsDescriptor, DElementPattern pattern, List<DElementPattern> patterns) {
     super(nsDescriptor, pattern);
-    myPatterns = patterns.toArray(new DElementPattern[patterns.size()]);
+    if (patterns.size() > 1) {
+      myPatterns = new LinkedHashSet<>(ContainerUtil.reverse(patterns)).toArray(DElementPattern[]::new);
+    } else if (patterns.size() == 1) {
+      myPatterns = new DElementPattern[] {pattern};
+    } else {
+      myPatterns = new DElementPattern[0];
+    }
   }
 
   @Override
@@ -61,12 +67,12 @@ public class CompositeDescriptor extends RngElementDescriptor {
 
   @Override
   public XmlElementDescriptor[] getElementsDescriptors(XmlTag context) {
-    final List<XmlElementDescriptor> descriptors = new ArrayList<>(Arrays.asList(super.getElementsDescriptors(context)));
+    final Set<XmlElementDescriptor> descriptors = new LinkedHashSet<>(Arrays.asList(super.getElementsDescriptors(context)));
     for (DElementPattern pattern : myPatterns) {
       final List<DElementPattern> list = ChildElementFinder.find(2, pattern);
       descriptors.addAll(Arrays.asList(myNsDescriptor.convertElementDescriptors(list)));
     }
-    return descriptors.toArray(new XmlElementDescriptor[descriptors.size()]);
+    return descriptors.toArray(XmlElementDescriptor.EMPTY_ARRAY);
   }
 
   @Override
@@ -78,18 +84,10 @@ public class CompositeDescriptor extends RngElementDescriptor {
 
   @Override
   protected XmlAttributeDescriptor[] collectAttributeDescriptors(@Nullable XmlTag context) {
-    final QName qName = null;
-    final DPattern[] patterns;
-    if (qName == null) {
-      patterns = myPatterns;
-    } else {
-      final List<DElementPattern> p = ContainerUtil.findAll(myPatterns, pattern -> pattern.getName().contains(qName));
-      patterns = p.toArray(new DPattern[p.size()]);
-    }
-
-    return computeAttributeDescriptors(AttributeFinder.find(patterns));
+    return computeAttributeDescriptors(AttributeFinder.find(myPatterns));
   }
 
+  @Override
   public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
@@ -102,6 +100,7 @@ public class CompositeDescriptor extends RngElementDescriptor {
     return true;
   }
 
+  @Override
   public int hashCode() {
     int result = super.hashCode();
     result = 31 * result + Arrays.hashCode(myPatterns);

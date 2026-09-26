@@ -17,15 +17,14 @@ package com.intellij.codeInsight;
 
 import com.intellij.injected.editor.EditorWindow;
 import com.intellij.testFramework.EditorTestUtil;
-import com.intellij.testFramework.fixtures.LightPlatformCodeInsightFixtureTestCase;
+import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
 /**
  * @author Dmitry Avdeev
- *         Date: 25.11.13
  */
-public class SoftWrapTest extends LightPlatformCodeInsightFixtureTestCase {
+public class SoftWrapTest extends BasePlatformTestCase {
 
-  public void testSoftWrapInInjection() throws Exception {
+  public void testSoftWrapInInjection() {
 
     myFixture.configureByFile("softWrap.html");
     EditorTestUtil.configureSoftWraps(((EditorWindow)myFixture.getEditor()).getDelegate(), 83);

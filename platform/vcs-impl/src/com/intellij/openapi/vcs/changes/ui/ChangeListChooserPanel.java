@@ -1,64 +1,68 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.changes.ui;
 
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.editor.event.DocumentAdapter;
 import com.intellij.openapi.editor.event.DocumentEvent;
-import com.intellij.openapi.editor.ex.EditorEx;
+import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.fileTypes.PlainTextLanguage;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vcs.VcsApplicationSettings;
+import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.openapi.vcs.VcsConfiguration;
 import com.intellij.openapi.vcs.changes.ChangeList;
 import com.intellij.openapi.vcs.changes.ChangeListCompletionContributor;
+import com.intellij.openapi.vcs.changes.ChangeListData;
 import com.intellij.openapi.vcs.changes.ChangeListManager;
+import com.intellij.openapi.vcs.changes.ChangeListManagerEx;
 import com.intellij.openapi.vcs.changes.LocalChangeList;
-import com.intellij.openapi.vcs.changes.committed.CommittedChangeListRenderer;
-import com.intellij.ui.*;
-import com.intellij.util.NullableConsumer;
-import com.intellij.util.ObjectUtils;
+import com.intellij.openapi.vcs.changes.actions.VcsStatisticsCollector;
+import com.intellij.ui.ColoredListCellRenderer;
+import com.intellij.ui.ComboBoxCompositeEditor;
+import com.intellij.ui.EditorTextField;
+import com.intellij.ui.JBColor;
+import com.intellij.ui.LanguageTextField;
+import com.intellij.ui.RelativeFont;
+import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.TextIcon;
+import com.intellij.ui.scale.JBUIScale;
+import com.intellij.util.concurrency.annotations.RequiresEdt;
 import com.intellij.util.ui.JBUI;
-import org.jetbrains.annotations.CalledInAwt;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.DefaultComboBoxModel;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JPanel;
+import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.util.Collection;
+import java.util.Objects;
+import java.util.function.Consumer;
 
-public class ChangeListChooserPanel extends JPanel {
-
+public final class ChangeListChooserPanel extends JPanel {
   private final MyEditorComboBox myExistingListsCombo;
   private final NewEditChangelistPanel myListPanel;
-  private final NullableConsumer<String> myOkEnabledListener;
+  private final Consumer<? super String> myOkEnabledListener;
   private final Project myProject;
   private String myLastTypedDescription;
   private boolean myNewNameSuggested = false;
+  private @Nullable ChangeListData myData;
 
-  public ChangeListChooserPanel(final Project project, @NotNull final NullableConsumer<String> okEnabledListener) {
+  public ChangeListChooserPanel(final Project project, @NotNull Consumer<? super @Nullable String> okEnabledListener) {
     super(new BorderLayout());
     myProject = project;
     myExistingListsCombo = new MyEditorComboBox();
     myExistingListsCombo.setEditable(true);
-    myExistingListsCombo.setRenderer(new ColoredListCellRenderer<ChangeList>() {
+    myExistingListsCombo.setRenderer(new ColoredListCellRenderer<>() {
 
       @Override
       protected void customizeCellRenderer(@NotNull JList<? extends ChangeList> list,
@@ -67,23 +71,9 @@ public class ChangeListChooserPanel extends JPanel {
                                            boolean selected,
                                            boolean hasFocus) {
         if (value != null) {
-          String name = value.getName();
-          int visibleWidth = getSize().width;
-          if (visibleWidth == 0) {
-            visibleWidth = MyEditorComboBox.PREF_WIDTH;
-          }
-          final FontMetrics fm = list.getFontMetrics(list.getFont());
-          final int width = fm.stringWidth(name);
-          if (width > visibleWidth) {
-            final String truncated = CommittedChangeListRenderer
-              .truncateDescription(name, fm, visibleWidth - fm.stringWidth(" ..") - 7);
-            if (truncated.length() > 5) {
-              name = truncated + " ..";
-            }
-          }
-          append(name, value instanceof LocalChangeList && ((LocalChangeList)value).isDefault()
-                       ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES
-                       : SimpleTextAttributes.REGULAR_ATTRIBUTES);
+          append(value.getName(), value instanceof LocalChangeList && ((LocalChangeList)value).isDefault()
+                                  ? SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES
+                                  : SimpleTextAttributes.REGULAR_ATTRIBUTES);
         }
       }
     });
@@ -92,26 +82,25 @@ public class ChangeListChooserPanel extends JPanel {
       @Override
       protected NewEditChangelistPanel.ComponentWithTextFieldWrapper createComponentWithTextField(Project project) {
         return new ComponentWithTextFieldWrapper(myExistingListsCombo) {
-          @NotNull
           @Override
-          public EditorTextField getEditorTextField() {
+          public @NotNull EditorTextField getEditorTextField() {
             return myExistingListsCombo.getEditorTextField();
           }
         };
       }
 
       @Override
-      @CalledInAwt
+      @RequiresEdt
       protected void nameChanged(String errorMessage) {
         //invoke later because of undo manager problem: when you try to undo changelist after description was already changed manually
         ApplicationManager.getApplication().invokeLater(() -> updateDescription(), ModalityState.current());
-        myOkEnabledListener.consume(errorMessage);
+        myOkEnabledListener.accept(errorMessage);
       }
 
       @Override
-      public void init(LocalChangeList initial) {
+      public void init(@Nullable LocalChangeList initial) {
         super.init(initial);
-        myDescriptionTextArea.addFocusListener(new FocusAdapter() {
+        descriptionTextArea.addFocusListener(new FocusAdapter() {
           @Override
           public void focusLost(FocusEvent e) {
             super.focusLost(e);
@@ -123,32 +112,47 @@ public class ChangeListChooserPanel extends JPanel {
       }
 
       @Override
-      protected void nameChangedImpl(Project project, LocalChangeList initial) {
-        nameChanged(StringUtil.isEmptyOrSpaces(getChangeListName()) ? "Cannot create new changelist with empty name." : null);
+      protected void nameChangedImpl(@Nullable LocalChangeList initial) {
+        nameChanged(StringUtil.isEmptyOrSpaces(getChangeListName()) ? VcsBundle.message("new.changelist.empty.name.error") : null);
       }
     };
     myOkEnabledListener = okEnabledListener;
     add(myListPanel, BorderLayout.CENTER);
+
+    setChangeLists(null);
+    setDefaultSelection(null);
   }
 
   public void init() {
     myListPanel.init(null);
   }
 
-  public void setChangeLists(Collection<? extends ChangeList> changeLists) {
-    myExistingListsCombo.setModel(new DefaultComboBoxModel<>(changeLists.toArray(new ChangeList[changeLists.size()])));
+  public void setChangeLists(@Nullable Collection<? extends ChangeList> changeLists) {
+    if (changeLists == null) changeLists = ChangeListManager.getInstance(myProject).getChangeLists();
+    myExistingListsCombo.setModel(new DefaultComboBoxModel<>(changeLists.toArray(new ChangeList[0])));
   }
 
-  public void setSuggestedName(@NotNull String name) {
+  public void setSuggestedName(@NlsSafe @NotNull String name) {
+    setSuggestedName(name, false);
+  }
+
+  public void setSuggestedName(@NlsSafe @NotNull String name, boolean forceCreate) {
+    setSuggestedName(name, null, forceCreate);
+  }
+
+  public void setSuggestedName(@NlsSafe @NotNull String name, @Nls @Nullable String comment, boolean forceCreate) {
     if (StringUtil.isEmptyOrSpaces(name)) return;
     LocalChangeList changelistByName = getExistingChangelistByName(name);
     if (changelistByName != null) {
       myExistingListsCombo.setSelectedItem(changelistByName);
     }
-    else {
+    else if (forceCreate || VcsApplicationSettings.getInstance().CREATE_CHANGELISTS_AUTOMATICALLY) {
       myNewNameSuggested = true;
+      myExistingListsCombo.insertItemAt(LocalChangeList.createEmptyChangeList(myProject, name), 0);
+      if (StringUtil.isEmptyOrSpaces(myLastTypedDescription)) {
+        setChangeListDescription(comment);
+      }
       if (VcsConfiguration.getInstance(myProject).PRESELECT_EXISTING_CHANGELIST) {
-        myExistingListsCombo.insertItemAt(LocalChangeList.createEmptyChangeList(myProject, name), 0);
         selectActiveChangeListIfExist();
       }
       else {
@@ -162,28 +166,33 @@ public class ChangeListChooserPanel extends JPanel {
     myExistingListsCombo.setSelectedItem(ChangeListManager.getInstance(myProject).getDefaultChangeList());
   }
 
+  public void setData(@Nullable ChangeListData data) {
+    myData = data;
+  }
+
   public void updateEnabled() {
     if (myProject != null) {
-      myListPanel.nameChangedImpl(myProject, null);
+      myListPanel.nameChangedImpl(null);
     }
   }
 
   /**
    * Method used as getResult, usually invoked inside doOkAction
    */
-  @Nullable
-  public LocalChangeList getSelectedList(Project project) {
-    ChangeListManager manager = ChangeListManager.getInstance(project);
+  public @Nullable LocalChangeList getSelectedList(Project project) {
+    ChangeListManagerEx manager = ChangeListManagerEx.getInstanceEx(project);
     String changeListName = myListPanel.getChangeListName();
     LocalChangeList localChangeList = manager.findChangeList(changeListName);
 
     if (localChangeList == null) {
-      localChangeList = manager.addChangeList(changeListName, myListPanel.getDescription());
+      localChangeList = manager.addChangeList(changeListName, myListPanel.getDescription(), myData);
       myListPanel.changelistCreatedOrChanged(localChangeList);
     }
     else {
-      //update description if changed
-      localChangeList.setComment(myListPanel.getDescription());
+      if (!StringUtil.equals(localChangeList.getComment(), myListPanel.getDescription())) {
+        VcsStatisticsCollector.CHANGE_LIST_COMMENT_EDITED.log(project, VcsStatisticsCollector.EditChangeListPlace.OTHER);
+      }
+      manager.editComment(changeListName, myListPanel.getDescription());
     }
     rememberSettings(project, localChangeList.isDefault(), myListPanel.getMakeActiveCheckBox().isSelected());
     if (myListPanel.getMakeActiveCheckBox().isSelected()) {
@@ -210,7 +219,13 @@ public class ChangeListChooserPanel extends JPanel {
     updateEnabled();
   }
 
+  public void setChangeListDescription(String description) {
+    myListPanel.setDescription(description);
+    myLastTypedDescription = description;
+  }
+
   private void updateDescription() {
+    if (myLastTypedDescription != null) return;
     LocalChangeList list = getExistingChangelistByName(myListPanel.getChangeListName());
     String newText = list != null ? list.getComment() : myLastTypedDescription;
     if (!StringUtil.equals(myListPanel.getDescription(), newText)) {
@@ -232,38 +247,37 @@ public class ChangeListChooserPanel extends JPanel {
     private static final int PREF_WIDTH = 200;
     private final LanguageTextField myEditorTextField;
 
-    public MyEditorComboBox() {
+    MyEditorComboBox() {
       super(PREF_WIDTH);
-      JBColor fg = new JBColor(0x00b53d, 0x24953c);
-      TextIcon icon = new TextIcon("New", fg, ColorUtil.toAlpha(fg, 40), JBUI.scale(2));
+      JBColor fg = new JBColor(0x00b53d, 0x6ba65d);
+      JBColor bg = new JBColor(0xebfcf1, 0x313b32);
+      TextIcon icon = new TextIcon(VcsBundle.message("new.changelist.new.label"), fg, bg, JBUIScale.scale(2));
       icon.setFont(RelativeFont.TINY.derive(getFont()));
-      icon.setRound(JBUI.scale(4));
+      icon.setRound(JBUIScale.scale(4));
       JLabel label = new JLabel(icon);
       JPanel panel = new JPanel(new BorderLayout());
       panel.setOpaque(true);
       panel.setBorder(JBUI.Borders.empty(1, 1, 1, 4));
       panel.add(label, BorderLayout.CENTER);
-      myEditorTextField = new LanguageTextField(PlainTextLanguage.INSTANCE, myProject, "") {
+      myEditorTextField = new LanguageTextField(PlainTextLanguage.INSTANCE, myProject, "");
+      myEditorTextField.addDocumentListener(new DocumentListener() {
         @Override
-        protected EditorEx createEditor() {
-          EditorEx editor = super.createEditor();
-          panel.setBackground(editor.getBackgroundColor());
-          return editor;
-        }
-      };
-      myEditorTextField.addDocumentListener(new DocumentAdapter() {
-        @Override
-        public void documentChanged(DocumentEvent e) {
+        public void documentChanged(@NotNull DocumentEvent e) {
           String changeListName = e.getDocument().getText();
           panel.setVisible(!StringUtil.isEmptyOrSpaces(changeListName) && getExistingChangelistByName(changeListName) == null);
         }
       });
-      ObjectUtils.assertNotNull(myEditorTextField.getDocument()).putUserData(ChangeListCompletionContributor.COMBO_BOX_KEY, this);
-      setEditor(new ComboBoxCompositeEditor<>(myEditorTextField, panel));
+      Objects.requireNonNull(myEditorTextField.getDocument()).putUserData(ChangeListCompletionContributor.COMBO_BOX_KEY, this);
+      ComboBoxCompositeEditor<Object, LanguageTextField> compositeEditor = new ComboBoxCompositeEditor<>(myEditorTextField, panel);
+      myEditorTextField.addSettingsProvider((editor) -> {
+        Color editorBackgroundColor = editor.getBackgroundColor();
+        panel.setBackground(editorBackgroundColor);
+        compositeEditor.setBackground(editorBackgroundColor);
+      });
+      setEditor(compositeEditor);
     }
 
-    @NotNull
-    private EditorTextField getEditorTextField() {
+    private @NotNull EditorTextField getEditorTextField() {
       return myEditorTextField;
     }
   }

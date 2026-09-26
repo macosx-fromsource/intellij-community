@@ -1,4 +1,4 @@
-// "Replace Stream API chain with loop" "true"
+// "Replace Stream API chain with loop" "true-preview"
 
 import java.util.Arrays;
 import java.util.List;
@@ -6,14 +6,12 @@ import java.util.Optional;
 
 public class Main {
   private static test(List<String> packages) {
-      Optional<String> found = Optional.empty();
       for (String s : packages) {
           if (s.startsWith("xyz")) {
-              found = Optional.of(s);
-              break;
+              return Optional.of(s).filter(pkg -> pkg.endsWith("abc")).isPresent();
           }
       }
-      return found.filter(pkg -> pkg.endsWith("abc")).isPresent();
+      return Optional.<String>empty().filter(pkg -> pkg.endsWith("abc")).isPresent();
   }
 
   public static void main(String[] args) {

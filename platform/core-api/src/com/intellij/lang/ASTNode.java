@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.lang;
 
@@ -46,6 +32,8 @@ public interface ASTNode extends UserDataHolder {
 
   /**
    * Returns the text of this node.
+   * <p></p>
+   * Note: This call requires traversing whole subtree, so it can be expensive for composite nodes, and should be avoided if possible.
    *
    * @return the node text.
    */
@@ -54,8 +42,12 @@ public interface ASTNode extends UserDataHolder {
 
   /**
    * Returns same text getText() returns but might be more effective eliminating toString() transformation from internal CharSequence representation
+   * <p></p>
+   * Note: This call requires traversing whole subtree, so it can be expensive for composite nodes, and should be avoided if possible.
    *
    * @return the node text.
+   * @see PsiElement#textMatches
+   * @see #textContains
    */
   @NotNull
   CharSequence getChars();
@@ -70,10 +62,22 @@ public interface ASTNode extends UserDataHolder {
 
   /**
    * Returns the starting offset of the node text in the document.
+   * <p></p>
+   * Note: it works in <i>O(tree_depth)</i> time, which can be slow in deep trees, so invoking this method should be avoided if possible.
    *
    * @return the start offset.
    */
   int getStartOffset();
+
+  /**
+   * Returns the starting offset of the node text relative to {@link #getTreeParent}.
+   *
+   * @return the start offset relative to node parent
+   */
+  default int getStartOffsetInParent() {
+    ASTNode parent = getTreeParent();
+    return getStartOffset() - (parent == null ? 0 : parent.getStartOffset());
+  }
 
   /**
    * Returns the length of the node text.
@@ -84,6 +88,8 @@ public interface ASTNode extends UserDataHolder {
 
   /**
    * Returns the text range (a combination of starting offset in the document and length) for this node.
+   * <p></p>
+   * Note: it works in <i>O(tree_depth)</i> time, which can be slow in deep trees, so invoking this method should be avoided if possible.
    *
    * @return the text range.
    */
@@ -132,8 +138,7 @@ public interface ASTNode extends UserDataHolder {
    *               all children should be returned.
    * @return the children array.
    */
-  @NotNull
-  ASTNode[] getChildren(@Nullable TokenSet filter);
+  ASTNode @NotNull [] getChildren(@Nullable TokenSet filter);
 
   /**
    * Adds the specified child node as the last child of this node.
@@ -146,7 +151,7 @@ public interface ASTNode extends UserDataHolder {
    * Adds the specified child node at the specified position in the child list.
    *
    * @param child        the child node to add.
-   * @param anchorBefore the node before which the child node is inserted (<code>null</code> to add a child as a last node).
+   * @param anchorBefore the node before which the child node is inserted ({@code null} to add a child as a last node).
    */
   void addChild(@NotNull ASTNode child, @Nullable ASTNode anchorBefore);
 
@@ -155,9 +160,8 @@ public interface ASTNode extends UserDataHolder {
    * @param leafType type of leaf element to add.
    * @param leafText text of added leaf.
    * @param anchorBefore the node before which the child node is inserted.
-   * @since 7.0
    */
-  void addLeaf(@NotNull IElementType leafType, CharSequence leafText, @Nullable ASTNode anchorBefore);
+  void addLeaf(@NotNull IElementType leafType, @NotNull CharSequence leafText, @Nullable ASTNode anchorBefore);
 
   /**
    * Removes the specified node from the list of children of this node.
@@ -167,16 +171,18 @@ public interface ASTNode extends UserDataHolder {
   void removeChild(@NotNull ASTNode child);
 
   /**
-   * Removes a range of nodes from the list of children, starting with <code>firstNodeToRemove</code>,
-   * up to and not including <code>firstNodeToKeep</code>.
+   * Removes a range of nodes from the list of children, starting with {@code firstNodeToRemove},
+   * up to and not including {@code firstNodeToKeep}.
    *
    * @param firstNodeToRemove the first child node to remove from the tree.
    * @param firstNodeToKeep   the first child node to keep in the tree.
    */
-  void removeRange(@NotNull ASTNode firstNodeToRemove, ASTNode firstNodeToKeep);
+  void removeRange(@NotNull ASTNode firstNodeToRemove, @Nullable ASTNode firstNodeToKeep);
 
   /**
    * Replaces the specified child node with another node.
+   * <p>
+   * It is guaranteed that {@code newChild} will appear in the resulting tree (i.e., the Platform will not make a copy of it)
    *
    * @param oldChild the child node to replace.
    * @param newChild the node to replace with.
@@ -188,17 +194,17 @@ public interface ASTNode extends UserDataHolder {
    *
    * @param anotherParent the parent node whose children are used for replacement.
    */
-  void replaceAllChildrenToChildrenOf(ASTNode anotherParent);
+  void replaceAllChildrenToChildrenOf(@NotNull ASTNode anotherParent);
 
   /**
    * Adds a range of nodes belonging to the same parent to the list of children of this node,
-   * starting with <code>firstChild</code>, up to and not including <code>firstChildToNotAdd</code>.
+   * starting with {@code firstChild}, up to and not including {@code firstChildToNotAdd}.
    *
    * @param firstChild         the first node to add.
    * @param firstChildToNotAdd the first child node following firstChild which will not be added to the tree.
    * @param anchorBefore       the node before which the child nodes are inserted.
    */
-  void addChildren(ASTNode firstChild, ASTNode firstChildToNotAdd, ASTNode anchorBefore);
+  void addChildren(@NotNull ASTNode firstChild, @Nullable ASTNode firstChildToNotAdd, @Nullable ASTNode anchorBefore);
 
   /**
    * Creates and returns a deep copy of the AST tree part starting at this node.
@@ -230,7 +236,7 @@ public interface ASTNode extends UserDataHolder {
    *
    * @param key the key for accessing the user data object.
    * @return the user data object, or null if no such object is found in the current node.
-   * @see #putCopyableUserData(com.intellij.openapi.util.Key, Object)
+   * @see #putCopyableUserData(Key, Object)
    */
   @Nullable
   <T> T getCopyableUserData(@NotNull Key<T> key);
@@ -239,11 +245,11 @@ public interface ASTNode extends UserDataHolder {
    * Attaches a copyable user data object to this node. Copyable user data objects are copied
    * when the AST tree nodes are copied.
    *
-   * @param key the key for accessing the user data object.
+   * @param key   the key for accessing the user data object.
    * @param value the user data object to attach.
-   * @see #getCopyableUserData(com.intellij.openapi.util.Key)
+   * @see #getCopyableUserData(Key)
    */
-  <T> void putCopyableUserData(@NotNull Key<T> key, T value);
+  <T> void putCopyableUserData(@NotNull Key<T> key, @Nullable T value);
 
   /**
    * Returns the first child of the specified node which has the specified type.
@@ -252,7 +258,7 @@ public interface ASTNode extends UserDataHolder {
    * @return the found node, or null if none was found.
    */
   @Nullable
-  ASTNode findChildByType(IElementType type);
+  ASTNode findChildByType(@NotNull IElementType type);
 
   /**
    * Returns the first child after anchor of the specified node which has the specified type.
@@ -262,7 +268,7 @@ public interface ASTNode extends UserDataHolder {
    * @return the found node, or null if none was found.
    */
   @Nullable
-  ASTNode findChildByType(IElementType type, @Nullable ASTNode anchor);
+  ASTNode findChildByType(@NotNull IElementType type, @Nullable ASTNode anchor);
 
   /**
    * Returns the first child of the specified node which has type from specified set.

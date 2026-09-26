@@ -1,30 +1,16 @@
-/*
- * Copyright 2000-2011 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package git4idea.validators;
 
 import com.intellij.util.Function;
-import com.intellij.util.containers.ContainerUtil;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
+import java.util.ArrayList;
 import java.util.Collection;
 
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
  * The test for {@link GitRefNameValidator}.
@@ -56,7 +42,6 @@ public class GitRefNameValidatorTest {
         { "UNDERSCORED_WORD",  "new_branch"             },
         { "HIERARCHY",         "user/branch"            },
         { "HIERARCHY_2",       "user/branch/sub_branch" },
-        { "BEGINS_WITH_SLASH", "/branch"                }, // actual branch name will be with trimmed slash
         { "NON_CONS_DOTS",     "complex.branch.name"    },
         { "GERRIT_PATTERN",    "refs/for/master%topic=my-cool-feature,r=some-reviewer"},
         { "CONTAINS_MINUS",    "b-ranch"},
@@ -67,6 +52,7 @@ public class GitRefNameValidatorTest {
   private static Object[][] createInvalidData() {
       return new Object[][] {
         { "BEGIN_WITH_DOT",      ".branch"      },
+        { "BEGINS_WITH_SLASH",   "/branch"      },
         { "ONLY_DOT",            "."            },
         { "ENDS_WITH_SLASH",     "branch/"      },
         { "ENDS_WITH_DOT",       "branch."      },
@@ -81,20 +67,11 @@ public class GitRefNameValidatorTest {
     }
 
   public static Object[][] createInvalidCharsData() {
-    return populateWithIllegalChars(ILLEGAL_CHARS, new Function<String, String>() {
-      @Override public String fun(String s) {
-        return s;
-      }
-    });
+    return populateWithIllegalChars(ILLEGAL_CHARS, s -> s);
   }
 
   public static Object[][] createInvalidControlCharsData() {
-    return populateWithIllegalChars(CONTROL_CHARS, new Function<String, String>() {
-      @Override public String fun(String s) {
-        Character c = s.charAt(0);
-        return "\\u00" + Integer.toHexString(c);
-      }
-    });
+    return populateWithIllegalChars(CONTROL_CHARS, s -> "\\u00" + Integer.toHexString(s.charAt(0)));
   }
 
   private static Object[][] populateWithIllegalChars(String[] illegalChars, Function<String, String> toString) {
@@ -109,7 +86,7 @@ public class GitRefNameValidatorTest {
 
   @Parameterized.Parameters(name = "{0}")
   public static Collection<Object[]> data() {
-    Collection<Object[]> data = ContainerUtil.newArrayList();
+    Collection<Object[]> data = new ArrayList<>();
     populateData(data, createValidData(), true);
     populateData(data, createInvalidData(), false);
     populateData(data, createInvalidCharsData(), false);
@@ -123,7 +100,6 @@ public class GitRefNameValidatorTest {
     }
   }
 
-  @SuppressWarnings("UnusedParameters")
   public GitRefNameValidatorTest(String name, String refNameToTest, boolean valid) {
     myRefNameToTest = refNameToTest;
     myIsExpectedValid = valid;
@@ -138,15 +114,15 @@ public class GitRefNameValidatorTest {
       assertInvalid(myRefNameToTest);
     }
   }
-  
+
   private static void assertValid(String branchName) {
-    assertTrue(GitRefNameValidator.getInstance().checkInput(branchName), "Should be valid");
-    assertTrue(GitRefNameValidator.getInstance().canClose(branchName), "Should be valid");
+    assertTrue("Should be valid", GitRefNameValidator.getInstance().checkInput(branchName));
+    assertTrue("Should be valid", GitRefNameValidator.getInstance().canClose(branchName));
   }
 
   private static void assertInvalid(String branchName) {
-    assertFalse(GitRefNameValidator.getInstance().checkInput(branchName), "Should be invalid");
-    assertFalse(GitRefNameValidator.getInstance().canClose(branchName), "Should be invalid");
+    assertFalse("Should be invalid", GitRefNameValidator.getInstance().checkInput(branchName));
+    assertFalse("Should be invalid", GitRefNameValidator.getInstance().canClose(branchName));
   }
 
 }

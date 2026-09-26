@@ -1,20 +1,9 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeDirection;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge.EdgeType;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.util.ListStack;
 
@@ -22,186 +11,106 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-//  --------------------------------------------------------------------
-//    Algorithm
-//  -------------------------------------------------------------------- 
-//  DFS(G)
-//  {
-//  make a new vertex x with edges x->v for all v
-//  initialize a counter N to zero
-//  initialize list L to empty
-//  build directed tree T, initially a single vertex {x}
-//  visit(x)
-//  }
-//
-//  visit(p)
-//  {
-//  add p to L
-//  dfsnum(p) = N
-//  increment N
-//  low(p) = dfsnum(p)
-//  for each edge p->q
-//      if q is not already in T
-//      {
-//      add p->q to T
-//      visit(q)
-//      low(p) = min(low(p), low(q))
-//      } else low(p) = min(low(p), dfsnum(q))
-//
-//  if low(p)=dfsnum(p)
-//  {
-//      output "component:"
-//      repeat
-//      remove last element v from L
-//      output v
-//      remove v from G
-//      until v=p
-//  }
-//  }	
-//  -------------------------------------------------------------------- 
-
+/**
+ * The class finds the strongly connected components (SCCs) of a directed graph,
+ * implementing "Tarjan's strongly connected components" algorithm.
+ * Running time is linear.
+ */
+// todo should be replaced or reuse InferenceGraphNode.strongConnect or DFSTBuilder.Tarjan?
 public class StrongConnectivityHelper {
+  private final List<List<Statement>> components = new ArrayList<>();
+  private final Set<Statement> setProcessed = new HashSet<>();
+  private final ListStack<Statement> component = new ListStack<>();
+  private final Set<Statement> visited = new HashSet<>();
+  private final Map<Statement, Integer> indices = new HashMap<>();
+  private final Map<Statement, Integer> lowIndices = new HashMap<>();
 
-  private ListStack<Statement> lstack;
+  private int nextIndex;
 
-  private int ncounter;
-
-  private HashSet<Statement> tset;
-  private HashMap<Statement, Integer> dfsnummap;
-  private HashMap<Statement, Integer> lowmap;
-
-  private List<List<Statement>> components;
-
-  private HashSet<Statement> setProcessed;
-
-  // *****************************************************************************
-  // constructors
-  // *****************************************************************************
-
-  public StrongConnectivityHelper() {
-  }
-
-  public StrongConnectivityHelper(Statement stat) {
-    findComponents(stat);
-  }
-
-  // *****************************************************************************
-  // public methods
-  // *****************************************************************************
-
-  public List<List<Statement>> findComponents(Statement stat) {
-
-    components = new ArrayList<>();
-    setProcessed = new HashSet<>();
-
-    visitTree(stat.getFirst());
-
-    for (Statement st : stat.getStats()) {
-      if (!setProcessed.contains(st) && st.getPredecessorEdges(Statement.STATEDGE_DIRECT_ALL).isEmpty()) {
-        visitTree(st);
+  public StrongConnectivityHelper(@NotNull Statement startStatement) {
+    visitTree(startStatement.getFirst());
+    for (Statement statement : startStatement.getStats()) {
+      if (!setProcessed.contains(statement) && statement.getPredecessorEdges(EdgeType.DIRECT_ALL).isEmpty()) {
+        visitTree(statement);
       }
     }
-
     // should not find any more nodes! FIXME: ??
-    for (Statement st : stat.getStats()) {
-      if (!setProcessed.contains(st)) {
-        visitTree(st);
+    for (Statement statement : startStatement.getStats()) {
+      if (!setProcessed.contains(statement)) {
+        visitTree(statement);
       }
     }
-
-    return components;
   }
 
-  public static boolean isExitComponent(List<Statement> lst) {
+  private void visitTree(@NotNull Statement statement) {
+    component.clear();
+    visited.clear();
+    indices.clear();
+    lowIndices.clear();
+    nextIndex = 0;
 
-    HashSet<Statement> set = new HashSet<>();
-    for (Statement stat : lst) {
-      set.addAll(stat.getNeighbours(StatEdge.TYPE_REGULAR, Statement.DIRECTION_FORWARD));
-    }
-    set.removeAll(lst);
+    visit(statement);
 
-    return (set.size() == 0);
+    setProcessed.addAll(visited);
+    setProcessed.add(statement);
   }
 
-  public static List<Statement> getExitReps(List<List<Statement>> lst) {
-
-    List<Statement> res = new ArrayList<>();
-
-    for (List<Statement> comp : lst) {
-      if (isExitComponent(comp)) {
-        res.add(comp.get(0));
-      }
-    }
-
-    return res;
-  }
-
-  // *****************************************************************************
-  // private methods
-  // *****************************************************************************
-
-  private void visitTree(Statement stat) {
-    lstack = new ListStack<>();
-    ncounter = 0;
-    tset = new HashSet<>();
-    dfsnummap = new HashMap<>();
-    lowmap = new HashMap<>();
-
-    visit(stat);
-
-    setProcessed.addAll(tset);
-    setProcessed.add(stat);
-  }
-
-  private void visit(Statement stat) {
-
-    lstack.push(stat);
-    dfsnummap.put(stat, ncounter);
-    lowmap.put(stat, ncounter);
-    ncounter++;
-
-    List<Statement> lstSuccs = stat.getNeighbours(StatEdge.TYPE_REGULAR, Statement.DIRECTION_FORWARD); // TODO: set?
-    lstSuccs.removeAll(setProcessed);
-
-    for (int i = 0; i < lstSuccs.size(); i++) {
-      Statement succ = lstSuccs.get(i);
-      int secvalue;
-
-      if (tset.contains(succ)) {
-        secvalue = dfsnummap.get(succ);
+  private void visit(@NotNull Statement statement) {
+    component.push(statement);
+    indices.put(statement, nextIndex);
+    lowIndices.put(statement, nextIndex);
+    nextIndex++;
+    List<Statement> successors = statement.getNeighbours(EdgeType.REGULAR, EdgeDirection.FORWARD); // TODO: set?
+    successors.removeAll(setProcessed);
+    for (Statement successor : successors) {
+      int successorIndex;
+      if (visited.contains(successor)) {
+        successorIndex = indices.get(successor);
       }
       else {
-        tset.add(succ);
-        visit(succ);
-        secvalue = lowmap.get(succ);
+        visited.add(successor);
+        visit(successor);
+        successorIndex = lowIndices.get(successor);
       }
-      lowmap.put(stat, Math.min(lowmap.get(stat), secvalue));
+      lowIndices.put(statement, Math.min(lowIndices.get(statement), successorIndex));
     }
-
-
-    if (lowmap.get(stat).intValue() == dfsnummap.get(stat).intValue()) {
-      List<Statement> lst = new ArrayList<>();
-      Statement v;
+    if (lowIndices.get(statement).intValue() == indices.get(statement).intValue()) {
+      List<Statement> component = new ArrayList<>();
+      Statement statementInComponent;
       do {
-        v = lstack.pop();
-        lst.add(v);
+        statementInComponent = this.component.pop();
+        component.add(statementInComponent);
       }
-      while (v != stat);
-      components.add(lst);
+      while (statementInComponent != statement);
+      components.add(component);
     }
   }
 
-
-  // *****************************************************************************
-  // getter and setter methods
-  // *****************************************************************************
-
-  public List<List<Statement>> getComponents() {
-    return components;
+  public static boolean isExitComponent(@NotNull List<? extends Statement> component) {
+    Set<Statement> statements = new HashSet<>();
+    for (Statement statement : component) {
+      statements.addAll(statement.getNeighbours(EdgeType.REGULAR, EdgeDirection.FORWARD));
+    }
+    for (Statement statement : component) {
+      statements.remove(statement);
+    }
+    return statements.isEmpty();
   }
 
-  public void setComponents(List<List<Statement>> components) {
-    this.components = components;
+  public @NotNull List<Statement> getExitReps() {
+    List<Statement> result = new ArrayList<>();
+    for (List<Statement> component : components) {
+      if (isExitComponent(component)) {
+        result.add(component.get(0));
+      }
+    }
+    return result;
+  }
+
+  public @NotNull List<@NotNull List<Statement>> getComponents() {
+    return components;
   }
 }

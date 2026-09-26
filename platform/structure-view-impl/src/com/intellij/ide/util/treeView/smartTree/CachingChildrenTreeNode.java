@@ -1,64 +1,73 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.util.treeView.smartTree;
 
+import com.intellij.ide.structureView.StructureViewModel;
+import com.intellij.ide.structureView.StructureViewTreeElement;
 import com.intellij.ide.structureView.impl.StructureViewElementWrapper;
 import com.intellij.ide.util.treeView.AbstractTreeNode;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.project.IndexNotReadyException;
 import com.intellij.openapi.project.Project;
 import com.intellij.pom.Navigatable;
-import gnu.trove.THashMap;
+import com.intellij.util.containers.CollectionFactory;
+import com.intellij.util.containers.JBIterable;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 
+@ApiStatus.NonExtendable
 public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<Value> {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.ide.util.treeView.smartTree.CachingChildrenTreeNode");
-  private List<CachingChildrenTreeNode> myChildren;
-  private List<CachingChildrenTreeNode> myOldChildren = null;
-  protected final TreeModel myTreeModel;
+  private static final Logger LOG = Logger.getInstance(CachingChildrenTreeNode.class);
+  private List<CachingChildrenTreeNode<?>> myChildren;
+  private List<CachingChildrenTreeNode<?>> myOldChildren;
+  protected final @NotNull TreeModel myTreeModel;
 
-  public CachingChildrenTreeNode(Project project, Value value, TreeModel treeModel) {
+  CachingChildrenTreeNode(Project project, @NotNull Value value, @NotNull TreeModel treeModel) {
     super(project,
-          value instanceof StructureViewElementWrapper ? (Value) ((StructureViewElementWrapper) value).getWrappedElement() : value);
+          value instanceof StructureViewElementWrapper ? (Value)((StructureViewElementWrapper<?>)value).getWrappedElement() : value);
     myTreeModel = treeModel;
   }
 
   @Override
-  @NotNull
-  public Collection<AbstractTreeNode> getChildren() {
+  public @NotNull Collection<AbstractTreeNode<?>> getChildren() {
     ensureChildrenAreInitialized();
     return new ArrayList<>(myChildren);
   }
 
   private void ensureChildrenAreInitialized() {
     if (myChildren == null) {
-      myChildren = new ArrayList<>();
-      rebuildSubtree();
+      try {
+        myChildren = new ArrayList<>();
+        rebuildSubtree();
+      } catch (IndexNotReadyException | ProcessCanceledException pce) {
+        myChildren = null;
+        throw pce;
+      }
     }
   }
 
-  protected void addSubElement(CachingChildrenTreeNode node) {
+  void addSubElement(@NotNull CachingChildrenTreeNode node) {
+    JBIterable<AbstractTreeNode<?>> parents = JBIterable.generate(this, o -> o.getParent());
+    if (parents.map(o -> o.getValue()).contains(node.getValue())) {
+      return;
+    }
     ensureChildrenAreInitialized();
     myChildren.add(node);
     node.setParent(this);
   }
 
-  protected void setChildren(Collection<AbstractTreeNode> children) {
+  protected void setChildren(@NotNull Collection<? extends AbstractTreeNode<?>> children) {
     clearChildren();
     for (AbstractTreeNode node : children) {
       myChildren.add((CachingChildrenTreeNode)node);
@@ -66,10 +75,10 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
     }
   }
 
-  private static class CompositeComparator implements java.util.Comparator<CachingChildrenTreeNode> {
+  private static class CompositeComparator implements Comparator<CachingChildrenTreeNode> {
     private final Sorter[] mySorters;
 
-    public CompositeComparator(final Sorter[] sorters) {
+    CompositeComparator(Sorter @NotNull [] sorters) {
       mySorters = sorters;
     }
 
@@ -78,17 +87,19 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
       final Object value1 = o1.getValue();
       final Object value2 = o2.getValue();
       for (Sorter sorter : mySorters) {
-        final int result = sorter.getComparator().compare(value1, value2);
-        if (result != 0) return result;
+        int result = sorter.getComparator().compare(value1, value2);
+        if (result != 0) {
+          return result;
+        }
       }
       return 0;
     }
   }
 
-  protected void sortChildren(Sorter[] sorters) {
+  protected void sortChildren(Sorter @NotNull [] sorters) {
     if (myChildren == null) return;
 
-    Collections.sort(myChildren, new CompositeComparator(sorters));
+    myChildren.sort(new CompositeComparator(sorters));
 
     for (CachingChildrenTreeNode child : myChildren) {
       if (child instanceof GroupWrapper) {
@@ -97,13 +108,13 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
     }
   }
 
-  protected void filterChildren(@NotNull Filter[] filters) {
-    Collection<AbstractTreeNode> children = getChildren();
+  protected void filterChildren(Filter @NotNull [] filters) {
+    Collection<AbstractTreeNode<?>> children = getChildren();
     for (Filter filter : filters) {
-      for (Iterator<AbstractTreeNode> eachNode = children.iterator(); eachNode.hasNext();) {
-        TreeElementWrapper eachChild = (TreeElementWrapper)eachNode.next();
-        TreeElement value = eachChild.getValue();
-        if (value == null || !filter.isVisible(value)) {
+      for (Iterator<AbstractTreeNode<?>> eachNode = children.iterator(); eachNode.hasNext();) {
+        AbstractTreeNode eachChild = eachNode.next();
+        Object value = eachChild.getValue();
+        if (!(value instanceof TreeElement) || !filter.isVisible((TreeElement)value)) {
           eachNode.remove();
         }
       }
@@ -111,11 +122,11 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
     setChildren(children);
   }
 
-  protected void groupChildren(@NotNull Grouper[] groupers) {
+  void groupChildren(Grouper @NotNull [] groupers) {
     for (Grouper grouper : groupers) {
       groupElements(grouper);
     }
-    Collection<AbstractTreeNode> children = getChildren();
+    Collection<AbstractTreeNode<?>> children = getChildren();
     for (AbstractTreeNode child : children) {
       if (child instanceof GroupWrapper) {
         ((GroupWrapper)child).groupChildren(groupers);
@@ -123,13 +134,13 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
     }
   }
 
-  private void groupElements(Grouper grouper) {
-    ArrayList<AbstractTreeNode<TreeElement>> ungrouped = new ArrayList<>();
-    Collection<AbstractTreeNode> children = getChildren();
-    for (final AbstractTreeNode child : children) {
-      CachingChildrenTreeNode<TreeElement> node = (CachingChildrenTreeNode<TreeElement>)child;
-      if (node instanceof TreeElementWrapper) {
-        ungrouped.add(node);
+  private void groupElements(@NotNull Grouper grouper) {
+    List<AbstractTreeNode<TreeElement>> ungrouped = new ArrayList<>();
+    Collection<AbstractTreeNode<?>> children = getChildren();
+    for (AbstractTreeNode child : children) {
+      if (child instanceof TreeElementWrapper) {
+        //noinspection unchecked
+        ungrouped.add(child);
       }
     }
 
@@ -137,7 +148,7 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
       processUngrouped(ungrouped, grouper);
     }
 
-    Collection<AbstractTreeNode> result = new LinkedHashSet<>();
+    Collection<AbstractTreeNode<?>> result = new LinkedHashSet<>();
     for (AbstractTreeNode child : children) {
       AbstractTreeNode parent = child.getParent();
       if (parent != this) {
@@ -150,7 +161,7 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
     setChildren(result);
   }
 
-  private void processUngrouped(@NotNull List<AbstractTreeNode<TreeElement>> ungrouped, @NotNull Grouper grouper) {
+  private void processUngrouped(@NotNull List<? extends AbstractTreeNode<TreeElement>> ungrouped, @NotNull Grouper grouper) {
     Map<TreeElement,AbstractTreeNode> ungroupedObjects = collectValues(ungrouped);
     Collection<Group> groups = grouper.group(this, ungroupedObjects.keySet());
 
@@ -166,19 +177,19 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
         if (node == null) {
           LOG.error(group + " returned null child: " + children);
         }
-        CachingChildrenTreeNode child = createChildNode(node);
-        groupWrapper.addSubElement(child);
         AbstractTreeNode abstractTreeNode = ungroupedObjects.get(node);
+        CachingChildrenTreeNode child = createChildNode(node, abstractTreeNode instanceof TreeElementWrapper ? ((TreeElementWrapper)abstractTreeNode).getProvider() : null);
+        groupWrapper.addSubElement(child);
         abstractTreeNode.setParent(groupWrapper);
       }
     }
   }
 
-  protected TreeElementWrapper createChildNode(@NotNull TreeElement child) {
-    return new TreeElementWrapper(getProject(), child, myTreeModel);
+  protected @NotNull TreeElementWrapper createChildNode(@NotNull TreeElement child, @Nullable NodeProvider<?> provider) {
+    return new TreeElementWrapper(getProject(), child, myTreeModel, provider);
   }
 
-  private static Map<TreeElement, AbstractTreeNode> collectValues(List<AbstractTreeNode<TreeElement>> ungrouped) {
+  private static @NotNull Map<TreeElement, AbstractTreeNode> collectValues(@NotNull List<? extends AbstractTreeNode<TreeElement>> ungrouped) {
     Map<TreeElement, AbstractTreeNode> objects = new LinkedHashMap<>();
     for (final AbstractTreeNode<TreeElement> node : ungrouped) {
       objects.put(node.getValue(), node);
@@ -186,15 +197,15 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
     return objects;
   }
 
-  private Map<Group, GroupWrapper> createGroupNodes(@NotNull Collection<Group> groups) {
-    Map<Group, GroupWrapper> result = new THashMap<>();
+  private @NotNull Map<Group, GroupWrapper> createGroupNodes(@NotNull Collection<? extends Group> groups) {
+    Map<Group, GroupWrapper> result = CollectionFactory.createSmallMemoryFootprintMap(groups.size());
     for (Group group : groups) {
       result.put(group, createGroupWrapper(getProject(), group, myTreeModel));
     }
     return result;
   }
 
-  protected GroupWrapper createGroupWrapper(final Project project, @NotNull Group group, final TreeModel treeModel) {
+  protected @NotNull GroupWrapper createGroupWrapper(final Project project, @NotNull Group group, @NotNull TreeModel treeModel) {
     return new GroupWrapper(project, group, treeModel);
   }
 
@@ -205,10 +216,13 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
 
     synchronizeChildren();
 
+    for (int i = 0; i < myChildren.size(); i++) {
+      myChildren.get(i).setIndex(i);
+    }
   }
 
-  protected void synchronizeChildren() {
-    List<CachingChildrenTreeNode> children = myChildren;
+  void synchronizeChildren() {
+    List<CachingChildrenTreeNode<?>> children = myChildren;
     if (myOldChildren != null && children != null) {
       HashMap<Object, CachingChildrenTreeNode> oldValuesToChildrenMap = new HashMap<>();
       for (CachingChildrenTreeNode oldChild : myOldChildren) {
@@ -256,6 +270,15 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
     return getValue() instanceof Navigatable && ((Navigatable)getValue()).canNavigateToSource();
   }
 
+  @Override
+  public boolean isAutoExpandAllowed() {
+    if (myTreeModel instanceof StructureViewModel.ExpandInfoProvider expandInfoProvider
+        && getValue() instanceof StructureViewTreeElement structureViewTreeElement) {
+      return expandInfoProvider.isAutoExpand(structureViewTreeElement);
+    }
+    return super.isAutoExpandAllowed();
+  }
+
   protected void clearChildren() {
     if (myChildren != null) {
       myChildren.clear();
@@ -264,7 +287,7 @@ public abstract class CachingChildrenTreeNode <Value> extends AbstractTreeNode<V
     }
   }
 
-  public void rebuildChildren() {
+  void rebuildChildren() {
     if (myChildren != null) {
       myOldChildren = myChildren;
       for (final CachingChildrenTreeNode node : myChildren) {

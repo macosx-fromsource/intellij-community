@@ -13,6 +13,8 @@ Groovy script
     PsiElement(identifier)('a')
     Extends clause
       <empty list>
+    Permits clause
+      <empty list>
     PsiWhiteSpace(' ')
     Type definition body
       PsiElement({)('{')
@@ -27,5 +29,5 @@ Groovy script
       PsiElement(new line)('\n  ')
       PsiElement(})('}')
   PsiElement(new line)('\n')
-  PsiErrorElement:Unexpected symbol
+  PsiErrorElement:';', <statement> or new line expected, got '}'
     PsiElement(})('}')

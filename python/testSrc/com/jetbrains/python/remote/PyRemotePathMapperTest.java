@@ -15,20 +15,26 @@
  */
 package com.jetbrains.python.remote;
 
+import com.jetbrains.python.allure.Subsystems;
+import com.jetbrains.python.allure.Layers;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.util.PathMapper;
 import com.intellij.util.PathMappingSettings;
 import com.jetbrains.python.remote.PyRemotePathMapper.PyPathMappingType;
 import org.junit.Test;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
  * @author Alexander Koshevoy
  */
+@Subsystems.RemoteInterpreters
+@Layers.Functional
 public class PyRemotePathMapperTest {
   @Test
-  public void testFromSettings() throws Exception {
+  public void testFromSettings() {
     PathMappingSettings settings = new PathMappingSettings();
     PyRemotePathMapper emptyMapper = PyRemotePathMapper.fromSettings(settings, PyPathMappingType.USER_DEFINED);
 
@@ -49,7 +55,7 @@ public class PyRemotePathMapperTest {
   }
 
   @Test
-  public void testReplicatedFolderInsideSysPath() throws Exception {
+  public void testReplicatedFolderInsideSysPath() {
     PyRemotePathMapper mapper = new PyRemotePathMapper();
     mapper.addMapping("C:\\Users\\J.S.\\.PyCharm\\system\\remote_sources\\-114", "/development/lib", PyPathMappingType.SYS_PATH);
     mapper.addMapping("C:\\Users\\J.S.\\.PyCharm\\system\\remote_sources\\-27315", "/development/src/project/module",

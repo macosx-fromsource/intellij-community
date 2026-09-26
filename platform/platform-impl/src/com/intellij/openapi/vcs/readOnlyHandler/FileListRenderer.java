@@ -1,40 +1,41 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.readOnlyHandler;
 
-import com.intellij.ide.presentation.VirtualFilePresentation;
-import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.fileTypes.FileTypeRegistry;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.ui.ColoredListCellRenderer;
-import com.intellij.ui.SimpleTextAttributes;
-import org.jetbrains.annotations.NotNull;
+import com.intellij.platform.backend.presentation.TargetPresentation;
+import com.intellij.platform.backend.presentation.TargetPresentationBuilder;
+import com.intellij.ui.list.TargetPopup;
+import org.jetbrains.annotations.ApiStatus;
 
-import javax.swing.*;
+import javax.swing.JList;
+import javax.swing.ListCellRenderer;
+import java.awt.Component;
 
-public class FileListRenderer extends ColoredListCellRenderer {
-  protected void customizeCellRenderer(@NotNull JList list, Object value, int index, boolean selected, boolean hasFocus) {
-    // paint selection only as a focus rectangle
-    mySelected = false;
-    setBackground(null);
-    VirtualFile vf = (VirtualFile) value;
-    setIcon(VirtualFilePresentation.getIcon(vf));
-    append(vf.getName(), SimpleTextAttributes.REGULAR_ATTRIBUTES);
-    VirtualFile parent = vf.getParent();
-    if (parent != null) {
-      append(" (" + FileUtil.toSystemDependentName(parent.getPath()) + ")", SimpleTextAttributes.GRAY_ATTRIBUTES);
-    }
+/**
+ * Please use {@link TargetPopup#createTargetPresentationRenderer}
+ */
+@ApiStatus.Obsolete
+@ApiStatus.Internal
+public final class FileListRenderer implements ListCellRenderer<VirtualFile> {
+  private final ListCellRenderer<VirtualFile> myPresentationRenderer;
+
+  public FileListRenderer() {
+    myPresentationRenderer = TargetPopup.createTargetPresentationRenderer((vf) -> {
+      TargetPresentationBuilder builder = TargetPresentation.builder(vf.getPresentableName())
+        .icon(FileTypeRegistry.getInstance().getFileTypeByFileName(vf.getNameSequence()).getIcon());
+      VirtualFile vfParent = vf.getParent();
+      if (vfParent != null) builder = builder.locationText(vfParent.getPresentableUrl());
+      return builder.presentation();
+    });
+  }
+
+  @Override
+  public Component getListCellRendererComponent(JList<? extends VirtualFile> list,
+                                                VirtualFile value,
+                                                int index,
+                                                boolean isSelected,
+                                                boolean cellHasFocus) {
+    return myPresentationRenderer.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
   }
 }

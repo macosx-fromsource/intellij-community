@@ -23,27 +23,23 @@ import org.jetbrains.jps.model.module.JpsModule;
 import org.jetbrains.jps.model.module.JpsModuleDependency;
 import org.jetbrains.jps.model.module.JpsModuleReference;
 
-/**
- * @author nik
- */
-public class JpsModuleDependencyImpl extends JpsDependencyElementBase<JpsModuleDependencyImpl> implements JpsModuleDependency {
+final class JpsModuleDependencyImpl extends JpsDependencyElementBase<JpsModuleDependencyImpl> implements JpsModuleDependency {
   private static final JpsElementChildRole<JpsModuleReference>
     MODULE_REFERENCE_CHILD_ROLE = JpsElementChildRoleBase.create("module reference");
 
   private volatile Ref<JpsModule> myCachedModule = null;
 
-  public JpsModuleDependencyImpl(final JpsModuleReference moduleReference) {
+  JpsModuleDependencyImpl(final JpsModuleReference moduleReference) {
     super();
     myContainer.setChild(MODULE_REFERENCE_CHILD_ROLE, moduleReference);
   }
 
-  public JpsModuleDependencyImpl(JpsModuleDependencyImpl original) {
+  JpsModuleDependencyImpl(JpsModuleDependencyImpl original) {
     super(original);
   }
 
-  @NotNull
   @Override
-  public JpsModuleReference getModuleReference() {
+  public @NotNull JpsModuleReference getModuleReference() {
     return myContainer.getChild(MODULE_REFERENCE_CHILD_ROLE);
   }
 
@@ -51,15 +47,14 @@ public class JpsModuleDependencyImpl extends JpsDependencyElementBase<JpsModuleD
   public JpsModule getModule() {
     Ref<JpsModule> moduleRef = myCachedModule;
     if (moduleRef == null) {
-      moduleRef = new Ref<JpsModule>(getModuleReference().resolve());
+      moduleRef = new Ref<>(getModuleReference().resolve());
       myCachedModule = moduleRef;
     }
     return moduleRef.get();
   }
 
-  @NotNull
   @Override
-  public JpsModuleDependencyImpl createCopy() {
+  public @NotNull JpsModuleDependencyImpl createCopy() {
     return new JpsModuleDependencyImpl(this);
   }
 

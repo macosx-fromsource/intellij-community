@@ -1,50 +1,49 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.psi.impl.compiled;
 
-import com.intellij.lang.PsiBuilder;
-import com.intellij.lang.java.lexer.JavaLexer;
-import com.intellij.lang.java.parser.JavaParser;
+import com.intellij.java.syntax.parser.JavaParser;
 import com.intellij.lang.java.parser.JavaParserUtil;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.projectRoots.JavaSdkVersion;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.pom.java.LanguageLevel;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiAnnotationMemberValue;
+import com.intellij.psi.PsiAnnotationOwner;
+import com.intellij.psi.PsiArrayInitializerMemberValue;
+import com.intellij.psi.PsiBinaryExpression;
+import com.intellij.psi.PsiClassObjectAccessExpression;
+import com.intellij.psi.PsiConstantEvaluationHelper;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiJavaParserFacade;
+import com.intellij.psi.PsiJavaToken;
+import com.intellij.psi.PsiLiteralExpression;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiNameValuePair;
+import com.intellij.psi.PsiPrefixExpression;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiReferenceExpression;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypes;
 import com.intellij.psi.impl.source.DummyHolder;
 import com.intellij.psi.impl.source.DummyHolderFactory;
 import com.intellij.psi.impl.source.JavaDummyElement;
 import com.intellij.psi.impl.source.SourceTreeToPsiMap;
 import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.lang.JavaVersion;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.org.objectweb.asm.Opcodes;
 
-/**
- * @author ven
- */
-public class ClsParsingUtil {
-  private static final Logger LOG = Logger.getInstance("com.intellij.psi.impl.compiled.ClsParsingUtil");
+public final class ClsParsingUtil {
+  private static final Logger LOG = Logger.getInstance(ClsParsingUtil.class);
 
-  private static final JavaParserUtil.ParserWrapper ANNOTATION_VALUE = new JavaParserUtil.ParserWrapper() {
-    @Override
-    public void parse(final PsiBuilder builder) {
-      JavaParser.INSTANCE.getDeclarationParser().parseAnnotationValue(builder);
-    }
-  };
+  private static final JavaParserUtil.ParserWrapper ANNOTATION_VALUE =
+    (builder, languageLevel) -> new JavaParser(languageLevel).getDeclarationParser().parseAnnotationValue(builder);
 
   private ClsParsingUtil() { }
 
@@ -119,8 +118,9 @@ public class ClsParsingUtil {
 
   static PsiExpression psiToClsExpression(@NotNull PsiExpression expr, @NotNull ClsElementImpl parent) {
     if (expr instanceof PsiLiteralExpression) {
-      boolean forDecompiling = ((ClsFileImpl)parent.getContainingFile()).isForDecompiling();
-      PsiType type = forDecompiling ? PsiType.NULL : expr.getType();
+      PsiFile file = parent.getContainingFile();
+      boolean forDecompiling = file instanceof ClsFileImpl && ((ClsFileImpl)file).isForDecompiling();
+      PsiType type = forDecompiling ? (PsiPrimitiveType)PsiTypes.nullType() : expr.getType();
       Object value = forDecompiling ? null : ((PsiLiteralExpression)expr).getValue();
       return new ClsLiteralExpressionImpl(parent, expr.getText(), type, value);
     }
@@ -158,8 +158,9 @@ public class ClsParsingUtil {
       return new ClsBinaryExpressionImpl(parent, sign, left, right);
     }
 
-    if (((ClsFileImpl)parent.getContainingFile()).isForDecompiling()) {
-      return new ClsLiteralExpressionImpl(parent, expr.getText(), PsiType.NULL, null);
+    PsiFile file = parent.getContainingFile();
+    if (file instanceof ClsFileImpl && ((ClsFileImpl)file).isForDecompiling()) {
+      return new ClsLiteralExpressionImpl(parent, expr.getText(), PsiTypes.nullType(), null);
     }
 
     PsiConstantEvaluationHelper evaluator = JavaPsiFacade.getInstance(expr.getProject()).getConstantEvaluationHelper();
@@ -173,38 +174,20 @@ public class ClsParsingUtil {
   }
 
   public static boolean isJavaIdentifier(@NotNull String identifier, @NotNull LanguageLevel level) {
-    return StringUtil.isJavaIdentifier(identifier) && !JavaLexer.isKeyword(identifier, level);
+    return StringUtil.isJavaIdentifier(identifier) && !PsiUtil.isKeyword(identifier, level);
   }
 
-  @Nullable
-  public static LanguageLevel getLanguageLevelByVersion(int major) {
-    switch (major) {
-      case Opcodes.V1_1:
-      case 45:  // other variant of 1.1
-      case Opcodes.V1_2:
-      case Opcodes.V1_3:
-        return LanguageLevel.JDK_1_3;
-
-      case Opcodes.V1_4:
-        return LanguageLevel.JDK_1_4;
-
-      case Opcodes.V1_5:
-        return LanguageLevel.JDK_1_5;
-
-      case Opcodes.V1_6:
-        return LanguageLevel.JDK_1_6;
-
-      case Opcodes.V1_7:
-        return LanguageLevel.JDK_1_7;
-
-      case Opcodes.V1_8:
-        return LanguageLevel.JDK_1_8;
-
-      case Opcodes.V1_9:
-        return LanguageLevel.JDK_1_9;
-
-      default:
-        return null;
+  // expecting the parameter in the "unsigned short" format
+  public static @Nullable JavaSdkVersion getJdkVersionByBytecode(int major) {
+    if (major >= 44) {
+      JavaVersion version = JavaVersion.compose(major - 44);  // 44 = 1.0, 45 = 1.1, 46 = 1.2 etc.
+      return JavaSdkVersion.fromJavaVersion(version);
     }
+    return null;
+  }
+
+  // expecting the parameter in the "unsigned short" format
+  public static boolean isPreviewLevel(int minor) {
+    return minor == 0xFFFF;
   }
 }

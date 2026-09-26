@@ -1,42 +1,41 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.projectView.impl
 
-import com.intellij.openapi.components.*
+import com.intellij.ide.projectView.NodeSortKey
+import com.intellij.ide.projectView.ProjectViewSettings
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.PersistentStateComponent
+import com.intellij.openapi.components.ReportValue
+import com.intellij.openapi.components.SettingsCategory
+import com.intellij.openapi.components.State
+import com.intellij.openapi.components.Storage
 import com.intellij.util.xmlb.XmlSerializerUtil
 
 /**
  * @author Konstantin Bulenkov
  */
-@State(name = "ProjectViewSharedSettings",
-       storages = arrayOf(Storage(value = "projectView.xml", roamingType = RoamingType.PER_OS)))
-
+@State(name = "ProjectViewSharedSettings", storages = [(Storage(value = "projectView.xml"))], category = SettingsCategory.UI)
 class ProjectViewSharedSettings : PersistentStateComponent<ProjectViewSharedSettings> {
-  var flattenPackages = false
-  var showMembers = false
-  var sortByType = false
-  var showModules = true
-  var showLibraryContents = true
-  var hideEmptyPackages = true
-  var abbreviatePackages = false
-  var autoscrollFromSource = false
-  var autoscrollToSource = false
-  var foldersAlwaysOnTop = true
+  var flattenPackages: Boolean = false
+  var showMembers: Boolean = false
+  @ReportValue
+  var sortKey: NodeSortKey = ProjectViewSettings.Immutable.DEFAULT.sortKey
+  var showModules: Boolean = true
+  var flattenModules: Boolean = false
+  var showExcludedFiles: Boolean = true
+  var showVisibilityIcons: Boolean = false
+  var showLibraryContents: Boolean = true
+  var showScratchesAndConsoles: Boolean = true
+  var hideEmptyPackages: Boolean = true
+  var compactDirectories: Boolean = false
+  var abbreviatePackages: Boolean = false
+  var autoscrollFromSource: Boolean = false
+  var autoscrollToSource: Boolean = false
+  var openDirectoriesWithSingleClick: Boolean = false
+  var foldersAlwaysOnTop: Boolean = true
+  var manualOrder: Boolean = false
 
-  override fun getState(): ProjectViewSharedSettings? {
+  override fun getState(): ProjectViewSharedSettings {
     return this
   }
 
@@ -46,6 +45,6 @@ class ProjectViewSharedSettings : PersistentStateComponent<ProjectViewSharedSett
 
   companion object {
     val instance: ProjectViewSharedSettings
-      get() = ServiceManager.getService(ProjectViewSharedSettings::class.java)
+      get() = ApplicationManager.getApplication().getService(ProjectViewSharedSettings::class.java)
   }
 }

@@ -1,62 +1,59 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.util.importProject;
 
+import com.intellij.ide.JavaUiBundle;
+import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.ide.util.projectWizard.importSources.DetectedProjectRoot;
 import com.intellij.ide.util.projectWizard.importSources.DetectedSourceRoot;
 import com.intellij.ide.util.projectWizard.importSources.JavaModuleSourceRoot;
 import com.intellij.ide.util.projectWizard.importSources.JavaSourceRootDetectionUtil;
 import com.intellij.lang.java.JavaParserDefinition;
-import com.intellij.lang.java.parser.ModuleParser;
 import com.intellij.lexer.Lexer;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.module.StdModuleTypes;
+import com.intellij.openapi.module.JavaModuleType;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.progress.ProgressIndicator;
-import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.pom.java.LanguageLevel;
-import com.intellij.psi.*;
-import com.intellij.psi.impl.source.DummyHolder;
-import com.intellij.psi.impl.source.DummyHolderFactory;
-import com.intellij.psi.impl.source.JavaDummyElement;
-import com.intellij.psi.impl.source.SourceTreeToPsiMap;
-import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.JavaRecursiveElementVisitor;
+import com.intellij.psi.JavaTokenType;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiFileFactory;
+import com.intellij.psi.PsiJavaCodeReferenceElement;
+import com.intellij.psi.PsiJavaFile;
+import com.intellij.psi.PsiJavaModule;
+import com.intellij.psi.PsiPackageAccessibilityStatement;
+import com.intellij.psi.PsiRequiresStatement;
 import com.intellij.util.Consumer;
 import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.StringBuilderSpinAllocator;
 import com.intellij.util.containers.ContainerUtil;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-public class JavaModuleInsight extends ModuleInsight {
+public final class JavaModuleInsight extends ModuleInsight {
   private static final Logger LOG = Logger.getInstance(JavaModuleInsight.class);
   private final Lexer myLexer;
 
-  public JavaModuleInsight(@Nullable final ProgressIndicator progress,
+  public JavaModuleInsight(final @Nullable ProgressIndicator progress,
                            Set<String> existingModuleNames,
                            Set<String> existingProjectLibraryNames) {
     super(progress, existingModuleNames, existingProjectLibraryNames);
@@ -87,7 +84,7 @@ public class JavaModuleInsight extends ModuleInsight {
       Map<String, ModuleInfo> moduleInfos = new HashMap<>();
       for (JavaModuleSourceRoot moduleInfoRoot : moduleInfoRoots) {
         final File sourceRoot = moduleInfoRoot.getDirectory();
-        myProgress.setText("Scanning " + sourceRoot.getPath());
+        myProgress.setText(JavaUiBundle.message("module.insight.scan.progress.text.scanning", sourceRoot.getPath()));
         final ModuleInfo moduleInfo = scanModuleInfoFile(sourceRoot);
         if (moduleInfo != null) {
           moduleInfo.descriptor = createModuleDescriptor(moduleInfo.directory, Collections.singletonList(moduleInfoRoot));
@@ -95,7 +92,7 @@ public class JavaModuleInsight extends ModuleInsight {
           addExportedPackages(sourceRoot, moduleInfo.exportsPackages);
         }
       }
-      myProgress.setText("Building modules layout...");
+      myProgress.setText(JavaUiBundle.message("module.insight.scan.progress.text.building.modules.layout"));
       for (ModuleInfo moduleInfo : moduleInfos.values()) {
         for (String requiresModule : moduleInfo.requiresModules) {
           ModuleInfo requiredModuleInfo = moduleInfos.get(requiresModule);
@@ -105,40 +102,35 @@ public class JavaModuleInsight extends ModuleInsight {
         }
       }
 
-      addModules(StreamEx.of(moduleInfos.values()).map(info -> info.descriptor).toList());
+      addModules(ContainerUtil.map(moduleInfos.values(), info -> info.descriptor));
     }
-    catch (ProcessCanceledException ignored) {
-    }
+    catch (ProcessCanceledException ignored) { }
     finally {
       myProgress.popState();
     }
   }
 
-  @NotNull
   @Override
-  protected List<DetectedSourceRoot> getSourceRootsToScan() {
+  protected @NotNull @Unmodifiable List<DetectedSourceRoot> getSourceRootsToScan() {
     final List<DetectedSourceRoot> allRoots = super.getSourceRootsToScan();
     return ContainerUtil.filter(allRoots, r -> !(r instanceof JavaModuleSourceRoot) || !((JavaModuleSourceRoot)r).isWithModuleInfoFile());
   }
 
   private ModuleInfo scanModuleInfoFile(@NotNull File directory) {
-    File file = new File(directory, "module-info.java");
-    myProgress.setText2(file.getName());
+    File file = new File(directory, PsiJavaModule.MODULE_INFO_FILE);
+    final @NlsSafe String name = file.getName();
+    myProgress.setText2(name);
     try {
-      final char[] chars = FileUtil.loadFileText(file);
-      String text = new String(chars);
+      String text = FileUtil.loadFile(file);
 
+      PsiFileFactory factory = PsiFileFactory.getInstance(ProjectManager.getInstance().getDefaultProject());
       ModuleInfo moduleInfo = ReadAction.compute(() -> {
-        Project project = ProjectManager.getInstance().getDefaultProject();
-        PsiManager manager = PsiManager.getInstance(project);
-        JavaDummyElement dummyElement = new JavaDummyElement(text, builder -> ModuleParser.parseModule(builder), LanguageLevel.JDK_1_9);
-        DummyHolder holder = DummyHolderFactory.createHolder(manager, dummyElement, null);
-        PsiElement element = SourceTreeToPsiMap.treeElementToPsi(holder.getTreeElement());
-        PsiJavaModule javaModule = PsiTreeUtil.getChildOfType(element, PsiJavaModule.class);
+        PsiFile psiFile = factory.createFileFromText(PsiJavaModule.MODULE_INFO_FILE, JavaFileType.INSTANCE, text);
+        PsiJavaModule javaModule = psiFile instanceof PsiJavaFile ? ((PsiJavaFile)psiFile).getModuleDeclaration() : null;
         if (javaModule == null) {
           throw new IncorrectOperationException("Incorrect module declaration '" + file.getPath() + "'");
         }
-        ModuleInfo info = new ModuleInfo(javaModule.getModuleName());
+        ModuleInfo info = new ModuleInfo(javaModule.getName());
         javaModule.accept(new ModuleInfoVisitor(info));
         return info;
       });
@@ -170,7 +162,7 @@ public class JavaModuleInsight extends ModuleInsight {
   }
 
   @Override
-  protected void scanSourceFileForImportedPackages(final CharSequence chars, final Consumer<String> result) {
+  protected void scanSourceFileForImportedPackages(final CharSequence chars, final Consumer<? super String> result) {
     myLexer.start(chars);
 
     JavaSourceRootDetectionUtil.skipWhiteSpaceAndComments(myLexer);
@@ -222,34 +214,28 @@ public class JavaModuleInsight extends ModuleInsight {
     }
   }
 
-  @Nullable
-  private static String readPackageName(final CharSequence text, final Lexer lexer) {
-    final StringBuilder buffer = StringBuilderSpinAllocator.alloc();
-    try {
-      while (true) {
-        if (lexer.getTokenType() != JavaTokenType.IDENTIFIER && lexer.getTokenType() != JavaTokenType.ASTERISK) {
-          break;
-        }
-        buffer.append(text, lexer.getTokenStart(), lexer.getTokenEnd());
-
-        advanceLexer(lexer);
-        if (lexer.getTokenType() != JavaTokenType.DOT) {
-          break;
-        }
-        buffer.append('.');
-
-        advanceLexer(lexer);
+  private static @Nullable String readPackageName(final CharSequence text, final Lexer lexer) {
+    final StringBuilder buffer = new StringBuilder();
+    while (true) {
+      if (lexer.getTokenType() != JavaTokenType.IDENTIFIER && lexer.getTokenType() != JavaTokenType.ASTERISK) {
+        break;
       }
+      buffer.append(text, lexer.getTokenStart(), lexer.getTokenEnd());
 
-      String packageName = buffer.toString();
-      if (packageName.length() == 0 || StringUtil.endsWithChar(packageName, '.') || StringUtil.startsWithChar(packageName, '*')) {
-        return null;
+      advanceLexer(lexer);
+      if (lexer.getTokenType() != JavaTokenType.DOT) {
+        break;
       }
-      return packageName;
+      buffer.append('.');
+
+      advanceLexer(lexer);
     }
-    finally {
-      StringBuilderSpinAllocator.dispose(buffer);
+
+    String packageName = buffer.toString();
+    if (packageName.isEmpty() || StringUtil.endsWithChar(packageName, '.') || StringUtil.startsWithChar(packageName, '*')) {
+      return null;
     }
+    return packageName;
   }
 
   private static void advanceLexer(final Lexer lexer) {
@@ -258,9 +244,8 @@ public class JavaModuleInsight extends ModuleInsight {
   }
 
   @Override
-  protected void scanLibraryForDeclaredPackages(File file, Consumer<String> result) throws IOException {
-    final ZipFile zip = new ZipFile(file);
-    try {
+  protected void scanLibraryForDeclaredPackages(File file, Consumer<? super String> result) throws IOException {
+    try (ZipFile zip = new ZipFile(file)) {
       final Enumeration<? extends ZipEntry> entries = zip.entries();
       while (entries.hasMoreElements()) {
         final String entryName = entries.nextElement().getName();
@@ -273,53 +258,57 @@ public class JavaModuleInsight extends ModuleInsight {
         }
       }
     }
-    finally {
-      zip.close();
-    }
   }
 
+  @Override
   protected ModuleDescriptor createModuleDescriptor(final File moduleContentRoot, final Collection<DetectedSourceRoot> sourceRoots) {
-    return new ModuleDescriptor(moduleContentRoot, StdModuleTypes.JAVA, sourceRoots);
+    return new ModuleDescriptor(moduleContentRoot, JavaModuleType.getModuleType(), sourceRoots);
   }
 
+  @Override
   public boolean isApplicableRoot(final DetectedProjectRoot root) {
     return root instanceof JavaModuleSourceRoot;
   }
 
-  private static class ModuleInfo {
-    @NotNull final String name;
+  private static final class ModuleInfo {
+    final String name;
     final Set<String> requiresModules = new HashSet<>();
     final Set<String> exportsPackages = new HashSet<>();
 
     File directory;
     ModuleDescriptor descriptor;
 
-    private ModuleInfo(@NotNull String name) {this.name = name;}
+    private ModuleInfo(@NotNull String name) {
+      this.name = name;
+    }
   }
 
   private static class ModuleInfoVisitor extends JavaRecursiveElementVisitor {
     private final ModuleInfo myInfo;
 
-    public ModuleInfoVisitor(ModuleInfo info) {myInfo = info;}
+    ModuleInfoVisitor(ModuleInfo info) {
+      myInfo = info;
+    }
 
     @Override
-    public void visitRequiresStatement(PsiRequiresStatement statement) {
+    public void visitRequiresStatement(@NotNull PsiRequiresStatement statement) {
       super.visitRequiresStatement(statement);
-      PsiJavaModuleReferenceElement referenceElement = statement.getReferenceElement();
-      if (referenceElement != null) {
-        String referenceText = referenceElement.getReferenceText();
+      String referenceText = statement.getModuleName();
+      if (referenceText != null) {
         myInfo.requiresModules.add(referenceText);
       }
     }
 
     @Override
-    public void visitExportsStatement(PsiExportsStatement statement) {
-      super.visitExportsStatement(statement);
-      PsiJavaCodeReferenceElement reference = statement.getPackageReference();
-      if (reference != null) {
-        String qualifiedName = reference.getQualifiedName();
-        if (qualifiedName != null) {
-          myInfo.exportsPackages.add(qualifiedName);
+    public void visitPackageAccessibilityStatement(@NotNull PsiPackageAccessibilityStatement statement) {
+      super.visitPackageAccessibilityStatement(statement);
+      if (statement.getRole() == PsiPackageAccessibilityStatement.Role.EXPORTS) {
+        PsiJavaCodeReferenceElement reference = statement.getPackageReference();
+        if (reference != null) {
+          String qualifiedName = reference.getQualifiedName();
+          if (qualifiedName != null) {
+            myInfo.exportsPackages.add(qualifiedName);
+          }
         }
       }
     }

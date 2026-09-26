@@ -1,48 +1,41 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.containers;
 
-import java.util.*;
+import com.intellij.util.SmartList;
+import kotlin.jvm.PurelyImplements;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Unmodifiable;
 
-/**
- * @author peter
- */
-public class SortedList<T> extends AbstractList<T>{
+import java.util.AbstractList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.SortedMap;
+import java.util.TreeMap;
+
+@PurelyImplements("kotlin.collections.MutableList")
+public final class SortedList<T> extends AbstractList<T>{
   private final SortedMap<T, List<T>> myMap;
-  private final Comparator<T> myComparator;
-  private List<T> myDelegate = null;
+  private final Comparator<? super T> myComparator;
+  private @Unmodifiable List<T> myDelegate;
 
-  public SortedList(final Comparator<T> comparator) {
+  public SortedList(@NotNull Comparator<? super T> comparator) {
     myComparator = comparator;
-    myMap = new TreeMap<T, List<T>>(comparator);
+    myMap = new TreeMap<>(comparator);
   }
 
-  public Comparator<T> getComparator() {
+  public @NotNull Comparator<? super T> getComparator() {
     return myComparator;
   }
 
   @Override
   public void add(final int index, final T element) {
-    _addToMap(element);
+    addToMap(element);
   }
 
-  private void _addToMap(T element) {
+  private void addToMap(T element) {
     List<T> group = myMap.get(element);
     if (group == null) {
-      myMap.put(element, group = new ArrayList<T>());
+      myMap.put(element, group = new SmartList<>());
     }
     group.add(element);
     myDelegate = null;
@@ -50,7 +43,7 @@ public class SortedList<T> extends AbstractList<T>{
 
   @Override
   public boolean add(T t) {
-    _addToMap(t);
+    addToMap(t);
     return true;
   }
 
@@ -76,15 +69,15 @@ public class SortedList<T> extends AbstractList<T>{
 
   @Override
   public T get(final int index) {
-    ensureLinearized();
-    return myDelegate.get(index);
+    return ensureLinearized().get(index);
   }
 
-  private List<T> ensureLinearized() {
-    if (myDelegate == null) {
-      myDelegate = ContainerUtil.concat(myMap.values());
+  private @NotNull List<T> ensureLinearized() {
+    List<T> delegate = myDelegate;
+    if (delegate == null) {
+      myDelegate = delegate = ContainerUtil.concat(myMap.values());
     }
-    return myDelegate;
+    return delegate;
   }
 
   @Override
@@ -100,7 +93,6 @@ public class SortedList<T> extends AbstractList<T>{
 
   @Override
   public int size() {
-    ensureLinearized();
-    return myDelegate.size();
+    return ensureLinearized().size();
   }
 }

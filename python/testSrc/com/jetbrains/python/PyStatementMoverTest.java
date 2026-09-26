@@ -1,19 +1,8 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python;
+
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
 
 import com.intellij.openapi.actionSystem.IdeActions;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -23,6 +12,8 @@ import com.jetbrains.python.psi.LanguageLevel;
 /**
  * User : ktisha
  */
+@Subsystems.Editing
+@Layers.Functional
 public class PyStatementMoverTest extends PyTestCase {
   private void doTest() {
     final String testName = getTestName(true);
@@ -252,6 +243,36 @@ public class PyStatementMoverTest extends PyTestCase {
     doTest();
   }
 
+  // PY-41312
+  public void testMultiLineSelectionDifferentIndentLevelsMoveToEmptyLine() {
+    doTest();
+  }
+
+  // PY-41312
+  public void testMultiLineSelectionDifferentIndentLevelsMoveThroughPass() {
+    doTest();
+  }
+
+  // PY-41375
+  public void testMultiLineSelectionDifferentLevelsMoveOutFromFunction() {
+    doTest();
+  }
+
+  // PY-37765
+  public void testMultiLineSelectionDifferentLevelsMoveIntoFunction() {
+    doTest();
+  }
+
+  // PY-41375
+  public void testSingleLineSelectionOutFromFunction() {
+    doTest();
+  }
+
+  // PY-41375
+  public void testMultiLineSelectionDifferentLevelsMoveOutFromNestedFunction() {
+    doTest();
+  }
+
   public void testTheSameLevelMultiple() { //PY-10947
     doTest();
   }
@@ -269,11 +290,31 @@ public class PyStatementMoverTest extends PyTestCase {
   }
 
   public void testWith() { // PY-5202
-    try {
-      setLanguageLevel(LanguageLevel.PYTHON27);
-      doTest();
-    } finally {
-      setLanguageLevel(null);
-    }
+    runWithLanguageLevel(LanguageLevel.PYTHON27, this::doTest);
+  }
+
+  // PY-48761
+  public void testMatchCaseMiddleClause() {
+    doTest();
+  }
+
+  // PY-48761
+  public void testMatchCaseFirstClause() {
+    doTest();
+  }
+
+  // PY-48761
+  public void testMatchCaseLastClause() {
+    doTest();
+  }
+
+  // PY-48761
+  public void testMatchCaseMultiStatementClause() {
+    doTest();
+  }
+
+  // PY-48761
+  public void testMatchCaseStatementInBody() {
+    doTest();
   }
 }

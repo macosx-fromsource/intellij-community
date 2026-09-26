@@ -1,27 +1,36 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.roots.ui.configuration.projectRoot.daemon;
 
+import com.intellij.ide.JavaUiBundle;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.text.HtmlBuilder;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.util.SmartList;
-import com.intellij.util.StringBuilderSpinAllocator;
+import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xml.util.XmlStringUtil;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.Collections;
 import java.util.List;
 
-/**
- * @author nik
- */
 public class ProjectStructureProblemsHolderImpl implements ProjectStructureProblemsHolder {
   private List<ProjectStructureProblemDescription> myProblemDescriptions;
 
   @Override
-  public void registerProblem(@NotNull String message, @Nullable String description,
+  public void registerProblem(@NotNull @Nls(capitalization = Nls.Capitalization.Sentence) String message,
+                              @Nullable @NlsContexts.DetailedDescription String description,
                               @NotNull ProjectStructureProblemType problemType,
                               @NotNull PlaceInProjectStructure place,
                               @Nullable ConfigurationErrorQuickFix fix) {
-    final List<ConfigurationErrorQuickFix> fixes = fix != null ? Collections.singletonList(fix) : Collections.<ConfigurationErrorQuickFix>emptyList();
-    registerProblem(new ProjectStructureProblemDescription(message, description, place, problemType, fixes));
+    final List<ConfigurationErrorQuickFix> fixes = ContainerUtil.createMaybeSingletonList(fix);
+    registerProblem(new ProjectStructureProblemDescription(message,
+                                                           description != null ? HtmlChunk.raw(description) : HtmlChunk.empty(),
+                                                           place,
+                                                           problemType,
+                                                           ProjectStructureProblemDescription.ProblemLevel.PROJECT,
+                                                           fixes,
+                                                           true));
   }
 
   @Override
@@ -32,27 +41,20 @@ public class ProjectStructureProblemsHolderImpl implements ProjectStructureProbl
     myProblemDescriptions.add(description);
   }
 
-  public String composeTooltipMessage() {
-    final StringBuilder buf = StringBuilderSpinAllocator.alloc();
-    try {
-      buf.append("<html><body>");
-      if (myProblemDescriptions != null) {
-        int problems = 0;
-        for (ProjectStructureProblemDescription problemDescription : myProblemDescriptions) {
-          buf.append(XmlStringUtil.convertToHtmlContent(problemDescription.getMessage(false))).append("<br>");
-          problems++;
-          if (problems >= 10 && myProblemDescriptions.size() > 12) {
-            buf.append(myProblemDescriptions.size() - problems).append(" more problems...<br>");
-            break;
-          }
+  public @Nls String composeTooltipMessage() {
+    final HtmlBuilder buf = new HtmlBuilder();
+    if (myProblemDescriptions != null) {
+      int problems = 0;
+      for (ProjectStructureProblemDescription problemDescription : myProblemDescriptions) {
+        buf.appendRaw(XmlStringUtil.convertToHtmlContent(problemDescription.getMessage(false))).br();
+        problems++;
+        if (problems >= 10 && myProblemDescriptions.size() > 12) {
+          buf.append(JavaUiBundle.message("x.more.problems", myProblemDescriptions.size() - problems)).br();
+          break;
         }
       }
-      buf.append("</body></html>");
-      return buf.toString();
     }
-    finally {
-      StringBuilderSpinAllocator.dispose(buf);
-    }
+    return buf.wrapWithHtmlBody().toString();
   }
 
   public boolean containsProblems() {
@@ -76,8 +78,7 @@ public class ProjectStructureProblemsHolderImpl implements ProjectStructureProbl
     }
   }
 
-  @Nullable
-  public List<ProjectStructureProblemDescription> getProblemDescriptions() {
+  public @Nullable List<ProjectStructureProblemDescription> getProblemDescriptions() {
     return myProblemDescriptions;
   }
 }

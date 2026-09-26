@@ -1,185 +1,180 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.actionSystem;
 
-import com.intellij.codeInsight.hint.HintManager;
-import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.diagnostic.PluginException;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.command.CommandProcessor;
-import com.intellij.openapi.command.UndoConfirmationPolicy;
-import com.intellij.openapi.editor.*;
-import com.intellij.openapi.extensions.Extensions;
-import com.intellij.openapi.project.Project;
-import com.intellij.reporting.FreezeLogger;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.extensions.ExtensionPointName;
+import com.intellij.openapi.extensions.PluginDescriptor;
+import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.util.SlowOperations;
+import kotlin.Unit;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.reflect.Constructor;
+
+import static com.intellij.openapi.editor.rd.LocalEditorSupportUtil.assertLocalEditorSupport;
+
 /**
  * Provides services for registering actions which are activated by typing in the editor.
- *
- * @see EditorActionManager#getTypedAction()
  */
-public class TypedAction {
-  @NotNull
-  private TypedActionHandler myRawHandler;
-  private TypedActionHandler myHandler;
-  private boolean myHandlersLoaded;
+public abstract class TypedAction {
+  private static final Logger LOG = Logger.getInstance(TypedAction.class);
+
+  @SuppressWarnings("removal")
+  private static final ExtensionPointName<EditorTypedHandlerBean> EP_NAME = new ExtensionPointName<>("com.intellij.editorTypedHandler");
+
+  @SuppressWarnings("removal")
+  private static final ExtensionPointName<EditorTypedHandlerBean> RAW_EP_NAME = new ExtensionPointName<>("com.intellij.rawEditorTypedHandler");
+
+  public static TypedAction getInstance() {
+    return ApplicationManager.getApplication().getService(TypedAction.class);
+  }
+
+  private TypedActionHandler rawHandler;
+  private @NotNull TypedActionHandler handler;
+  private boolean handlersLoaded;
 
   public TypedAction() {
-    myHandler = new Handler();
-    myRawHandler = new DefaultRawHandler();
+    handler = new DefaultTypedHandler();
   }
 
-  private void ensureHandlersLoaded() {
-    if (!myHandlersLoaded) {
-      myHandlersLoaded = true;
-      for(EditorTypedHandlerBean handlerBean: Extensions.getExtensions(EditorTypedHandlerBean.EP_NAME)) {
-        myHandler = handlerBean.getHandler(myHandler);
-      }
+  public void beforeActionPerformed(@NotNull Editor editor, char c, @NotNull DataContext context, @NotNull ActionPlan plan) {
+    assertLocalEditorSupport(editor);
+    if (rawHandler instanceof TypedActionHandlerEx rawHandlerEx) {
+      rawHandlerEx.beforeExecute(editor, c, context, plan);
     }
   }
 
-  private static class Handler implements TypedActionHandler {
-    @Override
-    public void execute(@NotNull final Editor editor, char charTyped, @NotNull DataContext dataContext) {
-      if (editor.isViewer()) return;
-
-      Document doc = editor.getDocument();
-      doc.startGuardedBlockChecking();
-      try {
-        final String str = String.valueOf(charTyped);
-        CommandProcessor.getInstance().setCurrentCommandName(EditorBundle.message("typing.in.editor.command.name"));
-        EditorModificationUtil.typeInStringAtCaretHonorMultipleCarets(editor, str, true);
-      }
-      catch (ReadOnlyFragmentModificationException e) {
-        EditorActionManager.getInstance().getReadonlyFragmentModificationHandler(doc).handle(e);
-      }
-      finally {
-        doc.stopGuardedBlockChecking();
-      }
+  public final void actionPerformed(@NotNull Editor editor, char charTyped, @NotNull DataContext dataContext) {
+    assertLocalEditorSupport(editor);
+    try (var ignored = SlowOperations.startSection(SlowOperations.ACTION_PERFORM)) {
+      rawHandler.execute(editor, charTyped, dataContext);
     }
   }
 
   /**
-   * Gets the current typing handler.
-   *
-   * @return the current typing handler.
+   * Returns the current 'raw' typing handler.
    */
-  public TypedActionHandler getHandler() {
+  public @NotNull TypedActionHandler getRawHandler() {
+    return rawHandler;
+  }
+
+  /**
+   * Returns the current typing handler.
+   */
+  public @NotNull TypedActionHandler getHandler() {
     ensureHandlersLoaded();
-    return myHandler;
+    return handler;
   }
 
   /**
-   * Replaces the typing handler with the specified handler. The handler should pass
-   * unprocessed typing to the previously registered handler.
-   *
-   * @param handler the handler to set.
-   * @return the previously registered handler.
-   */
-  public TypedActionHandler setupHandler(TypedActionHandler handler) {
-    ensureHandlersLoaded();
-    TypedActionHandler tmp = myHandler;
-    myHandler = handler;
-    return tmp;
-  }
-
-  /**
-   * Gets the current 'raw' typing handler.
-   *
-   * @see #setupRawHandler(TypedActionHandler)
-   */
-  @NotNull
-  public TypedActionHandler getRawHandler() {
-    return myRawHandler;
-  }
-
-  /**
-   * Replaces current 'raw' typing handler with the specified handler. The handler should pass unprocessed typing to the
-   * previously registered 'raw' handler.
+   * Replaces the current 'raw' typing handler with the specified handler.
+   * The handler should pass unprocessed typing to the previously registered 'raw' handler.
    * <p>
-   * 'Raw' handler is a handler directly invoked by the code which handles typing in editor. Default 'raw' handler
-   * performs some generic logic that has to be done on typing (like checking whether file has write access, creating a command
-   * instance for undo subsystem, initiating write action, etc), but delegates to 'normal' handler for actual typing logic.
+   * 'Raw' handler is a handler directly invoked by the code which handles typing in the editor.
+   * Default 'raw' handler performs some generic logic that has to be done on typing (like checking whether a file has write access,
+   * creating a command instance for the undo subsystem, initiating write action, etc.),
+   * but delegates to 'normal' handler for actual typing logic.
    *
    * @param handler the handler to set.
    * @return the previously registered handler.
-   *
    * @see #getRawHandler()
    * @see #getHandler()
    * @see #setupHandler(TypedActionHandler)
    */
-  @NotNull
   public TypedActionHandler setupRawHandler(@NotNull TypedActionHandler handler) {
-    TypedActionHandler tmp = myRawHandler;
-    myRawHandler = handler;
+    var tmp = rawHandler;
+    rawHandler = handler;
+    if (tmp == null) {
+      loadRawHandlers();
+    }
     return tmp;
   }
 
-  public void beforeActionPerformed(@NotNull Editor editor, char c, @NotNull DataContext context, @NotNull ActionPlan plan) {
-    if (myRawHandler instanceof TypedActionHandlerEx) {
-      ((TypedActionHandlerEx)myRawHandler).beforeExecute(editor, c, context, plan);
-    }
+  /**
+   * Replaces the typing handler with the specified handler.
+   * The handler should pass unprocessed typing to the previously registered handler.
+   *
+   * @param handler the handler to set.
+   * @return the previously registered handler.
+   * @deprecated Use &lt;typedHandler&gt; extension point for registering typing handlers
+   */
+  @Deprecated
+  public @NotNull TypedActionHandler setupHandler(@NotNull TypedActionHandler handler) {
+    ensureHandlersLoaded();
+    var tmp = this.handler;
+    this.handler = handler;
+    return tmp;
   }
 
-  public final void actionPerformed(@Nullable final Editor editor, final char charTyped, final DataContext dataContext) {
-    if (editor == null) return;
-    Project project = CommonDataKeys.PROJECT.getData(dataContext);
-    FreezeLogger.getInstance().runUnderPerformanceMonitor(project, () -> myRawHandler.execute(editor, charTyped, dataContext));
-  }
-
-  private class DefaultRawHandler implements TypedActionHandlerEx {
-    @Override
-    public void beforeExecute(@NotNull Editor editor, char c, @NotNull DataContext context, @NotNull ActionPlan plan) {
-      if (editor.isViewer() || !editor.getDocument().isWritable()) return;
-
-      TypedActionHandler handler = getHandler();
-
-      if (handler instanceof TypedActionHandlerEx) {
-        ((TypedActionHandlerEx)handler).beforeExecute(editor, c, context, plan);
+  private void loadRawHandlers() {
+    RAW_EP_NAME.processWithPluginDescriptor((bean, pluginDescriptor) -> {
+      var handler = getOrCreateHandler(bean, rawHandler, pluginDescriptor);
+      if (handler != null) {
+        rawHandler = handler;
       }
-    }
+      return Unit.INSTANCE;
+    });
+  }
 
-    @Override
-    public void execute(@NotNull final Editor editor, final char charTyped, @NotNull final DataContext dataContext) {
-      CommandProcessor.getInstance().executeCommand(
-        CommonDataKeys.PROJECT.getData(dataContext), () -> {
-          if (!EditorModificationUtil.requestWriting(editor)) {
-            HintManager.getInstance().showInformationHint(editor, "File is not writable");
-            return;
-          }
-          ApplicationManager.getApplication().runWriteAction(new DocumentRunnable(editor.getDocument(), editor.getProject()) {
-            @Override
-            public void run() {
-              Document doc = editor.getDocument();
-              doc.startGuardedBlockChecking();
-              try {
-                getHandler().execute(editor, charTyped, dataContext);
-              }
-              catch (ReadOnlyFragmentModificationException e) {
-                EditorActionManager.getInstance().getReadonlyFragmentModificationHandler(doc).handle(e);
-              }
-              finally {
-                doc.stopGuardedBlockChecking();
-              }
-            }
-          });
-        },
-        "", editor.getDocument(), UndoConfirmationPolicy.DEFAULT, editor.getDocument());
+  private void ensureHandlersLoaded() {
+    if (handlersLoaded) {
+      return;
+    }
+    handlersLoaded = true;
+    EP_NAME.processWithPluginDescriptor((bean, pluginDescriptor) -> {
+      var handler = getOrCreateHandler(bean, this.handler, pluginDescriptor);
+      if (handler != null) {
+        this.handler = handler;
+      }
+      return Unit.INSTANCE;
+    });
+  }
+
+  @SuppressWarnings("removal")
+  private static @Nullable TypedActionHandler getOrCreateHandler(
+    @NotNull EditorTypedHandlerBean bean,
+    TypedActionHandler originalHandler,
+    PluginDescriptor pluginDescriptor
+  ) {
+    var handler = bean.handler;
+    if (handler != null) {
+      return handler;
+    }
+    try {
+      var aClass = ApplicationManager.getApplication().<TypedActionHandler>loadClass(bean.implementationClass, pluginDescriptor);
+      Constructor<TypedActionHandler> constructor;
+      try {
+        constructor = aClass.getDeclaredConstructor(TypedActionHandler.class);
+      }
+      catch (NoSuchMethodException ignore) {
+        constructor = null;
+      }
+      if (constructor == null) {
+        constructor = aClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        bean.handler = constructor.newInstance();
+      }
+      else {
+        constructor.setAccessible(true);
+        bean.handler = constructor.newInstance(originalHandler);
+      }
+      return bean.handler;
+    }
+    catch (ProcessCanceledException e) {
+      throw e;
+    }
+    catch (PluginException e) {
+      LOG.error(e);
+      return null;
+    }
+    catch (Exception e) {
+      LOG.error(new PluginException(e, pluginDescriptor.getPluginId()));
+      return null;
     }
   }
 }

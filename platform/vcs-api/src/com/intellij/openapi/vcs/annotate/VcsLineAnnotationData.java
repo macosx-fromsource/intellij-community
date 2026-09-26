@@ -19,9 +19,6 @@ import com.intellij.openapi.vcs.history.VcsRevisionNumber;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * @author irengrig
- *         Date: 3/10/11
- *         Time: 4:09 PM
  * Common for all vcs annotation presentation
  */
 public interface VcsLineAnnotationData {

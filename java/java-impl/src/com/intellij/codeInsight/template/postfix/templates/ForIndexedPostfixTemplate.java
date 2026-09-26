@@ -1,63 +1,67 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.template.postfix.templates;
 
 import com.intellij.codeInsight.template.Template;
 import com.intellij.codeInsight.template.impl.MacroCallNode;
+import com.intellij.codeInsight.template.impl.TextExpression;
 import com.intellij.codeInsight.template.macro.SuggestVariableNameMacro;
-import com.intellij.openapi.util.Condition;
+import com.intellij.codeInsight.template.postfix.templates.editable.JavaEditablePostfixTemplate;
+import com.intellij.codeInsight.template.postfix.templates.editable.JavaPostfixTemplateExpressionCondition;
+import com.intellij.codeInsight.template.postfix.util.JavaPostfixTemplatesUtils;
+import com.intellij.java.syntax.parser.JavaKeywords;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.project.DumbAware;
+import com.intellij.openapi.project.DumbService;
+import com.intellij.pom.java.JavaFeature;
+import com.intellij.pom.java.LanguageLevel;
+import com.intellij.psi.CommonClassNames;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiExpression;
 import com.intellij.psi.PsiType;
+import com.intellij.psi.util.PsiUtil;
+import com.intellij.refactoring.JavaRefactoringSettings;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import static com.intellij.codeInsight.template.postfix.util.JavaPostfixTemplatesUtils.*;
+import static com.intellij.codeInsight.template.postfix.util.JavaPostfixTemplatesUtils.isArray;
+import static com.intellij.codeInsight.template.postfix.util.JavaPostfixTemplatesUtils.isIterable;
+import static com.intellij.codeInsight.template.postfix.util.JavaPostfixTemplatesUtils.isNumber;
 
-public abstract class ForIndexedPostfixTemplate extends StringBasedPostfixTemplate {
-
-  public static final Condition<PsiElement> IS_NUMBER_OR_ARRAY_OR_ITERABLE =
-    element -> IS_ITERABLE_OR_ARRAY.value(element) || IS_NUMBER.value(element);
-
-  protected ForIndexedPostfixTemplate(@NotNull String key, @NotNull String example) {
-    super(key, example, selectorTopmost(IS_NUMBER_OR_ARRAY_OR_ITERABLE));
+public abstract class ForIndexedPostfixTemplate extends JavaEditablePostfixTemplate implements DumbAware {
+  protected ForIndexedPostfixTemplate(@NotNull String templateName, @NotNull String templateText, @NotNull String example,
+                                      @NotNull JavaPostfixTemplateProvider provider) {
+    super(templateName, templateText, example,
+          ContainerUtil.newHashSet(new JavaPostfixTemplateExpressionCondition.JavaPostfixTemplateArrayExpressionCondition(),
+                                   new JavaPostfixTemplateExpressionCondition.JavaPostfixTemplateNumberExpressionCondition(),
+                                   new JavaPostfixTemplateExpressionCondition.JavaPostfixTemplateExpressionFqnCondition(
+                                     CommonClassNames.JAVA_UTIL_LIST)),
+          LanguageLevel.JDK_1_3, true, provider);
   }
 
   @Override
-  public void setVariables(@NotNull Template template, @NotNull PsiElement element) {
+  public boolean isApplicable(@NotNull PsiElement context, @NotNull Document copyDocument, int newOffset) {
+    return super.isApplicable(context, copyDocument, newOffset) && !JavaPostfixTemplatesUtils.isInExpressionFile(context);
+  }
+
+
+  @Override
+  protected void addTemplateVariables(@NotNull PsiElement element, @NotNull Template template) {
+    super.addTemplateVariables(element, template);
     MacroCallNode index = new MacroCallNode(new SuggestVariableNameMacro());
     template.addVariable("index", index, index, true);
-  }
 
-  @Override
-  public final String getTemplateString(@NotNull PsiElement element) {
     PsiExpression expr = (PsiExpression)element;
-    String bound = getExpressionBound(expr);
-    if (bound == null) {
-      return null;
-    }
-
-    return getStringTemplate(expr).replace("$bound$", bound).replace("$type$", suggestIndexType(expr));
+    DumbService.getInstance(element.getProject()).withAlternativeResolveEnabled(() -> {
+      String bound = getExpressionBound(expr);
+      if (bound != null) {
+        template.addVariable("bound", new TextExpression(bound), false);
+        template.addVariable("type", new TextExpression(suggestIndexType(expr)), false);
+      }
+    });
   }
 
-  @NotNull
-  protected abstract String getStringTemplate(@NotNull PsiExpression expr);
-
-  @Nullable
-  private static String getExpressionBound(@NotNull PsiExpression expr) {
+  protected @Nullable String getExpressionBound(@NotNull PsiExpression expr) {
     PsiType type = expr.getType();
     if (isNumber(type)) {
       return expr.getText();
@@ -71,17 +75,20 @@ public abstract class ForIndexedPostfixTemplate extends StringBasedPostfixTempla
     return null;
   }
 
-  @NotNull
-  private static String suggestIndexType(@NotNull PsiExpression expr) {
+  private static @NotNull String suggestIndexType(@NotNull PsiExpression expr) {
     PsiType type = expr.getType();
+    if (Boolean.TRUE.equals(JavaRefactoringSettings.getInstance().INTRODUCE_LOCAL_CREATE_VAR_TYPE) &&
+         PsiUtil.isAvailable(JavaFeature.LVTI, expr)) {
+      return JavaKeywords.VAR;
+    }
     if (isNumber(type)) {
       return type.getCanonicalText();
     }
-    return "int";
+    return JavaKeywords.INT;
   }
 
   @Override
-  protected boolean shouldAddExpressionToContext() {
-    return false;
+  public boolean isBuiltin() {
+    return true;
   }
 }

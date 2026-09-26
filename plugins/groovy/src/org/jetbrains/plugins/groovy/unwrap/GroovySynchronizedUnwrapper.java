@@ -15,19 +15,20 @@
  */
 package org.jetbrains.plugins.groovy.unwrap;
 
-import com.intellij.codeInsight.CodeInsightBundle;
+import com.intellij.java.JavaBundle;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrSynchronizedStatement;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock;
 
 public class GroovySynchronizedUnwrapper extends GroovyUnwrapper {
   public GroovySynchronizedUnwrapper() {
-    super(CodeInsightBundle.message("unwrap.synchronized"));
+    super(JavaBundle.message("unwrap.synchronized"));
   }
 
   @Override
-  public boolean isApplicableTo(PsiElement e) {
+  public boolean isApplicableTo(@NotNull PsiElement e) {
     return e instanceof GrSynchronizedStatement;
   }
 

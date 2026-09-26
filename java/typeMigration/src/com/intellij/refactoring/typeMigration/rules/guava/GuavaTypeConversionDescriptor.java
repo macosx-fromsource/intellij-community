@@ -1,22 +1,18 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.refactoring.typeMigration.rules.guava;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.psi.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiExpressionList;
+import com.intellij.psi.PsiLocalVariable;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiMethodCallExpression;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiReturnStatement;
+import com.intellij.psi.PsiType;
 import com.intellij.psi.util.PsiTypesUtil;
 import com.intellij.refactoring.typeMigration.TypeConversionDescriptor;
 import com.intellij.refactoring.typeMigration.TypeEvaluator;
@@ -32,11 +28,15 @@ import org.jetbrains.annotations.Nullable;
 public class GuavaTypeConversionDescriptor extends TypeConversionDescriptor {
   private static final Logger LOG = Logger.getInstance(GuavaTypeConversionDescriptor.class);
   private final String myReplaceByStringSource;
+  private final boolean myIterable;
   private boolean myConvertParameterAsLambda = true;
 
-  GuavaTypeConversionDescriptor(@NonNls String stringToReplace, @NonNls String replaceByString) {
+  GuavaTypeConversionDescriptor(@NonNls String stringToReplace,
+                                @NonNls String replaceByString,
+                                @NotNull PsiExpression expression) {
     super(stringToReplace, replaceByString);
     myReplaceByStringSource = replaceByString;
+    myIterable = isIterable(expression);
   }
 
   public GuavaTypeConversionDescriptor setConvertParameterAsLambda(boolean convertParameterAsLambda) {
@@ -46,7 +46,7 @@ public class GuavaTypeConversionDescriptor extends TypeConversionDescriptor {
 
   @Override
   public PsiExpression replace(PsiExpression expression, @NotNull TypeEvaluator evaluator) throws IncorrectOperationException {
-    setReplaceByString(myReplaceByStringSource + (isIterable(expression) ? ".collect(java.util.stream.Collectors.toList())" : ""));
+    setReplaceByString(myReplaceByStringSource + (myIterable ? ".collect(java.util.stream.Collectors.toList())" : ""));
     if (myConvertParameterAsLambda) {
       LOG.assertTrue(expression instanceof PsiMethodCallExpression);
       final PsiExpression[] arguments = ((PsiMethodCallExpression)expression).getArgumentList().getExpressions();
@@ -59,17 +59,15 @@ public class GuavaTypeConversionDescriptor extends TypeConversionDescriptor {
 
   public static boolean isIterable(PsiExpression expression) {
     final PsiElement parent = expression.getParent();
-    if (parent instanceof PsiLocalVariable) {
-      return isIterable(((PsiLocalVariable)parent).getType());
+    if (parent instanceof PsiLocalVariable var) {
+      return isIterable(var.getType());
     }
     else if (parent instanceof PsiReturnStatement) {
       return isIterable(PsiTypesUtil.getMethodReturnType(parent));
     }
-    else if (parent instanceof PsiExpressionList) {
-      final PsiExpressionList expressionList = (PsiExpressionList)parent;
-      final PsiElement maybeMethodCallExpr = expressionList.getParent();
-      if (maybeMethodCallExpr instanceof PsiMethodCallExpression) {
-        final PsiMethod method = ((PsiMethodCallExpression)maybeMethodCallExpr).resolveMethod();
+    else if (parent instanceof PsiExpressionList expressionList) {
+      if (expressionList.getParent() instanceof PsiMethodCallExpression call) {
+        final PsiMethod method = call.resolveMethod();
         if (method != null) {
           final PsiParameter[] parameters = method.getParameterList().getParameters();
           final PsiExpression[] arguments = expressionList.getExpressions();
@@ -82,11 +80,14 @@ public class GuavaTypeConversionDescriptor extends TypeConversionDescriptor {
         }
       }
     }
+    else if (parent instanceof PsiMethodCallExpression call) {
+      return isIterable(call);
+    }
     return false;
   }
 
   private static boolean isIterable(@Nullable PsiType type) {
-    PsiClass aClass;
-    return (aClass = PsiTypesUtil.getPsiClass(type)) != null && CommonClassNames.JAVA_LANG_ITERABLE.equals(aClass.getQualifiedName());
+    PsiClass aClass = PsiTypesUtil.getPsiClass(type);
+    return aClass != null && CommonClassNames.JAVA_LANG_ITERABLE.equals(aClass.getQualifiedName());
   }
 }

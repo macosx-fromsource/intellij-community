@@ -18,21 +18,34 @@ package com.jetbrains.env.ut;
 import com.intellij.execution.configurations.ConfigurationFactory;
 import com.jetbrains.env.ConfigurationBasedProcessRunner;
 import com.jetbrains.env.PyAbstractTestProcessRunner;
-import com.jetbrains.python.run.AbstractPythonRunConfigurationParams;
+import com.jetbrains.env.PyConfigurationProducerForRunner;
+import com.jetbrains.python.run.AbstractPythonRunConfiguration;
+import com.jetbrains.python.run.targetBasedConfiguration.PyRunTargetVariant;
 import com.jetbrains.python.testing.AbstractPythonTestRunConfigurationParams;
+import com.jetbrains.python.testing.ConfigurationTarget;
+import com.jetbrains.python.testing.PyAbstractTestConfiguration;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 
 /**
- * {@link PyAbstractTestProcessRunner} to run script-bases tests
+ * {@link PyAbstractTestProcessRunner} to run script-bases tests.
+ * <p>
+ * Since this class only supports scripts {@link #myScriptName}, one may use
+ * {@link #TEST_TARGET_PREFIX} as prefix to provide python qname for new test runners
  *
  * @author Ilya.Kazakevich
  */
-public class PyScriptTestProcessRunner<CONF_T extends AbstractPythonRunConfigurationParams & AbstractPythonTestRunConfigurationParams>
+public class PyScriptTestProcessRunner<CONF_T extends AbstractPythonRunConfiguration<?>>
   extends PyAbstractTestProcessRunner<CONF_T> {
+
+  /**
+   * Prepend script name with it if you use python test qname but not script name
+   */
+  public static final String TEST_TARGET_PREFIX = "test:";
   @NotNull
-  private final String myScriptName;
+  protected final String myScriptName;
 
   /**
    * @param scriptName name of script to run
@@ -46,10 +59,32 @@ public class PyScriptTestProcessRunner<CONF_T extends AbstractPythonRunConfigura
     myScriptName = scriptName;
   }
 
+  @ApiStatus.Internal
+  public PyScriptTestProcessRunner(@NotNull String scriptName,
+                                   @NotNull PyConfigurationProducerForRunner<CONF_T> configurationProducer,
+                                   @NotNull final Class<CONF_T> expectedConfigurationType,
+                                   final int timesToRerunFailedTests) {
+    super(configurationProducer, expectedConfigurationType, timesToRerunFailedTests);
+    myScriptName = scriptName;
+  }
+
 
   @Override
   protected void configurationCreatedAndWillLaunch(@NotNull final CONF_T configuration) throws IOException {
     super.configurationCreatedAndWillLaunch(configuration);
-    configuration.setScriptName(myScriptName);
+    if (configuration instanceof AbstractPythonTestRunConfigurationParams) {
+      ((AbstractPythonTestRunConfigurationParams)configuration).setScriptName(myScriptName);
+    }
+    if (configuration instanceof PyAbstractTestConfiguration) {
+      final ConfigurationTarget target = ((PyAbstractTestConfiguration)configuration).getTarget();
+      if (myScriptName.startsWith(TEST_TARGET_PREFIX)) {
+        target.setTarget(myScriptName.substring(TEST_TARGET_PREFIX.length()));
+        target.setTargetType(PyRunTargetVariant.PYTHON);
+      }
+      else {
+        target.setTarget(myScriptName);
+        target.setTargetType(PyRunTargetVariant.PATH);
+      }
+    }
   }
 }

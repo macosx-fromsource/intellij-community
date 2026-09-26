@@ -1,9 +1,12 @@
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.plugin.replace.ui;
 
 import com.intellij.history.LocalHistory;
 import com.intellij.history.LocalHistoryAction;
+import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.vfs.ReadonlyStatusHandler;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiElement;
 import com.intellij.structuralsearch.MatchResult;
 import com.intellij.structuralsearch.SSRBundle;
 import com.intellij.structuralsearch.plugin.replace.ReplacementInfo;
@@ -11,160 +14,112 @@ import com.intellij.structuralsearch.plugin.replace.impl.Replacer;
 import com.intellij.structuralsearch.plugin.ui.Configuration;
 import com.intellij.structuralsearch.plugin.ui.SearchContext;
 import com.intellij.structuralsearch.plugin.ui.UsageViewContext;
-import com.intellij.usageView.UsageInfo;
 import com.intellij.usages.Usage;
 import com.intellij.usages.UsageInfo2UsageAdapter;
-import com.intellij.usages.UsageView;
+import com.intellij.usages.rules.UsageInFile;
+import com.intellij.util.ObjectUtils;
+import com.intellij.util.containers.ContainerUtil;
+import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-/**
- * Created by IntelliJ IDEA.
- * User: Maxim.Mossienko
- * Date: Mar 9, 2005
- * Time: 4:37:08 PM
- * To change this template use File | Settings | File Templates.
- */
 class ReplaceUsageViewContext extends UsageViewContext {
-  private final HashMap<Usage,ReplacementInfo> usage2ReplacementInfo = new HashMap<>();
-  private final Replacer replacer = new Replacer(mySearchContext.getProject(), ((ReplaceConfiguration)myConfiguration).getOptions());
-  private UsageView myUsageView;
-  private Set<Usage> myExcludedSet;
+  private final Map<Usage,ReplacementInfo> usage2ReplacementInfo = new HashMap<>();
+  private final Replacer replacer = new Replacer(mySearchContext.getProject(), myConfiguration.getReplaceOptions());
 
-  ReplaceUsageViewContext(SearchContext context, Configuration configuration, Runnable searchStarter) {
+  ReplaceUsageViewContext(@NotNull SearchContext context, @NotNull Configuration configuration, @NotNull Runnable searchStarter) {
     super(configuration, context, searchStarter);
   }
 
-  @Override
-  public void setUsageView(UsageView usageView) {
-    myUsageView = usageView;
+  public void addReplaceUsage(@NotNull Usage usage, @NotNull MatchResult result) {
+    usage2ReplacementInfo.put(usage, replacer.buildReplacement(result));
   }
 
-  public Replacer getReplacer() {
-    return replacer;
-  }
-
-  public void addReplaceUsage(Usage usage, MatchResult result) {
-    usage2ReplacementInfo.put(usage, getReplacer().buildReplacement(result));
-  }
-
-  private boolean isValid(UsageInfo2UsageAdapter info) {
-    final UsageInfo usageInfo = info.getUsageInfo();
-    return !isExcluded(info) && usageInfo.getElement() != null && usageInfo.getElement().isValid();
+  private static boolean isValid(@NotNull UsageInfo2UsageAdapter info) {
+    final PsiElement element = info.getUsageInfo().getElement();
+    return element != null && element.isValid();
   }
 
   @Override
   protected void configureActions() {
-    final Runnable replaceRunnable = () -> {
-      LocalHistoryAction labelAction = LocalHistory.getInstance().startAction(SSRBundle.message("structural.replace.title"));
-
-      doReplace();
-      myUsageView.close();
-
-      labelAction.finish();
-    };
-
-    //noinspection HardCodedStringLiteral
-    myUsageView.addPerformOperationAction(replaceRunnable, "Replace All", null, SSRBundle.message("do.replace.all.button"));
-
-    final Runnable replaceSelected = () -> {
-      final Set<Usage> infos = myUsageView.getSelectedUsages();
-      if (infos == null || infos.isEmpty()) return;
-
-      LocalHistoryAction labelAction = LocalHistory.getInstance().startAction(SSRBundle.message("structural.replace.title"));
-
-      for (final Usage info : infos) {
-        final UsageInfo2UsageAdapter usage = (UsageInfo2UsageAdapter)info;
-
-        if (isValid(usage)) {
-          replaceOne(usage, false);
-        }
-      }
-
-      labelAction.finish();
-
-      if (myUsageView.getUsagesCount() > 0) {
-        for (Usage usage : myUsageView.getSortedUsages()) {
-          if (!isExcluded(usage)) {
-            myUsageView.selectUsages(new Usage[]{usage});
-            return;
-          }
-        }
-      }
-    };
-
-    myUsageView.addButtonToLowerPane(replaceSelected, SSRBundle.message("replace.selected.button"));
+    super.configureActions();
+    myUsageView.addButtonToLowerPane(() -> replace(myUsageView.getSortedUsages()), SSRBundle.message("do.replace.all.button"));
+    myUsageView.addButtonToLowerPane(() -> replace(myUsageView.getSelectedUsages()), SSRBundle.message("replace.selected.button"));
 
     final Runnable previewReplacement = () -> {
-      Set<Usage> selection = myUsageView.getSelectedUsages();
-
-      if (selection != null && !selection.isEmpty()) {
-        UsageInfo2UsageAdapter usage = (UsageInfo2UsageAdapter)selection.iterator().next();
-
-        if (isValid(usage)) {
-          replaceOne(usage, true);
+      final Set<Usage> selection = myUsageView.getSelectedUsages();
+      if (selection.isEmpty()) {
+        return;
+      }
+      for (Usage usage : selection) {
+        final UsageInfo2UsageAdapter info = (UsageInfo2UsageAdapter)usage;
+        if (!isValid(info) || myUsageView.getExcludedUsages().contains(usage)) {
+          continue;
         }
+        final ReplacementInfo replacementInfo = usage2ReplacementInfo.get(usage);
+        final ReplacementPreviewDialog previewDialog =
+          new ReplacementPreviewDialog(mySearchContext.getProject(), info.getUsageInfo(), replacementInfo.getReplacement());
+        if (!previewDialog.showAndGet()) {
+          return;
+        }
+        replace(Collections.singleton(info));
       }
     };
-
     myUsageView.addButtonToLowerPane(previewReplacement, SSRBundle.message("preview.replacement.button"));
-
-    super.configureActions();
   }
 
-  private static void ensureFileWritable(final UsageInfo2UsageAdapter usage) {
-    final VirtualFile file = usage.getFile();
+  private void replace(@NotNull Collection<? extends Usage> usages) {
+    final Set<Usage> excluded = myUsageView.getExcludedUsages();
+    usages = usages.stream().filter(u -> !excluded.contains(u)).filter(u -> isValid((UsageInfo2UsageAdapter)u)).collect(Collectors.toList());
 
-    if (file != null && !file.isWritable()) {
-      ReadonlyStatusHandler.getInstance(usage.getElement().getProject()).ensureFilesWritable(file);
+    final List<VirtualFile> files = ContainerUtil.map(usages, i -> ((UsageInFile)i).getFile());
+    if (ReadonlyStatusHandler.getInstance(mySearchContext.getProject()).ensureFilesWritable(files).hasReadonlyFiles()) {
+      return;
+    }
+    removeUsagesAndSelectNext(usages, excluded);
+    final List<ReplacementInfo> replacementInfos = ContainerUtil.map(usages, usage2ReplacementInfo::get);
+    final LocalHistoryAction action = LocalHistory.getInstance().startAction(SSRBundle.message("structural.replace.title"));
+    try {
+      CommandProcessor.getInstance().executeCommand(
+        mySearchContext.getProject(), () -> replacer.replaceAll(replacementInfos), SSRBundle.message("structural.replace.title"), null);
+    } finally {
+      action.finish();
     }
   }
 
-  private void replaceOne(UsageInfo2UsageAdapter info, boolean doConfirm) {
-    ReplacementInfo replacementInfo = usage2ReplacementInfo.get(info);
-    boolean approved;
-
-    if (doConfirm) {
-      ReplacementPreviewDialog wrapper =
-        new ReplacementPreviewDialog(mySearchContext.getProject(), info.getUsageInfo(), replacementInfo.getReplacement());
-
-      approved = wrapper.showAndGet();
+  private void removeUsagesAndSelectNext(@NotNull Collection<? extends Usage> usages, @NotNull Collection<? extends Usage> excluded) {
+    final List<Usage> sortedUsages = myUsageView.getSortedUsages();
+    if (sortedUsages.size() == usages.size()) {
+      myUsageView.close();
     }
     else {
-      approved = true;
-    }
-
-    if (approved) {
-      ensureFileWritable(info);
-      myUsageView.removeUsage(info);
-      getReplacer().replace(replacementInfo);
-
-      if (myUsageView.getUsagesCount() == 0) {
-        myUsageView.close();
+      Usage firstValid = null;
+      Usage select = null;
+      for (Usage usage : sortedUsages) {
+        if (usages.contains(usage)) {
+          select = null;
+          continue;
+        }
+        if (excluded.contains(usage) || !isValid((UsageInfo2UsageAdapter)usage)) {
+          continue;
+        }
+        if (select == null) {
+          select = usage;
+        }
+        if (firstValid == null) {
+          firstValid = usage;
+        }
       }
+      myUsageView.removeUsagesBulk(usages);
+      myUsageView.selectUsages(new Usage[]{
+        ObjectUtils.coalesce(select, firstValid, myUsageView.getSortedUsages().get(0))
+      });
     }
-  }
-
-  private void doReplace() {
-    List<Usage> infos = myUsageView.getSortedUsages();
-    List<ReplacementInfo> results = new ArrayList<>(infos.size());
-
-    for (final Usage info : infos) {
-      UsageInfo2UsageAdapter usage = (UsageInfo2UsageAdapter)info;
-
-      if (isValid(usage)) {
-        results.add(usage2ReplacementInfo.get(usage));
-      }
-    }
-
-    getReplacer().replaceAll(results);
-  }
-
-  private boolean isExcluded(Usage usage) {
-    if (myExcludedSet == null) myExcludedSet = myUsageView.getExcludedUsages();
-    return myExcludedSet.contains(usage);
   }
 }

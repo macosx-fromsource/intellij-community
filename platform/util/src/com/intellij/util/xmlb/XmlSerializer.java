@@ -1,73 +1,45 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.xmlb;
 
 import com.intellij.openapi.util.JDOMUtil;
+import com.intellij.serialization.SerializationException;
 import org.jdom.Document;
 import org.jdom.Element;
 import org.jdom.JDOMException;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
-import java.lang.reflect.Array;
 import java.net.URL;
-import java.util.Set;
+import java.util.Objects;
 
-public class XmlSerializer {
-  private static final SerializationFilter TRUE_FILTER = new SerializationFilter() {
-    @Override
-    public boolean accepts(@NotNull Accessor accessor, @NotNull Object bean) {
-      return true;
-    }
-  };
-
+public final class XmlSerializer {
   private XmlSerializer() {
   }
 
   /**
    * Consider to use {@link SkipDefaultValuesSerializationFilters}
    */
-  public static Element serialize(@NotNull Object object) throws XmlSerializationException {
-    return serialize(object, TRUE_FILTER);
+  public static Element serialize(@NotNull Object object) throws SerializationException {
+    return serialize(object, null);
   }
 
-  @NotNull
-  public static Element serialize(@NotNull Object object, @Nullable SerializationFilter filter) throws XmlSerializationException {
-    return XmlSerializerImpl.serialize(object, filter == null ? TRUE_FILTER : filter);
+  public static @NotNull Element serialize(@NotNull Object object, @Nullable SerializationFilter filter) throws SerializationException {
+    return XmlSerializerImpl.serialize(object, filter);
   }
 
-  @Nullable
-  public static Element serializeIfNotDefault(@NotNull Object object, @Nullable SerializationFilter filter) {
-    return XmlSerializerImpl.serializeIfNotDefault(object, filter == null ? TRUE_FILTER : filter);
-  }
-
-  @Nullable
-  public static <T> T deserialize(Document document, Class<T> aClass) throws XmlSerializationException {
+  public static @NotNull <T> T deserialize(Document document, Class<T> aClass) throws SerializationException {
     return deserialize(document.getRootElement(), aClass);
   }
 
-  @Nullable
-  @SuppressWarnings({"unchecked"})
-  public static <T> T deserialize(@NotNull Element element, @NotNull Class<T> aClass) throws XmlSerializationException {
+  @SuppressWarnings("unchecked")
+  public static @NotNull <T> T deserialize(@NotNull Element element, @NotNull Class<T> aClass) throws SerializationException {
     try {
-      return (T)XmlSerializerImpl.getBinding(aClass).deserialize(null, element);
+      Binding binding = XmlSerializerImpl.serializer.getRootBinding(aClass, aClass);
+      return (T)Objects.requireNonNull(binding.deserialize(null, element, JdomAdapter.INSTANCE));
     }
-    catch (XmlSerializationException e) {
+    catch (SerializationException e) {
       throw e;
     }
     catch (Exception e) {
@@ -75,41 +47,21 @@ public class XmlSerializer {
     }
   }
 
-  public static <T> T[] deserialize(Element[] elements, Class<T> aClass) throws XmlSerializationException {
-    //noinspection unchecked
-    T[] result = (T[])Array.newInstance(aClass, elements.length);
-
-    for (int i = 0; i < result.length; i++) {
-      result[i] = deserialize(elements[i], aClass);
-    }
-
-    return result;
-  }
-
-  @Nullable
-  public static <T> T deserialize(@NotNull URL url, Class<T> aClass) throws XmlSerializationException {
+  public static @NotNull <T> T deserialize(@NotNull URL url, Class<T> aClass) throws SerializationException {
     try {
-      Document document = JDOMUtil.loadDocument(url);
-      document = JDOMXIncluder.resolve(document, url.toExternalForm());
-      return deserialize(document.getRootElement(), aClass);
+      return deserialize(JDOMUtil.load(url), aClass);
     }
-    catch (IOException e) {
-      throw new XmlSerializationException(e);
-    }
-    catch (JDOMException e) {
+    catch (IOException | JDOMException e) {
       throw new XmlSerializationException(e);
     }
   }
 
   public static void deserializeInto(@NotNull Object bean, @NotNull Element element) {
-    deserializeInto(bean, element, null);
-  }
-
-  public static void deserializeInto(@NotNull Object bean, @NotNull Element element, @Nullable Set<String> accessorNameTracker) {
     try {
-      ((BeanBinding)XmlSerializerImpl.getBinding(bean.getClass())).deserializeInto(bean, element, accessorNameTracker);
+      Class<?> aClass = bean.getClass();
+      ((BeanBinding)XmlSerializerImpl.serializer.getRootBinding(aClass, aClass)).deserializeInto(bean, element);
     }
-    catch (XmlSerializationException e) {
+    catch (SerializationException e) {
       throw e;
     }
     catch (Exception e) {
@@ -117,20 +69,22 @@ public class XmlSerializer {
     }
   }
 
-  public static void serializeInto(final Object bean, final Element element) {
+  @ApiStatus.Internal
+  @ApiStatus.Obsolete
+  public static @NotNull BeanBinding getBeanBinding(@NotNull Class<?> aClass) {
+    return (BeanBinding)XmlSerializerImpl.serializer.getRootBinding(aClass, aClass);
+  }
+
+  public static void serializeInto(@NotNull Object bean, @NotNull Element element) {
     serializeInto(bean, element, null);
   }
 
   public static void serializeInto(@NotNull Object bean, @NotNull Element element, @Nullable SerializationFilter filter) {
-    if (filter == null) {
-      filter = TRUE_FILTER;
-    }
     try {
-      Binding binding = XmlSerializerImpl.getBinding(bean.getClass());
-      assert binding instanceof BeanBinding;
-      ((BeanBinding)binding).serializeInto(bean, element, filter);
+      Class<?> aClass = bean.getClass();
+      ((BeanBinding)XmlSerializerImpl.serializer.getRootBinding(aClass, aClass)).serializeProperties(bean, element, filter);
     }
-    catch (XmlSerializationException e) {
+    catch (SerializationException e) {
       throw e;
     }
     catch (Exception e) {

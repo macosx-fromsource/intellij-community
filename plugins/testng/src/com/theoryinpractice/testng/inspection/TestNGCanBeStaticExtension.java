@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * User: anna
- * Date: 30-Nov-2009
- */
 package com.theoryinpractice.testng.inspection;
 
 import com.intellij.openapi.util.Condition;
@@ -26,9 +22,9 @@ import com.intellij.psi.PsiMethod;
 import com.theoryinpractice.testng.util.TestNGUtil;
 
 public class TestNGCanBeStaticExtension implements Condition<PsiElement> {
+  @Override
   public boolean value(PsiElement member) {
-    if (member instanceof PsiMethod) {
-      PsiMethod method = (PsiMethod)member;
+    if (member instanceof PsiMethod method) {
       return TestNGUtil.hasTest(method, false) || TestNGUtil.hasConfig(method);
     }
     return false;

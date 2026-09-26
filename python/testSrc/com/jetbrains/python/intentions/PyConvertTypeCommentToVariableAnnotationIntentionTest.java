@@ -15,18 +15,23 @@
  */
 package com.jetbrains.python.intentions;
 
-import com.jetbrains.python.PyBundle;
+import com.jetbrains.python.allure.Components;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+import com.jetbrains.python.PyPsiBundle;
 import com.jetbrains.python.psi.LanguageLevel;
 
+@Subsystems.CodeInsight
+@Components.Intentions
+@Layers.Functional
 public class PyConvertTypeCommentToVariableAnnotationIntentionTest extends PyIntentionTestCase {
   private void doPositiveTest() {
-    doTest(PyBundle.message("INTN.convert.type.comment.to.variable.annotation.text"), LanguageLevel.PYTHON36);
+    doTest(PyPsiBundle.message("INTN.convert.type.comment.to.variable.annotation"), LanguageLevel.PYTHON36);
   }
 
   private void doNegativeTest() {
-    runWithLanguageLevel(LanguageLevel.PYTHON36, () -> {
-      doNegativeTest(PyBundle.message("INTN.convert.type.comment.to.variable.annotation.text"));
-    });
+    runWithLanguageLevel(LanguageLevel.PYTHON36, () -> doNegativeTest(PyPsiBundle.message(
+      "INTN.convert.type.comment.to.variable.annotation")));
   }
 
   public void testSimpleAssignment() {
@@ -34,9 +39,8 @@ public class PyConvertTypeCommentToVariableAnnotationIntentionTest extends PyInt
   }
 
   public void testBadLanguageLevel() {
-    runWithLanguageLevel(LanguageLevel.PYTHON35, () -> {
-      doNegativeTest(PyBundle.message("INTN.convert.type.comment.to.variable.annotation.text"));
-    });
+    runWithLanguageLevel(LanguageLevel.PYTHON35, () -> doNegativeTest(PyPsiBundle.message(
+      "INTN.convert.type.comment.to.variable.annotation")));
   }
 
   public void testChainedAssignment() {
@@ -80,6 +84,21 @@ public class PyConvertTypeCommentToVariableAnnotationIntentionTest extends PyInt
   }
 
   public void testWithStatementWithMultipleWithItems() {
+    doNegativeTest();
+  }
+
+  // EA-116787
+  public void testIllegalTypeHint() {
+    doPositiveTest();
+  }
+
+  // PY-21195 EA-116787
+  public void testTypeHintFollowedByComment() {
+    doPositiveTest();
+  }
+
+  // EA-117868
+  public void testIllegalTypeHintInAssignmentWithUnpacking() {
     doNegativeTest();
   }
 }

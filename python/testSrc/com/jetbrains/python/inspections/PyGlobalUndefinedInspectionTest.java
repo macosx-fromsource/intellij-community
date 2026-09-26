@@ -15,12 +15,15 @@
  */
 package com.jetbrains.python.inspections;
 
-import com.jetbrains.python.fixtures.PyTestCase;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
 
-/**
- * User: ktisha
- */
-public class PyGlobalUndefinedInspectionTest extends PyTestCase {
+import com.jetbrains.python.fixtures.PyInspectionTestCase;
+import org.jetbrains.annotations.NotNull;
+
+@Subsystems.Inspections
+@Layers.Functional
+public class PyGlobalUndefinedInspectionTest extends PyInspectionTestCase {
 
   public void testTruePositive() {
     doTest();
@@ -30,9 +33,29 @@ public class PyGlobalUndefinedInspectionTest extends PyTestCase {
     doTest();
   }
 
-  private void doTest() {
-    myFixture.configureByFile("inspections/PyGlobalUndefinedInspection/" + getTestName(true) + ".py");
-    myFixture.enableInspections(PyGlobalUndefinedInspection.class);
-    myFixture.checkHighlighting(false, false, true);
+  // PY-37415
+  public void testReassignedAndAbsent() {
+    doTest();
+  }
+
+  // PY-37415
+  public void testReassignedAndPresent() {
+    doTest();
+  }
+
+  // PY-37623
+  public void testSeveralGlobals() {
+    doTest();
+  }
+
+  // PY-37755
+  public void testSameNameMiddleTrueNegative() {
+    doTest();
+  }
+
+  @NotNull
+  @Override
+  protected Class<? extends PyInspection> getInspectionClass() {
+    return PyGlobalUndefinedInspection.class;
   }
 }

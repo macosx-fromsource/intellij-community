@@ -1,71 +1,66 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.problems;
 
-import com.intellij.openapi.Disposable;
 import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.concurrency.annotations.RequiresBackgroundThread;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.List;
 
-/**
- * @author cdr
- */
 public abstract class WolfTheProblemSolver {
-  public static final ExtensionPointName<Condition<VirtualFile>> FILTER_EP_NAME = ExtensionPointName.create("com.intellij.problemFileHighlightFilter");
+  protected static final ExtensionPointName<Condition<VirtualFile>> FILTER_EP_NAME = new ExtensionPointName<>("com.intellij.problemFileHighlightFilter");
 
   public static WolfTheProblemSolver getInstance(Project project) {
-    return project.getComponent(WolfTheProblemSolver.class);
+    return project.getService(WolfTheProblemSolver.class);
   }
 
-  public abstract boolean isProblemFile(VirtualFile virtualFile);
+  public static @Nullable WolfTheProblemSolver getInstanceIfCreated(Project project) {
+    return project.getServiceIfCreated(WolfTheProblemSolver.class);
+  }
 
-  public abstract void weHaveGotProblems(@NotNull VirtualFile virtualFile, @NotNull List<Problem> problems);
-  public abstract void weHaveGotNonIgnorableProblems(@NotNull VirtualFile virtualFile, @NotNull List<Problem> problems);
+  public abstract boolean isProblemFile(@NotNull VirtualFile virtualFile);
+
+  @RequiresBackgroundThread
+  public abstract void weHaveGotProblems(@NotNull VirtualFile virtualFile, @NotNull List<? extends Problem> problems);
+  @RequiresBackgroundThread
+  public abstract void weHaveGotNonIgnorableProblems(@NotNull VirtualFile virtualFile, @NotNull List<? extends Problem> problems);
   public abstract void clearProblems(@NotNull VirtualFile virtualFile);
 
-  public abstract boolean hasProblemFilesBeneath(@NotNull Condition<VirtualFile> condition);
+  public abstract boolean hasProblemFilesBeneath(@NotNull Condition<? super VirtualFile> condition);
 
   public abstract boolean hasProblemFilesBeneath(@NotNull Module scope);
 
-  public abstract Problem convertToProblem(VirtualFile virtualFile, int line, int column, String[] message);
+  public abstract Problem convertToProblem(@NotNull VirtualFile virtualFile, int line, int column, String @NotNull [] message);
 
-  public abstract void reportProblems(final VirtualFile file, Collection<Problem> problems);
+  @RequiresBackgroundThread
+  public abstract void reportProblems(@NotNull VirtualFile file, @NotNull Collection<? extends Problem> problems);
 
-  public abstract boolean hasSyntaxErrors(final VirtualFile file);
-
-  public abstract static class ProblemListener {
-    public void problemsAppeared(@NotNull VirtualFile file) {}
-    public void problemsChanged(@NotNull VirtualFile file) {}
-    public void problemsDisappeared(@NotNull VirtualFile file) {}
-  }
-
-  public abstract void addProblemListener(@NotNull ProblemListener listener);
-  public abstract void addProblemListener(@NotNull ProblemListener listener, @NotNull Disposable parentDisposable);
-  public abstract void removeProblemListener(@NotNull ProblemListener listener);
+  public abstract boolean hasSyntaxErrors(@NotNull VirtualFile file);
 
   /**
-   * @deprecated register extensions to {@link #FILTER_EP_NAME} instead
+   * Reports that the specified file contains problems that cannot be discovered by running the general
+   * highlighting pass for the file.
+   *
+   * @param source Identifies the component that discovered the problems. A file is highlighted as problematic
+   *               if it has problems from GeneralHighlightingPass or from at least one source.
    */
-  public abstract void registerFileHighlightFilter(@NotNull Condition<VirtualFile> filter, @NotNull Disposable parentDisposable);
-  public abstract void queue(VirtualFile suspiciousFile);
+  @RequiresBackgroundThread
+  public abstract void reportProblemsFromExternalSource(@NotNull VirtualFile file, @NotNull Object source);
+
+  /**
+   * Reports that the specified file no longer contains problems discovered by the specified source. If the
+   * file has no problems from GeneralHighlightingPass or from any other sources, it will no longer be
+   * highlighted as problematic.
+   */
+  @RequiresBackgroundThread
+  public abstract void clearProblemsFromExternalSource(@NotNull VirtualFile file, @NotNull Object source);
+
+  @RequiresBackgroundThread
+  public abstract void queue(@NotNull VirtualFile suspiciousFile);
 }

@@ -1,32 +1,17 @@
-/*
- * Copyright 2000-2011 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.impl;
 
 import com.intellij.openapi.editor.TextChange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.CharSequenceBackedByArray;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 /**
  * Default {@link TextChange} implementation with mutable state.
- *
- * @author Denis Zhdanov
- * @since Jul 7, 2010 5:24:06 PM
  */
+@ApiStatus.Internal
 public class TextChangeImpl implements TextChange {
 
   private final StringBuilder myText = new StringBuilder();
@@ -36,8 +21,8 @@ public class TextChangeImpl implements TextChange {
   private int    myEnd;
 
   /**
-   * Shorthand for creating change object with the given arguments where <code>'end index'</code> has the same value as
-   * <code>'start index'</code>.
+   * Shorthand for creating change object with the given arguments where {@code 'end index'} has the same value as
+   * {@code 'start index'}.
    *
    * @param text      text affected by the current change
    * @param start     start index (inclusive) of text range affected by the change encapsulated by the current object
@@ -48,13 +33,13 @@ public class TextChangeImpl implements TextChange {
   }
 
   /**
-   * Creates new <code>TextChange</code> object with the given arguments. It encapsulates information about the change that
+   * Creates new {@code TextChange} object with the given arguments. It encapsulates information about the change that
    * may be applied to the target document.
    *
    * @param text      text that is introduced by the current change
    * @param start     start index of the target document location where current change is to be applied
    * @param end       end index of the target document where current change is to be applied, i.e. it's assumed that current text
-   *                  change appliance to particular document causes replacement of its original text at <code>[start; end)</code>
+   *                  change appliance to particular document causes replacement of its original text at {@code [start; end)}
    *                  interval by the text encapsulated by the current change. I.e. original text is replaced by the new one
    * @throws IllegalArgumentException     if given start or end index in invalid or they are inconsistent to each other
    */
@@ -103,8 +88,7 @@ public class TextChangeImpl implements TextChange {
    * @return    text related to the change encapsulated by the current object
    */
   @Override
-  @NotNull
-  public CharSequence getText() {
+  public @NotNull CharSequence getText() {
     return myText;
   }
 
@@ -119,19 +103,19 @@ public class TextChangeImpl implements TextChange {
    * @return    stored change text as a char array
    */
   @Override
-  @NotNull
-  public char[] getChars() {
-    if (myChars == null) {
-      myChars = CharArrayUtil.fromSequence(myText);
+  public char @NotNull [] getChars() {
+    char[] chars = myChars;
+    if (chars == null) {
+      myChars = chars = CharArrayUtil.fromSequence(myText);
     }
-    return myChars;
+    return chars;
   }
 
   /**
    * Difference in document symbols number after current change appliance.
    * <p/>
-   * <b>Note:</b> returned number may be either positive or not. For example it may be negative for <code>'remove'</code>
-   * or <code>'replace'</code> changes (number of text symbols is less than number of symbols at target change interval)
+   * <b>Note:</b> returned number may be either positive or not. For example it may be negative for {@code 'remove'}
+   * or {@code 'replace'} changes (number of text symbols is less than number of symbols at target change interval)
    *
    * @return    difference in document symbols number after current change appliance
    */
@@ -161,27 +145,6 @@ public class TextChangeImpl implements TextChange {
     setEnd(myEnd + offset);
   }
 
-  /**
-   * Shorthand for calling {@link #isWithinBounds(int, int)} with zero start offset and given length as and end offset
-   * 
-   * @param length  target length
-   * @return        <code>true</code> if current change is within the target bounds; <code>false</code> otherwise
-   */
-  public boolean isWithinBounds(int length) {
-    return isWithinBounds(0, length);
-  }
-
-  /**
-   * Allows to check if current change is within the given bounds.
-   * 
-   * @param start  target bounds start offset (inclusive)
-   * @param end    target bounds end offset (exclusive)
-   * @return       <code>true</code> if current change is within the target bounds; <code>false</code> otherwise 
-   */
-  public boolean isWithinBounds(int start, int end) {
-    return myStart >= start && myEnd <= end && myStart <= myEnd;
-  }
-  
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
@@ -193,7 +156,7 @@ public class TextChangeImpl implements TextChange {
 
   @Override
   public int hashCode() {
-    int result = StringUtil.hashCode(myText);
+    int result = StringUtil.stringHashCode(myText);
     result = 31 * result + myStart;
     return 31 * result + myEnd;
   }

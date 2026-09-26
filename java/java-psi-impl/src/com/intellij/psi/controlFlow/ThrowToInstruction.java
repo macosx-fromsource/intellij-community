@@ -16,16 +16,18 @@
 package com.intellij.psi.controlFlow;
 
 import com.intellij.openapi.diagnostic.Logger;
+import org.jetbrains.annotations.NotNull;
 
 
 public class ThrowToInstruction extends BranchingInstruction {
 
-  private static final Logger LOG = Logger.getInstance("#com.intellij.psi.controlFlow.ThrowToInstruction");
+  private static final Logger LOG = Logger.getInstance(ThrowToInstruction.class);
 
-  public ThrowToInstruction(int offset) {
+  ThrowToInstruction(int offset) {
     super(offset, Role.END);
   }
 
+  @Override
   public String toString() {
     return "THROW_TO " + offset;
   }
@@ -40,7 +42,7 @@ public class ThrowToInstruction extends BranchingInstruction {
   }
 
   @Override
-  public void accept(ControlFlowInstructionVisitor visitor, int offset, int nextOffset) {
+  public void accept(@NotNull ControlFlowInstructionVisitor visitor, int offset, int nextOffset) {
     visitor.visitThrowToInstruction(this, offset, nextOffset);
   }
 }

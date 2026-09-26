@@ -4,22 +4,22 @@ import com.intellij.lang.ImportOptimizer;
 import com.intellij.openapi.fileTypes.PlainTextLanguage;
 import com.intellij.openapi.util.EmptyRunnable;
 import com.intellij.psi.PsiFile;
-import com.intellij.util.containers.HashSet;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.HashSet;
 import java.util.Set;
 
 public class MockPlainTextImportOptimizer implements ImportOptimizer {
-  private Set<PsiFile> myProcessedFiles = new HashSet<>();
+  private final Set<PsiFile> myProcessedFiles = new HashSet<>();
   
   @Override
-  public boolean supports(PsiFile file) {
+  public boolean supports(@NotNull PsiFile file) {
     return file.getLanguage() == PlainTextLanguage.INSTANCE;
   }
 
   @NotNull
   @Override
-  public Runnable processFile(PsiFile file) {
+  public Runnable processFile(@NotNull PsiFile file) {
     myProcessedFiles.add(file);
     return EmptyRunnable.INSTANCE;
   }

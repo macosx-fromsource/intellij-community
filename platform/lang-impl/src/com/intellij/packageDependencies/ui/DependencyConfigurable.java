@@ -1,64 +1,63 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.packageDependencies.ui;
 
-import com.intellij.analysis.AnalysisScopeBundle;
-import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
+import com.intellij.codeInsight.CodeInsightBundle;
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
 import com.intellij.ide.util.scopeChooser.PackageSetChooserCombo;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.options.BaseConfigurable;
+import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.project.Project;
-import com.intellij.packageDependencies.DefaultScopesProvider;
+import com.intellij.openapi.util.NlsContexts;
 import com.intellij.packageDependencies.DependencyRule;
 import com.intellij.packageDependencies.DependencyValidationManager;
+import com.intellij.psi.search.scope.packageSet.CustomScopesProviderEx;
 import com.intellij.psi.search.scope.packageSet.NamedScope;
 import com.intellij.psi.search.scope.packageSet.PackageSet;
 import com.intellij.ui.ToolbarDecorator;
 import com.intellij.ui.table.TableView;
-import com.intellij.util.ui.*;
+import com.intellij.util.ui.AbstractTableCellEditor;
+import com.intellij.util.ui.CellEditorComponentWithBrowseButton;
+import com.intellij.util.ui.ColumnInfo;
+import com.intellij.util.ui.EditableModel;
+import com.intellij.util.ui.GridBag;
+import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.ListTableModel;
+import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JCheckBox;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JTable;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 
-public class DependencyConfigurable extends BaseConfigurable {
+@ApiStatus.Internal
+public final class DependencyConfigurable implements Configurable, Configurable.NoScroll {
   private final Project myProject;
   private MyTableModel myDenyRulesModel;
   private MyTableModel myAllowRulesModel;
   private TableView<DependencyRule> myDenyTable;
   private TableView<DependencyRule> myAllowTable;
 
-  private final ColumnInfo<DependencyRule, NamedScope> DENY_USAGES_OF = new LeftColumn(AnalysisScopeBundle.message("dependency.configurable.deny.table.column1"));
-  private final ColumnInfo<DependencyRule, NamedScope> DENY_USAGES_IN = new RightColumn(AnalysisScopeBundle.message("dependency.configurable.deny.table.column2"));
-  private final ColumnInfo<DependencyRule, NamedScope> ALLOW_USAGES_OF = new LeftColumn(AnalysisScopeBundle.message("dependency.configurable.allow.table.column1"));
-  private final ColumnInfo<DependencyRule, NamedScope> ALLOW_USAGES_ONLY_IN = new RightColumn(AnalysisScopeBundle.message("dependency.configurable.allow.table.column2"));
+  private final ColumnInfo<DependencyRule, NamedScope> DENY_USAGES_OF = new LeftColumn(CodeInsightBundle.message("dependency.configurable.deny.table.column1"));
+  private final ColumnInfo<DependencyRule, NamedScope> DENY_USAGES_IN = new RightColumn(CodeInsightBundle.message("dependency.configurable.deny.table.column2"));
+  private final ColumnInfo<DependencyRule, NamedScope> ALLOW_USAGES_OF = new LeftColumn(CodeInsightBundle.message("dependency.configurable.allow.table.column1"));
+  private final ColumnInfo<DependencyRule, NamedScope> ALLOW_USAGES_ONLY_IN = new RightColumn(CodeInsightBundle.message("dependency.configurable.allow.table.column2"));
 
-  private JPanel myWholePanel;
-  private JPanel myDenyPanel;
-  private JPanel myAllowPanel;
   private JCheckBox mySkipImports;
-  private static final Logger LOG = Logger.getInstance("#" + DependencyConfigurable.class.getName());
+  private static final Logger LOG = Logger.getInstance(DependencyConfigurable.class);
 
   public DependencyConfigurable(Project project) {
     myProject = project;
@@ -66,7 +65,7 @@ public class DependencyConfigurable extends BaseConfigurable {
 
   @Override
   public String getDisplayName() {
-    return AnalysisScopeBundle.message("dependency.configurable.display.name");
+    return CodeInsightBundle.message("dependency.configurable.display.name");
   }
 
   @Override
@@ -76,20 +75,32 @@ public class DependencyConfigurable extends BaseConfigurable {
 
   @Override
   public JComponent createComponent() {
-    myDenyRulesModel = new MyTableModel(myProject, new ColumnInfo[]{DENY_USAGES_OF, DENY_USAGES_IN}, true);
+    JPanel wholePanel = new JPanel(new GridBagLayout());
+    final GridBag constraint = new GridBag()
+      .setDefaultWeightX(1.0)
+      .setDefaultWeightY(1.0)
+      .setDefaultFill(GridBagConstraints.BOTH);
+
+    myDenyRulesModel = new MyTableModel(new ColumnInfo[]{DENY_USAGES_OF, DENY_USAGES_IN}, true);
     myDenyRulesModel.setSortable(false);
 
-    myAllowRulesModel = new MyTableModel(myProject, new ColumnInfo[]{ALLOW_USAGES_OF, ALLOW_USAGES_ONLY_IN}, false);
+    myAllowRulesModel = new MyTableModel(new ColumnInfo[]{ALLOW_USAGES_OF, ALLOW_USAGES_ONLY_IN}, false);
     myAllowRulesModel.setSortable(false);
 
     myDenyTable = new TableView<>(myDenyRulesModel);
-    myDenyPanel.add(createRulesPanel(myDenyRulesModel, myDenyTable), BorderLayout.CENTER);
     myAllowTable = new TableView<>(myAllowRulesModel);
-    myAllowPanel.add(createRulesPanel(myAllowRulesModel, myAllowTable), BorderLayout.CENTER);
-    return myWholePanel;
+
+    mySkipImports = new JCheckBox(CodeInsightBundle.message("skip.import.statements.checkbox.title"));
+
+    wholePanel.add(createRulesPanel(myDenyTable), constraint.nextLine());
+    wholePanel.add(createRulesPanel(myAllowTable), constraint.nextLine().insets(UIUtil.LARGE_VGAP, 0, UIUtil.DEFAULT_VGAP, 0));
+    wholePanel.add(mySkipImports, constraint.nextLine().weighty(0));
+    wholePanel.setMinimumSize(new Dimension(400, 400));
+
+    return wholePanel;
   }
 
-  private JPanel createRulesPanel(MyTableModel model, TableView<DependencyRule> table) {
+  private JPanel createRulesPanel(TableView<DependencyRule> table) {
     table.setSurrendersFocusOnKeystroke(true);
     table.setPreferredScrollableViewportSize(JBUI.size(300, 150));
     table.setShowGrid(true);
@@ -99,7 +110,7 @@ public class DependencyConfigurable extends BaseConfigurable {
   }
 
   @Override
-  public JComponent getPreferredFocusedComponent() {
+  public @Nullable JComponent getPreferredFocusedComponent() {
     return myDenyTable;
   }
 
@@ -133,7 +144,7 @@ public class DependencyConfigurable extends BaseConfigurable {
 
     validationManager.setSkipImportStatements(mySkipImports.isSelected());
 
-    DaemonCodeAnalyzer.getInstance(myProject).restart();
+    DaemonCodeAnalyzerEx.getInstanceEx(myProject).restart("DependencyConfigurable.apply");
   }
 
   private void stopTableEditing() {
@@ -170,10 +181,6 @@ public class DependencyConfigurable extends BaseConfigurable {
     return !Arrays.asList(validationManager.getAllRules()).equals(rules);
   }
 
-  @Override
-  public void disposeUIResources() {
-  }
-
   private static final DefaultTableCellRenderer
     CELL_RENDERER = new DefaultTableCellRenderer() {
       @Override
@@ -184,13 +191,14 @@ public class DependencyConfigurable extends BaseConfigurable {
                                                      int row,
                                                      int column) {
         super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-        setText(value == null ? "" : ((NamedScope)value).getName());
+        setText(value == null ? "" : ((NamedScope)value).getPresentableName());
         return this;
       }
     };
 
+  @ApiStatus.Internal
   public abstract class MyColumnInfo extends ColumnInfo<DependencyRule, NamedScope> {
-    protected MyColumnInfo(String name) {
+    protected MyColumnInfo(@NlsContexts.ColumnName String name) {
       super(name);
     }
 
@@ -216,7 +224,7 @@ public class DependencyConfigurable extends BaseConfigurable {
 
         @Override
         public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
-          myCombo = new PackageSetChooserCombo(myProject, value == null ? null : ((NamedScope)value).getName());
+          myCombo = new PackageSetChooserCombo(myProject, value == null ? null : ((NamedScope)value).getScopeId());
           return new CellEditorComponentWithBrowseButton<>(myCombo, this);
         }
       };
@@ -227,8 +235,8 @@ public class DependencyConfigurable extends BaseConfigurable {
   }
 
 
-  private class RightColumn extends MyColumnInfo {
-    public RightColumn(final String name) {
+  private final class RightColumn extends MyColumnInfo {
+    RightColumn(final @NlsContexts.ColumnName String name) {
       super(name);
     }
 
@@ -243,8 +251,8 @@ public class DependencyConfigurable extends BaseConfigurable {
     }
   }
 
-  private class LeftColumn extends MyColumnInfo {
-    public LeftColumn(final String name) {
+  private final class LeftColumn extends MyColumnInfo {
+    LeftColumn(final @NlsContexts.ColumnName String name) {
       super(name);
     }
 
@@ -259,20 +267,18 @@ public class DependencyConfigurable extends BaseConfigurable {
     }
   }
 
-  private static class MyTableModel extends ListTableModel<DependencyRule> implements EditableModel {
-    private final Project myProject;
+  private static final class MyTableModel extends ListTableModel<DependencyRule> implements EditableModel {
     private final boolean myDenyRule;
 
-    public MyTableModel(final Project project, final ColumnInfo[] columnInfos, final boolean isDenyRule) {
+    MyTableModel(final ColumnInfo[] columnInfos, final boolean isDenyRule) {
       super(columnInfos);
-      myProject = project;
       myDenyRule = isDenyRule;
     }
 
     @Override
     public void addRow() {
       ArrayList<DependencyRule> newList = new ArrayList<>(getItems());
-      final NamedScope scope = DefaultScopesProvider.getAllScope();
+      final NamedScope scope = CustomScopesProviderEx.getAllScope();
       newList.add(new DependencyRule(scope, scope, myDenyRule));
       setItems(newList);
     }

@@ -1,29 +1,21 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jdom.output;
 
+import com.intellij.application.options.CodeStyle;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.CharsetToolkit;
-import com.intellij.psi.codeStyle.CodeStyleSettingsManager;
 import org.jdom.Element;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 
-public class EclipseJDOMUtil {
+public final class EclipseJDOMUtil {
   private EclipseJDOMUtil() {
   }
 
@@ -40,17 +32,16 @@ public class EclipseJDOMUtil {
   }
 
   public static void output(@NotNull Element element, @NotNull File file, @NotNull Project project) throws IOException {
-    Writer writer = new OutputStreamWriter(new FileOutputStream(file), CharsetToolkit.UTF8);
-    try {
+    try (Writer writer = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8)) {
       output(element, writer, project);
-    }
-    finally {
-      writer.close();
     }
   }
 
-  public static void output(@NotNull Element element, @NotNull Writer writer, @NotNull Project project) throws IOException {
-    String lineSeparator = CodeStyleSettingsManager.getSettings(project).getLineSeparator();
+  public static void output(@NotNull Element element, @NotNull @NonNls Writer writer, @NotNull Project project) throws IOException {
+    output(element, writer, CodeStyle.getSettings(project).getLineSeparator());
+  }
+
+  public static void output(@NotNull Element element, @NonNls @NotNull Writer writer, String lineSeparator) throws IOException {
     writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     writer.write(lineSeparator);
     createOutputter(lineSeparator).output(element, writer);

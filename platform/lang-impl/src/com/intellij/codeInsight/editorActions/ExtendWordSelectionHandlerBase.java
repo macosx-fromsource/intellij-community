@@ -1,30 +1,17 @@
-/*
- * Copyright 2000-2013 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.codeInsight.editorActions;
 
-import com.intellij.diagnostic.LogEventException;
 import com.intellij.openapi.diagnostic.Attachment;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.diagnostic.RuntimeExceptionWithAttachments;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.psi.PsiPlainText;
+import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.util.text.CharArrayUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -32,26 +19,33 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author yole
- */
+
 public abstract class ExtendWordSelectionHandlerBase implements ExtendWordSelectionHandler {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.codeInsight.editorActions.ExtendWordSelectionHandlerBase");
+  private static final Logger LOG = Logger.getInstance(ExtendWordSelectionHandlerBase.class);
   @Override
-  public abstract boolean canSelect(PsiElement e);
+  public abstract boolean canSelect(@NotNull PsiElement e);
 
   @Override
-  public List<TextRange> select(PsiElement e, CharSequence editorText, int cursorOffset, Editor editor) {
-    final TextRange originalRange = e.getTextRange();
+  public List<TextRange> select(@NotNull PsiElement e, @NotNull CharSequence editorText, int cursorOffset, @NotNull Editor editor) {
+    final TextRange originalRange;
+    if (e instanceof PsiWhiteSpace) {
+      TextRange whiteSpaceRange = expandToWhiteSpace(e, cursorOffset);
+      if (whiteSpaceRange == null) return null;
+      originalRange = whiteSpaceRange;
+    } else if (e instanceof PsiPlainText) {
+      TextRange whiteSpaceRange = expandToWhiteSpace(e, cursorOffset);
+      originalRange = whiteSpaceRange == null ? e.getTextRange() : whiteSpaceRange;
+    } else {
+      originalRange = e.getTextRange();
+    }
+
     if (originalRange.getEndOffset() > editorText.length()) {
-      throw new LogEventException("Invalid element range in " + getClass(),
-                                  "element=" + e +
-                                  "; range=" + originalRange +
-                                  "; text length=" + editorText.length() +
-                                  "; editor=" + editor +
-                                  "; committed=" + PsiDocumentManager.getInstance(e.getProject()).isCommitted(editor.getDocument()),
-                                  new Attachment("editor_text.txt", editorText.toString()),
-                                  new Attachment("psi_text.txt", e.getText()));
+      throw new RuntimeExceptionWithAttachments(
+        "Invalid element range in " + getClass(),
+        "element=" + e + "; range=" + originalRange + "; text length=" + editorText.length() + "; editor=" + editor +
+        "; committed=" + PsiDocumentManager.getInstance(e.getProject()).isCommitted(editor.getDocument()),
+        new Attachment("editor_text.txt", editorText.toString()),
+        new Attachment("psi_text.txt", e.getText()));
     }
 
     List<TextRange> ranges = expandToWholeLine(editorText, originalRange, true);
@@ -64,15 +58,45 @@ public abstract class ExtendWordSelectionHandlerBase implements ExtendWordSelect
   }
 
   /**
+   * IDEA-110607
+   * @param element psiElement at caret
+   * @param cursorOffset current caret offset in editor
+   * @return range containing all space/tab characters around the cursor
+   *         null if there is no such characters or cursor is not at the psiWhiteSpace
+   */
+  private static @Nullable TextRange expandToWhiteSpace(@NotNull PsiElement element, int cursorOffset) {
+    TextRange elementRange = element.getTextRange();
+    if (cursorOffset < elementRange.getStartOffset() || cursorOffset > elementRange.getEndOffset()) return null;
+
+    int startOffset = cursorOffset;
+    for (int i = cursorOffset - 1; ; --i) {
+      Character charBeforeCursor = SelectWordUtil.getCharAfterCursorInPsiElement(element, i);
+      if (charBeforeCursor == null || !SelectWordUtil.isExpandableWhiteSpace(charBeforeCursor)) break;
+      startOffset = i;
+    }
+
+    int endOffset = cursorOffset;
+    for (int i = cursorOffset + 1; ; ++i) {
+      Character charAfterCursor = SelectWordUtil.getCharBeforeCursorInPsiElement(element, i);
+      if (charAfterCursor == null || !SelectWordUtil.isExpandableWhiteSpace(charAfterCursor)) break;
+      endOffset = i;
+    }
+
+    if (startOffset == cursorOffset && endOffset == cursorOffset) return null;
+
+    return new TextRange(startOffset, endOffset);
+  }
+
+  /**
    * Returns minimal selection length for given element.
-   * 
-   * Sometimes the length of word selection should be bounded below. 
+   *
+   * Sometimes the length of word selection should be bounded below.
    * E.g. it is useful in languages that requires prefixes for variable (php, less, etc.).
    * By default this kind of variables will be selected without prefix: @<selection>variable</selection>,
-   * but it make sense to exclude this range from selection list. 
+   * but it make sense to exclude this range from selection list.
    * So if this method returns 9 as a minimal length of selection
    * then first selection range for @variable will be: <selection>@variable</selection>.
-   * 
+   *
    * @param element element at caret
    * @param text text in editor
    * @param cursorOffset current caret offset in editor
@@ -82,7 +106,7 @@ public abstract class ExtendWordSelectionHandlerBase implements ExtendWordSelect
     return 0;
   }
 
-  public static List<TextRange> expandToWholeLine(CharSequence text, @Nullable TextRange range, boolean isSymmetric) {
+  public static @NotNull List<TextRange> expandToWholeLine(@NotNull CharSequence text, @Nullable TextRange range, boolean isSymmetric) {
     List<TextRange> result = new ArrayList<>();
 
     if (range == null) {
@@ -103,8 +127,7 @@ public abstract class ExtendWordSelectionHandlerBase implements ExtendWordSelect
     return result;
   }
 
-  @Nullable
-  private static TextRange getExpandedRange(CharSequence text, TextRange range, boolean isSymmetric) {
+  private static @Nullable TextRange getExpandedRange(@NotNull CharSequence text, @NotNull TextRange range, boolean isSymmetric) {
     int startOffset = range.getStartOffset();
     int endOffset = range.getEndOffset();
     int index1 = CharArrayUtil.shiftBackward(text, startOffset - 1, " \t");
@@ -144,8 +167,8 @@ public abstract class ExtendWordSelectionHandlerBase implements ExtendWordSelect
     return null;
   }
 
-  public static List<TextRange> expandToWholeLinesWithBlanks(CharSequence text, TextRange range) {
-    List<TextRange> result = ContainerUtil.newArrayList();
+  public static @NotNull List<TextRange> expandToWholeLinesWithBlanks(@NotNull CharSequence text, @NotNull TextRange range) {
+    List<TextRange> result = new ArrayList<>();
     result.addAll(expandToWholeLine(text, range, true));
 
     TextRange last = result.isEmpty() ? range : result.get(result.size() - 1);
@@ -174,7 +197,7 @@ public abstract class ExtendWordSelectionHandlerBase implements ExtendWordSelect
     return result;
   }
 
-  public static List<TextRange> expandToWholeLine(CharSequence text, TextRange range) {
+  public static @NotNull List<TextRange> expandToWholeLine(@NotNull CharSequence text, @Nullable TextRange range) {
     return expandToWholeLine(text, range, true);
   }
 }

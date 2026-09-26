@@ -1,39 +1,62 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.util.ui;
 
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.text.HtmlBuilder;
+import com.intellij.openapi.util.text.HtmlChunk;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vcs.ui.FontUtil;
 import com.intellij.ui.BrowserHyperlinkListener;
+import com.intellij.ui.ColorUtil;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.JEditorPane;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
 import javax.swing.text.BadLocationException;
+import javax.swing.text.DefaultCaret;
 import javax.swing.text.Document;
 import javax.swing.text.Position;
+import javax.swing.text.html.HTMLDocument;
+import javax.swing.text.html.StyleSheet;
+import java.awt.Font;
+import java.awt.event.InputEvent;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.io.StringWriter;
 
-public class HtmlPanel extends JEditorPane implements HyperlinkListener {
+public abstract class HtmlPanel extends JEditorPane implements HyperlinkListener {
   public HtmlPanel() {
     super(UIUtil.HTML_MIME, "");
     setEditable(false);
     setOpaque(false);
     putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
-    addHyperlinkListener(this);
+    addHyperlinkListener(new FilteringHyperlinkListener());
+    setEditorKit(new HTMLEditorKitBuilder().withWordWrapViewFactory().build());
+  }
+
+  private final class FilteringHyperlinkListener implements HyperlinkListener {
+
+    @Override
+    public void hyperlinkUpdate(HyperlinkEvent e) {
+      if (e.getEventType() == HyperlinkEvent.EventType.ACTIVATED && isToTheLeftOrAboveTheText(e.getInputEvent())) {
+        return;
+      }
+      HtmlPanel.this.hyperlinkUpdate(e);
+    }
+
+    /** Filters out clicks to the left or above the text, which are interpreted as clicking the link if the text starts with one. */
+    private boolean isToTheLeftOrAboveTheText(InputEvent event) {
+      if (event instanceof MouseEvent mouseEvent) {
+        var insets = getInsets();
+        if (insets == null) {
+          return false;
+        }
+        return mouseEvent.getX() < insets.left || mouseEvent.getY() < insets.top;
+      }
+      return false;
+    }
   }
 
   @Override
@@ -58,5 +81,50 @@ public class HtmlPanel extends JEditorPane implements HyperlinkListener {
     catch (BadLocationException | IOException ignored) {
     }
     return super.getSelectedText();
+  }
+
+  public void setBody(@NotNull @Nls String text) {
+    if (text.isEmpty()) {
+      setText("");
+    }
+    else {
+      @NlsSafe String cssFontDeclaration = UIUtil.getCssFontDeclaration(getBodyFont());
+      setText(new HtmlBuilder()
+                .append(HtmlChunk.raw(cssFontDeclaration).wrapWith("head"))
+                .append(HtmlChunk.raw(text).wrapWith(HtmlChunk.body()))
+                .wrapWith(HtmlChunk.html()).toString());
+    }
+  }
+
+  protected @NotNull Font getBodyFont() {
+    return FontUtil.getCommitMessageFont();
+  }
+
+  protected abstract @NotNull @Nls String getBody();
+
+  @Override
+  public void updateUI() {
+    super.updateUI();
+
+    DefaultCaret caret = (DefaultCaret)getCaret();
+    caret.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
+
+    update();
+  }
+
+  public void update() {
+    setBody(getBody());
+    customizeLinksStyle();
+    revalidate();
+    repaint();
+  }
+
+  private void customizeLinksStyle() {
+    Document document = getDocument();
+    if (document instanceof HTMLDocument) {
+      StyleSheet styleSheet = ((HTMLDocument)document).getStyleSheet();
+      String linkColor = "#" + ColorUtil.toHex(JBUI.CurrentTheme.Link.Foreground.ENABLED); // NON-NLS
+      styleSheet.addRule("a { color: " + linkColor + "; text-decoration: none;}"); // NON-NLS
+    }
   }
 }

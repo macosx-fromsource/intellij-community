@@ -20,25 +20,22 @@ import com.intellij.codeInsight.editorActions.ExtendWordSelectionHandlerBase;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.lang.groovydoc.psi.api.GrDocMethodParams;
 
 import java.util.List;
 
-/**
- * @author ilyas
- */
-public class GroovyDocParamsSelectioner extends ExtendWordSelectionHandlerBase {
+public final class GroovyDocParamsSelectioner extends ExtendWordSelectionHandlerBase {
   @Override
-  public boolean canSelect(PsiElement e) {
+  public boolean canSelect(@NotNull PsiElement e) {
     return e instanceof GrDocMethodParams;
   }
 
   @Override
-  public List<TextRange> select(PsiElement element, CharSequence editorText, int cursorOffset, Editor editor) {
+  public List<TextRange> select(@NotNull PsiElement element, @NotNull CharSequence editorText, int cursorOffset, @NotNull Editor editor) {
     List<TextRange> result = super.select(element, editorText, cursorOffset, editor);
 
-    if (element instanceof GrDocMethodParams) {
-      GrDocMethodParams params = ((GrDocMethodParams) element);
+    if (element instanceof GrDocMethodParams params) {
       TextRange range = params.getTextRange();
       if (range.contains(cursorOffset)) {
         PsiElement leftParen = params.getLeftParen();

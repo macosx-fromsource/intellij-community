@@ -19,28 +19,21 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.fixtures.CodeInsightFixtureTestCase;
 import com.intellij.util.containers.MultiMap;
-import com.intellij.util.containers.hash.HashSet;
 import org.junit.Assert;
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Created with IntelliJ IDEA.
- * User: Irina.Chernushina
- * Date: 7/5/12
- * Time: 12:52 PM
- */
 public class XmlSchemaTypeInheritanceTest extends CodeInsightFixtureTestCase {
   private final static String ourNs = "http://www.omg.org/spec/BPMN/20100524/MODEL";
 
   public void testBuilder() throws Exception {
     VirtualFile file = myFixture.copyFileToProject("Semantic.xsd");
     assert file != null;
-    final FileInputStream is = new FileInputStream(new File(file.getPath()));
+    final FileInputStream is = new FileInputStream(file.getPath());
     final MultiMap<SchemaTypeInfo, SchemaTypeInfo> map = XsdComplexTypeInfoBuilder.parse(is);
 
     final Collection<SchemaTypeInfo> node = map.get(new SchemaTypeInfo("tConversationNode", true, ourNs));
@@ -71,7 +64,7 @@ public class XmlSchemaTypeInheritanceTest extends CodeInsightFixtureTestCase {
     Assert.assertTrue(baseNode.contains(new SchemaTypeInfo("tFlowElement", true, ourNs)));
   }
 
-  public void testIndex() throws Exception {
+  public void testIndex() {
     myFixture.copyDirectoryToProject("", "");
 
     final Project project = getProject();

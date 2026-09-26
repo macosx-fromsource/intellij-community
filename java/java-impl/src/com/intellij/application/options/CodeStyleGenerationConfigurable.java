@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2016 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,150 +18,541 @@ package com.intellij.application.options;
 import com.intellij.application.options.codeStyle.CommenterForm;
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
 import com.intellij.codeInspection.util.SpecialAnnotationsUtil;
+import com.intellij.java.JavaBundle;
+import com.intellij.java.refactoring.JavaRefactoringBundle;
 import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.application.ApplicationBundle;
-import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
-import com.intellij.openapi.util.Condition;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiClass;
+import com.intellij.psi.codeStyle.CodeStyleConfigurable;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
-import com.intellij.refactoring.RefactoringBundle;
+import com.intellij.psi.codeStyle.JavaCodeStyleSettings;
+import com.intellij.refactoring.JavaRefactoringSettings;
 import com.intellij.refactoring.ui.JavaVisibilityPanel;
 import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.SortedListModel;
 import com.intellij.ui.components.JBCheckBox;
+import com.intellij.ui.components.JBScrollPane;
+import com.intellij.uiDesigner.core.GridConstraints;
+import com.intellij.uiDesigner.core.GridLayoutManager;
+import com.intellij.uiDesigner.core.Spacer;
 import com.intellij.util.ui.JBInsets;
+import com.intellij.util.ui.JBUI;
+import org.jetbrains.annotations.Nls;
+import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.AbstractButton;
+import javax.swing.BorderFactory;
+import javax.swing.JCheckBox;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JTextField;
+import javax.swing.border.TitledBorder;
+import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.lang.reflect.Method;
 import java.util.Comparator;
+import java.util.ResourceBundle;
+import java.util.function.Predicate;
 
-public class CodeStyleGenerationConfigurable implements Configurable {
+import static com.intellij.openapi.options.Configurable.isCheckboxModified;
+import static com.intellij.openapi.options.Configurable.isFieldModified;
+
+public class CodeStyleGenerationConfigurable implements CodeStyleConfigurable {
   private final JavaVisibilityPanel myJavaVisibilityPanel;
-  JPanel myPanel;
-  private JTextField myFieldPrefixField;
-  private JTextField myStaticFieldPrefixField;
-  private JTextField myParameterPrefixField;
-  private JTextField myLocalVariablePrefixField;
+  final JPanel myPanel;
+  private final JTextField myFieldPrefixField;
+  private final JTextField myStaticFieldPrefixField;
+  private final JTextField myParameterPrefixField;
+  private final JTextField myLocalVariablePrefixField;
 
-  private JTextField myFieldSuffixField;
-  private JTextField myStaticFieldSuffixField;
-  private JTextField myParameterSuffixField;
-  private JTextField myLocalVariableSuffixField;
+  private final JTextField myFieldSuffixField;
+  private final JTextField myStaticFieldSuffixField;
+  private final JTextField myParameterSuffixField;
+  private final JTextField myLocalVariableSuffixField;
 
-  private JCheckBox myCbPreferLongerNames;
+  private final JCheckBox myCbPreferLongerNames;
 
   private final CodeStyleSettings mySettings;
-  private JCheckBox myCbGenerateFinalParameters;
-  private JCheckBox myCbGenerateFinalLocals;
-  private JCheckBox myCbUseExternalAnnotations;
-  private JCheckBox myInsertOverrideAnnotationCheckBox;
-  private JCheckBox myRepeatSynchronizedCheckBox;
-  private JPanel myVisibilityPanel;
-  
-  @SuppressWarnings("unused") private JPanel myCommenterPanel;
-  private JPanel myOverridePanel;
-  private JBCheckBox myReplaceInstanceOfCb;
-  private JBCheckBox myReplaceCastCb;
-  private JBCheckBox myReplaceNullCheckCb;
+  private final JCheckBox myCbGenerateFinalParameters;
+  private final JCheckBox myCbGenerateFinalLocals;
+  private final JCheckBox myCbUseExternalAnnotations;
+  private final JCheckBox myGenerateTypeAnnotationBeforeType;
+  private final JCheckBox myInsertOverrideAnnotationCheckBox;
+  private final JCheckBox myRepeatSynchronizedCheckBox;
+  private final JPanel myVisibilityPanel;
+
+  @SuppressWarnings("unused") private final JPanel myCommenterPanel;
+  private final JPanel myOverridePanel;
+  private final JBCheckBox myReplaceInstanceOfCb;
+  private final JBCheckBox myReplaceNullCheckCb;
+  private final JTextField myTestClassPrefix;
+  private final JTextField myTestClassSuffix;
+  private final JTextField mySubclassPrefix;
+  private final JTextField mySubclassSuffix;
+  private final JBCheckBox myReplaceSumCb;
+  private final JCheckBox myCbDeclareVarType;
   private CommenterForm myCommenterForm;
   private SortedListModel<String> myRepeatAnnotationsModel;
 
   public CodeStyleGenerationConfigurable(CodeStyleSettings settings) {
     mySettings = settings;
-    myPanel.setBorder(IdeBorderFactory.createEmptyBorder(2, 2, 2, 2));
-    myJavaVisibilityPanel = new JavaVisibilityPanel(false, true, RefactoringBundle.message("default.visibility.border.title"));
+    {
+      myCommenterForm = new CommenterForm(JavaLanguage.INSTANCE);
+      myCommenterPanel = myCommenterForm.getCommenterPanel();
+    }
+    {
+      // GUI initializer generated by IntelliJ IDEA GUI Designer
+      // >>> IMPORTANT!! <<<
+      // DO NOT EDIT OR ADD ANY CODE HERE!
+      myPanel = new JPanel();
+      myPanel.setLayout(new GridLayoutManager(1, 1, new Insets(0, 0, 0, 0), -1, -1));
+      final JBScrollPane jBScrollPane1 = new JBScrollPane();
+      myPanel.add(jBScrollPane1, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                                     GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                                     GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null,
+                                                     null, null, 0, false));
+      jBScrollPane1.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEmptyBorder(), null, TitledBorder.DEFAULT_JUSTIFICATION,
+                                                               TitledBorder.DEFAULT_POSITION, null, null));
+      final JPanel panel1 = new JPanel();
+      panel1.setLayout(new GridLayoutManager(6, 2, new Insets(0, 10, 15, 10), -1, -1));
+      jBScrollPane1.setViewportView(panel1);
+      final JPanel panel2 = new JPanel();
+      panel2.setLayout(new GridLayoutManager(2, 1, new Insets(0, 0, 0, 0), -1, -1));
+      panel2.putClientProperty("BorderFactoryClass", "com.intellij.ui.IdeBorderFactory$PlainSmallWithIndent");
+      panel1.add(panel2, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                             GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                             GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null,
+                                             0, false));
+      panel2.setBorder(IdeBorderFactory.PlainSmallWithIndent.createTitledBorder(BorderFactory.createEtchedBorder(),
+                                                                                this.$$$getMessageFromBundle$$$("messages/JavaBundle",
+                                                                                                                "title.naming"),
+                                                                                TitledBorder.DEFAULT_JUSTIFICATION,
+                                                                                TitledBorder.DEFAULT_POSITION, null, null));
+      myCbPreferLongerNames = new JCheckBox();
+      this.$$$loadButtonText$$$(myCbPreferLongerNames,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "checkbox.prefer.longer.names"));
+      panel2.add(myCbPreferLongerNames, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                                            GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                                            GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      final JPanel panel3 = new JPanel();
+      panel3.setLayout(new GridLayoutManager(7, 3, new Insets(0, 0, 0, 0), -1, -1));
+      panel2.add(panel3,
+                 new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_NORTH, GridConstraints.FILL_BOTH, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null, 0,
+                                     false));
+      final JLabel label1 = new JLabel();
+      this.$$$loadLabelText$$$(label1, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "label.naming.parameter"));
+      panel3.add(label1,
+                 new GridConstraints(3, 0, 1, 1, GridConstraints.ANCHOR_EAST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      final JLabel label2 = new JLabel();
+      this.$$$loadLabelText$$$(label2, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "label.naming.static.field"));
+      panel3.add(label2,
+                 new GridConstraints(2, 0, 1, 1, GridConstraints.ANCHOR_EAST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      final JLabel label3 = new JLabel();
+      this.$$$loadLabelText$$$(label3, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "label.naming.field"));
+      panel3.add(label3,
+                 new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_EAST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      final JLabel label4 = new JLabel();
+      this.$$$loadLabelText$$$(label4, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "label.naming.local.variable"));
+      panel3.add(label4,
+                 new GridConstraints(4, 0, 1, 1, GridConstraints.ANCHOR_EAST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      myFieldPrefixField = new JTextField();
+      myFieldPrefixField.setText("");
+      panel3.add(myFieldPrefixField, new GridConstraints(1, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                         GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                         new Dimension(60, -1), null, 0, false));
+      myStaticFieldPrefixField = new JTextField();
+      panel3.add(myStaticFieldPrefixField, new GridConstraints(2, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                               GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                               new Dimension(60, -1), null, 0, false));
+      myParameterPrefixField = new JTextField();
+      panel3.add(myParameterPrefixField, new GridConstraints(3, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                             GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                             new Dimension(60, -1), null, 0, false));
+      myLocalVariablePrefixField = new JTextField();
+      myLocalVariablePrefixField.setText("");
+      panel3.add(myLocalVariablePrefixField, new GridConstraints(4, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                                 GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED,
+                                                                 null, new Dimension(60, -1), null, 0, false));
+      myFieldSuffixField = new JTextField();
+      panel3.add(myFieldSuffixField, new GridConstraints(1, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                         GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                         new Dimension(60, -1), null, 0, false));
+      myStaticFieldSuffixField = new JTextField();
+      panel3.add(myStaticFieldSuffixField, new GridConstraints(2, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                               GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                               new Dimension(60, -1), null, 0, false));
+      myParameterSuffixField = new JTextField();
+      panel3.add(myParameterSuffixField, new GridConstraints(3, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                             GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                             new Dimension(60, -1), null, 0, false));
+      myLocalVariableSuffixField = new JTextField();
+      panel3.add(myLocalVariableSuffixField, new GridConstraints(4, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                                 GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED,
+                                                                 null, new Dimension(60, -1), null, 0, false));
+      final JLabel label5 = new JLabel();
+      this.$$$loadLabelText$$$(label5, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "label.name.suffix"));
+      panel3.add(label5,
+                 new GridConstraints(0, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      final JLabel label6 = new JLabel();
+      this.$$$loadLabelText$$$(label6, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "label.name.prefix"));
+      panel3.add(label6,
+                 new GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      final JLabel label7 = new JLabel();
+      this.$$$loadLabelText$$$(label7, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "label.naming.test.class"));
+      panel3.add(label7,
+                 new GridConstraints(6, 0, 1, 1, GridConstraints.ANCHOR_EAST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      myTestClassPrefix = new JTextField();
+      panel3.add(myTestClassPrefix, new GridConstraints(6, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                        GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                        new Dimension(150, -1), null, 0, false));
+      myTestClassSuffix = new JTextField();
+      panel3.add(myTestClassSuffix, new GridConstraints(6, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                        GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                        new Dimension(150, -1), null, 0, false));
+      final JLabel label8 = new JLabel();
+      this.$$$loadLabelText$$$(label8, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "label.naming.subclass"));
+      panel3.add(label8,
+                 new GridConstraints(5, 0, 1, 1, GridConstraints.ANCHOR_EAST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      mySubclassPrefix = new JTextField();
+      panel3.add(mySubclassPrefix, new GridConstraints(5, 1, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                       GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                       new Dimension(150, -1), null, 0, false));
+      mySubclassSuffix = new JTextField();
+      panel3.add(mySubclassSuffix, new GridConstraints(5, 2, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_HORIZONTAL,
+                                                       GridConstraints.SIZEPOLICY_WANT_GROW, GridConstraints.SIZEPOLICY_FIXED, null,
+                                                       new Dimension(150, -1), null, 0, false));
+      final Spacer spacer1 = new Spacer();
+      panel1.add(spacer1, new GridConstraints(5, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_VERTICAL, 1,
+                                              GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
+      final JPanel panel4 = new JPanel();
+      panel4.setLayout(new GridLayoutManager(4, 1, new Insets(0, 0, 0, 0), -1, -1));
+      panel4.putClientProperty("BorderFactoryClass", "com.intellij.ui.IdeBorderFactory$PlainSmallWithIndent");
+      panel1.add(panel4, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                             GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                             GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null,
+                                             0, false));
+      panel4.setBorder(IdeBorderFactory.PlainSmallWithIndent.createTitledBorder(BorderFactory.createEtchedBorder(),
+                                                                                this.$$$getMessageFromBundle$$$("messages/JavaBundle",
+                                                                                                                "title.naming.final.modifier"),
+                                                                                TitledBorder.DEFAULT_JUSTIFICATION,
+                                                                                TitledBorder.DEFAULT_POSITION, null, null));
+      myCbGenerateFinalLocals = new JCheckBox();
+      myCbGenerateFinalLocals.setMargin(new Insets(5, 10, 2, 2));
+      this.$$$loadButtonText$$$(myCbGenerateFinalLocals,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "checkbox.make.generated.local.variables.final"));
+      panel4.add(myCbGenerateFinalLocals, new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                                              GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                                              GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      myCbGenerateFinalParameters = new JCheckBox();
+      myCbGenerateFinalParameters.setMargin(new Insets(5, 10, 2, 2));
+      this.$$$loadButtonText$$$(myCbGenerateFinalParameters,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "checkbox.make.generated.parameters.final"));
+      panel4.add(myCbGenerateFinalParameters, new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                                                  GridConstraints.SIZEPOLICY_CAN_SHRINK |
+                                                                  GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED,
+                                                                  null, null, null, 0, false));
+      final Spacer spacer2 = new Spacer();
+      panel4.add(spacer2, new GridConstraints(3, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_VERTICAL, 1,
+                                              GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
+      myCbDeclareVarType = new JCheckBox();
+      myCbDeclareVarType.setMargin(new Insets(5, 10, 2, 2));
+      this.$$$loadButtonText$$$(myCbDeclareVarType, this.$$$getMessageFromBundle$$$("messages/JavaBundle", "checkbox.declare.var.type"));
+      panel4.add(myCbDeclareVarType, new GridConstraints(2, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                                         GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                                         GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      myCbUseExternalAnnotations = new JCheckBox();
+      this.$$$loadButtonText$$$(myCbUseExternalAnnotations,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "use.external.annotations"));
+      panel1.add(myCbUseExternalAnnotations, new GridConstraints(3, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                                                 GridConstraints.SIZEPOLICY_CAN_SHRINK |
+                                                                 GridConstraints.SIZEPOLICY_CAN_GROW, GridConstraints.SIZEPOLICY_FIXED,
+                                                                 null, null, null, 0, false));
+      myOverridePanel = new JPanel();
+      myOverridePanel.setLayout(new GridBagLayout());
+      myOverridePanel.putClientProperty("BorderFactoryClass", "com.intellij.ui.IdeBorderFactory$PlainSmallWithIndent");
+      panel1.add(myOverridePanel, new GridConstraints(2, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                                      GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                                      GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null,
+                                                      null, null, 0, false));
+      myOverridePanel.setBorder(IdeBorderFactory.PlainSmallWithIndent.createTitledBorder(BorderFactory.createEtchedBorder(),
+                                                                                         this.$$$getMessageFromBundle$$$(
+                                                                                           "messages/JavaBundle",
+                                                                                           "code.style.generation.override.method.signature"),
+                                                                                         TitledBorder.DEFAULT_JUSTIFICATION,
+                                                                                         TitledBorder.DEFAULT_POSITION, null, null));
+      myInsertOverrideAnnotationCheckBox = new JCheckBox();
+      this.$$$loadButtonText$$$(myInsertOverrideAnnotationCheckBox,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "insert.override.annotation"));
+      GridBagConstraints gbc;
+      gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 0;
+      gbc.weightx = 1.0;
+      gbc.anchor = GridBagConstraints.WEST;
+      myOverridePanel.add(myInsertOverrideAnnotationCheckBox, gbc);
+      myRepeatSynchronizedCheckBox = new JCheckBox();
+      this.$$$loadButtonText$$$(myRepeatSynchronizedCheckBox, this.$$$getMessageFromBundle$$$("messages/JavaBundle",
+                                                                                              "code.style.generation.repeat.synchronized.modifier"));
+      gbc = new GridBagConstraints();
+      gbc.gridx = 0;
+      gbc.gridy = 1;
+      gbc.weightx = 1.0;
+      gbc.anchor = GridBagConstraints.WEST;
+      myOverridePanel.add(myRepeatSynchronizedCheckBox, gbc);
+      myVisibilityPanel = new JPanel();
+      myVisibilityPanel.setLayout(new BorderLayout(0, 0));
+      myVisibilityPanel.putClientProperty("BorderFactoryClass", "com.intellij.ui.IdeBorderFactory$PlainSmallWithIndent");
+      panel1.add(myVisibilityPanel, new GridConstraints(0, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                                        GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                                        GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null,
+                                                        null, null, 0, false));
+      final Spacer spacer3 = new Spacer();
+      myVisibilityPanel.add(spacer3, BorderLayout.WEST);
+      myCommenterPanel.putClientProperty("BorderFactoryClass", "com.intellij.ui.IdeBorderFactory$PlainSmallWithIndent");
+      panel1.add(myCommenterPanel, new GridConstraints(1, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                                       GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                                       GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null,
+                                                       null, null, 0, false));
+      final JPanel panel5 = new JPanel();
+      panel5.setLayout(new GridLayoutManager(4, 1, new Insets(0, 0, 0, 0), -1, -1));
+      panel5.putClientProperty("BorderFactoryClass", "com.intellij.ui.IdeBorderFactory$PlainSmallWithIndent");
+      panel1.add(panel5, new GridConstraints(2, 1, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_BOTH,
+                                             GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW,
+                                             GridConstraints.SIZEPOLICY_CAN_SHRINK | GridConstraints.SIZEPOLICY_CAN_GROW, null, null, null,
+                                             0, false));
+      panel5.setBorder(IdeBorderFactory.PlainSmallWithIndent.createTitledBorder(BorderFactory.createEtchedBorder(),
+                                                                                this.$$$getMessageFromBundle$$$("messages/JavaBundle",
+                                                                                                                "title.naming.functional.expressions"),
+                                                                                TitledBorder.DEFAULT_JUSTIFICATION,
+                                                                                TitledBorder.DEFAULT_POSITION, null, null));
+      final Spacer spacer4 = new Spacer();
+      panel5.add(spacer4, new GridConstraints(2, 0, 1, 1, GridConstraints.ANCHOR_CENTER, GridConstraints.FILL_VERTICAL, 1,
+                                              GridConstraints.SIZEPOLICY_WANT_GROW, null, null, null, 0, false));
+      myReplaceInstanceOfCb = new JBCheckBox();
+      this.$$$loadButtonText$$$(myReplaceInstanceOfCb,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "code.style.generation.use.class.isInstance"));
+      panel5.add(myReplaceInstanceOfCb,
+                 new GridConstraints(0, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      myReplaceNullCheckCb = new JBCheckBox();
+      this.$$$loadButtonText$$$(myReplaceNullCheckCb,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "code.style.generation.replace.null.check"));
+      panel5.add(myReplaceNullCheckCb,
+                 new GridConstraints(1, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE, GridConstraints.SIZEPOLICY_FIXED,
+                                     GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+      myReplaceSumCb = new JBCheckBox();
+      this.$$$loadButtonText$$$(myReplaceSumCb,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "code.style.generation.use.integer.sum"));
+      panel5.add(myReplaceSumCb, new GridConstraints(2, 0, 1, 1, GridConstraints.ANCHOR_NORTHWEST, GridConstraints.FILL_NONE,
+                                                     GridConstraints.SIZEPOLICY_FIXED, GridConstraints.SIZEPOLICY_FIXED, null, null, null,
+                                                     0, false));
+      myGenerateTypeAnnotationBeforeType = new JBCheckBox();
+      this.$$$loadButtonText$$$(myGenerateTypeAnnotationBeforeType,
+                                this.$$$getMessageFromBundle$$$("messages/JavaBundle", "generate.type.use.before.type"));
+      myGenerateTypeAnnotationBeforeType.setToolTipText(
+        this.$$$getMessageFromBundle$$$("messages/JavaBundle", "generate.type.use.before.type.description"));
+      panel1.add(myGenerateTypeAnnotationBeforeType, new GridConstraints(4, 0, 1, 1, GridConstraints.ANCHOR_WEST, GridConstraints.FILL_NONE,
+                                                                         GridConstraints.SIZEPOLICY_CAN_SHRINK |
+                                                                         GridConstraints.SIZEPOLICY_CAN_GROW,
+                                                                         GridConstraints.SIZEPOLICY_FIXED, null, null, null, 0, false));
+    }
+    myPanel.setBorder(JBUI.Borders.empty(2));
+    myJavaVisibilityPanel = new JavaVisibilityPanel(false, true, JavaRefactoringBundle.message("default.visibility.border.title"));
   }
 
+  private static Method $$$cachedGetBundleMethod$$$ = null;
+
+  /** @noinspection ALL */
+  private String $$$getMessageFromBundle$$$(String path, String key) {
+    ResourceBundle bundle;
+    try {
+      Class<?> thisClass = this.getClass();
+      if ($$$cachedGetBundleMethod$$$ == null) {
+        Class<?> dynamicBundleClass = thisClass.getClassLoader().loadClass("com.intellij.DynamicBundle");
+        $$$cachedGetBundleMethod$$$ = dynamicBundleClass.getMethod("getBundle", String.class, Class.class);
+      }
+      bundle = (ResourceBundle)$$$cachedGetBundleMethod$$$.invoke(null, path, thisClass);
+    }
+    catch (Exception e) {
+      bundle = ResourceBundle.getBundle(path);
+    }
+    return bundle.getString(key);
+  }
+
+  /** @noinspection ALL */
+  private void $$$loadLabelText$$$(JLabel component, String text) {
+    StringBuffer result = new StringBuffer();
+    boolean haveMnemonic = false;
+    char mnemonic = '\0';
+    int mnemonicIndex = -1;
+    for (int i = 0; i < text.length(); i++) {
+      if (text.charAt(i) == '&') {
+        i++;
+        if (i == text.length()) break;
+        if (!haveMnemonic && text.charAt(i) != '&') {
+          haveMnemonic = true;
+          mnemonic = text.charAt(i);
+          mnemonicIndex = result.length();
+        }
+      }
+      result.append(text.charAt(i));
+    }
+    component.setText(result.toString());
+    if (haveMnemonic) {
+      component.setDisplayedMnemonic(mnemonic);
+      component.setDisplayedMnemonicIndex(mnemonicIndex);
+    }
+  }
+
+  /** @noinspection ALL */
+  private void $$$loadButtonText$$$(AbstractButton component, String text) {
+    StringBuffer result = new StringBuffer();
+    boolean haveMnemonic = false;
+    char mnemonic = '\0';
+    int mnemonicIndex = -1;
+    for (int i = 0; i < text.length(); i++) {
+      if (text.charAt(i) == '&') {
+        i++;
+        if (i == text.length()) break;
+        if (!haveMnemonic && text.charAt(i) != '&') {
+          haveMnemonic = true;
+          mnemonic = text.charAt(i);
+          mnemonicIndex = result.length();
+        }
+      }
+      result.append(text.charAt(i));
+    }
+    component.setText(result.toString());
+    if (haveMnemonic) {
+      component.setMnemonic(mnemonic);
+      component.setDisplayedMnemonicIndex(mnemonicIndex);
+    }
+  }
+
+  /** @noinspection ALL */
+  public JComponent $$$getRootComponent$$$() { return myPanel; }
+
+  @Override
   public JComponent createComponent() {
     myVisibilityPanel.add(myJavaVisibilityPanel, BorderLayout.CENTER);
     GridBagConstraints gc =
       new GridBagConstraints(0, GridBagConstraints.RELATIVE, 1, 1, 1, 1, GridBagConstraints.NORTHEAST, GridBagConstraints.BOTH,
                              new JBInsets(0, 0, 0, 0), 0, 0);
-    final Condition<PsiClass> isApplicable = aClass -> aClass.isAnnotationType();
+    Predicate<PsiClass> isApplicable = PsiClass::isAnnotationType;
     //noinspection Convert2Diamond
     myRepeatAnnotationsModel = new SortedListModel<String>(Comparator.naturalOrder());
-    myOverridePanel.add(SpecialAnnotationsUtil.createSpecialAnnotationsListControl("Annotations to Repeat", false, isApplicable, myRepeatAnnotationsModel), gc);
+    myOverridePanel.add(SpecialAnnotationsUtil.createSpecialAnnotationsListControl(JavaBundle.message("separator.annotations.to.copy"),
+                                                                                   false, myRepeatAnnotationsModel, isApplicable), gc);
     return myPanel;
   }
 
-  public void disposeUIResources() {
-  }
-
+  @Override
   public String getDisplayName() {
     return ApplicationBundle.message("title.code.generation");
   }
 
+  @Override
   public String getHelpTopic() {
     return "reference.settingsdialog.IDE.globalcodestyle.codegen";
   }
 
-  public void reset(CodeStyleSettings settings) {
-    myCbPreferLongerNames.setSelected(settings.PREFER_LONGER_NAMES);
+  @Override
+  public void reset(@NotNull CodeStyleSettings settings) {
+    JavaCodeStyleSettings javaSettings = settings.getCustomSettings(JavaCodeStyleSettings.class);
+    myCbPreferLongerNames.setSelected(javaSettings.PREFER_LONGER_NAMES);
 
-    myFieldPrefixField.setText(settings.FIELD_NAME_PREFIX);
-    myStaticFieldPrefixField.setText(settings.STATIC_FIELD_NAME_PREFIX);
-    myParameterPrefixField.setText(settings.PARAMETER_NAME_PREFIX);
-    myLocalVariablePrefixField.setText(settings.LOCAL_VARIABLE_NAME_PREFIX);
+    myFieldPrefixField.setText(javaSettings.FIELD_NAME_PREFIX);
+    myStaticFieldPrefixField.setText(javaSettings.STATIC_FIELD_NAME_PREFIX);
+    myParameterPrefixField.setText(javaSettings.PARAMETER_NAME_PREFIX);
+    myLocalVariablePrefixField.setText(javaSettings.LOCAL_VARIABLE_NAME_PREFIX);
+    mySubclassPrefix.setText(javaSettings.SUBCLASS_NAME_PREFIX);
+    myTestClassPrefix.setText(javaSettings.TEST_NAME_PREFIX);
 
-    myFieldSuffixField.setText(settings.FIELD_NAME_SUFFIX);
-    myStaticFieldSuffixField.setText(settings.STATIC_FIELD_NAME_SUFFIX);
-    myParameterSuffixField.setText(settings.PARAMETER_NAME_SUFFIX);
-    myLocalVariableSuffixField.setText(settings.LOCAL_VARIABLE_NAME_SUFFIX);
+    myFieldSuffixField.setText(javaSettings.FIELD_NAME_SUFFIX);
+    myStaticFieldSuffixField.setText(javaSettings.STATIC_FIELD_NAME_SUFFIX);
+    myParameterSuffixField.setText(javaSettings.PARAMETER_NAME_SUFFIX);
+    myLocalVariableSuffixField.setText(javaSettings.LOCAL_VARIABLE_NAME_SUFFIX);
+    mySubclassSuffix.setText(javaSettings.SUBCLASS_NAME_SUFFIX);
+    myTestClassSuffix.setText(javaSettings.TEST_NAME_SUFFIX);
 
-    myCbGenerateFinalLocals.setSelected(settings.GENERATE_FINAL_LOCALS);
-    myCbGenerateFinalParameters.setSelected(settings.GENERATE_FINAL_PARAMETERS);
+    myCbGenerateFinalLocals.setSelected(javaSettings.GENERATE_FINAL_LOCALS);
+    myCbGenerateFinalParameters.setSelected(javaSettings.GENERATE_FINAL_PARAMETERS);
+    myCbDeclareVarType.setSelected(JavaRefactoringSettings.getInstance().INTRODUCE_LOCAL_CREATE_VAR_TYPE);
 
-    myCbUseExternalAnnotations.setSelected(settings.USE_EXTERNAL_ANNOTATIONS);
-    myInsertOverrideAnnotationCheckBox.setSelected(settings.INSERT_OVERRIDE_ANNOTATION);
-    myRepeatSynchronizedCheckBox.setSelected(settings.REPEAT_SYNCHRONIZED);
-    myJavaVisibilityPanel.setVisibility(settings.VISIBILITY);
+    myCbUseExternalAnnotations.setSelected(javaSettings.USE_EXTERNAL_ANNOTATIONS);
+    myGenerateTypeAnnotationBeforeType.setSelected(javaSettings.GENERATE_USE_TYPE_ANNOTATION_BEFORE_TYPE);
+    myInsertOverrideAnnotationCheckBox.setSelected(javaSettings.INSERT_OVERRIDE_ANNOTATION);
+    myRepeatSynchronizedCheckBox.setSelected(javaSettings.REPEAT_SYNCHRONIZED);
+    myJavaVisibilityPanel.setVisibility(javaSettings.VISIBILITY);
 
-    myReplaceCastCb.setSelected(settings.REPLACE_CAST);
-    myReplaceInstanceOfCb.setSelected(settings.REPLACE_INSTANCEOF);
-    myReplaceNullCheckCb.setSelected(settings.REPLACE_NULL_CHECK);
+    myReplaceInstanceOfCb.setSelected(javaSettings.REPLACE_INSTANCEOF_AND_CAST);
+    myReplaceNullCheckCb.setSelected(javaSettings.REPLACE_NULL_CHECK);
+    myReplaceSumCb.setSelected(javaSettings.REPLACE_SUM);
 
     myRepeatAnnotationsModel.clear();
-    myRepeatAnnotationsModel.addAll(settings.getRepeatAnnotations());
+    myRepeatAnnotationsModel.addAll(javaSettings.getRepeatAnnotations());
     myCommenterForm.reset(settings);
   }
 
+  @Override
   public void reset() {
     reset(mySettings);
   }
 
-  public void apply(CodeStyleSettings settings) throws ConfigurationException {
-    settings.PREFER_LONGER_NAMES = myCbPreferLongerNames.isSelected();
+  @Override
+  public void apply(@NotNull CodeStyleSettings settings) throws ConfigurationException {
+    JavaCodeStyleSettings javaSettings = settings.getCustomSettings(JavaCodeStyleSettings.class);
+    javaSettings.PREFER_LONGER_NAMES = myCbPreferLongerNames.isSelected();
 
-    settings.FIELD_NAME_PREFIX = setPrefixSuffix(myFieldPrefixField.getText(), true);
-    settings.STATIC_FIELD_NAME_PREFIX = setPrefixSuffix(myStaticFieldPrefixField.getText(), true);
-    settings.PARAMETER_NAME_PREFIX = setPrefixSuffix(myParameterPrefixField.getText(), true);
-    settings.LOCAL_VARIABLE_NAME_PREFIX = setPrefixSuffix(myLocalVariablePrefixField.getText(), true);
+    javaSettings.FIELD_NAME_PREFIX = setPrefixSuffix(myFieldPrefixField.getText(), true);
+    javaSettings.STATIC_FIELD_NAME_PREFIX = setPrefixSuffix(myStaticFieldPrefixField.getText(), true);
+    javaSettings.PARAMETER_NAME_PREFIX = setPrefixSuffix(myParameterPrefixField.getText(), true);
+    javaSettings.LOCAL_VARIABLE_NAME_PREFIX = setPrefixSuffix(myLocalVariablePrefixField.getText(), true);
+    javaSettings.SUBCLASS_NAME_PREFIX = setPrefixSuffix(mySubclassPrefix.getText(), true);
+    javaSettings.TEST_NAME_PREFIX = setPrefixSuffix(myTestClassPrefix.getText(), true);
 
-    settings.FIELD_NAME_SUFFIX = setPrefixSuffix(myFieldSuffixField.getText(), false);
-    settings.STATIC_FIELD_NAME_SUFFIX = setPrefixSuffix(myStaticFieldSuffixField.getText(), false);
-    settings.PARAMETER_NAME_SUFFIX = setPrefixSuffix(myParameterSuffixField.getText(), false);
-    settings.LOCAL_VARIABLE_NAME_SUFFIX = setPrefixSuffix(myLocalVariableSuffixField.getText(), false);
+    javaSettings.FIELD_NAME_SUFFIX = setPrefixSuffix(myFieldSuffixField.getText(), false);
+    javaSettings.STATIC_FIELD_NAME_SUFFIX = setPrefixSuffix(myStaticFieldSuffixField.getText(), false);
+    javaSettings.PARAMETER_NAME_SUFFIX = setPrefixSuffix(myParameterSuffixField.getText(), false);
+    javaSettings.LOCAL_VARIABLE_NAME_SUFFIX = setPrefixSuffix(myLocalVariableSuffixField.getText(), false);
+    javaSettings.SUBCLASS_NAME_SUFFIX = setPrefixSuffix(mySubclassSuffix.getText(), false);
+    javaSettings.TEST_NAME_SUFFIX = setPrefixSuffix(myTestClassSuffix.getText(), false);
 
-    settings.GENERATE_FINAL_LOCALS = myCbGenerateFinalLocals.isSelected();
-    settings.GENERATE_FINAL_PARAMETERS = myCbGenerateFinalParameters.isSelected();
+    javaSettings.GENERATE_FINAL_LOCALS = myCbGenerateFinalLocals.isSelected();
+    javaSettings.GENERATE_FINAL_PARAMETERS = myCbGenerateFinalParameters.isSelected();
+    JavaRefactoringSettings.getInstance().INTRODUCE_LOCAL_CREATE_VAR_TYPE = myCbDeclareVarType.isSelected();
 
-    settings.USE_EXTERNAL_ANNOTATIONS = myCbUseExternalAnnotations.isSelected();
-    settings.INSERT_OVERRIDE_ANNOTATION = myInsertOverrideAnnotationCheckBox.isSelected();
-    settings.REPEAT_SYNCHRONIZED = myRepeatSynchronizedCheckBox.isSelected();
-    
-    settings.VISIBILITY = myJavaVisibilityPanel.getVisibility();
+    javaSettings.USE_EXTERNAL_ANNOTATIONS = myCbUseExternalAnnotations.isSelected();
+    javaSettings.GENERATE_USE_TYPE_ANNOTATION_BEFORE_TYPE = myGenerateTypeAnnotationBeforeType.isSelected();
+    javaSettings.INSERT_OVERRIDE_ANNOTATION = myInsertOverrideAnnotationCheckBox.isSelected();
+    javaSettings.REPEAT_SYNCHRONIZED = myRepeatSynchronizedCheckBox.isSelected();
 
-    settings.REPLACE_CAST = myReplaceCastCb.isSelected();
-    settings.REPLACE_INSTANCEOF = myReplaceInstanceOfCb.isSelected();
-    settings.REPLACE_NULL_CHECK = myReplaceNullCheckCb.isSelected();
+    javaSettings.VISIBILITY = myJavaVisibilityPanel.getVisibility();
+
+    javaSettings.REPLACE_INSTANCEOF_AND_CAST = myReplaceInstanceOfCb.isSelected();
+    javaSettings.REPLACE_NULL_CHECK = myReplaceNullCheckCb.isSelected();
+    javaSettings.REPLACE_SUM = myReplaceSumCb.isSelected();
 
 
     myCommenterForm.apply(settings);
-    settings.setRepeatAnnotations(myRepeatAnnotationsModel.getItems());
+    javaSettings.setRepeatAnnotations(myRepeatAnnotationsModel.getItems());
 
     for (Project project : ProjectManager.getInstance().getOpenProjects()) {
       DaemonCodeAnalyzer.getInstance(project).settingsChanged();
@@ -172,62 +563,61 @@ public class CodeStyleGenerationConfigurable implements Configurable {
     text = text.trim();
     if (text.isEmpty()) return text;
     if (!StringUtil.isJavaIdentifier(text)) {
-      throw new ConfigurationException("Not a valid java identifier part in " + (prefix ? "prefix" : "suffix") + " \'" + text + "\'");
+      final @Nls String message = JavaBundle.message(prefix
+                                                     ? "code.style.generation.settings.error.not.valid.identifier.part.in.prefix"
+                                                     : "code.style.generation.settings.error.not.valid.identifier.part.in.suffix", text);
+      throw new ConfigurationException(message);
     }
     return text;
   }
 
+  @Override
   public void apply() throws ConfigurationException {
     apply(mySettings);
   }
 
   public boolean isModified(CodeStyleSettings settings) {
-    boolean isModified = isModified(myCbPreferLongerNames, settings.PREFER_LONGER_NAMES);
+    JavaCodeStyleSettings javaSettings = settings.getCustomSettings(JavaCodeStyleSettings.class);
+    boolean isModified = isCheckboxModified(myCbPreferLongerNames, javaSettings.PREFER_LONGER_NAMES);
 
-    isModified |= isModified(myFieldPrefixField, settings.FIELD_NAME_PREFIX);
-    isModified |= isModified(myStaticFieldPrefixField, settings.STATIC_FIELD_NAME_PREFIX);
-    isModified |= isModified(myParameterPrefixField, settings.PARAMETER_NAME_PREFIX);
-    isModified |= isModified(myLocalVariablePrefixField, settings.LOCAL_VARIABLE_NAME_PREFIX);
+    isModified |= isFieldModified(myFieldPrefixField, javaSettings.FIELD_NAME_PREFIX);
+    isModified |= isFieldModified(myStaticFieldPrefixField, javaSettings.STATIC_FIELD_NAME_PREFIX);
+    isModified |= isFieldModified(myParameterPrefixField, javaSettings.PARAMETER_NAME_PREFIX);
+    isModified |= isFieldModified(myLocalVariablePrefixField, javaSettings.LOCAL_VARIABLE_NAME_PREFIX);
+    isModified |= isFieldModified(mySubclassPrefix, javaSettings.SUBCLASS_NAME_PREFIX);
+    isModified |= isFieldModified(myTestClassPrefix, javaSettings.TEST_NAME_PREFIX);
 
-    isModified |= isModified(myFieldSuffixField, settings.FIELD_NAME_SUFFIX);
-    isModified |= isModified(myStaticFieldSuffixField, settings.STATIC_FIELD_NAME_SUFFIX);
-    isModified |= isModified(myParameterSuffixField, settings.PARAMETER_NAME_SUFFIX);
-    isModified |= isModified(myLocalVariableSuffixField, settings.LOCAL_VARIABLE_NAME_SUFFIX);
+    isModified |= isFieldModified(myFieldSuffixField, javaSettings.FIELD_NAME_SUFFIX);
+    isModified |= isFieldModified(myStaticFieldSuffixField, javaSettings.STATIC_FIELD_NAME_SUFFIX);
+    isModified |= isFieldModified(myParameterSuffixField, javaSettings.PARAMETER_NAME_SUFFIX);
+    isModified |= isFieldModified(myLocalVariableSuffixField, javaSettings.LOCAL_VARIABLE_NAME_SUFFIX);
+    isModified |= isFieldModified(mySubclassSuffix, javaSettings.SUBCLASS_NAME_SUFFIX);
+    isModified |= isFieldModified(myTestClassSuffix, javaSettings.TEST_NAME_SUFFIX);
 
-    isModified |= isModified(myCbGenerateFinalLocals, settings.GENERATE_FINAL_LOCALS);
-    isModified |= isModified(myCbGenerateFinalParameters, settings.GENERATE_FINAL_PARAMETERS);
+    isModified |= isCheckboxModified(myCbGenerateFinalLocals, javaSettings.GENERATE_FINAL_LOCALS);
+    isModified |= isCheckboxModified(myCbGenerateFinalParameters, javaSettings.GENERATE_FINAL_PARAMETERS);
+    isModified |= isCheckboxModified(myCbDeclareVarType, JavaRefactoringSettings.getInstance().INTRODUCE_LOCAL_CREATE_VAR_TYPE);
 
-    isModified |= isModified(myCbUseExternalAnnotations, settings.USE_EXTERNAL_ANNOTATIONS);
-    isModified |= isModified(myInsertOverrideAnnotationCheckBox, settings.INSERT_OVERRIDE_ANNOTATION);
-    isModified |= isModified(myRepeatSynchronizedCheckBox, settings.REPEAT_SYNCHRONIZED);
+    isModified |= isCheckboxModified(myCbUseExternalAnnotations, javaSettings.USE_EXTERNAL_ANNOTATIONS);
+    isModified |= isCheckboxModified(myGenerateTypeAnnotationBeforeType, javaSettings.GENERATE_USE_TYPE_ANNOTATION_BEFORE_TYPE);
+    isModified |= isCheckboxModified(myInsertOverrideAnnotationCheckBox, javaSettings.INSERT_OVERRIDE_ANNOTATION);
+    isModified |= isCheckboxModified(myRepeatSynchronizedCheckBox, javaSettings.REPEAT_SYNCHRONIZED);
 
-    isModified |= isModified(myReplaceCastCb, settings.REPLACE_CAST);
-    isModified |= isModified(myReplaceInstanceOfCb, settings.REPLACE_INSTANCEOF);
-    isModified |= isModified(myReplaceNullCheckCb, settings.REPLACE_NULL_CHECK);
+    isModified |= isCheckboxModified(myReplaceInstanceOfCb, javaSettings.REPLACE_INSTANCEOF_AND_CAST);
+    isModified |= isCheckboxModified(myReplaceNullCheckCb, javaSettings.REPLACE_NULL_CHECK);
+    isModified |= isCheckboxModified(myReplaceSumCb, javaSettings.REPLACE_SUM);
 
-    isModified |= !settings.VISIBILITY.equals(myJavaVisibilityPanel.getVisibility());
-    
+    isModified |= !javaSettings.VISIBILITY.equals(myJavaVisibilityPanel.getVisibility());
+
     isModified |= myCommenterForm.isModified(settings);
 
-    isModified |= !myRepeatAnnotationsModel.getItems().equals(settings.getRepeatAnnotations());
+    isModified |= !myRepeatAnnotationsModel.getItems().equals(javaSettings.getRepeatAnnotations());
 
     return isModified;
   }
 
+  @Override
   public boolean isModified() {
     return isModified(mySettings);
-  }
-
-  private static boolean isModified(JCheckBox checkBox, boolean value) {
-    return checkBox.isSelected() != value;
-  }
-
-  private static boolean isModified(JTextField textField, String value) {
-    return !textField.getText().trim().equals(value);
-  }
-
-  private void createUIComponents() {
-    myCommenterForm =  new CommenterForm(JavaLanguage.INSTANCE);
-    myCommenterPanel = myCommenterForm.getCommenterPanel();
   }
 }

@@ -1,38 +1,20 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.keymap.impl.ui;
 
 import com.intellij.openapi.actionSystem.MouseShortcut;
 import com.intellij.openapi.util.SystemInfo;
-import com.intellij.openapi.util.registry.Registry;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.mac.MacGestureSupportForMouseShortcutPanel;
+import org.jetbrains.annotations.ApiStatus;
 
 import java.awt.BorderLayout;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
 
-/**
- * @author Sergey.Malenkov
- */
+@ApiStatus.Internal
 public final class MouseShortcutPanel extends ShortcutPanel<MouseShortcut> {
-  static final JBColor FOREGROUND = new JBColor(0x8C8C8C, 0x8C8C8C);
-  static final JBColor BACKGROUND = new JBColor(0xF5F5F5, 0x4B4F52);
-  static final JBColor BORDER = new JBColor(0xDEDEDE, 0x383B3D);
+  private static final JBColor BACKGROUND = JBColor.namedColor("Panel.mouseShortcutBackground", new JBColor(0xF5F5F5, 0x4B4F52));
 
   private final int myClickCount;
   private MouseShortcut myMouseShortcut = null;
@@ -70,13 +52,14 @@ public final class MouseShortcutPanel extends ShortcutPanel<MouseShortcut> {
     myClickCount = allowDoubleClick ? 2 : 1;
     addMouseListener(myMouseListener);
     addMouseWheelListener(myMouseListener);
-    if (SystemInfo.isJavaVersionAtLeast("1.8") && SystemInfo.isMacIntel64 && SystemInfo.isJetbrainsJvm && Registry.is("ide.mac.forceTouch")) {
+    if (SystemInfo.isMac && SystemInfo.isJetBrainsJvm) {
       new MacGestureSupportForMouseShortcutPanel(this, () -> myMouseShortcut = null);
     }
     setBackground(BACKGROUND);
     setOpaque(true);
   }
 
+  @Override
   public void setShortcut(MouseShortcut shortcut) {
     MouseShortcut old = getShortcut();
     if (old != null || shortcut != null) {

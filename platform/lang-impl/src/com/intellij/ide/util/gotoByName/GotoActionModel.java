@@ -1,111 +1,186 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.ide.util.gotoByName;
 
-import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Strings;
+import com.intellij.BundleBase;
+import com.intellij.codeInsight.multiverse.EditorContextManager;
+import com.intellij.icons.AllIcons;
+import com.intellij.ide.DataManager;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.actions.ApplyIntentionAction;
 import com.intellij.ide.actions.ShowSettingsUtilImpl;
+import com.intellij.ide.actions.searcheverywhere.MergeableElement;
+import com.intellij.ide.actions.searcheverywhere.PromoAction;
+import com.intellij.ide.ui.RegistryTextOptionDescriptor;
 import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.ui.search.BooleanOptionDescription;
 import com.intellij.ide.ui.search.OptionDescription;
-import com.intellij.openapi.actionSystem.*;
-import com.intellij.openapi.actionSystem.ex.ActionUtil;
+import com.intellij.internal.inspector.PropertyBean;
+import com.intellij.internal.inspector.UiInspectorActionUtil;
+import com.intellij.internal.inspector.UiInspectorContextProvider;
+import com.intellij.internal.inspector.UiInspectorUtil;
+import com.intellij.lang.LangBundle;
+import com.intellij.openapi.actionSystem.ActionGroup;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionPlaces;
+import com.intellij.openapi.actionSystem.ActionUiKind;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.actionSystem.Separator;
+import com.intellij.openapi.actionSystem.Shortcut;
+import com.intellij.openapi.actionSystem.ToggleAction;
+import com.intellij.openapi.actionSystem.Toggleable;
+import com.intellij.openapi.actionSystem.UpdateSession;
+import com.intellij.openapi.actionSystem.impl.ActionPresentationDecorator;
+import com.intellij.openapi.actionSystem.impl.Utils;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
-import com.intellij.openapi.keymap.KeymapManager;
 import com.intellij.openapi.keymap.KeymapUtil;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.SearchableConfigurable;
-import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbAware;
+import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.*;
+import com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.FeaturePromoBundle;
+import com.intellij.openapi.util.Comparing;
+import com.intellij.openapi.util.IconLoader;
+import com.intellij.openapi.util.NlsActions.ActionText;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiFile;
-import com.intellij.psi.codeStyle.MinusculeMatcher;
-import com.intellij.ui.*;
-import com.intellij.ui.components.JBLabel;
+import com.intellij.psi.codeStyle.PlatformKeyboardLayoutConverter;
+import com.intellij.psi.codeStyle.WordPrefixMatcher;
+import com.intellij.ui.DirtyUI;
+import com.intellij.ui.HtmlToSimpleColoredComponentConverter;
+import com.intellij.ui.LayeredIcon;
+import com.intellij.ui.SimpleColoredComponent;
+import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.OnOffButton;
+import com.intellij.ui.render.IconCompOptionalCompPanel;
 import com.intellij.ui.speedSearch.SpeedSearchUtil;
-import com.intellij.util.ArrayUtil;
-import com.intellij.util.Function;
-import com.intellij.util.TimeoutUtil;
+import com.intellij.util.ArrayUtilRt;
+import com.intellij.util.concurrency.SynchronizedClearableLazy;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.ContainerUtilRt;
-import com.intellij.util.containers.TransferToEDTQueue;
+import com.intellij.util.ui.EDT;
 import com.intellij.util.ui.EmptyIcon;
+import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.NamedColorUtil;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.util.ui.components.BorderLayoutPanel;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.VisibleForTesting;
 
-import javax.swing.*;
+import javax.accessibility.AccessibleContext;
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.Icon;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.ListCellRenderer;
 import javax.swing.border.Border;
-import java.awt.*;
-import java.util.*;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Insets;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
-import static com.intellij.ui.SimpleTextAttributes.STYLE_PLAIN;
-import static com.intellij.ui.SimpleTextAttributes.STYLE_SEARCH_MATCH;
+public final class GotoActionModel implements ChooseByNameModel, Comparator<Object>, DumbAware {
+  private static final Logger LOG = Logger.getInstance(GotoActionModel.class);
+  private static final Icon EMPTY_ICON = EmptyIcon.ICON_16;
 
-public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, DumbAware {
-  private static final Pattern INNER_GROUP_WITH_IDS = Pattern.compile("(.*) \\(\\d+\\)");
+  private final @Nullable Project myProject;
+  private final @Nullable WeakReference<Editor> myEditor;
+  private final DataContext myDataContext;
+  private volatile UpdateSession myUpdateSession;
 
-  @Nullable private final Project myProject;
-  private final Component myContextComponent;
-  @Nullable private final Editor myEditor;
-  @Nullable private final PsiFile myFile;
+  private final ActionManager myActionManager = ActionManager.getInstance();
 
-  protected final ActionManager myActionManager = ActionManager.getInstance();
+  private final Map<AnAction, GroupMapping> myActionGroups = new ConcurrentHashMap<>();
 
-  private static final Icon EMPTY_ICON = EmptyIcon.ICON_18;
-
-  protected final Map<AnAction, String> myActionGroups = ContainerUtil.newHashMap();
-
-  private final NotNullLazyValue<Map<String, String>> myConfigurablesNames = VolatileNotNullLazyValue.createValue(() -> {
-    Map<String, String> map = ContainerUtil.newTroveMap();
-    for (Configurable configurable : ShowSettingsUtilImpl.getConfigurables(getProject(), true)) {
-      if (configurable instanceof SearchableConfigurable) {
-        map.put(((SearchableConfigurable)configurable).getId(), configurable.getDisplayName());
+  private final Supplier<Map<@NonNls String, @NlsContexts.ConfigurableName String>> myConfigurablesNames =
+    new SynchronizedClearableLazy<>(() -> {
+      if (EDT.isCurrentThreadEdt() && !ApplicationManager.getApplication().isUnitTestMode()) {
+        LOG.error("Configurable names must not be loaded on EDT");
       }
-    }
-    return map;
-  });
 
-  private final ModalityState myModality = ModalityState.defaultModalityState();
+      Map<@NonNls String, @NlsContexts.ConfigurableName String> map = new HashMap<>();
+      for (Configurable configurable : ShowSettingsUtilImpl.getConfigurables(getProject(), true, true)) {
+        if (configurable instanceof SearchableConfigurable && ((SearchableConfigurable)configurable).isSearchableInActions()) {
+          map.put(((SearchableConfigurable)configurable).getId(), configurable.getDisplayName());
+        }
+      }
+      return map;
+    });
 
-  public GotoActionModel(@Nullable Project project, Component component, @Nullable Editor editor, @Nullable PsiFile file) {
+  public GotoActionModel(@Nullable Project project, @Nullable Component component, @Nullable Editor editor) {
+    this(project, component, editor, null);
+  }
+
+  /**
+   * In case of Remote Development the component doesn't contain the full DataContext, and we have to explicitly provide the context.
+   */
+  @ApiStatus.Internal
+  public GotoActionModel(@Nullable Project project, @Nullable Component component, @Nullable Editor editor, @Nullable DataContext dataContext) {
     myProject = project;
-    myContextComponent = component;
-    myEditor = editor;
-    myFile = file;
-    ActionGroup mainMenu = (ActionGroup)myActionManager.getActionOrStub(IdeActions.GROUP_MAIN_MENU);
-    collectActions(myActionGroups, mainMenu, mainMenu.getTemplatePresentation().getText());
+    myEditor = new WeakReference<>(editor);
+    myDataContext = dataContext == null ? Utils.createAsyncDataContext(DataManager.getInstance().getDataContext(component)) : dataContext;
+    myUpdateSession = newUpdateSession();
+  }
+
+  private @NotNull UpdateSession newUpdateSession() {
+    AnActionEvent event = AnActionEvent.createEvent(myDataContext, null, ActionPlaces.ACTION_SEARCH, ActionUiKind.SEARCH_POPUP, null);
+    Utils.initUpdateSession(event);
+    return event.getUpdateSession();
+  }
+
+  public void buildGroupMappings() {
+    if (!myActionGroups.isEmpty()) return;
+    ActionGroup mainMenu = Objects.requireNonNull((ActionGroup)myActionManager.getActionOrStub(IdeActions.GROUP_MAIN_MENU));
+    ActionGroup keymapOthers = Objects.requireNonNull((ActionGroup)myActionManager.getActionOrStub("Other.KeymapGroup"));
+
+    Map<AnAction, GroupMapping> mainGroups = new HashMap<>();
+    collectActions(mainGroups, mainMenu, Collections.emptyList(), false);
+
+    Map<AnAction, GroupMapping> otherGroups = new HashMap<>();
+    collectActions(otherGroups, keymapOthers, Collections.emptyList(), true);
+
+    myActionGroups.putAll(mainGroups);
+    otherGroups.forEach(myActionGroups::putIfAbsent);
   }
 
   @NotNull
   Map<String, ApplyIntentionAction> getAvailableIntentions() {
     Map<String, ApplyIntentionAction> map = new TreeMap<>();
-    if (myProject != null && myEditor != null && myFile != null) {
-      ApplyIntentionAction[] children = ApplyIntentionAction.getAvailableIntentions(myEditor, myFile);
+    Editor editor = myEditor != null ? myEditor.get() : null;
+    if (myProject != null && !myProject.isDisposed() && !DumbService.isDumb(myProject) &&
+        editor != null && !editor.isDisposed()) {
+      PsiFile file = EditorContextManager.getPsiFileForEditor(editor, myProject);
+      ApplyIntentionAction[] children = file == null ? null : ApplyIntentionAction.getAvailableIntentions(editor, file);
       if (children != null) {
         for (ApplyIntentionAction action : children) {
           map.put(action.getName(), action);
@@ -120,60 +195,124 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
     return IdeBundle.message("prompt.gotoaction.enter.action");
   }
 
-  @Nullable
   @Override
-  public String getCheckBoxName() {
-    return null;
+  public @NotNull String getCheckBoxName() {
+    return IdeBundle.message("checkbox.disabled.included");
+  }
+
+
+  @Override
+  public @NotNull String getNotInMessage() {
+    return IdeBundle.message("label.no.enabled.actions.found");
   }
 
   @Override
-  public char getCheckBoxMnemonic() {
-    return 'd';
-  }
-
-  @Override
-  public String getNotInMessage() {
-    return IdeBundle.message("label.no.menu.actions.found");
-  }
-
-  @Override
-  public String getNotFoundMessage() {
+  public @NotNull String getNotFoundMessage() {
     return IdeBundle.message("label.no.actions.found");
   }
 
   @Override
   public boolean loadInitialCheckBoxState() {
-    return true;
+    return false;
   }
 
   @Override
   public void saveInitialCheckBoxState(boolean state) {
   }
 
-  public static class MatchedValue implements Comparable<MatchedValue> {
-    @NotNull public final Comparable value;
-    @NotNull final String pattern;
+  @ApiStatus.Internal
+  public void clearCaches() {
+    myActionGroups.clear();
+    myUpdateSession = newUpdateSession();
+  }
 
-    public MatchedValue(@NotNull Comparable value, @NotNull String pattern) {
+  @ApiStatus.Internal
+  public enum MatchedValueType {ABBREVIATION, INTENTION, TOP_HIT, OPTION, ACTION, SEMANTIC}
+
+  public static class MatchedValue implements MergeableElement, UiInspectorContextProvider {
+    public final @NotNull Object value;
+    final @NotNull MatchedValueType type;
+    @ApiStatus.Internal
+    public final @NotNull String pattern;
+    final int matchingDegree;
+
+    public @Nullable Double similarityScore = null;
+
+    @ApiStatus.Internal
+    public MatchedValue(@NotNull Object value, @NotNull String pattern, @NotNull MatchedValueType type) {
+      LOG.assertTrue(value instanceof OptionDescription || value instanceof ActionWrapper, "Not expected: " + value.getClass());
       this.value = value;
       this.pattern = pattern;
+      matchingDegree = calcMatchingDegree();
+      this.type = type;
     }
 
-    @Nullable
-    @VisibleForTesting
-    public String getValueText() {
-      if (value instanceof OptionDescription) return ((OptionDescription)value).getHit();
-      if (!(value instanceof ActionWrapper)) return null;
-      return ((ActionWrapper)value).getAction().getTemplatePresentation().getText();
+    @ApiStatus.Internal
+    public MatchedValue(@NotNull Object value, @NotNull String pattern, @NotNull MatchedValueType type, double similarityScore) {
+      this(value, pattern, type);
+      this.similarityScore = similarityScore;
     }
 
-    @Nullable
+    MatchedValue(@NotNull Object value, @NotNull String pattern, int degree, @NotNull MatchedValueType type) {
+      assert value instanceof OptionDescription || value instanceof ActionWrapper;
+      this.value = value;
+      this.pattern = pattern;
+      matchingDegree = degree;
+      this.type = type;
+    }
+
+    @ApiStatus.Internal
     @Override
-    public String toString() {
-      return getMatchingDegree() + " " + getValueText();
+    public MergeableElement mergeWith(MergeableElement other) {
+      MatchedValue mergedValue = new MatchedValue(value, pattern, matchingDegree, type);
+      if (other instanceof MatchedValue otherMatchedValue) {
+        if (otherMatchedValue.type == MatchedValueType.SEMANTIC) {
+          mergedValue.similarityScore = otherMatchedValue.similarityScore;
+        }
+      }
+      return mergedValue;
     }
 
-    private int getMatchingDegree() {
+    @Override
+    public boolean shouldBeMergedIntoAnother() {
+      return similarityScore != null;
+    }
+
+    @VisibleForTesting
+    public @Nullable String getValueText() {
+      return ActionSearchUtilKt.getActionText(value);
+    }
+
+    @Override
+    public @Nullable String toString() {
+      String presentation;
+      if (value instanceof OptionDescription) {
+        presentation = String.format("%s, %s, %s",
+                                     ((OptionDescription)value).getHit(),
+                                     ((OptionDescription)value).getOption(),
+                                     ((OptionDescription)value).getConfigurableId());
+      }
+      else {
+        presentation = value.toString();
+      }
+
+      return String.format("%d %s; %s; %s", getMatchingDegree(), getValueText(), presentation, value.getClass());
+    }
+
+    public int getMatchingDegree() {
+      return matchingDegree;
+    }
+
+    @ApiStatus.Internal
+    public @NotNull MatchedValueType getType() {
+      return type;
+    }
+
+    public int getValueTypeWeight() {
+      return getTypeWeight(value);
+    }
+
+    private int calcMatchingDegree() {
       String text = getValueText();
       if (text != null) {
         int degree = getRank(text);
@@ -189,263 +328,261 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
       return 0;
     }
 
-    @Override
-    public int compareTo(@NotNull MatchedValue o) {
+    public int compareWeights(@NotNull MatchedValue o) {
+      if (o == this) return 0;
       int diff = o.getMatchingDegree() - getMatchingDegree();
       if (diff != 0) return diff;
 
-      boolean edt = ApplicationManager.getApplication().isDispatchThread();
+      diff = getTypeWeight(o.value) - getTypeWeight(value);
+      if (diff != 0) return diff;
 
-      if (value instanceof ActionWrapper && o.value instanceof ActionWrapper) {
-        if (edt) {
-          boolean p1Enable = ((ActionWrapper)value).isAvailable();
-          boolean p2enable = ((ActionWrapper)o.value).isAvailable();
-          if (p1Enable && !p2enable) return -1;
-          if (!p1Enable && p2enable) return 1;
-        }
-        //noinspection unchecked
-        int compared = value.compareTo(o.value);
+      if (value instanceof ActionWrapper value1 && o.value instanceof ActionWrapper value2) {
+        int compared = value1.compareWeights(value2);
         if (compared != 0) return compared;
       }
-      
-      if (value instanceof ActionWrapper && o.value instanceof BooleanOptionDescription) {
-        return edt && ((ActionWrapper)value).isAvailable() ? -1 : 1;
-      }
-      
-      if (o.value instanceof ActionWrapper && value instanceof BooleanOptionDescription) {
-        return edt && ((ActionWrapper)o.value).isAvailable() ? 1 : -1;
-      }
-      
-      if (value instanceof OptionDescription && o.value instanceof BooleanOptionDescription) return 1;
-      if (o.value instanceof OptionDescription && value instanceof BooleanOptionDescription) return -1;
-
-      if (value instanceof OptionDescription && !(o.value instanceof OptionDescription)) return 1;
-      if (o.value instanceof OptionDescription && !(value instanceof OptionDescription)) return -1;
 
       diff = StringUtil.notNullize(getValueText()).length() - StringUtil.notNullize(o.getValueText()).length();
       if (diff != 0) return diff;
-      
-      //noinspection unchecked
-      diff = value.compareTo(o.value);
-      if (diff != 0) return diff;
-      
-      return o.hashCode() - hashCode(); 
+
+      if (value instanceof OptionDescription value1 && o.value instanceof OptionDescription value2) {
+        diff = value1.compareTo(value2);
+        if (diff != 0) return diff;
+      }
+
+      return o.hashCode() - hashCode();
+    }
+
+    private static int getTypeWeight(@NotNull Object value) {
+      if (value instanceof ActionWrapper actionWrapper) {
+        if (actionWrapper.isAvailable()) {
+          return 0;
+        }
+        return 2;
+      }
+      if (value instanceof OptionDescription) {
+        if (value instanceof BooleanOptionDescription) return 1;
+        return 3;
+      }
+      throw new IllegalArgumentException(value.getClass() + " - " + value);
+    }
+
+    @Override
+    public @NotNull List<PropertyBean> getUiInspectorContext() {
+      // Implement here, as GotoActionListCellRenderer is behind 9000 wrappers
+      List<PropertyBean> result = new ArrayList<>();
+      if (value instanceof ActionWrapper actionWrapper) {
+        result.add(new PropertyBean("Action ID", UiInspectorActionUtil.getActionId(actionWrapper.myAction), true));
+        result.add(new PropertyBean("Action Class", UiInspectorUtil.getClassPresentation(actionWrapper.myAction), true));
+      }
+      return result;
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+      if (this == o) return true;
+      if (!(o instanceof MatchedValue value1)) return false;
+      return Objects.equals(value, value1.value) &&
+             Objects.equals(pattern, value1.pattern);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(value, pattern);
     }
   }
 
   @Override
-  public ListCellRenderer getListCellRenderer() {
-    return new GotoActionListCellRenderer(this::getGroupName);
+  public @NotNull ListCellRenderer<?> getListCellRenderer() {
+    return new GotoActionListCellRenderer();
   }
 
-  protected String getActionId(@NotNull AnAction anAction) {
-    return myActionManager.getId(anAction);
-  }
-
-  @NotNull
-  private static JLabel createIconLabel(@Nullable Icon icon) {
+  @ApiStatus.Internal
+  public static @NotNull LayeredIcon createLayeredIcon(@Nullable Icon icon, boolean disabled) {
     LayeredIcon layeredIcon = new LayeredIcon(2);
     layeredIcon.setIcon(EMPTY_ICON, 0);
-    if (icon != null && icon.getIconWidth() <= EMPTY_ICON.getIconWidth() && icon.getIconHeight() <= EMPTY_ICON.getIconHeight()) {
-      layeredIcon
-        .setIcon(icon, 1, (-icon.getIconWidth() + EMPTY_ICON.getIconWidth()) / 2, (EMPTY_ICON.getIconHeight() - icon.getIconHeight()) / 2);
+    if (icon == null) {
+      return layeredIcon;
     }
 
-    return new JLabel(layeredIcon);
+    int width = icon.getIconWidth();
+    int height = icon.getIconHeight();
+    int emptyIconWidth = EMPTY_ICON.getIconWidth();
+    int emptyIconHeight = EMPTY_ICON.getIconHeight();
+    if (width <= emptyIconWidth && height <= emptyIconHeight) {
+      layeredIcon.setIcon(disabled && IconLoader.isGoodSize(icon) ? IconLoader.getDisabledIcon(icon) : icon, 1,
+                          (emptyIconWidth - width) / 2,
+                          (emptyIconHeight - height) / 2);
+    }
+
+    return layeredIcon;
   }
 
   @Override
   public int compare(@NotNull Object o1, @NotNull Object o2) {
     if (ChooseByNameBase.EXTRA_ELEM.equals(o1)) return 1;
     if (ChooseByNameBase.EXTRA_ELEM.equals(o2)) return -1;
-    return ((MatchedValue)o1).compareTo((MatchedValue)o2);
+    return ((MatchedValue)o1).compareWeights((MatchedValue)o2);
   }
 
-  @NotNull
-  public static AnActionEvent updateActionBeforeShow(@NotNull AnAction anAction, @NotNull DataContext dataContext) {
-    AnActionEvent event = AnActionEvent.createFromDataContext(ActionPlaces.ACTION_SEARCH, null, dataContext);
-    ActionUtil.performDumbAwareUpdate(anAction, event, false);
-    return event;
+  public static Color defaultActionForeground(boolean isSelected, boolean hasFocus, @Nullable Presentation presentation) {
+    return defaultActionForeground(isSelected, hasFocus, presentation == null || presentation.isEnabledAndVisible());
   }
 
-  public static Color defaultActionForeground(boolean isSelected, @Nullable Presentation presentation) {
-    if (isSelected) return UIUtil.getListSelectionForeground();
-    if (presentation != null && (!presentation.isEnabled() || !presentation.isVisible())) return UIUtil.getInactiveTextColor();
+  @ApiStatus.Internal
+  public static Color defaultActionForeground(boolean isSelected, boolean hasFocus, boolean isEnabledAndVisible) {
+    if (isSelected) return NamedColorUtil.getListSelectionForeground(hasFocus);
+    if (!isEnabledAndVisible) return NamedColorUtil.getInactiveTextColor();
     return UIUtil.getListForeground();
   }
 
   @Override
-  @NotNull
-  public String[] getNames(boolean checkBoxState) {
-    return ArrayUtil.EMPTY_STRING_ARRAY;
+  public String @NotNull [] getNames(boolean checkBoxState) {
+    return ArrayUtilRt.EMPTY_STRING_ARRAY;
   }
 
   @Override
-  @NotNull
-  public Object[] getElementsByName(String id, boolean checkBoxState, String pattern) {
-    return ArrayUtil.EMPTY_OBJECT_ARRAY;
+  public Object @NotNull [] getElementsByName(@NotNull String id, boolean checkBoxState, @NotNull String pattern) {
+    return ArrayUtilRt.EMPTY_OBJECT_ARRAY;
+  }
+
+  public static @Nls @NotNull String getGroupName(@NotNull OptionDescription description) {
+    return getGroupName(description.getGroupName(),
+                        description.getHit(),
+                        description instanceof RegistryTextOptionDescriptor);
+  }
+
+  @ApiStatus.Internal
+  public static @Nls @NotNull String getGroupName(@Nullable @Nls String groupName,
+                                                  @Nullable @NlsSafe String optionHit,
+                                                  boolean isRegistry) {
+    if (isRegistry) return LangBundle.message("group.registry");
+    String settings = LangBundle.message("group.settings");
+    if (groupName == null || groupName.equals(optionHit)) return settings;
+    return settings + " > " + groupName;
   }
 
   @NotNull
-  String getGroupName(@NotNull OptionDescription description) {
-    String id = description.getConfigurableId();
-    String name = myConfigurablesNames.getValue().get(id);
-    String settings = SystemInfo.isMac ? "Preferences" : "Settings";
-    if (name == null) return settings;
-    return settings + " > " + name;
+  Map<@NonNls String, @NlsContexts.ConfigurableName String> getConfigurablesNames() {
+    return myConfigurablesNames.get();
   }
 
-  void initConfigurables() {
-    myConfigurablesNames.getValue();
-  }
+  private void collectActions(@NotNull Map<? super AnAction, GroupMapping> actionGroups,
+                              @NotNull ActionGroup group,
+                              @NotNull List<ActionGroup> path,
+                              boolean showNonPopupGroups) {
+    if (actionGroups.containsKey(group)) return;
+    AnAction[] actions = group instanceof DefaultActionGroup g ?
+                         g.getChildren(myActionManager) : AnAction.EMPTY_ARRAY;
 
-  private void collectActions(@NotNull Map<AnAction, String> result, @NotNull ActionGroup group, @Nullable String containingGroupName) {
-    AnAction[] actions = group.getChildren(null);
-    includeGroup(result, group, actions, containingGroupName);
+    boolean hasRegisteredChild = ContainerUtil.exists(actions, action -> myActionManager.getId(action) != null);
+    if (!hasRegisteredChild) {
+      GroupMapping mapping = actionGroups.computeIfAbsent(group, _ -> new GroupMapping(showNonPopupGroups));
+      mapping.addPath(path);
+    }
+
+    List<ActionGroup> newPath = ContainerUtil.append(path, group);
     for (AnAction action : actions) {
       if (action == null || action instanceof Separator) continue;
       if (action instanceof ActionGroup) {
-        ActionGroup actionGroup = (ActionGroup)action;
-        String groupName = actionGroup.getTemplatePresentation().getText();
-        collectActions(result, actionGroup, getGroupName(StringUtil.isEmpty(groupName) || !actionGroup.isPopup() ? containingGroupName : groupName));
+        collectActions(actionGroups, (ActionGroup)action, newPath, showNonPopupGroups);
       }
       else {
-        String groupName = group.getTemplatePresentation().getText();
-        if (result.containsKey(action)) {
-          result.put(action, null);
-        }
-        else {
-          result.put(action, getGroupName(StringUtil.isEmpty(groupName) ? containingGroupName : groupName));
-        }
+        GroupMapping mapping = actionGroups.computeIfAbsent(action, _ -> new GroupMapping(showNonPopupGroups));
+        mapping.addPath(newPath);
       }
     }
   }
 
-  @Nullable
-  private static String getGroupName(@Nullable String groupName) {
-    if (groupName != null) {
-      Matcher matcher = INNER_GROUP_WITH_IDS.matcher(groupName);
-      if (matcher.matches()) return matcher.group(1);
-    }
-    return groupName;  
-  }
-
-  private void includeGroup(@NotNull Map<AnAction, String> result,
-                            @NotNull ActionGroup group,
-                            @NotNull AnAction[] actions,
-                            @Nullable String containingGroupName) {
-    boolean showGroup = true;
-    for (AnAction action : actions) {
-      if (myActionManager.getId(action) != null) {
-        showGroup = false;
-        break;
-      }
-    }
-    if (showGroup) {
-      result.put(group, getGroupName(containingGroupName));
-    }
+  @ApiStatus.Internal
+  public @Nullable GroupMapping getGroupMapping(@NotNull AnAction action) {
+    return myActionGroups.get(action);
   }
 
   @Override
-  @Nullable
-  public String getFullName(@NotNull Object element) {
+  public @Nullable String getFullName(@NotNull Object element) {
     return getElementName(element);
   }
 
-  @NonNls
   @Override
-  public String getHelpId() {
+  public @NonNls String getHelpId() {
     return "procedures.navigating.goto.action";
   }
 
   @Override
-  @NotNull
-  public String[] getSeparators() {
-    return ArrayUtil.EMPTY_STRING_ARRAY;
+  public String @NotNull [] getSeparators() {
+    return ArrayUtilRt.EMPTY_STRING_ARRAY;
   }
 
-  @Nullable
   @Override
-  public String getElementName(@NotNull Object mv) {
-    return ((MatchedValue) mv).getValueText();
+  public @Nullable String getElementName(@NotNull Object mv) {
+    return ((MatchedValue)mv).getValueText();
   }
 
-  protected MatchMode actionMatches(@NotNull String pattern, MinusculeMatcher matcher, @NotNull AnAction anAction) {
-    Presentation presentation = anAction.getTemplatePresentation();
+  @VisibleForTesting
+  @ApiStatus.Internal
+  public @NotNull MatchMode actionMatches(@NotNull String pattern, com.intellij.util.text.Matcher matcher, @NotNull AnAction anAction) {
+    Presentation presentation = anAction.getTemplatePresentation().clone();
+    anAction.applyTextOverride(ActionPlaces.ACTION_SEARCH, presentation);
     String text = presentation.getText();
     String description = presentation.getDescription();
-    String groupName = myActionGroups.get(anAction);
     if (text != null && matcher.matches(text)) {
       return MatchMode.NAME;
     }
-    else if (description != null && !description.equals(text) && matcher.matches(description)) {
+    for (Supplier<String> synonym : anAction.getSynonyms()) {
+      if (matcher.matches(synonym.get())) {
+        return MatchMode.SYNONYM;
+      }
+    }
+    if (!Strings.isNullOrEmpty(description) && !description.equals(text) && new WordPrefixMatcher(pattern, PlatformKeyboardLayoutConverter.INSTANCE).matches(description)) {
       return MatchMode.DESCRIPTION;
     }
     if (text == null) {
       return MatchMode.NONE;
     }
-    if (matcher.matches(groupName + " " + text)) {
-      return anAction instanceof ToggleAction ? MatchMode.NAME : MatchMode.GROUP;
-    }
-    return matcher.matches(text + " " + groupName) ? MatchMode.GROUP : MatchMode.NONE;
-  }
-
-  @Nullable
-  protected Project getProject() {
-    return myProject;
-  }
-
-  protected Component getContextComponent() {
-    return myContextComponent;
-  }
-
-  @NotNull
-  public SortedSet<Object> sortItems(@NotNull Set<Object> elements) {
-    List<ActionWrapper> toUpdate = getActionsToUpdate(elements);
-    if (!toUpdate.isEmpty()) {
-      updateActions(toUpdate);
-    }
-
-    TreeSet<Object> objects = ContainerUtilRt.newTreeSet(this);
-    objects.addAll(elements);
-    return objects;
-  }
-
-  @NotNull
-  private static List<ActionWrapper> getActionsToUpdate(@NotNull Set<Object> elements) {
-    List<ActionWrapper> toUpdate = new ArrayList<>();
-    for (Object element : elements) {
-      if (element instanceof MatchedValue) {
-        Comparable value = ((MatchedValue)element).value;
-        if (value instanceof ActionWrapper && !((ActionWrapper)value).hasPresentation()) {
-          toUpdate.add((ActionWrapper)value);
+    GroupMapping groupMapping = myActionGroups.get(anAction);
+    if (groupMapping != null) {
+      for (String groupName : groupMapping.getAllGroupNames()) {
+        if (matcher.matches(groupName + " " + text)) {
+          return anAction instanceof ToggleAction ? MatchMode.NAME : MatchMode.GROUP;
+        }
+        if (matcher.matches(text + " " + groupName)) {
+          return MatchMode.GROUP;
         }
       }
     }
-    return toUpdate;
-  }
 
-  private void updateActions(List<ActionWrapper> toUpdate) {
-    TransferToEDTQueue<ActionWrapper> queue = new TransferToEDTQueue<ActionWrapper>("goto action", aw -> {
-      aw.getPresentation();
-      return true;
-    }, Conditions.FALSE, 50) {
-      @Override
-      protected void schedule(@NotNull Runnable updateRunnable) {
-        ApplicationManager.getApplication().invokeLater(updateRunnable, myModality);
+    for (GotoActionAliasMatcher m : GotoActionAliasMatcher.EP_NAME.getExtensions()) {
+      MatchMode match = m.matchAction(anAction, pattern);
+      if (match != MatchMode.NONE) {
+        return match;
       }
-    };
-    for (ActionWrapper wrapper : toUpdate) {
-      queue.offer(wrapper);
     }
-    while (queue.size() > 0) {
-      ProgressManager.checkCanceled();
-      TimeoutUtil.sleep(50);
-    }
+    return MatchMode.NONE;
   }
 
-  public enum MatchMode {
-    NONE, INTENTION, NAME, DESCRIPTION, GROUP, NON_MENU
+  @Nullable
+  Project getProject() {
+    return myProject;
+  }
+
+  @NotNull
+  DataContext getDataContext() {
+    // This data context can be reused because
+    // 1. it was reused before
+    // 2. context component shall not change much while SE popup is open
+    // 2. EDT event count check is not applied
+    return myDataContext;
+  }
+
+  @ApiStatus.Internal
+  public @NotNull UpdateSession getUpdateSession() {
+    return myUpdateSession;
+  }
+
+  public @NotNull SortedSet<Object> sortItems(@NotNull Set<Object> elements) {
+    TreeSet<Object> objects = new TreeSet<>(this);
+    objects.addAll(elements);
+    return objects;
   }
 
   @Override
@@ -458,75 +595,87 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
     return true;
   }
 
-  public static class ActionWrapper implements Comparable<ActionWrapper> {
-    @NotNull private final AnAction myAction;
-    @NotNull private final MatchMode myMode;
-    @Nullable  private final String myGroupName;
-    private final DataContext myDataContext;
-    private volatile Presentation myPresentation;
+  public static class ActionWrapper {
+    private final @NotNull AnAction myAction;
+    private final @NotNull MatchMode myMode;
+    private final @Nullable GroupMapping myGroupMapping;
+    private final Presentation myPresentation;
+    private final String myActionText;
 
-    public ActionWrapper(@NotNull AnAction action, @Nullable String groupName, @NotNull MatchMode mode, DataContext dataContext) {
+    @ApiStatus.Internal
+    public ActionWrapper(@NotNull AnAction action,
+                         @Nullable GroupMapping groupMapping,
+                         @NotNull MatchMode mode,
+                         @NotNull Presentation presentation) {
       myAction = action;
       myMode = mode;
-      myGroupName = groupName;
-      myDataContext = dataContext;
+      myGroupMapping = groupMapping;
+      myPresentation = presentation;
+      myActionText = ActionSearchUtilKt.getActionText(action);
     }
 
-    @NotNull
-    public AnAction getAction() {
+    public String getActionText() {
+      return myActionText;
+    }
+
+    public @NotNull AnAction getAction() {
       return myAction;
     }
 
-    @NotNull
-    public MatchMode getMode() {
+    public @NotNull MatchMode getMode() {
       return myMode;
     }
 
-    @Override
-    public int compareTo(@NotNull ActionWrapper o) {
+    @ApiStatus.Internal
+    public @Nullable GroupMapping getGroupMapping() {
+      return myGroupMapping;
+    }
+
+    public int compareWeights(@NotNull ActionWrapper o) {
       int compared = myMode.compareTo(o.getMode());
       if (compared != 0) return compared;
+
       Presentation myPresentation = myAction.getTemplatePresentation();
       Presentation oPresentation = o.getAction().getTemplatePresentation();
-      String myText = myPresentation.getText();
-      String oText = oPresentation.getText();
+      String myText = StringUtil.notNullize(myActionText);
+      String oText = StringUtil.notNullize(o.getActionText());
       int byText = StringUtil.compare(StringUtil.trimEnd(myText, "..."), StringUtil.trimEnd(oText, "..."), true);
       if (byText != 0) return byText;
       int byTextLength = StringUtil.notNullize(myText).length() - StringUtil.notNullize(oText).length();
       if (byTextLength != 0) return byTextLength;
-      int byGroup = Comparing.compare(myGroupName, o.getGroupName());
+      int byGroup = Comparing.compare(myGroupMapping, o.myGroupMapping);
       if (byGroup != 0) return byGroup;
       int byDesc = StringUtil.compare(myPresentation.getDescription(), oPresentation.getDescription(), true);
       if (byDesc != 0) return byDesc;
+      int byClassHashCode = Integer.compare(myAction.getClass().hashCode(), o.myAction.getClass().hashCode());
+      if (byClassHashCode != 0) return byClassHashCode;
+      int byInstanceHashCode = Integer.compare(myAction.hashCode(), o.myAction.hashCode());
+      if (byInstanceHashCode != 0) return byInstanceHashCode;
       return 0;
     }
 
     public boolean isAvailable() {
-      return getPresentation().isEnabledAndVisible();
+      return myPresentation.isEnabledAndVisible();
     }
 
-    public Presentation getPresentation() {
-      if (myPresentation != null) return myPresentation;
-      return myPresentation = updateActionBeforeShow(myAction, myDataContext).getPresentation();
+    public @NotNull Presentation getPresentation() {
+      return myPresentation;
     }
 
-    private boolean hasPresentation() {
-      return myPresentation != null;
+    public @ActionText @Nullable String getGroupName() {
+      if (myGroupMapping == null) return null;
+      String groupName = myGroupMapping.getBestGroupName();
+      if (myAction instanceof ActionGroup && Objects.equals(myAction.getTemplatePresentation().getText(), groupName)) return null;
+      return groupName;
     }
 
-    @Nullable
-    public String getGroupName() {
-      if (myAction instanceof ActionGroup && Comparing.equal(myAction.getTemplatePresentation().getText(), myGroupName)) return null;
-      return myGroupName;
-    }
-    
     public boolean isGroupAction() {
       return myAction instanceof ActionGroup;
     }
 
     @Override
     public boolean equals(Object obj) {
-      return obj instanceof ActionWrapper && compareTo((ActionWrapper)obj) == 0;
+      return obj instanceof ActionWrapper && myAction.equals(((ActionWrapper)obj).myAction);
     }
 
     @Override
@@ -541,148 +690,284 @@ public class GotoActionModel implements ChooseByNameModel, Comparator<Object>, D
     }
   }
 
-  public static class GotoActionListCellRenderer extends DefaultListCellRenderer {
-    private final Function<OptionDescription, String> myGroupNamer;
+  @ApiStatus.Internal
+  @DirtyUI
+  public static final class GotoActionListCellRenderer extends DefaultListCellRenderer {
+    public static final Border TOGGLE_BUTTON_BORDER = JBUI.Borders.empty(0, 2);
+    private final boolean myUseListFont;
 
-    public GotoActionListCellRenderer(Function<OptionDescription, String> groupNamer) {
-      myGroupNamer = groupNamer;
+    public GotoActionListCellRenderer() {
+      this(false);
     }
 
-    @NotNull
+    public GotoActionListCellRenderer(boolean useListFont) {
+      myUseListFont = useListFont;
+    }
+
     @Override
-    public Component getListCellRendererComponent(@NotNull JList list,
-                                                  Object matchedValue,
-                                                  int index, boolean isSelected, boolean cellHasFocus) {
-      boolean showIcon = UISettings.getInstance().SHOW_ICONS_IN_MENUS;
-      JPanel panel = new JPanel(new BorderLayout());
-      panel.setBorder(IdeBorderFactory.createEmptyBorder(2));
+    public @NotNull Component getListCellRendererComponent(@NotNull JList list,
+                                                           Object matchedValue,
+                                                           int index, boolean isSelected, boolean cellHasFocus) {
+      SimpleColoredComponent nameComponent = new SimpleColoredComponent();
+
+      boolean showIcon = UISettings.getInstance().getShowIconsInMenus();
+      IconCompOptionalCompPanel<SimpleColoredComponent>
+        panel = new IconCompOptionalCompPanel<>(nameComponent) {
+        @Override
+        public AccessibleContext getAccessibleContext() {
+          return nameComponent.getAccessibleContext();
+        }
+      };
+
+      panel.setBorder(JBUI.Borders.empty(2));
       panel.setOpaque(true);
-      Color bg = UIUtil.getListBackground(isSelected);
+      Color bg = UIUtil.getListBackground(isSelected, cellHasFocus);
       panel.setBackground(bg);
 
-      SimpleColoredComponent nameComponent = new SimpleColoredComponent();
-      nameComponent.setBackground(bg);
-      panel.add(nameComponent, BorderLayout.CENTER);
-      
+      if (myUseListFont) {
+        nameComponent.setFont(list.getFont());
+      }
+      nameComponent.setOpaque(false);
+
       if (matchedValue instanceof String) { //...
-        nameComponent.append((String)matchedValue, new SimpleTextAttributes(STYLE_PLAIN, defaultActionForeground(isSelected, null)));
         if (showIcon) {
-          panel.add(new JBLabel(EMPTY_ICON), BorderLayout.WEST);
+          panel.setIcon(EMPTY_ICON);
         }
+        String str = cutName((String)matchedValue, null, list, panel);
+        nameComponent.append(str, new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN,
+                                                           defaultActionForeground(isSelected, cellHasFocus, null)));
         return panel;
       }
 
-      Color groupFg = isSelected ? UIUtil.getListSelectionForeground() : UIUtil.getLabelDisabledForeground();
+      Color groupFg;
+      groupFg = isSelected ? NamedColorUtil.getListSelectionForeground(true) : NamedColorUtil.getInactiveTextColor();
 
-      Object value = ((MatchedValue) matchedValue).value;
+      Object value = ((MatchedValue)matchedValue).value;
       String pattern = ((MatchedValue)matchedValue).pattern;
 
-      Border eastBorder = IdeBorderFactory.createEmptyBorder(0, 0, 0, 2);
-      if (value instanceof ActionWrapper) {
-        ActionWrapper actionWithParentGroup = (ActionWrapper)value;
+      Border eastBorder = JBUI.Borders.emptyRight(2);
+      if (value instanceof ActionWrapper actionWithParentGroup) {
         AnAction anAction = actionWithParentGroup.getAction();
-        Presentation presentation = anAction.getTemplatePresentation();
         boolean toggle = anAction instanceof ToggleAction;
-        String groupName = actionWithParentGroup.getAction() instanceof ApplyIntentionAction ? null : actionWithParentGroup.getGroupName();
-        Color fg = defaultActionForeground(isSelected, actionWithParentGroup.getPresentation());
-        if (showIcon) {
-          panel.add(createIconLabel(presentation.getIcon()), BorderLayout.WEST);
-        }
-        appendWithColoredMatches(nameComponent, getName(presentation.getText(), groupName, toggle), pattern, fg, isSelected);
-        panel.setToolTipText(presentation.getDescription());
+        String groupName = anAction instanceof ApplyIntentionAction ? null : actionWithParentGroup.getGroupName();
+        Presentation presentation = actionWithParentGroup.getPresentation();
+        Color fg = defaultActionForeground(isSelected, cellHasFocus, presentation);
+        boolean disabled = !isSelected && !presentation.isEnabledAndVisible();
 
-        Shortcut[] shortcuts = KeymapManager.getInstance().getActiveKeymap().getShortcuts(ActionManager.getInstance().getId(anAction));
-        String shortcutText = KeymapUtil.getPreferredShortcutText(
-          shortcuts);
-        if (StringUtil.isNotEmpty(shortcutText)) {
-          nameComponent.append(" " + shortcutText,
-                               new SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER | SimpleTextAttributes.STYLE_BOLD,
-                                                        UIUtil.isUnderDarcula() ? groupFg : ColorUtil.shift(groupFg, 1.3)));
+        if (disabled) {
+          groupFg = UIUtil.getLabelDisabledForeground();
+        }
+
+        if (showIcon) {
+          Icon icon = presentation.getIcon();
+          if (isSelected && presentation.getSelectedIcon() != null) {
+            icon = presentation.getSelectedIcon();
+          }
+          panel.setIcon(createLayeredIcon(icon, disabled));
         }
 
         if (toggle) {
-          AnActionEvent event = AnActionEvent.createFromDataContext(ActionPlaces.UNKNOWN, null, ((ActionWrapper)value).myDataContext);
-          boolean selected = ((ToggleAction)anAction).isSelected(event);
-          addOnOffButton(panel, selected);
+          addOnOffButton(panel, Toggleable.isSelected(presentation));
         }
-        else {
-          if (groupName != null) {
-            JLabel groupLabel = new JLabel(groupName);
-            groupLabel.setBackground(bg);
-            groupLabel.setBorder(eastBorder);
-            groupLabel.setForeground(groupFg);
-            panel.add(groupLabel, BorderLayout.EAST);
-          }
+        else if (groupName != null) {
+          JLabel groupLabel = new JLabel(groupName);
+          groupLabel.setBackground(bg);
+          groupLabel.setBorder(eastBorder);
+          groupLabel.setForeground(groupFg);
+          panel.setRight(groupLabel);
+        }
+
+        if (anAction instanceof PromoAction promoAction) {
+          customizePromoAction(promoAction, bg, eastBorder, groupFg, panel);
+        }
+
+        panel.setToolTipText(presentation.getDescription());
+        @NlsSafe String actionId = ActionManager.getInstance().getId(anAction);
+        Shortcut[] shortcuts = KeymapUtil.getActiveKeymapShortcuts(actionId).getShortcuts();
+        String shortcutText = KeymapUtil.getPreferredShortcutText(shortcuts);
+        String text = ActionPresentationDecorator.decorateTextIfNeeded(anAction, presentation.getText());
+        String name = getName(text, groupName, toggle);
+        name = cutName(name, shortcutText, list, panel);
+
+        appendWithColoredMatches(nameComponent, name, pattern, fg, isSelected);
+        if (UISettings.getInstance().getShowInplaceCommentsInternal() && actionId != null) {
+          nameComponent.append(" " + actionId + " ", SimpleTextAttributes.GRAYED_ATTRIBUTES);
+        }
+        if (StringUtil.isNotEmpty(shortcutText)) {
+          nameComponent.append(" " + shortcutText,
+                               new SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER | SimpleTextAttributes.STYLE_BOLD, groupFg));
         }
       }
       else if (value instanceof OptionDescription) {
         if (!isSelected && !(value instanceof BooleanOptionDescription)) {
-          Color descriptorBg = UIUtil.isUnderDarcula() ? ColorUtil.brighter(UIUtil.getListBackground(), 1) : LightColors.SLIGHTLY_GRAY;
+          Color descriptorBg = JBUI.CurrentTheme.BigPopup.getListSettingsBackground();
           panel.setBackground(descriptorBg);
           nameComponent.setBackground(descriptorBg);
         }
-        String hit = ((OptionDescription)value).getHit();
-        if (hit == null) {
-          hit = ((OptionDescription)value).getOption();
-        }
-        hit = StringUtil.unescapeXml(hit);
-        hit = hit.replace("  ", " "); // avoid extra spaces from mnemonics and xml conversion
-        String fullHit = hit;
-        hit = StringUtil.first(hit, 45, true);
-
-        Color fg = UIUtil.getListForeground(isSelected);
-
-        appendWithColoredMatches(nameComponent, hit.trim(), pattern, fg, isSelected);
+        String hit = calcHit((OptionDescription)value);
+        Color fg = UIUtil.getListForeground(isSelected, cellHasFocus);
 
         if (showIcon) {
-          panel.add(new JLabel(EMPTY_ICON), BorderLayout.WEST);
+          panel.setIcon(EMPTY_ICON);
         }
-        panel.setToolTipText(fullHit);
-
         if (value instanceof BooleanOptionDescription) {
           boolean selected = ((BooleanOptionDescription)value).isOptionEnabled();
           addOnOffButton(panel, selected);
         }
         else {
-          JLabel settingsLabel = new JLabel(myGroupNamer.fun((OptionDescription)value));
+          JLabel settingsLabel = new JLabel(getGroupName((OptionDescription)value));
           settingsLabel.setForeground(groupFg);
           settingsLabel.setBackground(bg);
           settingsLabel.setBorder(eastBorder);
-          panel.add(settingsLabel, BorderLayout.EAST);
+          panel.setRight(settingsLabel);
         }
+
+        String name = cutName(hit, null, list, panel);
+        appendWithColoredMatches(nameComponent, name, pattern, fg, isSelected);
       }
       return panel;
     }
 
-    private static void addOnOffButton(@NotNull JPanel panel, boolean selected) {
-      OnOffButton button = new OnOffButton();
-      button.setSelected(selected);
-      panel.add(button, BorderLayout.EAST);
-      panel.setBorder(IdeBorderFactory.createEmptyBorder(0, 2, 0, 2));
+    private static void customizePromoAction(PromoAction promoAction,
+                                             Color panelBackground,
+                                             Border eastBorder,
+                                             Color groupFg,
+                                             IconCompOptionalCompPanel<SimpleColoredComponent> panel) {
+      SimpleColoredComponent promo = new SimpleColoredComponent();
+      promo.setBackground(panelBackground);
+      promo.setForeground(groupFg);
+      promo.setIcon(AllIcons.Ide.External_link_arrow);
+      promo.setIconOnTheRight(true);
+      promo.setTransparentIconBackground(true);
+      promo.append(promoAction.getCallToAction());
+
+      SimpleColoredComponent upgradeTo = new SimpleColoredComponent();
+      upgradeTo.setIcon(promoAction.getPromotedProductIcon());
+      upgradeTo.setBackground(panelBackground);
+      upgradeTo.setForeground(groupFg);
+      upgradeTo.setIconOnTheRight(true);
+      upgradeTo.append(FeaturePromoBundle.message("get.prefix") + " ");
+      upgradeTo.setTransparentIconBackground(true);
+
+      BorderLayoutPanel compositeUpgradeHint = JBUI.Panels.simplePanel(promo);
+      if (promoAction.getPromotedProductIcon() != null) {
+        compositeUpgradeHint.addToLeft(upgradeTo);
+      }
+
+      compositeUpgradeHint.andTransparent();
+
+      compositeUpgradeHint.setBorder(eastBorder);
+
+      panel.setRight(compositeUpgradeHint);
     }
 
-    @NotNull
-    private static String getName(@Nullable String text, @Nullable String groupName, boolean toggle) {
+    public static @ActionText @NotNull String calcHit(@NotNull OptionDescription value) {
+      if (value instanceof RegistryTextOptionDescriptor) {
+        return value.getHit() + " = " + value.getValue();
+      }
+      String hit = StringUtil.defaultIfEmpty(value.getHit(), value.getOption());
+      return StringUtil.unescapeXmlEntities(StringUtil.notNullize(hit))
+        .replace(BundleBase.MNEMONIC_STRING, "")
+        .replace("  ", " "); // avoid extra spaces from mnemonics and xml conversion
+    }
+
+    private static @ActionText String cutName(@ActionText String name,
+                                              @NlsSafe String shortcutText,
+                                              JList<?> list,
+                                              IconCompOptionalCompPanel<SimpleColoredComponent> panel) {
+      if (!list.isShowing() || list.getWidth() <= 0) {
+        return StringUtil.first(name, 60, true); // fallback to previous behaviour
+      }
+
+      //we cannot cut HTML formatted strings
+      if (name.startsWith("<html>")) return name;
+
+      // we have a min size for SE, which is ~40 symbols, don't spend time for trimming, let's use a shortcut
+      if (name.length() < 40) return name;
+
+      int freeSpace = calcFreeSpace(list, panel, shortcutText);
+
+      if (freeSpace <= 0) {
+        return name;
+      }
+
+      SimpleColoredComponent nameComponent = panel.getCenter();
+      FontMetrics fm = nameComponent.getFontMetrics(nameComponent.getFont());
+      int strWidth = fm.stringWidth(name);
+      if (strWidth <= freeSpace) {
+        return name;
+      }
+
+      int cutSymbolIndex = (int)((((double)freeSpace - fm.stringWidth("...")) / strWidth) * name.length());
+      cutSymbolIndex = Integer.max(1, cutSymbolIndex);
+      name = name.substring(0, cutSymbolIndex);
+      while (fm.stringWidth(name + "...") > freeSpace && name.length() > 1) {
+        name = name.substring(0, name.length() - 1);
+      }
+
+      return name.trim() + "...";
+    }
+
+    private static int calcFreeSpace(JList<?> list, IconCompOptionalCompPanel<SimpleColoredComponent> panel, String shortcutText) {
+      SimpleColoredComponent nameComponent = panel.getCenter();
+      Insets insets = nameComponent.getInsets();
+      Insets ipad = nameComponent.getIpad();
+      int freeSpace = list.getWidth()
+                      - (list.getInsets().right + list.getInsets().left)
+                      - panel.calculateNonResizeableWidth()
+                      - (insets.right + insets.left)
+                      - (ipad.right + ipad.left);
+
+      if (StringUtil.isNotEmpty(shortcutText)) {
+        FontMetrics fm = nameComponent.getFontMetrics(nameComponent.getFont().deriveFont(Font.BOLD));
+        freeSpace -= fm.stringWidth(" " + shortcutText);
+      }
+
+      return freeSpace;
+    }
+
+    private static void addOnOffButton(@NotNull IconCompOptionalCompPanel<SimpleColoredComponent> panel, boolean selected) {
+      OnOffButton button = new OnOffButton();
+      button.setSelected(selected);
+      panel.setRight(button);
+      panel.setBorder(TOGGLE_BUTTON_BORDER);
+    }
+
+    private static @ActionText @NotNull String getName(@Nullable @ActionText String text, @Nullable @ActionText String groupName, boolean toggle) {
+      if (text != null && text.startsWith("<html>") && text.endsWith("</html>")) {
+        String rawText = text.substring(6, text.length() - 7);
+        return "<html>" + getName(rawText, groupName, toggle) + "</html>";
+      }
       return toggle && StringUtil.isNotEmpty(groupName)
-             ? StringUtil.isNotEmpty(text) ? groupName + ": " + text 
+             ? StringUtil.isNotEmpty(text) ? groupName + ": " + text
                                            : groupName : StringUtil.notNullize(text);
     }
 
     private static void appendWithColoredMatches(SimpleColoredComponent nameComponent,
-                                                 @NotNull String name,
-                                                 @NotNull String pattern,
+                                                 @NotNull @ActionText String name,
+                                                 @NotNull @NlsSafe String pattern,
                                                  Color fg,
                                                  boolean selected) {
-      SimpleTextAttributes plain = new SimpleTextAttributes(STYLE_PLAIN, fg);
-      SimpleTextAttributes highlighted = new SimpleTextAttributes(null, fg, null, STYLE_SEARCH_MATCH);
-      List<TextRange> fragments = ContainerUtil.newArrayList();
+      SimpleTextAttributes plain = new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, fg);
+
+      if (name.startsWith("<html>")) {
+        new HtmlToSimpleColoredComponentConverter(HtmlToSimpleColoredComponentConverter.DEFAULT_TAG_HANDLER).appendHtml(nameComponent, name,
+                                                                                                                        plain);
+        name = nameComponent.getCharSequence(false).toString();
+      }
+      else {
+        nameComponent.append(name, plain);
+      }
+
+      nameComponent.setDynamicSearchMatchHighlighting(false);
       if (selected) {
         int matchStart = StringUtil.indexOfIgnoreCase(name, pattern, 0);
         if (matchStart >= 0) {
-          fragments.add(TextRange.from(matchStart, pattern.length()));
+          nameComponent.setDynamicSearchMatchHighlighting(true);
+          List<TextRange> fragments = Collections.singletonList(TextRange.from(matchStart, pattern.length()));
+          SpeedSearchUtil.applySpeedSearchHighlighting(nameComponent, fragments, true);
         }
       }
-      SpeedSearchUtil.appendColoredFragments(nameComponent, name, fragments, plain, highlighted);
     }
   }
 }

@@ -1,43 +1,109 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.jetbrains.python.codeInsight.postfix;
 
+import com.intellij.codeInsight.template.impl.TemplateImpl;
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplate;
 import com.intellij.codeInsight.template.postfix.templates.PostfixTemplateProvider;
+import com.intellij.codeInsight.template.postfix.templates.PostfixTemplatesUtils;
+import com.intellij.codeInsight.template.postfix.templates.editable.PostfixTemplateEditor;
+import com.intellij.codeInsight.template.postfix.templates.editable.PostfixTemplateExpressionCondition;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.psi.PsiFile;
-import com.intellij.util.containers.ContainerUtil;
+import com.jetbrains.python.PyBundle;
+import org.jdom.Element;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Set;
 
-public class PyPostfixTemplateProvider implements PostfixTemplateProvider {
-  @NotNull
+import static com.intellij.codeInsight.template.postfix.templates.PostfixTemplatesUtils.readExternalConditions;
+import static com.intellij.codeInsight.template.postfix.templates.PostfixTemplatesUtils.readExternalLiveTemplate;
+import static com.intellij.codeInsight.template.postfix.templates.PostfixTemplatesUtils.readExternalTopmostAttribute;
+
+public final class PyPostfixTemplateProvider implements PostfixTemplateProvider {
+
+  private final @NotNull Set<PostfixTemplate> myTemplates = Set.of(
+    new PyNotPostfixTemplate(this),
+    new PyParenthesizedExpressionPostfixTemplate(this),
+    new PyReturnPostfixTemplate(this),
+    new PyIfPostfixTemplate(this),
+    new PyWhilePostfixTemplate(this),
+    new PyForPostfixTemplate("for", this),
+    new PyForPostfixTemplate("iter", this),
+    new PyForEnumeratePostfixTemplate("fore", this),
+    new PyForEnumeratePostfixTemplate("itere", this),
+    new PyForEnumeratePostfixTemplate("enum", this),
+    new PyIsNonePostfixTemplate(this),
+    new PyIsNotNonePostfixTemplate(this),
+    new PyPrintPostfixTemplate(this),
+    new PyMainPostfixTemplate(this),
+    new PyLenPostfixTemplate(this),
+    new PyIsInstancePostfixTemplate(this),
+    new PyCastPostfixTemplate(this),
+    new PyAwaitPostfixTemplate(this),
+    new PyWithPostfixTemplate(this),
+    new PyStatementKeywordPostfixTemplate("raise", this),
+    new PyStatementKeywordPostfixTemplate("yield", this),
+    new PyCallWrapPostfixTemplate("str", this),
+    new PyCallWrapPostfixTemplate("list", this),
+    new PyCallWrapPostfixTemplate("set", this),
+    new PyCallWrapPostfixTemplate("dict", this),
+    new PyCallWrapPostfixTemplate("tuple", this),
+    new PyComprehensionPostfixTemplate("compl", "[$VAR_EXPR$ for $VAR$ in $EXPR$]$END$", "[e for e in expr]", this),
+    new PyComprehensionPostfixTemplate("comps", "{$VAR_EXPR$ for $VAR$ in $EXPR$}$END$", "{e for e in expr}", this),
+    new PyComprehensionPostfixTemplate("compg", "($VAR_EXPR$ for $VAR$ in $EXPR$)$END$", "(e for e in expr)", this),
+    new PyDictComprehensionPostfixTemplate(this)
+  );
+
   @Override
-  public Set<PostfixTemplate> getTemplates() {
-    return ContainerUtil.<PostfixTemplate>newHashSet(new PyNotPostfixTemplate(),
-                                                     new PyParenthesizedExpressionPostfixTemplate(),
-                                                     new PyReturnPostfixTemplate(),
-                                                     new PyIfPostfixTemplate(),
-                                                     new PyWhilePostfixTemplate(),
-                                                     new PyIsNonePostfixTemplate(),
-                                                     new PyIsNotNonePostfixTemplate(),
-                                                     new PyPrintPostfixTemplate(),
-                                                     new PyMainPostfixTemplate());
+  public @NotNull String getId() {
+    return "builtin.python";
   }
+
+  @Override
+  public @Nullable String getPresentableName() {
+    return PyBundle.message("postfix.template.provider.name");
+  }
+
+  @Override
+  public @NotNull Set<PostfixTemplate> getTemplates() {
+    return myTemplates;
+  }
+
+  @Override
+  public @Nullable PostfixTemplateEditor createEditor(@Nullable PostfixTemplate templateToEdit) {
+    if (templateToEdit == null || templateToEdit instanceof PyEditablePostfixTemplate) {
+      PyPostfixTemplateEditor result = new PyPostfixTemplateEditor(this);
+      result.setTemplate(templateToEdit);
+      return result;
+    }
+    return null;
+  }
+
+  @Override
+  public @Nullable PostfixTemplate readExternalTemplate(@NotNull String id, @NotNull String name, @NotNull Element templateElement) {
+    TemplateImpl template = readExternalLiveTemplate(templateElement, this);
+    if (template == null) return null;
+    Set<PyPostfixTemplateExpressionCondition> conditions =
+      readExternalConditions(templateElement, PyPostfixTemplateProvider::readCondition);
+    boolean useTopmostExpression = readExternalTopmostAttribute(templateElement);
+    return new PyEditablePostfixTemplate(id, name, template, "", conditions, useTopmostExpression, this, false /*?*/);
+  }
+
+  @Override
+  public void writeExternalTemplate(@NotNull PostfixTemplate template, @NotNull Element parentElement) {
+    if (template instanceof PyEditablePostfixTemplate) {
+      PostfixTemplatesUtils.writeExternalTemplate(template, parentElement);
+    }
+  }
+
+  private static @Nullable PyPostfixTemplateExpressionCondition readCondition(@NotNull Element conditionElement) {
+    String id = conditionElement.getAttributeValue(PostfixTemplateExpressionCondition.ID_ATTR);
+    return PyPostfixTemplateExpressionCondition.PyClassCondition.ID.equals(id) ?
+           PyPostfixTemplateExpressionCondition.PyClassCondition.Companion.readFrom(conditionElement) :
+           PyPostfixTemplateExpressionCondition.PUBLIC_CONDITIONS.get(id);
+  }
+
 
   @Override
   public boolean isTerminalSymbol(char currentChar) {
@@ -54,9 +120,8 @@ public class PyPostfixTemplateProvider implements PostfixTemplateProvider {
 
   }
 
-  @NotNull
   @Override
-  public PsiFile preCheck(@NotNull PsiFile copyFile, @NotNull Editor realEditor, int currentOffset) {
+  public @NotNull PsiFile preCheck(@NotNull PsiFile copyFile, @NotNull Editor realEditor, int currentOffset) {
     return copyFile;
   }
 }

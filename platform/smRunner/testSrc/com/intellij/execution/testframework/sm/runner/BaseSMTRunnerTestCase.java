@@ -1,24 +1,16 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.execution.testframework.sm.runner;
 
 import com.intellij.execution.configurations.ModuleRunConfiguration;
 import com.intellij.execution.executors.DefaultDebugExecutor;
+import com.intellij.execution.testframework.AbstractTestProxy;
 import com.intellij.execution.testframework.TestConsoleProperties;
+import com.intellij.execution.testframework.sm.runner.ui.MockPrinter;
+import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.testFramework.LightPlatformTestCase;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * @author Roman Chernyatchik
@@ -35,6 +27,20 @@ public abstract class BaseSMTRunnerTestCase extends LightPlatformTestCase {
     mySimpleTest = createTestProxy();
   }
 
+  @Override
+  protected void tearDown() throws Exception {
+    try {
+      if (mySuite != null) Disposer.dispose(mySuite);
+      if (mySimpleTest != null) Disposer.dispose(mySimpleTest);
+    }
+    catch (Throwable e) {
+      addSuppressedException(e);
+    }
+    finally {
+      super.tearDown();
+    }
+  }
+
   protected SMTestProxy createTestProxy() {
     return createTestProxy("test");
   }
@@ -48,7 +54,7 @@ public abstract class BaseSMTRunnerTestCase extends LightPlatformTestCase {
   }
 
   protected SMTestProxy createTestProxy(final String name, final SMTestProxy parentSuite) {
-    final SMTestProxy proxy = new SMTestProxy(name, false, null);
+    final SMTestProxy proxy = new SMTestProxy(name, false, "file://test.text");
     if (parentSuite != null) {
       parentSuite.addChild(proxy);
     }
@@ -88,20 +94,62 @@ public abstract class BaseSMTRunnerTestCase extends LightPlatformTestCase {
     return consoleProperties;
   }
 
-  protected void doPassTest(final SMTestProxy test) {
-    test.setStarted();
-    test.setFinished();
+  /**
+   * @return Test tree using poorman's graphics
+   */
+  @NotNull
+  public static String getFormattedTestTree(@NotNull final SMTestProxy proxy) {
+    final StringBuilder builder = new StringBuilder("Test tree:\n");
+    formatLevel(proxy, 0, builder);
+    return builder.toString();
   }
 
-  protected void doFailTest(final SMTestProxy test) {
-    test.setStarted();
-    test.setTestFailed("", "", false);
-    test.setFinished();
+  private static void formatLevel(@NotNull final SMTestProxy test, final int level, @NotNull final StringBuilder builder) {
+    builder.append(StringUtil.repeat(".", level));
+    builder.append(test.getName());
+    if (test.wasTerminated()) {
+      builder.append("[T]");
+    }
+    else if (test.isPassed()) {
+      builder.append("(+)");
+    }
+    else if (test.isIgnored()) {
+      builder.append("(~)");
+    }
+    else {
+      builder.append("(-)");
+    }
+    builder.append('\n');
+    for (SMTestProxy child : test.getChildren()) {
+      formatLevel(child, level + 1, builder);
+    }
   }
 
-  protected void doErrorTest(final SMTestProxy test) {
-    test.setStarted();
-    test.setTestFailed("", "", true);
-    test.setFinished();
+  /**
+   * Searches for test by its name recursevly in test, passed as arumuent.
+   *
+   * @param testName test name to find
+   * @param test     root test
+   * @return test or null if not found
+   */
+  @Nullable
+  public static AbstractTestProxy findTestByName(@NotNull final String testName, @NotNull final AbstractTestProxy test) {
+    if (test.getName().equals(testName)) {
+      return test;
+    }
+    for (final AbstractTestProxy testProxy : test.getChildren()) {
+      final AbstractTestProxy result = findTestByName(testName, testProxy);
+      if (result != null) {
+        return result;
+      }
+    }
+    return null;
+  }
+
+  @NotNull
+  public static String getTestOutput(@NotNull final AbstractTestProxy test) {
+    final MockPrinter p = new MockPrinter();
+    test.printOn(p);
+    return p.getAllOut();
   }
 }

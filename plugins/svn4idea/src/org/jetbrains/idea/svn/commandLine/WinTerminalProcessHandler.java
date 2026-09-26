@@ -1,35 +1,21 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.commandLine;
 
+import com.intellij.execution.configurations.GeneralCommandLine;
+import com.intellij.execution.process.ProcessOutputTypes;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.io.BaseDataReader;
 import com.intellij.util.io.BaseOutputReader;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * @author Konstantin Kolosovsky.
- */
 public class WinTerminalProcessHandler extends TerminalProcessHandler {
 
   // see http://en.wikipedia.org/wiki/ANSI_escape_code
   private static final String NON_CSI_ESCAPE_CODE = "\u001B.[@-_]";
   private static final String CSI_ESCAPE_CODE = "\u001B\\[(.*?)[@-~]";
 
-  public WinTerminalProcessHandler(@NotNull Process process, @NotNull String commandLine, boolean forceUtf8, boolean forceBinary) {
+  public WinTerminalProcessHandler(@NotNull Process process, @NotNull GeneralCommandLine commandLine, boolean forceUtf8, boolean forceBinary) {
     super(process, commandLine, forceUtf8, forceBinary);
   }
 
@@ -38,9 +24,14 @@ public class WinTerminalProcessHandler extends TerminalProcessHandler {
     return true;
   }
 
-  @NotNull
   @Override
-  protected BaseOutputReader.Options readerOptions() {
+  protected @NotNull BaseDataReader createErrorDataReader() {
+    return new SimpleOutputReader(createProcessErrReader(), ProcessOutputTypes.STDERR, BaseOutputReader.Options.BLOCKING,
+                                  "error stream of " + myPresentableName);
+  }
+
+  @Override
+  protected @NotNull BaseOutputReader.Options readerOptions() {
     // Currently, when blocking policy is used, reading stops when nothing was actually read (stream ended).
     // This is an issue for reading output in Windows as redirection to file is used. And so file is actually
     // empty when first read attempt is performed (thus no output is read at all).
@@ -48,9 +39,8 @@ public class WinTerminalProcessHandler extends TerminalProcessHandler {
     return BaseOutputReader.Options.NON_BLOCKING;
   }
 
-  @NotNull
   @Override
-  protected String filterCombinedText(@NotNull String currentLine) {
+  protected @NotNull String filterCombinedText(@NotNull String currentLine) {
     // for windows platform output is assumed in format suitable for terminal emulator
     // for instance, same text could be returned twice with '\r' symbol in between (so in emulator output we'll still see correct
     // text without duplication)
@@ -58,9 +48,8 @@ public class WinTerminalProcessHandler extends TerminalProcessHandler {
     return removeAllBeforeCaretReturn(currentLine);
   }
 
-  @NotNull
   @Override
-  protected String filterText(@NotNull String text) {
+  protected @NotNull String filterText(@NotNull String text) {
     // filter terminal escape codes - they are presented in the output for windows platform
     text = text.replaceAll(CSI_ESCAPE_CODE, "").replaceAll(NON_CSI_ESCAPE_CODE, "");
     // trim leading '\r' symbols - as they break xml parsing logic
@@ -69,14 +58,12 @@ public class WinTerminalProcessHandler extends TerminalProcessHandler {
     return text;
   }
 
-  @NotNull
   @Override
-  protected Key resolveOutputType(@NotNull String line, @NotNull Key outputType) {
+  protected @NotNull Key resolveOutputType(@NotNull String line, @NotNull Key outputType) {
     return outputType;
   }
 
-  @NotNull
-  private static String removeAllBeforeCaretReturn(@NotNull String line) {
+  private static @NotNull String removeAllBeforeCaretReturn(@NotNull String line) {
     int caretReturn = line.lastIndexOf("\r");
 
     while (caretReturn >= 0) {

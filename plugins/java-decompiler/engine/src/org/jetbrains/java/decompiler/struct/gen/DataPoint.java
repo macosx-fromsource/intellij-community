@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2022 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.struct.gen;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
@@ -23,11 +9,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DataPoint {
+  private final List<VarType> localVariables;
+  private final ListStack<VarType> stack;
 
-  private List<VarType> localVariables = new ArrayList<>();
+  public DataPoint() {
+    this(new ArrayList<>(), new ListStack<>());
+  }
 
-  private ListStack<VarType> stack = new ListStack<>();
+  private DataPoint(List<VarType> localVariables, ListStack<VarType> stack) {
+    this.localVariables = localVariables;
+    this.stack = stack;
+  }
 
+  public DataPoint copy() {
+    return new DataPoint(new ArrayList<>(localVariables), stack.copy());
+  }
 
   public void setVariable(int index, VarType value) {
     if (index >= localVariables.size()) {
@@ -43,23 +39,12 @@ public class DataPoint {
     if (index < localVariables.size()) {
       return localVariables.get(index);
     }
-    else if (index < 0) {
-      throw new IndexOutOfBoundsException();
-    }
     else {
       return new VarType(CodeConstants.TYPE_NOTINITIALIZED);
     }
   }
 
-  public DataPoint copy() {
-    DataPoint point = new DataPoint();
-    point.setLocalVariables(new ArrayList<>(localVariables));
-    point.setStack(stack.clone());
-    return point;
-  }
-
   public static DataPoint getInitialDataPoint(StructMethod mt) {
-
     DataPoint point = new DataPoint();
 
     MethodDescriptor md = MethodDescriptor.parseDescriptor(mt.getDescriptor());
@@ -73,7 +58,7 @@ public class DataPoint {
       VarType var = md.params[i];
 
       point.setVariable(k++, var);
-      if (var.stackSize == 2) {
+      if (var.getStackSize() == 2) {
         point.setVariable(k++, new VarType(CodeConstants.TYPE_GROUP2EMPTY));
       }
     }
@@ -81,20 +66,7 @@ public class DataPoint {
     return point;
   }
 
-
-  public List<VarType> getLocalVariables() {
-    return localVariables;
-  }
-
-  public void setLocalVariables(List<VarType> localVariables) {
-    this.localVariables = localVariables;
-  }
-
   public ListStack<VarType> getStack() {
     return stack;
-  }
-
-  public void setStack(ListStack<VarType> stack) {
-    this.stack = stack;
   }
 }

@@ -1,31 +1,38 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.javaFX.fxml.codeInsight.inspections;
 
 import com.intellij.codeInspection.LocalInspectionToolSession;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.codeInspection.XmlSuppressableInspectionTool;
-import com.intellij.psi.*;
-import com.intellij.psi.xml.*;
+import com.intellij.psi.CommonClassNames;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiMember;
+import com.intellij.psi.XmlElementVisitor;
+import com.intellij.psi.xml.XmlAttribute;
+import com.intellij.psi.xml.XmlAttributeValue;
+import com.intellij.psi.xml.XmlTag;
+import com.intellij.psi.xml.XmlTagValue;
+import com.intellij.psi.xml.XmlText;
 import com.intellij.xml.XmlAttributeDescriptor;
 import com.intellij.xml.XmlElementDescriptor;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.plugins.javaFX.JavaFXBundle;
 import org.jetbrains.plugins.javaFX.fxml.JavaFxCommonNames;
 import org.jetbrains.plugins.javaFX.fxml.JavaFxFileTypeFactory;
 import org.jetbrains.plugins.javaFX.fxml.JavaFxPsiUtil;
 import org.jetbrains.plugins.javaFX.fxml.descriptors.JavaFxPropertyAttributeDescriptor;
 import org.jetbrains.plugins.javaFX.fxml.descriptors.JavaFxPropertyTagDescriptor;
 
-/**
- * @author Pavel.Dolgov
- */
-public class JavaFxColorRgbInspection extends XmlSuppressableInspectionTool {
-  @NotNull
+public final class JavaFxColorRgbInspection extends XmlSuppressableInspectionTool {
   @Override
-  public PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly, @NotNull LocalInspectionToolSession session) {
+  public @NotNull PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly, @NotNull LocalInspectionToolSession session) {
     if (!JavaFxFileTypeFactory.isFxml(session.getFile())) return PsiElementVisitor.EMPTY_VISITOR;
 
     return new XmlElementVisitor() {
       @Override
-      public void visitXmlAttribute(XmlAttribute attribute) {
+      public void visitXmlAttribute(@NotNull XmlAttribute attribute) {
         super.visitXmlAttribute(attribute);
 
         final String attributeValue = attribute.getValue();
@@ -42,7 +49,7 @@ public class JavaFxColorRgbInspection extends XmlSuppressableInspectionTool {
       }
 
       @Override
-      public void visitXmlTag(XmlTag tag) {
+      public void visitXmlTag(@NotNull XmlTag tag) {
         super.visitXmlTag(tag);
         if (tag.getSubTags().length != 0) return;
 
@@ -62,13 +69,13 @@ public class JavaFxColorRgbInspection extends XmlSuppressableInspectionTool {
                                           @NotNull String propertyName,
                                           @NotNull String propertyValue,
                                           @NotNull PsiElement location) {
-        final PsiMember declaration = JavaFxPsiUtil.collectWritableProperties(psiClass).get(propertyName);
+        final PsiMember declaration = JavaFxPsiUtil.getWritableProperties(psiClass).get(propertyName);
         final String boxedQName = JavaFxPsiUtil.getBoxedPropertyType(psiClass, declaration);
         if (CommonClassNames.JAVA_LANG_FLOAT.equals(boxedQName) || CommonClassNames.JAVA_LANG_DOUBLE.equals(boxedQName)) {
           try {
             double value = Double.parseDouble(propertyValue);
             if (value < 0.0 || value > 1.0) {
-              holder.registerProblem(location, "Color component has to be a number between 0.0 and 1.0, inclusively");
+              holder.registerProblem(location, JavaFXBundle.message("inspection.javafx.color.component.out.of.range.problem"));
             }
           }
           catch (NumberFormatException ignored) {

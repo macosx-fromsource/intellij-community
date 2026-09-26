@@ -1,33 +1,19 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.zmlx.hg4idea.command;
 
 import com.intellij.openapi.application.PathManager;
+import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.VcsException;
-import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.messages.MessageBus;
 import com.intellij.vcsUtil.VcsFileUtil;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.zmlx.hg4idea.HgBundle;
 import org.zmlx.hg4idea.HgFile;
 import org.zmlx.hg4idea.HgVcs;
-import org.zmlx.hg4idea.HgVcsMessages;
 import org.zmlx.hg4idea.execution.HgCommandException;
 import org.zmlx.hg4idea.repo.HgRepository;
 import org.zmlx.hg4idea.util.HgEncodingUtil;
@@ -41,12 +27,12 @@ import java.util.Set;
 
 public abstract class HgCommitTypeCommand {
 
-  private static final String TEMP_FILE_NAME = ".hg4idea-commit.tmp";
+  private static final @NonNls String TEMP_FILE_NAME = ".hg4idea-commit.tmp";
 
-  @NotNull protected final Project myProject;
-  @NotNull protected final HgRepository myRepository;
-  @NotNull private final String myMessage;
-  @NotNull private final Charset myCharset;
+  protected final @NotNull Project myProject;
+  protected final @NotNull HgRepository myRepository;
+  private final @NotNull String myMessage;
+  private final @NotNull Charset myCharset;
   protected final boolean myAmend;
 
   private Set<HgFile> myFiles = Collections.emptySet();
@@ -70,7 +56,7 @@ public abstract class HgCommitTypeCommand {
       FileUtil.writeToFile(tempFile, myMessage.getBytes(myCharset));
     }
     catch (IOException e) {
-      throw new VcsException("Couldn't prepare commit message", e);
+      throw new VcsException(HgBundle.message("action.hg4idea.Commit.cant.prepare.commit.message.file"), e);
     }
     return tempFile;
   }
@@ -78,25 +64,19 @@ public abstract class HgCommitTypeCommand {
 
   public void executeInCurrentThread() throws HgCommandException, VcsException {
     if (StringUtil.isEmptyOrSpaces(myMessage)) {
-      throw new HgCommandException(HgVcsMessages.message("hg4idea.commit.error.messageEmpty"));
+      throw new HgCommandException(HgBundle.message("hg4idea.commit.error.messageEmpty"));
     }
     if (myFiles.isEmpty()) {
-      executeChunked(Collections.<List<String>>emptyList());
+      executeChunked(Collections.emptyList());
     }
     else {
-      List<String> relativePaths = ContainerUtil.map2List(myFiles, new Function<HgFile, String>() {
-        @Override
-        public String fun(HgFile file) {
-          return file.getRelativePath();
-        }
-      });
+      List<String> relativePaths = ContainerUtil.map(myFiles, file -> file.getRelativePath());
       List<List<String>> chunkedCommits = VcsFileUtil.chunkArguments(relativePaths);
       executeChunked(chunkedCommits);
     }
     myRepository.update();
-    final MessageBus messageBus = myProject.getMessageBus();
-    messageBus.syncPublisher(HgVcs.REMOTE_TOPIC).update(myProject, null);
+    BackgroundTaskUtil.syncPublisher(myProject, HgVcs.REMOTE_TOPIC).update(myProject, null);
   }
 
-  protected abstract void executeChunked(@NotNull List<List<String>> chunkedCommits) throws HgCommandException, VcsException;
+  protected abstract void executeChunked(@NotNull List<List<String>> chunkedCommits) throws VcsException;
 }

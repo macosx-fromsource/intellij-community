@@ -1,58 +1,59 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.execution.filters;
 
-import com.intellij.openapi.application.AccessToken;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.java.analysis.JavaAnalysisBundle;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.markup.EffectType;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
+import com.intellij.openapi.project.DumbService;
+import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
-import com.intellij.openapi.util.Trinity;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiCompiledFile;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiTryStatement;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.Consumer;
-import com.intellij.util.ui.UIUtil;
-import gnu.trove.THashMap;
+import com.intellij.util.ui.NamedColorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
+import java.awt.Color;
+import java.awt.Font;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * @author gregsh
  */
-public class ExceptionExFilterFactory implements ExceptionFilterFactory {
-  @NotNull
+public final class ExceptionExFilterFactory implements ExceptionFilterFactory {
   @Override
-  public Filter create(@NotNull GlobalSearchScope searchScope) {
-    return new MyFilter(searchScope);
+  public @NotNull Filter create(@NotNull GlobalSearchScope searchScope) {
+    return new MyFilter(Objects.requireNonNull(searchScope.getProject()), searchScope);
+  }
+
+  @Override
+  public Filter create(@NotNull Project project,
+                       @NotNull GlobalSearchScope searchScope) {
+    return new MyFilter(project, searchScope);
   }
 
   private static class MyFilter implements Filter, FilterMixin {
     private final ExceptionInfoCache myCache;
+    private final ExceptionLineParserFactory myFactory = ExceptionLineParserFactory.getInstance();
 
-    public MyFilter(@NotNull final GlobalSearchScope scope) {
-      myCache = new ExceptionInfoCache(scope);
+    MyFilter(@NotNull Project project, final @NotNull GlobalSearchScope scope) {
+      myCache = new ExceptionInfoCache(project, scope);
     }
 
-    public Result applyFilter(final String line, final int textEndOffset) {
+    @Override
+    public Result applyFilter(final @NotNull String line, final int textEndOffset) {
       return null;
     }
 
@@ -62,68 +63,65 @@ public class ExceptionExFilterFactory implements ExceptionFilterFactory {
     }
 
     @Override
-    public void applyHeavyFilter(@NotNull final Document copiedFragment,
+    public void applyHeavyFilter(final @NotNull Document copiedFragment,
                                  final int startOffset,
                                  int startLineNumber,
-                                 @NotNull final Consumer<AdditionalHighlight> consumer) {
-      Map<String, Trinity<TextRange, TextRange, TextRange>> visited = new THashMap<>();
-      final Trinity<TextRange, TextRange, TextRange> emptyInfo = Trinity.create(null, null, null);
+                                 final @NotNull Consumer<? super AdditionalHighlight> consumer) {
+      Map<String, ExceptionWorker.ParsedLine> visited = new HashMap<>();
+      ExceptionWorker.ParsedLine emptyInfo = new ExceptionWorker.ParsedLine(TextRange.EMPTY_RANGE, TextRange.EMPTY_RANGE, TextRange.EMPTY_RANGE, null, -1);
 
-      final ExceptionWorker worker = new ExceptionWorker(myCache);
+      final ExceptionLineParser worker = myFactory.create(myCache);
       for (int i = 0; i < copiedFragment.getLineCount(); i++) {
         final int lineStartOffset = copiedFragment.getLineStartOffset(i);
         final int lineEndOffset = copiedFragment.getLineEndOffset(i);
 
-        String text = copiedFragment.getText(new TextRange(lineStartOffset, lineEndOffset));
-        if (!text.contains(".java:")) continue;
-        Trinity<TextRange, TextRange, TextRange> info = visited.get(text);
+        String lineText = copiedFragment.getText(new TextRange(lineStartOffset, lineEndOffset));
+        if (!lineText.contains(".java:")) continue;
+        ExceptionWorker.ParsedLine info = visited.get(lineText);
         if (info == emptyInfo) continue;
 
         if (info == null) {
-          info = emptyInfo;
-          AccessToken token = ApplicationManager.getApplication().acquireReadActionLock();
-          try {
-            worker.execute(text, lineEndOffset);
-            Result result = worker.getResult();
-            if (result == null) continue;
-            HyperlinkInfo hyperlinkInfo = result.getHyperlinkInfo();
-            if (!(hyperlinkInfo instanceof FileHyperlinkInfo)) continue;
-
-            OpenFileDescriptor descriptor = ((FileHyperlinkInfo)hyperlinkInfo).getDescriptor();
-            if (descriptor == null) continue;
-
-            PsiFile psiFile = worker.getFile();
-            if (psiFile == null || psiFile instanceof PsiCompiledFile) continue;
-            int offset = descriptor.getOffset();
-            if (offset <= 0) continue;
-
-            PsiElement element = psiFile.findElementAt(offset);
-            PsiTryStatement parent = PsiTreeUtil.getParentOfType(element, PsiTryStatement.class, true, PsiClass.class);
-            PsiCodeBlock tryBlock = parent != null? parent.getTryBlock() : null;
-            if (tryBlock == null || !tryBlock.getTextRange().contains(offset)) continue;
-            info = worker.getInfo();
-          }
-          finally {
-            token.finish();
-            visited.put(text, info);
+          info = ReadAction.compute(() -> DumbService.isDumb(worker.getProject()) ? null : doParse(worker, lineEndOffset, lineText));
+          visited.put(lineText, info == null ? emptyInfo : info);
+          if (info == null) {
+            continue;
           }
         }
         int off = startOffset + lineStartOffset;
-        final Color color = UIUtil.getInactiveTextColor();
-        consumer.consume(new AdditionalHighlight(off + info.first.getStartOffset(), off + info.second.getEndOffset()) {
-          @NotNull
+        final Color color = NamedColorUtil.getInactiveTextColor();
+        consumer.consume(new AdditionalHighlight(off + info.classFqnRange.getStartOffset(), off + info.methodNameRange.getEndOffset()) {
           @Override
-          public TextAttributes getTextAttributes(@Nullable TextAttributes source) {
+          public @NotNull TextAttributes getTextAttributes(@Nullable TextAttributes source) {
             return new TextAttributes(null, null, color, EffectType.BOLD_DOTTED_LINE, Font.PLAIN);
           }
         });
       }
     }
 
-    @NotNull
+    private static ExceptionWorker.ParsedLine doParse(@NotNull ExceptionLineParser worker, int lineEndOffset, @NotNull String lineText) {
+      Result result = worker.execute(lineText, lineEndOffset);
+      if (result == null) return null;
+      HyperlinkInfo hyperlinkInfo = result.getHyperlinkInfo();
+      if (!(hyperlinkInfo instanceof FileHyperlinkInfo)) return null;
+
+      OpenFileDescriptor descriptor = ((FileHyperlinkInfo)hyperlinkInfo).getDescriptor();
+      if (descriptor == null) return null;
+
+      PsiFile psiFile = worker.getFile();
+      if (psiFile == null || psiFile instanceof PsiCompiledFile) return null;
+      int offset = descriptor.getOffset();
+      if (offset <= 0) return null;
+
+      PsiElement element = psiFile.findElementAt(offset);
+      PsiTryStatement parent = PsiTreeUtil.getParentOfType(element, PsiTryStatement.class, true, PsiClass.class);
+      PsiCodeBlock tryBlock = parent != null? parent.getTryBlock() : null;
+      if (tryBlock == null || !tryBlock.getTextRange().contains(offset)) return null;
+      return worker.getInfo();
+    }
+
     @Override
-    public String getUpdateMessage() {
-      return "Highlighting try blocks...";
+    public @NotNull String getUpdateMessage() {
+      return JavaAnalysisBundle.message("highlighting.try.blocks");
     }
   }
 }

@@ -15,9 +15,7 @@
  */
 
 /*
- * @author: Eugene Zhuravlev
- * Date: Apr 1, 2003
- * Time: 1:17:50 PM
+ * @author Eugene Zhuravlev
  */
 package com.intellij.compiler.impl;
 
@@ -27,19 +25,24 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.*;
-import java.util.Collection;
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.File;
+import java.io.IOException;
+import java.io.Serializable;
 
 public class FileProcessingCompilerStateCache {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.compiler.impl.FileProcessingCompilerStateCache");
+  private static final Logger LOG = Logger.getInstance(FileProcessingCompilerStateCache.class);
   private final StateCache<MyState> myCache;
 
   public FileProcessingCompilerStateCache(File storeDirectory, final ValidityStateFactory stateFactory) throws IOException {
-    myCache = new StateCache<MyState>(new File(storeDirectory, "timestamps")) {
+    myCache = new StateCache<>(new File(storeDirectory, "timestamps")) {
+      @Override
       public MyState read(DataInput stream) throws IOException {
         return new MyState(stream.readLong(), stateFactory.createValidityState(stream));
       }
 
+      @Override
       public void write(MyState state, DataOutput out) throws IOException {
         out.writeLong(state.getTimestamp());
         final ValidityState extState = state.getExtState();
@@ -62,11 +65,7 @@ public class FileProcessingCompilerStateCache {
   }
 
   public long getTimestamp(String url) throws IOException {
-    final Serializable savedState = myCache.getState(url);
-    if (savedState != null) {
-      LOG.assertTrue(savedState instanceof MyState);
-    }
-    MyState state = (MyState)savedState;
+    MyState state = myCache.getState(url);
     return (state != null)? state.getTimestamp() : -1L;
   }
 
@@ -77,10 +76,6 @@ public class FileProcessingCompilerStateCache {
 
   public void force() {
     myCache.force();
-  }
-
-  public Collection<String> getUrls() throws IOException {
-    return myCache.getUrls();
   }
 
   public boolean wipe() {
@@ -100,7 +95,7 @@ public class FileProcessingCompilerStateCache {
     private final long myTimestamp;
     private final ValidityState myExtState;
 
-    public MyState(long timestamp, @Nullable ValidityState extState) {
+    MyState(long timestamp, @Nullable ValidityState extState) {
       myTimestamp = timestamp;
       myExtState = extState;
     }

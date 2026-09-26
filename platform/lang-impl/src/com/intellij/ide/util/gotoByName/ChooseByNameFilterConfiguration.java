@@ -1,31 +1,17 @@
-/*
- * Copyright 2000-2010 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.util.gotoByName;
 
+import com.intellij.ide.util.TypeVisibilityStateHolder;
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.util.xmlb.annotations.AbstractCollection;
-import com.intellij.util.xmlb.annotations.Tag;
+import com.intellij.util.xmlb.annotations.XCollection;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/**
- * @author yole
- */
-public abstract class ChooseByNameFilterConfiguration<T> implements PersistentStateComponent<ChooseByNameFilterConfiguration.Items>  {
+
+public abstract class ChooseByNameFilterConfiguration<T>
+  implements TypeVisibilityStateHolder<T>, PersistentStateComponent<ChooseByNameFilterConfiguration.Items> {
   /**
    * state object for the configuration
    */
@@ -43,16 +29,11 @@ public abstract class ChooseByNameFilterConfiguration<T> implements PersistentSt
    * {@inheritDoc}
    */
   @Override
-  public void loadState(final Items state) {
+  public void loadState(@NotNull Items state) {
     items = state;
   }
 
-  /**
-   * Set filtering state for file type
-   *
-   * @param type  a type of the file to update
-   * @param value if false, a file type will be filtered out
-   */
+  @Override
   public void setVisible(T type, boolean value) {
     if (value) {
       items.getFilteredOutFileTypeNames().remove(nameForElement(type));
@@ -69,15 +50,22 @@ public abstract class ChooseByNameFilterConfiguration<T> implements PersistentSt
    *
    * @param type a file type to check
    * @return false if file of the specified type should be filtered out
+   * @deprecated use a more general method {@link #isVisible}
    */
+  @Deprecated
   public boolean isFileTypeVisible(T type) {
+    return isVisible(type);
+  }
+
+  @Override
+  public boolean isVisible(T type) {
     return !items.getFilteredOutFileTypeNames().contains(nameForElement(type));
   }
 
   /**
    * A state for this configuration
    */
-  public static class Items {
+  public static final class Items {
     /**
      * a set of file types
      */
@@ -86,8 +74,7 @@ public abstract class ChooseByNameFilterConfiguration<T> implements PersistentSt
     /**
      * @return names for file types
      */
-    @Tag("file-type-list")
-    @AbstractCollection(elementTag = "filtered-out-file-type", elementValueAttribute = "name", surroundWithTag = false)
+    @XCollection(propertyElementName = "file-type-list", elementName = "filtered-out-file-type", valueAttributeName = "name")
     public Set<String> getFilteredOutFileTypeNames() {
       return filteredOutFileTypeNames;
     }

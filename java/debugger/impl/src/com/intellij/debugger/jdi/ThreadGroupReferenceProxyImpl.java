@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 /*
  * @author Eugene Zhuravlev
@@ -21,15 +7,15 @@ package com.intellij.debugger.jdi;
 
 import com.intellij.debugger.engine.jdi.ThreadGroupReferenceProxy;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.util.containers.ContainerUtil;
 import com.sun.jdi.ThreadGroupReference;
-import com.sun.jdi.ThreadReference;
 import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.Unmodifiable;
 
-import java.util.ArrayList;
 import java.util.List;
 
-public class ThreadGroupReferenceProxyImpl extends ObjectReferenceProxyImpl implements ThreadGroupReferenceProxy{
-  private static final Logger LOG = Logger.getInstance("#com.intellij.debugger.jdi.ThreadGroupReferenceProxyImpl");
+public class ThreadGroupReferenceProxyImpl extends ObjectReferenceProxyImpl implements ThreadGroupReferenceProxy {
+  private static final Logger LOG = Logger.getInstance(ThreadGroupReferenceProxyImpl.class);
   //caches
   private ThreadGroupReferenceProxyImpl myParentThreadGroupProxy;
   private boolean myIsParentGroupCached = false;
@@ -39,6 +25,7 @@ public class ThreadGroupReferenceProxyImpl extends ObjectReferenceProxyImpl impl
     super(virtualMachineProxy, threadGroupReference);
   }
 
+  @Override
   public ThreadGroupReference getThreadGroupReference() {
     return (ThreadGroupReference)getObjectReference();
   }
@@ -60,6 +47,7 @@ public class ThreadGroupReferenceProxyImpl extends ObjectReferenceProxyImpl impl
     return myParentThreadGroupProxy;
   }
 
+  @Override
   public @NonNls String toString() {
     return "ThreadGroupReferenceProxy: " + getThreadGroupReference().toString();
   }
@@ -72,26 +60,15 @@ public class ThreadGroupReferenceProxyImpl extends ObjectReferenceProxyImpl impl
     getThreadGroupReference().resume();
   }
 
-  public List<ThreadReferenceProxyImpl> threads() {
-    List<ThreadReference> list = getThreadGroupReference().threads();
-    List<ThreadReferenceProxyImpl> proxies = new ArrayList<>(list.size());
-
-    for (ThreadReference threadReference : list) {
-      proxies.add(getVirtualMachineProxy().getThreadReferenceProxy(threadReference));
-    }
-    return proxies;
+  public @Unmodifiable List<ThreadReferenceProxyImpl> threads() {
+    return ContainerUtil.map(getThreadGroupReference().threads(), getVirtualMachineProxy()::getThreadReferenceProxy);
   }
 
-  public List<ThreadGroupReferenceProxyImpl> threadGroups() {
-    List<ThreadGroupReference> list = getThreadGroupReference().threadGroups();
-    List<ThreadGroupReferenceProxyImpl> proxies = new ArrayList<>(list.size());
-
-    for (ThreadGroupReference threadGroupReference : list) {
-      proxies.add(getVirtualMachineProxy().getThreadGroupReferenceProxy(threadGroupReference));
-    }
-    return proxies;
+  public @Unmodifiable List<ThreadGroupReferenceProxyImpl> threadGroups() {
+    return ContainerUtil.map(getThreadGroupReference().threadGroups(), getVirtualMachineProxy()::getThreadGroupReferenceProxy);
   }
 
+  @Override
   public void clearCaches() {
 //    myIsParentGroupCached = false;
 //    myName = null;

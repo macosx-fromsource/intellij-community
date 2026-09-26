@@ -16,26 +16,20 @@
 package com.jetbrains.env.ut;
 
 import com.jetbrains.env.ProcessWithConsoleRunner;
+import com.jetbrains.python.testing.PyTestConfiguration;
+import com.jetbrains.python.testing.PyTestFactory;
 import com.jetbrains.python.testing.PythonTestConfigurationType;
-import com.jetbrains.python.testing.pytest.PyTestRunConfiguration;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.IOException;
 
 /**
  * {@link ProcessWithConsoleRunner} to pytest
  *
  * @author Ilya.Kazakevich
  */
-public class PyTestTestProcessRunner extends PyScriptTestProcessRunner<PyTestRunConfiguration> {
+public class PyTestTestProcessRunner extends PyScriptTestProcessRunner<PyTestConfiguration> {
   public PyTestTestProcessRunner(@NotNull final String scriptName, final int timesToRerunFailedTests) {
-    super(PythonTestConfigurationType.getInstance().PY_PYTEST_FACTORY,
-          PyTestRunConfiguration.class, scriptName, timesToRerunFailedTests);
-  }
-
-  @Override
-  protected void configurationCreatedAndWillLaunch(@NotNull final PyTestRunConfiguration configuration) throws IOException {
-    super.configurationCreatedAndWillLaunch(configuration);
-    configuration.setTestToRun(configuration.getScriptName());
+    super(new PyTestFactory(PythonTestConfigurationType.getInstance()),
+          PyTestConfiguration.class, scriptName, timesToRerunFailedTests);
   }
 }

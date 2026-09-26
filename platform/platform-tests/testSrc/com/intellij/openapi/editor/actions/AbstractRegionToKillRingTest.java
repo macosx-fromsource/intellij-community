@@ -20,46 +20,41 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.testFramework.LightPlatformCodeInsightTestCase;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * @author Denis Zhdanov
- * @since 4/19/11 6:32 PM
- */
 public abstract class AbstractRegionToKillRingTest extends LightPlatformCodeInsightTestCase {
 
-  public void testNoSelection() throws Exception {
+  public void testNoSelection() {
     doTest("this is a test string");
   }
 
-  public void testSingleLineSelection() throws Exception {
+  public void testSingleLineSelection() {
     doTest("this is a t<selection>est str</selection>ing");
   }
 
-  public void testMultiLineSelection() throws Exception {
+  public void testMultiLineSelection() {
     doTest(
       "this is the fir<selection>st string\n" +
       "this is the sec</selection>ond string"
     );
   }
   
-  protected abstract void doTest(@NotNull String text) throws Exception;
+  protected abstract void doTest(@NotNull String text);
 
   /**
-   * Checks current editor and returns tuple of <code>(selected text; text over than selected)</code>.
+   * Checks current editor and returns tuple of {@code (selected text; text over than selected)}.
    * 
-   * @return    tuple of <code>(selected text; text over than selected)</code>.
+   * @return    tuple of {@code (selected text; text over than selected)}.
    */
   @NotNull
-  protected static Pair<String, String> parse() {
-    SelectionModel selectionModel = myEditor.getSelectionModel();
+  protected Pair<String, String> parse() {
+    SelectionModel selectionModel = getEditor().getSelectionModel();
     if (!selectionModel.hasSelection()) {
-      return new Pair<>(null, myEditor.getDocument().getText());
+      return new Pair<>(null, getEditor().getDocument().getText());
     }
     
-    CharSequence text = myEditor.getDocument().getCharsSequence();
+    CharSequence text = getEditor().getDocument().getCharsSequence();
     String selectedText = text.subSequence(selectionModel.getSelectionStart(), selectionModel.getSelectionEnd()).toString();
-    StringBuilder nonSelectedText = new StringBuilder();
-    nonSelectedText.append(text.subSequence(0, selectionModel.getSelectionStart()))
-      .append(text.subSequence(selectionModel.getSelectionEnd(), text.length()));
-    return new Pair<>(selectedText, nonSelectedText.toString());
+    String nonSelectedText = String.valueOf(text.subSequence(0, selectionModel.getSelectionStart())) +
+                             text.subSequence(selectionModel.getSelectionEnd(), text.length());
+    return new Pair<>(selectedText, nonSelectedText);
   }
 }

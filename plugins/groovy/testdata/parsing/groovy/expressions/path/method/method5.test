@@ -17,9 +17,9 @@ Groovy script
       PsiWhiteSpace(' ')
       Reference expression
         PsiElement(identifier)('c')
-      PsiErrorElement:',' or ')' expected
+      PsiErrorElement:')' or ',' expected
         <empty list>
-      PsiWhiteSpace('\n')
+      PsiElement(new line)('\n')
       Method call
         Reference expression
           Literal
@@ -29,5 +29,5 @@ Groovy script
         Arguments
           PsiElement(()('(')
           PsiElement())(')')
-      PsiErrorElement:')' expected
+      PsiErrorElement:')' or ',' expected
         <empty list>

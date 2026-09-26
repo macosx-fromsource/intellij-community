@@ -18,11 +18,11 @@ package com.intellij.util;
 import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.psi.PsiFile;
 import com.intellij.testFramework.PlatformTestUtil;
-import com.intellij.testFramework.fixtures.LightPlatformCodeInsightFixtureTestCase;
+import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import org.jetbrains.annotations.NotNull;
 import org.junit.Assert;
 
-public class PsiErrorElementUtilTest extends LightPlatformCodeInsightFixtureTestCase {
+public class PsiErrorElementUtilTest extends BasePlatformTestCase {
 
   @NotNull
   @Override
@@ -30,12 +30,12 @@ public class PsiErrorElementUtilTest extends LightPlatformCodeInsightFixtureTest
     return PlatformTestUtil.getPlatformTestDataPath();
   }
 
-  public void testNoErrors() throws Exception {
+  public void testNoErrors() {
     PsiFile file = myFixture.configureByText(StdFileTypes.XML, "<hello></hello>");
     Assert.assertFalse(PsiErrorElementUtil.hasErrors(getProject(), file.getVirtualFile()));
   }
 
-  public void testErrors() throws Exception {
+  public void testErrors() {
     PsiFile file = myFixture.configureByText(StdFileTypes.XML, "<hello></hello");
     Assert.assertTrue(PsiErrorElementUtil.hasErrors(getProject(), file.getVirtualFile()));
   }

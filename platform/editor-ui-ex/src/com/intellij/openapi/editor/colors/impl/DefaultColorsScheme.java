@@ -1,32 +1,19 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.colors.impl;
 
 import com.intellij.openapi.editor.colors.ColorKey;
-import com.intellij.openapi.editor.colors.EditorFontType;
+import com.intellij.openapi.editor.colors.EditorColorsScheme;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
 import com.intellij.openapi.editor.markup.TextAttributes;
-import com.intellij.openapi.options.SchemeManager;
+import com.intellij.openapi.options.SchemeState;
 import org.jdom.Element;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
+import java.awt.Color;
 
-public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnlyColorsScheme {
+public class DefaultColorsScheme extends AbstractColorsScheme {
   private String myName;
 
   public DefaultColorsScheme() {
@@ -34,51 +21,57 @@ public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnl
   }
 
   @Override
-  @Nullable
-  public TextAttributes getAttributes(TextAttributesKey key) {
+  public @Nullable TextAttributes getAttributes(TextAttributesKey key) {
     return key == null ? null : getAttributes(key, true);
   }
 
-  @Nullable
-  public TextAttributes getAttributes(@NotNull TextAttributesKey key, boolean isUseDefault) {
-    TextAttributes attrs = myAttributesMap.get(key);
-    if (attrs == null) {
-      if (key.getFallbackAttributeKey() != null) {
-        attrs = getFallbackAttributes(key.getFallbackAttributeKey());
-        if (attrs != null && attrs != TextAttributes.USE_INHERITED_MARKER) {
-          return attrs;
-        }
-      }
+  @Override
+  public @Nullable TextAttributes getAttributes(TextAttributesKey key, boolean useDefaults) {
+    if (key == null) return null;
+    TextAttributes attrs = attributesMap.get(key.getExternalName());
+    if (attrs != null) return attrs;
 
-      if (isUseDefault) {
-        attrs = getKeyDefaults(key);
-      }
-    }
-    return attrs;
+    TextAttributesKey fallbackKey = key.getFallbackAttributeKey();
+    TextAttributes fallback = fallbackKey == null ? null : getFallbackAttributes(fallbackKey);
+    if (fallback != null && fallback != AbstractColorsScheme.INHERITED_ATTRS_MARKER) return fallback;
+
+    if (!useDefaults) return null;
+    TextAttributes keyDefaults = getKeyDefaults(key);
+    if (keyDefaults != null) return keyDefaults;
+    return fallbackKey == null ? null : getKeyDefaults(fallbackKey);
   }
 
-  @Nullable
-  protected TextAttributes getKeyDefaults(@NotNull TextAttributesKey key) {
+  protected @Nullable TextAttributes getKeyDefaults(@NotNull TextAttributesKey key) {
     return key.getDefaultAttributes();
   }
 
-  @Nullable
   @Override
-  public Color getColor(ColorKey key) {
-    if (key == null) return null;
-    Color color = myColorsMap.get(key);
-    return color != null ? color : key.getDefaultColor();
+  public @Nullable Color getColor(@Nullable ColorKey key) {
+    return key == null ? null : getColor(key, true);
+  }
+
+  public @Nullable Color getColor(@NotNull ColorKey key, boolean useDefaults) {
+    Color color = colorMap.get(key);
+    if (color != null) return color == NULL_COLOR_MARKER ? null : color;
+
+    ColorKey fallbackKey = key.getFallbackColorKey();
+    Color fallback = fallbackKey == null ? null : getFallbackColor(fallbackKey);
+    if (fallback != null && fallback != AbstractColorsScheme.INHERITED_COLOR_MARKER) return fallback;
+
+    if (!useDefaults) return null;
+    Color keyDefaults = key.getDefaultColor();
+    if (keyDefaults != null) return keyDefaults;
+    return fallbackKey == null ? null : fallbackKey.getDefaultColor();
   }
 
   @Override
-  public void readExternal(Element parentNode) {
+  public void readExternal(@NotNull Element parentNode) {
     super.readExternal(parentNode);
     myName = parentNode.getAttributeValue(NAME_ATTR);
   }
 
-  @NotNull
   @Override
-  public String getName() {
+  public @NotNull String getName() {
     return myName;
   }
 
@@ -91,14 +84,10 @@ public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnl
   }
 
   @Override
-  public void setFont(EditorFontType key, Font font) {
-  }
-
-  @Override
   public Object clone() {
     EditorColorsSchemeImpl newScheme = new EditorColorsSchemeImpl(this);
     copyTo(newScheme);
-    newScheme.setName(DEFAULT_SCHEME_NAME);
+    newScheme.setName(EditorColorsScheme.getDefaultSchemeName());
     newScheme.setDefaultMetaInfo(this);
     return newScheme;
   }
@@ -111,13 +100,23 @@ public class DefaultColorsScheme extends AbstractColorsScheme implements ReadOnl
   public boolean hasEditableCopy() {
     return true;
   }
-  
-  public String getEditableCopyName() {
-    return SchemeManager.EDITABLE_COPY_PREFIX + myName;
+
+  public @NonNls @NotNull String getEditableCopyName() {
+    return EDITABLE_COPY_PREFIX + myName;
   }
 
   @Override
   public boolean isVisible() {
     return false;
+  }
+
+  @Override
+  public boolean isReadOnly() {
+    return true;
+  }
+
+  @Override
+  public @NotNull SchemeState getSchemeState() {
+    return SchemeState.NON_PERSISTENT;
   }
 }

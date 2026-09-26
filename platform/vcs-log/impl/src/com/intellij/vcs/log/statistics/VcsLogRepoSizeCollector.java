@@ -1,65 +1,81 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.vcs.log.statistics;
 
-import com.intellij.internal.statistic.AbstractApplicationUsagesCollector;
-import com.intellij.internal.statistic.CollectUsagesException;
-import com.intellij.internal.statistic.StatisticsUtilKt;
-import com.intellij.internal.statistic.beans.GroupDescriptor;
-import com.intellij.internal.statistic.beans.UsageDescriptor;
+import com.intellij.ide.trustedProjects.TrustedProjects;
+import com.intellij.internal.statistic.beans.MetricEvent;
+import com.intellij.internal.statistic.eventLog.EventLogGroup;
+import com.intellij.internal.statistic.eventLog.events.EventFields;
+import com.intellij.internal.statistic.eventLog.events.EventId;
+import com.intellij.internal.statistic.eventLog.events.EventId1;
+import com.intellij.internal.statistic.eventLog.events.EventId2;
+import com.intellij.internal.statistic.eventLog.events.RoundedIntEventField;
+import com.intellij.internal.statistic.eventLog.events.StringEventField;
+import com.intellij.internal.statistic.service.fus.collectors.ProjectUsagesCollector;
+import com.intellij.internal.statistic.service.fus.collectors.UsageDescriptorKeyValidator;
+import com.intellij.internal.statistic.utils.PluginInfoDetectorKt;
+import com.intellij.internal.statistic.utils.StatisticsUtil;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.VcsKey;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.containers.MultiMap;
+import com.intellij.vcs.log.VcsLogAggregatedStoredRefsKt;
 import com.intellij.vcs.log.VcsLogProvider;
-import com.intellij.vcs.log.data.DataPack;
 import com.intellij.vcs.log.data.VcsLogData;
-import com.intellij.vcs.log.graph.PermanentGraph;
+import com.intellij.vcs.log.data.VcsLogGraphData;
 import com.intellij.vcs.log.impl.VcsProjectLog;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static java.util.Arrays.asList;
+@ApiStatus.Internal
+public @NonNls class VcsLogRepoSizeCollector extends ProjectUsagesCollector {
+  public static final RoundedIntEventField COMMIT_COUNT = EventFields.RoundedInt("commit_count");
+  public static final RoundedIntEventField BRANCHES_COUNT = EventFields.RoundedInt("branches_count");
+  public static final RoundedIntEventField TAGS_COUNT = EventFields.RoundedInt("tags_count");
 
-@SuppressWarnings("StringToUpperCaseOrToLowerCaseWithoutLocale")
-public class VcsLogRepoSizeCollector extends AbstractApplicationUsagesCollector {
+  private static final EventLogGroup GROUP = new EventLogGroup("vcs.log.data", 7);
+  private static final EventId DATA_INITIALIZED = GROUP.registerEvent("dataInitialized");
+  private static final EventId1<Integer> COMMIT_COUNT_EVENT = GROUP.registerEvent("commit.count", COMMIT_COUNT);
+  private static final EventId1<Integer> BRANCHES_COUNT_EVENT = GROUP.registerEvent("branches.count", BRANCHES_COUNT);
+  private static final EventId1<Integer> USERS_COUNT = GROUP.registerEvent("users.count", EventFields.Count);
+  public static final StringEventField VCS_FIELD = new StringEventField("vcs") {
+    @Override
+    public @NotNull List<String> getValidationRule() {
+      return getVcsValidationRule();
+    }
+  };
+  private static final EventId2<Integer, String>
+    ROOT_COUNT = GROUP.registerEvent("root.count", EventFields.Count, VCS_FIELD);
 
-  public static final GroupDescriptor ID = GroupDescriptor.create("VCS Log 2");
-
-  @NotNull
   @Override
-  public Set<UsageDescriptor> getProjectUsages(@NotNull Project project) throws CollectUsagesException {
-    VcsProjectLog projectLog = VcsProjectLog.getInstance(project);
+  public @NotNull Set<MetricEvent> getMetrics(@NotNull Project project) {
+    if (!TrustedProjects.isProjectTrusted(project)) return Collections.emptySet();
+
+    VcsProjectLog projectLog = project.getServiceIfCreated(VcsProjectLog.class);
+    if (projectLog == null) return Collections.emptySet();
+
     VcsLogData logData = projectLog.getDataManager();
     if (logData != null) {
-      DataPack dataPack = logData.getDataPack();
+      VcsLogGraphData dataPack = logData.getGraphData();
       if (dataPack.isFull()) {
-        PermanentGraph<Integer> permanentGraph = dataPack.getPermanentGraph();
+        int commitCount = dataPack.getPermanentGraph().getAllCommits().size();
+        int branchesCount = VcsLogAggregatedStoredRefsKt.getBranches(dataPack.getRefsModel()).size();
+        int usersCount = logData.getAllUsers().size();
+        Set<MetricEvent> usages = ContainerUtil.newHashSet(DATA_INITIALIZED.metric());
+        usages.add(COMMIT_COUNT_EVENT.metric(commitCount));
+        usages.add(BRANCHES_COUNT_EVENT.metric(branchesCount));
+        usages.add(USERS_COUNT.metric(StatisticsUtil.roundToPowerOfTwo(usersCount)));
         MultiMap<VcsKey, VirtualFile> groupedRoots = groupRootsByVcs(dataPack.getLogProviders());
-
-        Set<UsageDescriptor> usages = ContainerUtil.newHashSet();
-        usages.add(StatisticsUtilKt.getCountingUsage("data.commit.count", permanentGraph.getAllCommits().size(),
-                                                     asList(0, 1, 100, 1000, 10 * 1000, 100 * 1000, 500 * 1000, 1000 * 1000)));
         for (VcsKey vcs : groupedRoots.keySet()) {
-          usages.add(StatisticsUtilKt.getCountingUsage("data." + vcs.getName().toLowerCase() + ".root.count", groupedRoots.get(vcs).size(),
-                                                       asList(0, 1, 2, 5, 8, 15, 30, 50, 100, 300, 500)));
+          int rootCount = groupedRoots.get(vcs).size();
+          usages.add(ROOT_COUNT.metric(StatisticsUtil.roundToPowerOfTwo(rootCount), getVcsKeySafe(vcs)));
         }
         return usages;
       }
@@ -67,8 +83,18 @@ public class VcsLogRepoSizeCollector extends AbstractApplicationUsagesCollector 
     return Collections.emptySet();
   }
 
-  @NotNull
-  private static MultiMap<VcsKey, VirtualFile> groupRootsByVcs(@NotNull Map<VirtualFile, VcsLogProvider> providers) {
+  public static @NotNull String getVcsKeySafe(@NotNull VcsKey vcs) {
+    if (PluginInfoDetectorKt.getPluginInfo(vcs.getClass()).isDevelopedByJetBrains()) {
+      return UsageDescriptorKeyValidator.ensureProperKey(StringUtil.toLowerCase(vcs.getName()));
+    }
+    return "third.party";
+  }
+
+  static @NotNull List<String> getVcsValidationRule() {
+    return List.of("{enum#vcs}", "{enum:third.party}");
+  }
+
+  private static @NotNull MultiMap<VcsKey, VirtualFile> groupRootsByVcs(@NotNull Map<VirtualFile, VcsLogProvider> providers) {
     MultiMap<VcsKey, VirtualFile> result = MultiMap.create();
     for (Map.Entry<VirtualFile, VcsLogProvider> entry : providers.entrySet()) {
       VirtualFile root = entry.getKey();
@@ -78,9 +104,8 @@ public class VcsLogRepoSizeCollector extends AbstractApplicationUsagesCollector 
     return result;
   }
 
-  @NotNull
   @Override
-  public GroupDescriptor getGroupId() {
-    return ID;
+  public EventLogGroup getGroup() {
+    return GROUP;
   }
 }

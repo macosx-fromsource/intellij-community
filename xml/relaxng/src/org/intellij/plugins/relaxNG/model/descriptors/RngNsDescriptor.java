@@ -18,9 +18,8 @@ package org.intellij.plugins.relaxNG.model.descriptors;
 
 import com.intellij.codeInsight.daemon.Validator;
 import com.intellij.javaee.ExternalResourceManager;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.DumbService;
-import com.intellij.openapi.util.Condition;
-import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.ModificationTracker;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
@@ -28,17 +27,20 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.search.PsiElementProcessor;
-import com.intellij.psi.util.*;
+import com.intellij.psi.util.CachedValue;
+import com.intellij.psi.util.CachedValueProvider;
+import com.intellij.psi.util.CachedValuesManager;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.xml.XmlDocument;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.HashMap;
 import com.intellij.xml.XmlElementDescriptor;
 import com.intellij.xml.XmlNSDescriptorEx;
 import com.intellij.xml.impl.schema.AnyXmlElementDescriptor;
-import org.intellij.plugins.relaxNG.ApplicationLoader;
+import com.intellij.xml.util.BasicHtmlUtil;
+import org.intellij.plugins.relaxNG.RelaxNgMetaDataContributor;
 import org.intellij.plugins.relaxNG.model.resolve.RelaxIncludeIndex;
 import org.intellij.plugins.relaxNG.validation.RngParser;
 import org.intellij.plugins.relaxNG.validation.XmlInstanceValidator;
@@ -50,18 +52,17 @@ import org.kohsuke.rngom.digested.DPattern;
 import org.kohsuke.rngom.nc.NameClass;
 
 import javax.xml.namespace.QName;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 
-/**
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 18.07.2007
- */
 public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
   private final Map<QName, CachedValue<XmlElementDescriptor>> myDescriptorsMap =
-    Collections.synchronizedMap(new HashMap<QName, CachedValue<XmlElementDescriptor>>());
-
-  private static final Key<ParameterizedCachedValue<XmlElementDescriptor, RngNsDescriptor>> ROOT_KEY = Key.create("ROOT_DESCRIPTOR");
+    Collections.synchronizedMap(new HashMap<>());
 
   private XmlFile myFile;
   private PsiElement myElement;
@@ -71,8 +72,7 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
   private PsiManager myManager;
 
   @Override
-  @Nullable
-  public XmlElementDescriptor getElementDescriptor(@NotNull XmlTag tag) {
+  public @Nullable XmlElementDescriptor getElementDescriptor(@NotNull XmlTag tag) {
     if (myPattern == null) {
       return null;
     }
@@ -87,7 +87,7 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
     XmlElementDescriptor desc;
     do {
       desc = findRootDescriptor(chain.removeFirst());
-    } while (desc == null && chain.size() > 0);
+    } while (desc == null && !chain.isEmpty());
 
     if (desc != null) {
       for (XmlTag xmlTag : chain) {
@@ -106,40 +106,21 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
   }
 
   private XmlElementDescriptor findRootDescriptor(final XmlTag tag) {
-    return CachedValuesManager.getManager(tag.getProject())
-        .getParameterizedCachedValue(tag, ROOT_KEY, new ParameterizedCachedValueProvider<XmlElementDescriptor, RngNsDescriptor>() {
-          @Override
-          public CachedValueProvider.Result<XmlElementDescriptor> compute(RngNsDescriptor o) {
-            final XmlElementDescriptor descr = o.findRootDescriptorInner(tag);
-            if (descr != null) {
-              return CachedValueProvider.Result.create(descr, tag, descr.getDependences(), o.getDependences());
-            }
-            else {
-              return CachedValueProvider.Result.create(null, tag, o.getDependences());
-            }
-          }
-        }, false, this);
-  }
-
-  private XmlElementDescriptor findRootDescriptorInner(XmlTag tag) {
-    final List<DElementPattern> allNamedPatterns =
-      ContainerUtil.findAll(ChildElementFinder.find(-1, myPattern), NamedPatternFilter.INSTANCE);
-    XmlElementDescriptor descriptor = findDescriptor(tag, allNamedPatterns);
-    return descriptor != null ? descriptor : findDescriptor(tag, ChildElementFinder.find(myPattern));
+    return getElementDescriptor(tag.getLocalName(), tag.getNamespace());
   }
 
   private XmlElementDescriptor findRootDescriptorInner(QName qName) {
-    return findDescriptor(qName, ContainerUtil.findAll(
-      ChildElementFinder.find(-1, myPattern), NamedPatternFilter.INSTANCE));
+    XmlElementDescriptor descriptor = findDescriptor(qName, ContainerUtil.findAll(ChildElementFinder.find(-1, myPattern), NamedPatternFilter.INSTANCE));
+    return descriptor != null ? descriptor : findDescriptor(qName, ChildElementFinder.find(myPattern));
   }
 
-  public XmlElementDescriptor findDescriptor(XmlTag tag, List<DElementPattern> list) {
+  public XmlElementDescriptor findDescriptor(XmlTag tag, List<? extends DElementPattern> list) {
     final QName qName = new QName(tag.getNamespace(), tag.getLocalName());
 
     return findDescriptor(qName, list);
   }
 
-  private XmlElementDescriptor findDescriptor(final QName qName, List<DElementPattern> list) {
+  private XmlElementDescriptor findDescriptor(final QName qName, List<? extends DElementPattern> list) {
     int max = -1;
     DElementPattern maxPattern = null;
     for (DElementPattern pattern : list) {
@@ -169,8 +150,7 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
   }
 
   @Override
-  @NotNull
-  public XmlElementDescriptor[] getRootElementsDescriptors(@Nullable XmlDocument document) {
+  public XmlElementDescriptor @NotNull [] getRootElementsDescriptors(@Nullable XmlDocument document) {
     if (myPattern == null) {
       return XmlElementDescriptor.EMPTY_ARRAY;
     }
@@ -179,11 +159,13 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
     return convertElementDescriptors(list);
   }
 
-  XmlElementDescriptor[] convertElementDescriptors(List<DElementPattern> patterns) {
+  XmlElementDescriptor[] convertElementDescriptors(List<? extends DElementPattern> patterns) {
     patterns = ContainerUtil.findAll(patterns, NamedPatternFilter.INSTANCE);
 
-    final Map<QName, List<DElementPattern>> name2patterns = new HashMap<>();
+    final Map<QName, List<DElementPattern>> name2patterns = new LinkedHashMap<>();
     for (DElementPattern pattern : patterns) {
+      ProgressManager.checkCanceled();
+
       for (QName qName : pattern.getName().listNames()) {
         List<DElementPattern> dPatterns = name2patterns.get(qName);
         if (dPatterns == null) {
@@ -204,7 +186,7 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
       }
     }
 
-    return result.toArray(new XmlElementDescriptor[result.size()]);
+    return result.toArray(XmlElementDescriptor.EMPTY_ARRAY);
   }
 
   protected XmlElementDescriptor initDescriptor(@NotNull XmlElementDescriptor descriptor) {
@@ -212,8 +194,7 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
   }
 
   @Override
-  @NotNull
-  public XmlFile getDescriptorFile() {
+  public @NotNull XmlFile getDescriptorFile() {
     return myFile;
   }
 
@@ -234,19 +215,17 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
   }
 
   @Override
-  @NonNls
-  public String getName(PsiElement context) {
+  public @NonNls String getName(PsiElement context) {
     return getName();
   }
 
   @Override
-  @NonNls
-  public String getName() {
+  public @NonNls String getName() {
     return getDescriptorFile().getName();
   }
 
   @Override
-  public Object[] getDependences() {
+  public Object @NotNull [] getDependencies() {
     if (myPattern != null) {
       if (DumbService.isDumb(myElement.getProject())) {
         return new Object[] { ModificationTracker.EVER_CHANGED, ExternalResourceManager.getInstance()};
@@ -254,7 +233,7 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
       final Object[] a = { myElement, ExternalResourceManager.getInstance() };
       final PsiElementProcessor.CollectElements<XmlFile> processor = new PsiElementProcessor.CollectElements<>();
       RelaxIncludeIndex.processForwardDependencies(myFile, processor);
-      if (processor.getCollection().size() > 0) {
+      if (!processor.getCollection().isEmpty()) {
         return ArrayUtil.mergeArrays(a, processor.toArray());
       } else {
         return a;
@@ -278,7 +257,7 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
   }
 
   @Override
-  public void validate(@NotNull PsiElement context, @NotNull final ValidationHost host) {
+  public void validate(@NotNull PsiElement context, final @NotNull ValidationHost host) {
     final XmlDocument doc = PsiTreeUtil.getContextOfType(context, XmlDocument.class, false);
     if (doc == null) {
       return;
@@ -288,7 +267,10 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
       return;
     }
     // RNG XML itself is validated by parsing it with Jing, so we don't want to schema-validate it
-    if (!ApplicationLoader.RNG_NAMESPACE.equals(rootTag.getNamespace())) {
+    // SVG namespace requires special data type factories, which are not available, so it doesn't load anyway
+    var namespace = rootTag.getNamespace();
+    if (!RelaxNgMetaDataContributor.RNG_NAMESPACE.equals(namespace)
+        && !BasicHtmlUtil.SVG_NAMESPACE.equals(namespace)) {
       XmlInstanceValidator.doValidation(doc, host, getDescriptorFile());
     }
   }
@@ -303,8 +285,8 @@ public class RngNsDescriptor implements XmlNSDescriptorEx, Validator {
         CachedValuesManager.getManager(myElement.getProject()).createCachedValue(() -> {
           final XmlElementDescriptor descriptor = findRootDescriptorInner(qName);
           return descriptor != null
-                 ? new CachedValueProvider.Result<>(descriptor, descriptor.getDependences())
-                 : new CachedValueProvider.Result<>(null, getDependences());
+                 ? new CachedValueProvider.Result<>(descriptor, descriptor.getDependencies())
+                 : new CachedValueProvider.Result<>(null, getDependencies());
         }, false);
       myDescriptorsMap.put(qName, cachedValue);
     }

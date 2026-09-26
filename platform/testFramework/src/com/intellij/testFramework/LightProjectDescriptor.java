@@ -1,56 +1,60 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.testFramework;
 
+import com.intellij.ide.highlighter.ProjectFileType;
+import com.intellij.ide.impl.OpenProjectTask;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.module.EmptyModuleType;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
-import com.intellij.openapi.module.ModuleType;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.impl.ProjectImpl;
+import com.intellij.openapi.projectRoots.ProjectJdkTable;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ContentEntry;
-import com.intellij.openapi.roots.ContentIterator;
 import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.openapi.roots.ModuleRootModificationUtil;
-import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.vfs.VfsUtilCore;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
-import com.intellij.openapi.vfs.VirtualFileVisitor;
 import com.intellij.openapi.vfs.ex.temp.TempFileSystem;
-import com.intellij.util.indexing.FileBasedIndex;
-import com.intellij.util.indexing.IndexableFileSet;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.jps.model.java.JavaSourceRootType;
+import org.jetbrains.jps.model.module.JpsModuleSourceRootType;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
+/**
+ * Defines requirements for a light test's project environment (SDK, module, libraries, ...).
+ * <p>
+ * A light test reuses the already opened project only when the previously used descriptor {@code equals()}
+ * the one requested by the current test.
+ * With the default identity {@code equals()}, every freshly created descriptor instance is considered different,
+ * which forces a full project re-setup and slows the tests down.
+ * <p>
+ * Therefore, subclasses must either:
+ * <ul>
+ * <li>implement both {@code equals()} and {@code hashCode()}</li>
+ * <li>or be used via a single shared descriptor instance (for example, a {@code static final} field or a Kotlin {@code object}) only</li>
+ * </ul>
+ *
+ * @see <a href="https://plugins.jetbrains.com/docs/intellij/light-and-heavy-tests.html#lightprojectdescriptor">LightProjectDescriptor</a> in IntelliJ Platform Plugin SDK Docs
+ */
 public class LightProjectDescriptor {
   public static final LightProjectDescriptor EMPTY_PROJECT_DESCRIPTOR = new LightProjectDescriptor();
 
-  protected static final String TEST_MODULE_NAME = "light_idea_test_case";
+  public static final String TEST_MODULE_NAME = "light_idea_test_case";
 
   public void setUpProject(@NotNull Project project, @NotNull SetupHandler handler) throws Exception {
     WriteAction.run(() -> {
       Module module = createMainModule(project);
       handler.moduleCreated(module);
-      VirtualFile sourceRoot = createSourcesRoot(module);
+      VirtualFile sourceRoot = createDirForSources(module);
       if (sourceRoot != null) {
         handler.sourceRootCreated(sourceRoot);
         createContentEntry(module, sourceRoot);
@@ -58,65 +62,81 @@ public class LightProjectDescriptor {
     });
   }
 
-  @NotNull
-  public Module createMainModule(@NotNull Project project) {
-    return createModule(project, FileUtil.join(FileUtil.getTempDirectory(), TEST_MODULE_NAME + ".iml"));
+  public @NotNull OpenProjectTask getOpenProjectOptions() {
+    return OpenProjectTask.build();
   }
 
-  protected Module createModule(@NotNull Project project, @NotNull String moduleFilePath) {
-    return WriteAction.compute(() -> {
-      File imlFile = new File(moduleFilePath);
-      if (imlFile.exists()) {
-        //temporary workaround for IDEA-147530: otherwise if someone saved module with this name before the created module will get its settings
-        FileUtil.delete(imlFile);
-      }
-      return ModuleManager.getInstance(project).newModule(moduleFilePath, getModuleType().getId());
+  public void registerSdk(Disposable disposable) {
+    Sdk sdk = getSdk();
+    if (sdk != null) {
+      registerJdk(sdk, disposable);
+    }
+  }
+
+  public @NotNull Module createMainModule(@NotNull Project project) {
+    return createModule(project, Paths.get(FileUtil.getTempDirectory(), TEST_MODULE_NAME + ".iml"));
+  }
+
+  protected final Module createModule(@NotNull Project project, @NotNull String moduleFilePath) {
+    return createModule(project, Paths.get(moduleFilePath));
+  }
+
+  protected Module createModule(@NotNull Project project, @NotNull Path moduleFile) {
+    try {
+      // temporary workaround for IDEA-147530: otherwise if someone saved module with this name before the created module will get its settings
+      Files.deleteIfExists(moduleFile);
+    }
+    catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+
+    Module module = WriteAction.compute(() -> {
+      return ModuleManager.getInstance(project).newModule(moduleFile, getModuleTypeId());
     });
+    IndexingTestUtil.waitUntilIndexesAreReady(project);
+    return module;
   }
 
-  @NotNull
-  public ModuleType getModuleType() {
-    return EmptyModuleType.getInstance();
+  public @NotNull String getModuleTypeId() {
+    return EmptyModuleType.EMPTY_MODULE;
   }
 
-  @Nullable
-  public VirtualFile createSourcesRoot(@NotNull Module module) {
+  /**
+   * Creates in-memory directory {@code temp:///some/path} where sources for test project will be placed.
+   * Please keep in mind that this directory will be marked as "Source root". If you want to disable this
+   * behaviour use {@link #markDirForSourcesAsSourceRoot()}.
+   *
+   * @see #markDirForSourcesAsSourceRoot()
+   */
+  public @Nullable VirtualFile createDirForSources(@NotNull Module module) {
     return createSourceRoot(module, "src");
+  }
+
+  /**
+   * Configures whether directory created by {@link #createDirForSources(Module)} should be marked as "Source root".
+   * <p></p>
+   * If you wonder about when this can be helpful: RubyMine does this. See this method overrides and according JavaDoc.
+   */
+  protected boolean markDirForSourcesAsSourceRoot() {
+    return true;
   }
 
   protected VirtualFile createSourceRoot(@NotNull Module module, String srcPath) {
     VirtualFile dummyRoot = VirtualFileManager.getInstance().findFileByUrl("temp:///");
     assert dummyRoot != null;
     dummyRoot.refresh(false, false);
+    return doCreateSourceRoot(dummyRoot, srcPath);
+  }
 
+  protected VirtualFile doCreateSourceRoot(VirtualFile root, String srcPath) {
     VirtualFile srcRoot;
     try {
-      srcRoot = dummyRoot.createChildDirectory(this, srcPath);
+      srcRoot = root.createChildDirectory(this, srcPath);
       cleanSourceRoot(srcRoot);
     }
     catch (IOException e) {
       throw new RuntimeException(e);
     }
-
-    IndexableFileSet indexableFileSet = new IndexableFileSet() {
-      @Override
-      public boolean isInSet(@NotNull VirtualFile file) {
-        return file.getFileSystem() == srcRoot.getFileSystem() && module.getProject().isOpen();
-      }
-
-      @Override
-      public void iterateIndexableFilesIn(@NotNull VirtualFile file, @NotNull ContentIterator iterator) {
-        VfsUtilCore.visitChildrenRecursively(file, new VirtualFileVisitor() {
-          @Override
-          public boolean visitFile(@NotNull VirtualFile file) {
-            iterator.processFile(file);
-            return true;
-          }
-        });
-      }
-    };
-    FileBasedIndex.getInstance().registerIndexableSet(indexableFileSet, null);
-    Disposer.register(module.getProject(), () -> FileBasedIndex.getInstance().removeIndexableSet(indexableFileSet));
 
     return srcRoot;
   }
@@ -129,14 +149,25 @@ public class LightProjectDescriptor {
       }
 
       ContentEntry contentEntry = model.addContentEntry(srcRoot);
-      contentEntry.addSourceFolder(srcRoot, false);
+      if (markDirForSourcesAsSourceRoot()) {
+        contentEntry.addSourceFolder(srcRoot, getSourceRootType());
+      }
 
       configureModule(module, model, contentEntry);
     });
+    IndexingTestUtil.waitUntilIndexesAreReady(module.getProject());
   }
 
-  @Nullable
-  public Sdk getSdk() {
+  private static void registerJdk(Sdk jdk, Disposable parentDisposable) {
+    WriteAction.run(() -> ProjectJdkTable.getInstance().addJdk(jdk, parentDisposable));
+    IndexingTestUtil.waitUntilIndexesAreReadyInAllOpenedProjects();
+  }
+
+  protected @NotNull JpsModuleSourceRootType<?> getSourceRootType() {
+    return JavaSourceRootType.SOURCE;
+  }
+
+  public @Nullable Sdk getSdk() {
     return null;
   }
 
@@ -150,7 +181,10 @@ public class LightProjectDescriptor {
     }
   }
 
-  @SuppressWarnings("NullableProblems")
+  public @NotNull Path generateProjectPath() {
+    return TemporaryDirectory.generateTemporaryPath(ProjectImpl.LIGHT_PROJECT_NAME + ProjectFileType.DOT_DEFAULT_EXTENSION);
+  }
+
   protected void configureModule(@NotNull Module module, @NotNull ModifiableRootModel model, @NotNull ContentEntry contentEntry) { }
 
   public interface SetupHandler {

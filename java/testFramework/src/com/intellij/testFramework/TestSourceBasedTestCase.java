@@ -1,101 +1,89 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.testFramework;
 
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ex.PathManagerEx;
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx;
 import com.intellij.openapi.util.io.FileUtil;
-import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.psi.PsiDirectory;
-import com.intellij.util.PathUtil;
-import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
+import java.nio.file.Path;
 
-@SuppressWarnings({"HardCodedStringLiteral", "ConstantConditions", "JUnitTestCaseInProductSource"})
-@NonNls public abstract class TestSourceBasedTestCase extends IdeaTestCase {
-  private File myTempDirectory;
+@SuppressWarnings({"ConstantConditions", "JUnitTestCaseInProductSource"})
+public abstract class TestSourceBasedTestCase extends JavaProjectTestCase {
+  private Path myTempDirectory;
 
   @Override
   protected void setUp() throws Exception {
     super.setUp();
-    myTempDirectory = FileUtil.createTempDirectory(getTestName(true), "test",false);
-    myFilesToDelete.add(myTempDirectory);
-    final File testRoot = new File(getTestDataPath(), getTestPath());
-    assertTrue(testRoot.getAbsolutePath(), testRoot.isDirectory());
+    VirtualFile tempDir = getTempDir().createVirtualDir();
+    myTempDirectory = tempDir.toNioPath();
+    String testPath = getTestPath();
+    if (testPath != null && myModule != null) {
+      File testRoot = new File(getTestDataPath(), testPath);
+      assertTrue(testRoot.getAbsolutePath(), testRoot.isDirectory());
 
-    final File currentTestRoot = new File(testRoot, getTestDirectoryName());
-    assertTrue(currentTestRoot.getAbsolutePath(), currentTestRoot.isDirectory());
+      File currentTestRoot = new File(testRoot, getTestDirectoryName());
+      assertTrue(currentTestRoot.getAbsolutePath(), currentTestRoot.isDirectory());
 
-    FileUtil.copyDir(currentTestRoot, new File(myTempDirectory, getTestDirectoryName()));
+      FileUtil.copyDir(currentTestRoot, myTempDirectory.resolve(getTestDirectoryName()).toFile());
+      tempDir.refresh(false, true);
 
-    ApplicationManager.getApplication().runWriteAction(() -> setupContentRoot());
+      ApplicationManager.getApplication().runWriteAction(() -> {
+        VirtualFile contentRoot = tempDir.findChild(getTestDirectoryName());
+        PsiTestUtil.addContentRoot(myModule, contentRoot);
+        VirtualFile src = contentRoot.findChild("src");
+        if (src != null) {
+          PsiTestUtil.addSourceRoot(myModule, src);
+        }
+      });
+    }
+
     ProjectViewTestUtil.setupImpl(getProject(), true);
   }
 
   @Override
   protected void tearDown() throws Exception {
-    FileEditorManagerEx.getInstanceEx(getProject()).closeAllFiles();
-    super.tearDown();
+    try {
+      FileEditorManagerEx.getInstanceEx(getProject()).closeAllFiles();
+    }
+    catch (Throwable e) {
+      addSuppressedException(e);
+    }
+    finally {
+      super.tearDown();
+    }
   }
 
   protected String getTestDataPath() {
     return PathManagerEx.getTestDataPath(getClass());
   }
 
-  protected abstract String getTestPath();
+  protected abstract @Nullable String getTestPath();
 
-  private File getTestContentFile() {
-    return new File(myTempDirectory, getTestDirectoryName());
-  }
-
-  private void setupContentRoot() {
-    PsiTestUtil.addContentRoot(myModule, getContentRoot());
-    VirtualFile src = getContentRoot().findChild("src");
-    if (src != null) {
-      PsiTestUtil.addSourceRoot(myModule, src);
-    }
-  }
-
-  protected VirtualFile getContentRoot() {
-    File file = getTestContentFile();
-    return LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file);
+  protected final VirtualFile getContentRoot() {
+    return VirtualFileManager.getInstance().findFileByNioPath(myTempDirectory.resolve(getTestDirectoryName()));
   }
 
   @Override
-  protected String getTestDirectoryName() {
+  protected @NotNull String getTestDirectoryName() {
     return getTestName(true);
   }
 
-
-  protected PsiDirectory getPackageDirectory(final String packageRelativePath) {
+  protected final PsiDirectory getPackageDirectory(@NotNull String packageRelativePath) {
     return getPsiManager().findDirectory(getContentRoot().findFileByRelativePath("src/" + packageRelativePath));
   }
 
-  protected PsiDirectory getSrcDirectory() {
+  protected final PsiDirectory getSrcDirectory() {
     return getPsiManager().findDirectory(getContentRoot().findFileByRelativePath("src"));
   }
 
-  protected PsiDirectory getContentDirectory() {
+  protected final PsiDirectory getContentDirectory() {
     return getPsiManager().findDirectory(getContentRoot());
-  }
-  
-  protected String getRootFiles() {
-    return " " + PathUtil.getFileName(myModule.getModuleFilePath()) + "\n";
   }
 }

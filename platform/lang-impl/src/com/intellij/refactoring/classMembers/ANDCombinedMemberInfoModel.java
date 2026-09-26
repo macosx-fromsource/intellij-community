@@ -1,37 +1,17 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * Created by IntelliJ IDEA.
- * User: dsl
- * Date: 09.07.2002
- * Time: 15:20:25
- * To change template for new class use
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.refactoring.classMembers;
 
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
-public class ANDCombinedMemberInfoModel<T extends PsiElement, M extends MemberInfoBase<T>> implements MemberInfoModel<T, M> {
+@ApiStatus.Internal
+public final class ANDCombinedMemberInfoModel<T extends PsiElement, M extends MemberInfoBase<T>> implements MemberInfoModel<T, M> {
   private final MemberInfoModel<T, M> myModel1;
   private final MemberInfoModel<T, M> myModel2;
   private final MemberInfoTooltipManager<T, M> myTooltipManager =
-    new MemberInfoTooltipManager<>(new MemberInfoTooltipManager.TooltipProvider<T, M>() {
+    new MemberInfoTooltipManager<>(new MemberInfoTooltipManager.TooltipProvider<>() {
       @Override
       public String getTooltip(M memberInfo) {
         final String tooltipText1 = myModel1.getTooltipText(memberInfo);
@@ -72,7 +52,7 @@ public class ANDCombinedMemberInfoModel<T extends PsiElement, M extends MemberIn
   }
 
   @Override
-  public void memberInfoChanged(MemberInfoChange<T, M> event) {
+  public void memberInfoChanged(@NotNull MemberInfoChange<T, M> event) {
     myTooltipManager.invalidate();
     myModel1.memberInfoChanged(event);
     myModel2.memberInfoChanged(event);

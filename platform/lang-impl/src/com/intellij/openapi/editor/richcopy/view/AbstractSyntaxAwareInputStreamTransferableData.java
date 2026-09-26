@@ -1,25 +1,11 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.editor.richcopy.view;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.richcopy.model.SyntaxInfo;
 import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.util.registry.Registry;
-import com.intellij.util.StringBuilderSpinAllocator;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -28,47 +14,26 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
+import java.util.Arrays;
 
-/**
- * @author Denis Zhdanov
- * @since 3/28/13 1:20 PM
- */
-public abstract class AbstractSyntaxAwareInputStreamTransferableData extends InputStream implements RawTextWithMarkup
-{
+@ApiStatus.Internal
+public abstract class AbstractSyntaxAwareInputStreamTransferableData extends InputStream implements RawTextWithMarkup {
+  private static final Logger LOG = Logger.getInstance(AbstractSyntaxAwareInputStreamTransferableData.class);
 
-  private static final Logger LOG = Logger.getInstance("#" + AbstractSyntaxAwareInputStreamTransferableData.class.getName());
+  String myRawText;
+  final @NotNull SyntaxInfo mySyntaxInfo;
+  private final @NotNull DataFlavor myDataFlavor;
 
-  protected String myRawText;
-  @NotNull
-  protected final SyntaxInfo mySyntaxInfo;
-  @NotNull
-  private final DataFlavor myDataFlavor;
+  private transient @Nullable InputStream myDelegate;
 
-  @Nullable private transient InputStream myDelegate;
-
-  public AbstractSyntaxAwareInputStreamTransferableData(@NotNull SyntaxInfo syntaxInfo, @NotNull DataFlavor flavor) {
+  AbstractSyntaxAwareInputStreamTransferableData(@NotNull SyntaxInfo syntaxInfo, @NotNull DataFlavor flavor) {
     mySyntaxInfo = syntaxInfo;
     myDataFlavor = flavor;
   }
 
   @Override
-  public DataFlavor getFlavor() {
+  public @Nullable DataFlavor getFlavor() {
     return myDataFlavor;
-  }
-
-  @Override
-  public int getOffsetCount() {
-    return 0;
-  }
-
-  @Override
-  public int getOffsets(int[] offsets, int index) {
-    return index;
-  }
-
-  @Override
-  public int setOffsets(int[] offsets, int index) {
-    return index;
   }
 
   @Override
@@ -77,7 +42,7 @@ public abstract class AbstractSyntaxAwareInputStreamTransferableData extends Inp
   }
 
   @Override
-  public int read(@NotNull byte[] b, int off, int len) throws IOException {
+  public int read(byte @NotNull [] b, int off, int len) throws IOException {
     return getDelegate().read(b, off, len);
   }
 
@@ -91,40 +56,51 @@ public abstract class AbstractSyntaxAwareInputStreamTransferableData extends Inp
     myRawText = rawText;
   }
 
-  @NotNull
-  private InputStream getDelegate() {
+  private @NotNull InputStream getDelegate() {
     if (myDelegate != null) {
       return myDelegate;
     }
 
     int maxLength = Registry.intValue("editor.richcopy.max.size.megabytes") * FileUtilRt.MEGABYTE;
-    final StringBuilder buffer = StringBuilderSpinAllocator.alloc();
+    final StringBuilder buffer = new StringBuilder();
     try {
-      try {
-        build(buffer, maxLength);
-      }
-      catch (Exception e) {
-        LOG.error(e);
-      }
-      String s = buffer.toString();
-      if (LOG.isDebugEnabled()) {
-        LOG.debug("Resulting text: \n" + s);
-      }
-      try {
-        myDelegate = new ByteArrayInputStream(s.getBytes(getCharset()));
-      }
-      catch (UnsupportedEncodingException e) {
-        throw new RuntimeException(e);
-      }
-      return myDelegate;
+      build(buffer, maxLength);
     }
-    finally {
-      StringBuilderSpinAllocator.dispose(buffer);
+    catch (Exception e) {
+      LOG.error(e);
     }
+    String s = buffer.toString();
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("Resulting text: \n" + s);
+    }
+
+    try {
+      byte[] data = s.getBytes(getCharset());
+      byte[] dataWithNullTerminator = Arrays.copyOf(data, data.length + 1);
+      myDelegate = new ByteArrayInputStream(dataWithNullTerminator);
+    }
+    catch (UnsupportedEncodingException e) {
+      throw new RuntimeException(e);
+    }
+    return myDelegate;
   }
   
   protected abstract void build(@NotNull StringBuilder holder, int maxLength);
 
-  @NotNull
-  protected abstract String getCharset();
+  protected abstract @NotNull String getCharset();
+
+  @Override
+  public synchronized void mark(int readlimit) {
+    getDelegate().mark(readlimit);
+  }
+
+  @Override
+  public synchronized void reset() throws IOException {
+    getDelegate().reset();
+  }
+
+  @Override
+  public boolean markSupported() {
+    return getDelegate().markSupported();
+  }
 }

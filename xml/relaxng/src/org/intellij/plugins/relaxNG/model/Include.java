@@ -21,15 +21,9 @@ import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 17.09.2007
- */
 public interface Include<E extends PsiElement, D extends Define> extends CommonElement<E> {
   @Nullable
   PsiFile getInclude();
 
-  @NotNull
-  D[] getOverrides();
+  D @NotNull [] getOverrides();
 }

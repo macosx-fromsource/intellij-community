@@ -7,11 +7,11 @@ class a  {
 
 // super ctr
 
-<error descr="There is no default constructor available in 'a'">class b extends a</error> {
+<error descr="There is no no-arg constructor available in 'a'">class b extends a</error> {
 }
 
 class c extends a {
-  <error descr="There is no default constructor available in 'a'">c()</error> {
+  <error descr="There is no no-arg constructor available in 'a'">c()</error> {
   }
 
   c(String s) {
@@ -54,7 +54,7 @@ class A3 {
 
 // in initializer
 class Test{
-  final String s = <error descr="Unhandled exception: java.lang.Exception">makeString();</error>
+  final String s = <error descr="Unhandled exception: java.lang.Exception">makeString</error>();
   String makeString() throws Exception {throw new Exception();}
 }
 

@@ -1,62 +1,94 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight;
 
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx;
+import com.intellij.codeInspection.options.OptPane;
+import com.intellij.codeInspection.options.OptionContainer;
+import com.intellij.codeInspection.options.OptionController;
+import com.intellij.codeInspection.options.OptionControllerProvider;
+import com.intellij.java.JavaBundle;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.PersistentStateComponent;
-import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.psi.PsiElement;
 import com.intellij.util.PatternUtil;
-import com.intellij.util.containers.ConcurrentWeakFactoryMap;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.ConcurrentFactoryMap;
 import com.intellij.util.xmlb.XmlSerializerUtil;
-import com.intellij.util.xmlb.annotations.AbstractCollection;
-import com.intellij.util.xmlb.annotations.Tag;
+import com.intellij.util.xmlb.annotations.XCollection;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * @author peter
- */
 @State(name = "JavaProjectCodeInsightSettings", storages = @Storage("codeInsightSettings.xml"))
-public class JavaProjectCodeInsightSettings implements PersistentStateComponent<JavaProjectCodeInsightSettings> {
-  @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
-  private static final ConcurrentWeakFactoryMap<String, Pattern> ourPatterns = new ConcurrentWeakFactoryMap<String, Pattern>() {
-    @Nullable
-    @Override
-    protected Pattern create(String key) {
-      return PatternUtil.fromMask(key);
-    }
-  };
+public class JavaProjectCodeInsightSettings implements PersistentStateComponent<JavaProjectCodeInsightSettings>, OptionContainer {
+  private static final ConcurrentMap<String, Pattern> ourPatterns = ConcurrentFactoryMap.createWeakMap(PatternUtil::fromMask);
 
-  @Tag("excluded-names")
-  @AbstractCollection(surroundWithTag = false, elementTag = "name", elementValueAttribute = "")
-  public List<String> excludedNames = ContainerUtil.newArrayList();
+  @XCollection(propertyElementName = "excluded-names", elementName = "name", valueAttributeName = "")
+  public List<String> excludedNames = new ArrayList<>();
+  @XCollection(propertyElementName = "included-static-names", elementName = "name", valueAttributeName = "")
+  public List<String> includedAutoStaticNames = new ArrayList<>();
 
   public static JavaProjectCodeInsightSettings getSettings(@NotNull Project project) {
-    return ServiceManager.getService(project, JavaProjectCodeInsightSettings.class);
+    return project.getService(JavaProjectCodeInsightSettings.class);
+  }
+
+  @NotNull
+  public AutoStaticNameContainer getAllIncludedAutoStaticNames() {
+    List<String> names = new ArrayList<>(includedAutoStaticNames);
+    names.addAll(JavaIdeCodeInsightSettings.getInstance().includedAutoStaticNames);
+    return AutoStaticNameContainer.create(names);
+  }
+
+  public record AutoStaticNameContainer(@NotNull Set<String> includedNames,
+                                        @NotNull Set<String> excludedNames) {
+
+    public boolean containsName(@NotNull String name) {
+      return (includedNames.contains(name) || includedNames.contains(StringUtil.getPackageName(name))) &&
+             !(excludedNames.contains(name) || excludedNames.contains(StringUtil.getPackageName(name)));
+    }
+
+    @NotNull
+    public static AutoStaticNameContainer create(@NotNull List<String> allNames) {
+      Set<String> includedNames = new HashSet<>();
+      Set<String> excludedNames = new HashSet<>();
+      for (String name : allNames) {
+        if (name == null) continue;
+        if (StringUtil.isEmptyOrSpaces(name)) continue;
+        if (name.startsWith("-")) {
+          excludedNames.add(name.substring(1));
+        }
+        else {
+          includedNames.add(name);
+        }
+      }
+      return new AutoStaticNameContainer(includedNames, excludedNames);
+    }
+  }
+
+  /**
+   * Determines whether the given name should be considered as a static auto-import name.
+   * Can be a fully qualified name of a class or member of a class
+   *
+   * @param name the name to check, which can be null
+   * @return true if the name is included in the list of static auto-import names, false otherwise
+   */
+  public boolean isStaticAutoImportName(@Nullable String name) {
+    if (name == null) return false;
+    AutoStaticNameContainer names = getAllIncludedAutoStaticNames();
+    return names.containsName(name);
   }
 
   public boolean isExcluded(@NotNull String name) {
@@ -84,7 +116,7 @@ public class JavaProjectCodeInsightSettings implements PersistentStateComponent<
       return excluded.length();
     }
 
-    if (excluded.indexOf('*') > 0) {
+    if (excluded.indexOf('*') >= 0) {
       Matcher matcher = ourPatterns.get(excluded).matcher(name);
       if (matcher.lookingAt()) {
         return matcher.end();
@@ -94,14 +126,13 @@ public class JavaProjectCodeInsightSettings implements PersistentStateComponent<
     return -1;
   }
 
-  @Nullable
   @Override
-  public JavaProjectCodeInsightSettings getState() {
+  public @Nullable JavaProjectCodeInsightSettings getState() {
     return this;
   }
 
   @Override
-  public void loadState(JavaProjectCodeInsightSettings state) {
+  public void loadState(@NotNull JavaProjectCodeInsightSettings state) {
     XmlSerializerUtil.copyBean(state, this);
   }
 
@@ -113,8 +144,39 @@ public class JavaProjectCodeInsightSettings implements PersistentStateComponent<
     Disposer.register(parentDisposable, new Disposable() {
       @Override
       public void dispose() {
-        instance.excludedNames = ContainerUtil.newArrayList();
+        instance.excludedNames = new ArrayList<>();
       }
     });
+  }
+
+  @Override
+  public @NotNull OptPane getOptionsPane() {
+    String autoStaticImportMessage =
+      JavaBundle.message("auto.static.import.comment.project");
+    String excludeStaticImportMessage =
+      JavaBundle.message("exclude.from.imports.no.exclusions");
+    return OptPane.pane(
+      OptPane.stringList("includedAutoStaticNames", autoStaticImportMessage),
+      OptPane.stringList("excludedNames", excludeStaticImportMessage));
+  }
+
+  /**
+   * Provides bindId = "JavaProjectCodeInsightSettings.excludedNames" and
+   * "JavaProjectCodeInsightSettings.includedAutoStaticNames" lists to control auto-imports
+   */
+  public static final class Provider implements OptionControllerProvider {
+    @Override
+    public @NotNull OptionController forContext(@NotNull PsiElement context) {
+      Project project = context.getProject();
+      return getSettings(context.getProject()).getOptionController()
+        .onValueSet((bindId, value) ->
+                      DaemonCodeAnalyzerEx.getInstanceEx(project).restart("JavaProjectCodeInsightSettings.Provider.forContext")
+        );
+    }
+
+    @Override
+    public @NotNull String name() {
+      return "JavaProjectCodeInsightSettings";
+    }
   }
 }

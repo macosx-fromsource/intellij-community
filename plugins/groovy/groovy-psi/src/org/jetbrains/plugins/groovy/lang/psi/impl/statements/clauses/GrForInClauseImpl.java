@@ -1,88 +1,73 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.groovy.lang.psi.impl.statements.clauses;
 
 import com.intellij.lang.ASTNode;
 import com.intellij.psi.PsiElement;
-import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.ObjectUtils;
+import com.intellij.psi.ResolveState;
+import com.intellij.psi.scope.PsiScopeProcessor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.plugins.groovy.lang.lexer.GroovyTokenTypes;
 import org.jetbrains.plugins.groovy.lang.psi.GroovyElementVisitor;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrParametersOwner;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.clauses.GrForInClause;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameter;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameterList;
 import org.jetbrains.plugins.groovy.lang.psi.impl.GroovyPsiElementImpl;
+import org.jetbrains.plugins.groovy.lang.resolve.ResolveUtil;
 
-/**
- * @author ilyas
- */
-public class GrForInClauseImpl extends GroovyPsiElementImpl implements GrForInClause, GrParametersOwner {
+public class GrForInClauseImpl extends GroovyPsiElementImpl implements GrForInClause {
 
   public GrForInClauseImpl(@NotNull ASTNode node) {
     super(node);
   }
 
   @Override
-  public void accept(GroovyElementVisitor visitor) {
+  public void accept(@NotNull GroovyElementVisitor visitor) {
     visitor.visitForInClause(this);
   }
 
+  @Override
   public String toString() {
     return "In clause";
   }
 
   @Override
+  public @Nullable GrParameter getIndexVariable() {
+    GrParameter[] parameters = findChildrenByClass(GrParameter.class);
+    if (parameters.length != 2) return null;
+    return parameters[0];
+  }
+
+  @Override
   public GrParameter getDeclaredVariable() {
-    return findChildByClass(GrParameter.class);
+    GrParameter[] parameters = findChildrenByClass(GrParameter.class);
+    if (parameters.length == 0) return null;
+    return parameters[parameters.length - 1];
   }
 
   @Override
-  public GrParameter[] getParameters() {
-    final GrParameter declaredVariable = getDeclaredVariable();
-    return declaredVariable == null ? GrParameter.EMPTY_ARRAY : new GrParameter[]{declaredVariable};
-  }
-
-  @Override
-  public GrParameterList getParameterList() {
-    return null;
-  }
-
-  @Override
-  public boolean isVarArgs() {
-    throw new IncorrectOperationException("For in clause cannot have varargs");
-  }
-
-  @Override
-  @Nullable
-  public GrExpression getIteratedExpression() {
+  public @Nullable GrExpression getIteratedExpression() {
     return findExpressionChild(this);
   }
 
-  @NotNull
   @Override
-  public PsiElement getDelimiter() {
+  public @Nullable PsiElement getDelimiter() {
     PsiElement in = findChildByType(GroovyTokenTypes.kIN);
     if (in != null) return in;
 
-    PsiElement colon = findChildByType(GroovyTokenTypes.mCOLON);
-    return ObjectUtils.assertNotNull(colon);
+    return findChildByType(GroovyTokenTypes.mCOLON);
+  }
+
+  @Override
+  public boolean processDeclarations(@NotNull PsiScopeProcessor processor,
+                                     @NotNull ResolveState state,
+                                     PsiElement lastParent,
+                                     @NotNull PsiElement place) {
+    if (lastParent != null) return true;
+    GrParameter declaredVariable = getDeclaredVariable();
+    GrParameter indexVariable = getIndexVariable();
+    if (indexVariable != null && !ResolveUtil.processElement(processor, indexVariable, state)) return false;
+    if (declaredVariable != null && !ResolveUtil.processElement(processor, declaredVariable, state)) return false;
+    return true;
   }
 }

@@ -1,29 +1,19 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.util.IncorrectOperationException;
-import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * A PSI element which has a name and can be renamed (for example, a class or a method).
+ * Represents a declaration which introduces a named entity and can be renamed (for example, a class or a method).
+ * References should not implement this interface since they don't usually introduce a new entity.
+ *
+ * @see com.intellij.model.psi.PsiSymbolDeclaration
+ * @see PsiNameIdentifierOwner
  */
-public interface PsiNamedElement extends PsiElement{
+public interface PsiNamedElement extends PsiElement {
   /**
    * The empty array of PSI named elements which can be reused to avoid unnecessary allocations.
    */
@@ -34,15 +24,17 @@ public interface PsiNamedElement extends PsiElement{
    *
    * @return the element name.
    */
-  @Nullable @NonNls String getName();
+  @Nullable
+  @NlsSafe
+  String getName();
 
   /**
    * Renames the element.
    *
    * @param name the new element name.
-   * @return the element corresponding to this element after the rename (either <code>this</code>
-   * or a different element if the rename caused the element to be replaced).
+   * @return the element corresponding to this element after the renaming (either {@code this}
+   * or a different element if the renaming caused the element to be replaced).
    * @throws IncorrectOperationException if the modification is not supported or not possible for some reason.
    */
-  PsiElement setName(@NonNls @NotNull String name) throws IncorrectOperationException;
+  PsiElement setName(@NlsSafe @NotNull String name) throws IncorrectOperationException;
 }

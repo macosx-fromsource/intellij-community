@@ -21,9 +21,6 @@ import org.apache.tools.ant.types.ZipFileSet;
 
 import java.io.File;
 
-/**
- * @author nik
- */
 public abstract class IdeaModuleBase extends LayoutFileSet {
   private String name;
 
@@ -45,11 +42,6 @@ public abstract class IdeaModuleBase extends LayoutFileSet {
   }
 
   protected File getOutputDir() {
-    String common = getProject().getProperty("modules.output");
-    if (common != null) {
-      return new File(new File(common), getKind() + "/" + getName());
-    }
-
     String adhoc = getProject().getProperty(getOutputDirProperty());
     return adhoc != null ? new File(adhoc) : null;
   }
@@ -60,11 +52,11 @@ public abstract class IdeaModuleBase extends LayoutFileSet {
     }
 
     File outputDir = getOutputDir();
-
-    if (outputDir == null || !outputDir.exists()) {
-      throw new BuildException("No " + getKind() + " output found for module " + name +
-          ". Either modules.output property references project output that doesn't contain this module or " +
-          getOutputDirProperty() + " is not defined or references non-existing directory.");
+    if (outputDir == null) {
+      throw new BuildException("Cannot find " + getKind() + " output for module " + name + ": '" + getOutputDirProperty() + "' property isn't defined");
+    }
+    if (!outputDir.exists()) {
+      throw new BuildException("No " + getKind() + " output found for module " + name + ": " + outputDir + " doesn't exist");
     }
   }
 
@@ -72,6 +64,7 @@ public abstract class IdeaModuleBase extends LayoutFileSet {
 
   protected abstract String getKind();
 
+  @Override
   public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
@@ -80,6 +73,7 @@ public abstract class IdeaModuleBase extends LayoutFileSet {
     return getDir(getProject()).equals(that.getDir(getProject()));
   }
 
+  @Override
   public int hashCode() {
     return getDir(getProject()).hashCode();
   }

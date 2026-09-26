@@ -1,27 +1,15 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
-import org.jetbrains.java.decompiler.main.TextBuffer;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.main.collectors.BytecodeMappingTracer;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
-import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.ListStack;
+import org.jetbrains.java.decompiler.util.TextBuffer;
 
-import java.util.*;
+import java.util.BitSet;
+import java.util.List;
+import java.util.Objects;
 
 public class IfExprent extends Exprent {
 
@@ -44,10 +32,9 @@ public class IfExprent extends Exprent {
   public static final int IF_ACMPEQ = 14;
   public static final int IF_ACMPNE = 15;
 
-  public static final int IF_CAND = 16;
-  public static final int IF_COR = 17;
-
-  public static final int IF_NOT = 18;
+  //public static final int IF_CAND = 16;
+  //public static final int IF_COR = 17;
+  //public static final int IF_NOT = 18;
   public static final int IF_VALUE = 19;
 
   private static final int[] FUNC_TYPES = {
@@ -75,7 +62,7 @@ public class IfExprent extends Exprent {
 
   private Exprent condition;
 
-  public IfExprent(int ifType, ListStack<Exprent> stack, Set<Integer> bytecodeOffsets) {
+  public IfExprent(int ifType, ListStack<Exprent> stack, BitSet bytecodeOffsets) {
     this(null, bytecodeOffsets);
 
     if (ifType <= IF_LE) {
@@ -93,7 +80,7 @@ public class IfExprent extends Exprent {
     }
   }
 
-  private IfExprent(Exprent condition, Set<Integer> bytecodeOffsets) {
+  private IfExprent(Exprent condition, BitSet bytecodeOffsets) {
     super(EXPRENT_IF);
     this.condition = condition;
 
@@ -106,8 +93,7 @@ public class IfExprent extends Exprent {
   }
 
   @Override
-  public List<Exprent> getAllExprents() {
-    List<Exprent> lst = new ArrayList<>();
+  public List<Exprent> getAllExprents(List<Exprent> lst) {
     lst.add(condition);
     return lst;
   }
@@ -115,7 +101,7 @@ public class IfExprent extends Exprent {
   @Override
   public TextBuffer toJava(int indent, BytecodeMappingTracer tracer) {
     tracer.addMapping(bytecode);
-    return condition.toJava(indent, tracer).enclose("if(", ")");
+    return condition.toJava(indent, tracer).enclose("if (", ")");
   }
 
   @Override
@@ -128,10 +114,9 @@ public class IfExprent extends Exprent {
   @Override
   public boolean equals(Object o) {
     if (o == this) return true;
-    if (o == null || !(o instanceof IfExprent)) return false;
+    if (!(o instanceof IfExprent ie)) return false;
 
-    IfExprent ie = (IfExprent)o;
-    return InterpreterUtil.equalObjects(condition, ie.getCondition());
+    return Objects.equals(condition, ie.getCondition());
   }
 
   public IfExprent negateIf() {
@@ -145,5 +130,11 @@ public class IfExprent extends Exprent {
 
   public void setCondition(Exprent condition) {
     this.condition = condition;
+  }
+
+  @Override
+  public void fillBytecodeRange(@Nullable BitSet values) {
+    measureBytecode(values, condition);
+    measureBytecode(values);
   }
 }

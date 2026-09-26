@@ -9,16 +9,16 @@ class FooBool {
 
   def boolCast() {
     (boolean) null
-    <error descr="Cannot cast 'char' to 'boolean'">(boolean) 1 as char</error>
-    <error descr="Cannot cast 'BigDecimal' to 'boolean'">(boolean) 1 as BigDecimal</error>
-    <error descr="Cannot cast 'BigInteger' to 'boolean'">(boolean) 1 as BigInteger</error>
-    <error descr="Cannot cast 'double' to 'boolean'">(boolean) 1 as double</error>
-    <error descr="Cannot cast 'float' to 'boolean'">(boolean) 1 as float</error>
-    <error descr="Cannot cast 'int' to 'boolean'">(boolean) 1 as int</error>
-    <error descr="Cannot cast 'short' to 'boolean'">(boolean) 1 as short</error>
-    <error descr="Cannot cast 'long' to 'boolean'">(boolean) 1 as long</error>
-    (boolean) 1 as boolean
-    <error descr="Cannot cast 'void' to 'boolean'">(boolean) 1 as void</error>
+    <error descr="Cannot cast 'char' to 'boolean'">(boolean) (1 as char)</error>
+    <error descr="Cannot cast 'BigDecimal' to 'boolean'">(boolean) (1 as BigDecimal)</error>
+    <error descr="Cannot cast 'BigInteger' to 'boolean'">(boolean) (1 as BigInteger)</error>
+    <error descr="Cannot cast 'double' to 'boolean'">(boolean) (1 as double)</error>
+    <error descr="Cannot cast 'float' to 'boolean'">(boolean) (1 as float)</error>
+    <error descr="Cannot cast 'int' to 'boolean'">(boolean) (1 as int)</error>
+    <error descr="Cannot cast 'short' to 'boolean'">(boolean) (1 as short)</error>
+    <error descr="Cannot cast 'long' to 'boolean'">(boolean) (1 as long)</error>
+    (boolean) (1 as boolean)
+    <error descr="Cannot cast 'void' to 'boolean'">(boolean) (1 as void)</error>
     <error descr="Cannot cast 'void' to 'boolean'">(boolean) explicitVoid()</error>
     <error descr="Cannot cast 'Date' to 'boolean'">(boolean) new Date()</error>
     <error descr="Cannot cast 'String' to 'boolean'">(boolean) "a"</error>
@@ -27,7 +27,7 @@ class FooBool {
     <error descr="Cannot cast 'Object[]' to 'boolean'">(boolean) new Object[0]</error>
     <error descr="Cannot cast 'Closure<Integer>' to 'boolean'">(boolean) { int a, int b -> a + b }</error>
     (boolean) s
-    <error descr="Cannot cast 'Matcher' to 'boolean'">(boolean) "aaa" =~ /aaa/</error>
+    <error descr="Cannot cast 'Matcher' to 'boolean'">(boolean) ("aaa" =~ /aaa/)</error>
     <error descr="Cannot cast 'List' to 'boolean'">(boolean) []</error>
   }
 
@@ -54,12 +54,12 @@ class FooBool {
     b = "aaa" =~ /aaa/
     b = []
     b = [] as List
-    b = <error descr="Constructor 'Boolean' in 'java.lang.Boolean' cannot be applied to '(java.lang.Integer, java.lang.Integer, java.lang.Integer)'">[1, 2, 3]</error>
+    b = [1, 2, 3]
     b = [1, 2, 3] as List
     b = ["true"]
     b = [true]
     b = [1] as List
-    b = <error descr="Constructor 'Boolean' in 'java.lang.Boolean' cannot be applied to '(['a':java.lang.Integer, 'b':java.lang.Integer,...])'">[a: 1, b: 2, c: 3]</error>
+    b = [a: 1, b: 2, c: 3]
     b = [a: 1, b: 2, c: 3] as Map
     b = [a: 1, b: 2, c: 3] as List
   }
@@ -86,9 +86,9 @@ class FooBool {
     boolean b18 = "aaa" =~ /aaa/
     boolean b19 = []
     boolean b20 = [] as List
-    boolean b21 = <error descr="Constructor 'Boolean' in 'java.lang.Boolean' cannot be applied to '(java.lang.Integer, java.lang.Integer, java.lang.Integer)'">[1, 2, 3]</error>
+    boolean b21 = [1, 2, 3]
     boolean b22 = [1, 2, 3] as List
-    boolean b23 = <error descr="Constructor 'Boolean' in 'java.lang.Boolean' cannot be applied to '(['a':java.lang.Integer, 'b':java.lang.Integer,...])'">[a: 1, b: 2, c: 3]</error>
+    boolean b23 = [a: 1, b: 2, c: 3]
     boolean b24 = [a: 1, b: 2, c: 3] as Map
     boolean b25 = [a: 1, b: 2, c: 3] as List
   }

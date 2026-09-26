@@ -1,46 +1,42 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.profile.codeInspection
 
 import com.intellij.codeInsight.daemon.impl.SeverityRegistrar
-import com.intellij.codeInspection.InspectionProfile
 import com.intellij.codeInspection.ex.InspectionProfileImpl
+import com.intellij.codeInspection.ex.InspectionProfileModifiableModel
 import com.intellij.configurationStore.LazySchemeProcessor
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.options.SchemeManager
 import com.intellij.openapi.options.SchemeState
 import com.intellij.openapi.project.Project
 import com.intellij.util.messages.MessageBus
+import org.jetbrains.annotations.ApiStatus.Internal
 
-@JvmField
-internal val LOG = Logger.getInstance(BaseInspectionProfileManager::class.java)
-
-abstract class BaseInspectionProfileManager(messageBus: MessageBus) :  InspectionProjectProfileManager() {
+abstract class BaseInspectionProfileManager(messageBus: MessageBus) : InspectionProjectProfileManager() {
   protected abstract val schemeManager: SchemeManager<InspectionProfileImpl>
 
   private val severityRegistrar = SeverityRegistrar(messageBus)
 
-  override final fun getSeverityRegistrar() = severityRegistrar
-
-  override final fun getOwnSeverityRegistrar() = severityRegistrar
+  final override fun getSeverityRegistrar(): SeverityRegistrar = severityRegistrar
 
   internal fun cleanupSchemes(project: Project) {
     for (profile in schemeManager.allSchemes) {
       profile.cleanup(project)
     }
+  }
+
+  @Internal
+  fun normalizeRemovedSeverities(removedSeverityNames: Set<String>): List<InspectionProfileImpl> {
+    if (removedSeverityNames.isEmpty()) {
+      return emptyList()
+    }
+
+    val changedProfiles = ArrayList<InspectionProfileImpl>()
+    for (profile in schemeManager.allSchemes) {
+      if (profile.normalizeRemovedSeverities(removedSeverityNames)) {
+        changedProfiles.add(profile)
+      }
+    }
+    return changedProfiles
   }
 
   fun addProfile(profile: InspectionProfileImpl) {
@@ -54,12 +50,11 @@ abstract class BaseInspectionProfileManager(messageBus: MessageBus) :  Inspectio
   }
 
   fun deleteProfile(profile: InspectionProfileImpl) {
-    if (schemeManager.removeScheme(profile)) {
-      schemeRemoved(profile)
-    }
+    if (profile is InspectionProfileModifiableModel) deleteProfile(profile.source.name) else deleteProfile(profile.name)
   }
 
-  open protected fun schemeRemoved(scheme: InspectionProfile) {
+  protected open fun schemeRemoved(scheme: InspectionProfileImpl) {
+    scheme.cleanup(null)
   }
 
   abstract fun fireProfileChanged(profile: InspectionProfileImpl)

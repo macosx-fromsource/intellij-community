@@ -15,17 +15,18 @@
  */
 package com.intellij.ide.util.importProject;
 
+import com.intellij.openapi.util.NlsSafe;
+
 import java.io.File;
 import java.util.Collection;
 import java.util.Collections;
 
 /**
  * @author Eugene Zhuravlev
- *         Date: Jul 13, 2007
  */
-public class LibraryDescriptor {
-  
-  private String myName;
+public final class LibraryDescriptor implements Dependency {
+
+  private @NlsSafe String myName;
   private final Collection<File> myJars;
 
   public LibraryDescriptor(String name, Collection<File> jars) {
@@ -33,7 +34,7 @@ public class LibraryDescriptor {
     myJars = jars;
   }
 
-  public String getName() {
+  public @NlsSafe String getName() {
     return myName != null? myName : "";
   }
 
@@ -45,15 +46,21 @@ public class LibraryDescriptor {
     return Collections.unmodifiableCollection(myJars);
   }
   
-  public void addJars(Collection<File> jars) {
+  public void addJars(Collection<? extends File> jars) {
     myJars.addAll(jars);
   }
   
-  public void removeJars(Collection<File> jars) {
+  public void removeJars(Collection<? extends File> jars) {
     myJars.removeAll(jars);
   }
 
+  @Override
   public String toString() {
     return "Lib[" + myName + "]";
+  }
+
+  @Override
+  public int getWeight() {
+    return myJars.size() > 1 ? 30 : 40;
   }
 }

@@ -1,3 +1,4 @@
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.json;
 
 import com.intellij.lang.BracePair;
@@ -11,13 +12,13 @@ import org.jetbrains.annotations.Nullable;
  * @author Mikhail Golubev
  */
 public class JsonBraceMatcher implements PairedBraceMatcher {
-  private static BracePair[] PAIRS = {
+  private static final BracePair[] PAIRS = {
     new BracePair(JsonElementTypes.L_BRACKET, JsonElementTypes.R_BRACKET, true),
     new BracePair(JsonElementTypes.L_CURLY, JsonElementTypes.R_CURLY, true)
   };
 
   @Override
-  public BracePair[] getPairs() {
+  public BracePair @NotNull [] getPairs() {
     return PAIRS;
   }
 

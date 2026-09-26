@@ -1,65 +1,95 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.ignore;
 
+import com.intellij.openapi.actionSystem.ActionPlaces;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.openapi.actionSystem.DataContext;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.actionSystem.UpdateSession;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vcs.AbstractVcs;
-import com.intellij.openapi.vcs.VcsException;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.util.Ref;
+import com.intellij.openapi.vcs.ProjectLevelVcsManager;
 import com.intellij.openapi.vcs.changes.ChangeListManager;
+import com.intellij.openapi.vcs.changes.ui.ChangesListView;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.JBIterable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.idea.svn.SvnStatusUtil;
 import org.jetbrains.idea.svn.SvnVcs;
-import org.jetbrains.idea.svn.actions.BasicAction;
 
-public class IgnoreGroupHelperAction extends BasicAction {
-  private boolean myAllCanBeIgnored;
-  private boolean myAllAreIgnored;
-  private FileIterationListener myListener;
+import java.util.Optional;
 
-  protected String getActionName(final AbstractVcs vcs) {
-    return null;
+import static com.intellij.util.ArrayUtil.isEmpty;
+
+public class IgnoreGroupHelperAction {
+  private static final Key<Optional<IgnoreGroupHelperAction>> KEY = Key.create("IgnoreGroupHelperAction");
+
+  private final FileGroupInfo myFileGroupInfo = new FileGroupInfo();
+
+  private boolean myAllCanBeIgnored = true;
+  private boolean myAllAreIgnored = true;
+
+  private final Ref<Boolean> myIgnoreFilesOk = new Ref<>(Boolean.FALSE);
+  private final Ref<Boolean> myIgnoreExtensionOk = new Ref<>(Boolean.FALSE);
+
+  private IgnoreGroupHelperAction() {
   }
 
-  public void update(final AnActionEvent e) {
-    myAllAreIgnored = true;
-    myAllCanBeIgnored = true;
-
-    super.update(e);
+  public static @Nullable IgnoreGroupHelperAction createFor(@NotNull AnActionEvent e) {
+    UpdateSession session = e.getUpdateSession();
+    Optional<IgnoreGroupHelperAction> helper = session.sharedData(KEY, () -> tryCreateFor(e));
+    return helper.orElse(null);
   }
 
-  public void setFileIterationListener(final FileIterationListener listener) {
-    myListener = listener;
+  private static @NotNull Optional<IgnoreGroupHelperAction> tryCreateFor(@NotNull AnActionEvent e) {
+    // TODO: This logic was taken from BasicAction.update(). Probably it'll be more convenient to share these conditions for correctness.
+    Project project = e.getProject();
+    SvnVcs vcs = project != null ? SvnVcs.getInstance(project) : null;
+    VirtualFile[] files = getSelectedFiles(e);
+    if (project == null || vcs == null || isEmpty(files)) return Optional.empty();
+
+    IgnoreGroupHelperAction helper = new IgnoreGroupHelperAction();
+    if (!helper.checkEnabled(vcs, files)) return Optional.empty();
+
+    helper.checkIgnoreProperty(vcs);
+    return Optional.of(helper);
   }
 
-  private boolean isEnabledImpl(final SvnVcs vcs, final VirtualFile file) {
-    final ChangeListManager clManager = ChangeListManager.getInstance(vcs.getProject());
+  public static VirtualFile @Nullable [] getSelectedFiles(@NotNull AnActionEvent e) {
+    if (e.getPlace().equals(ActionPlaces.CHANGES_VIEW_POPUP)) {
+      Iterable<VirtualFile> exactlySelectedFiles = e.getData(ChangesListView.EXACTLY_SELECTED_FILES_DATA_KEY);
+      if (exactlySelectedFiles != null) {
+        return JBIterable.from(exactlySelectedFiles).toList().toArray(VirtualFile[]::new);
+      }
+    }
+    return e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY);
+  }
 
-    if (SvnStatusUtil.isIgnoredInAnySense(clManager, file)) {
+  private boolean checkEnabled(@NotNull SvnVcs vcs, VirtualFile @NotNull [] files) {
+    return ProjectLevelVcsManager.getInstance(vcs.getProject()).checkAllFilesAreUnder(vcs, files) &&
+           ContainerUtil.and(files, file -> isEnabled(vcs, file));
+  }
+
+  private void checkIgnoreProperty(@NotNull SvnVcs vcs) {
+    if (myAllAreIgnored) {
+      // virtual files parameter is not used -> can pass null
+      SvnPropertyService.doCheckIgnoreProperty(vcs, null, myFileGroupInfo, myFileGroupInfo.getExtensionMask(),
+                                               myIgnoreFilesOk, myIgnoreExtensionOk);
+    }
+  }
+
+  private boolean isEnabledImpl(@NotNull SvnVcs vcs, @NotNull VirtualFile file) {
+    if (isIgnored(vcs, file)) {
       myAllCanBeIgnored = false;
-      return myAllAreIgnored | myAllCanBeIgnored;
-    } else if (clManager.isUnversioned(file)) {
-      // check parent
-      final VirtualFile parent = file.getParent();
-      if (parent != null) {
-        if ((! SvnStatusUtil.isIgnoredInAnySense(clManager, parent)) && (! clManager.isUnversioned(parent))) {
-          myAllAreIgnored = false;
-          return myAllAreIgnored | myAllCanBeIgnored;
-        }
+      return myAllAreIgnored;
+    }
+    else if (isUnversioned(vcs, file)) {
+      VirtualFile parent = file.getParent();
+      if (parent != null && SvnStatusUtil.isUnderControl(vcs, parent)) {
+        myAllAreIgnored = false;
+        return myAllCanBeIgnored;
       }
     }
     myAllCanBeIgnored = false;
@@ -67,10 +97,10 @@ public class IgnoreGroupHelperAction extends BasicAction {
     return false;
   }
 
-  protected boolean isEnabled(final Project project, final SvnVcs vcs, final VirtualFile file) {
-    final boolean result = isEnabledImpl(vcs, file);
+  private boolean isEnabled(@NotNull SvnVcs vcs, @NotNull VirtualFile file) {
+    boolean result = isEnabledImpl(vcs, file);
     if (result) {
-      myListener.onFileEnabled(file);
+      myFileGroupInfo.onFileEnabled(file);
     }
     return result;
   }
@@ -83,21 +113,29 @@ public class IgnoreGroupHelperAction extends BasicAction {
     return myAllAreIgnored;
   }
 
-  protected boolean needsFiles() {
-    return true;
+  public @NotNull FileGroupInfo getFileGroupInfo() {
+    return myFileGroupInfo;
   }
 
-  protected void perform(final Project project, final SvnVcs activeVcs, final VirtualFile file, final DataContext context)
-      throws VcsException {
-
+  public boolean areIgnoreFilesOk() {
+    return myAllAreIgnored && Boolean.TRUE.equals(myIgnoreFilesOk.get());
   }
 
-  protected void batchPerform(final Project project, final SvnVcs activeVcs, final VirtualFile[] file, final DataContext context)
-      throws VcsException {
-
+  public boolean areIgnoreExtensionOk() {
+    return myAllAreIgnored && Boolean.TRUE.equals(myIgnoreExtensionOk.get());
   }
 
-  protected boolean isBatchAction() {
+  public static boolean isIgnored(@NotNull SvnVcs vcs, @NotNull VirtualFile file) {
+    return SvnStatusUtil.isIgnoredInAnySense(vcs.getProject(), file);
+  }
+
+  public static boolean isUnversioned(@NotNull SvnVcs vcs, @NotNull VirtualFile file) {
+    if (ChangeListManager.getInstance(vcs.getProject()).isUnversioned(file)) {
+      VirtualFile parent = file.getParent();
+      if (parent != null && SvnStatusUtil.isUnderControl(vcs, parent)) {
+        return true;
+      }
+    }
     return false;
   }
 }

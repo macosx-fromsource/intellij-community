@@ -15,15 +15,46 @@
  */
 package com.intellij.psi.search.scope.packageSet;
 
+import com.intellij.openapi.util.NlsSafe;
 import com.intellij.psi.PsiFile;
-import org.jetbrains.annotations.NonNls;
+import com.intellij.psi.PsiFileSystemItem;
 import org.jetbrains.annotations.NotNull;
+
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 public interface PackageSet {
   boolean contains(@NotNull PsiFile file, NamedScopesHolder holder);
+
+  default boolean contains(@NotNull PsiFileSystemItem file, NamedScopesHolder holder) {
+    if (file instanceof PsiFile psiFile) {
+      return contains(psiFile, holder);
+    }
+    else {
+      return false;
+    }
+  }
+
   @NotNull
   PackageSet createCopy();
-  @NonNls @NotNull
+
+  @NlsSafe @NotNull
   String getText();
+
   int getNodePriority();
+
+  /**
+   * Applies given {@code transformation} to all inner {@code PackageSet} of this instance and returns the modified instance or {@code this}
+   * if no modification in inner {@code PackageSet} were made.
+   */
+  default PackageSet map(@NotNull Function<? super PackageSet, ? extends PackageSet> transformation) {
+    return transformation.apply(this);
+  }
+
+  /**
+   * @return {@code true} if any inner {@code PackageSet} of this instance matched given predicate
+   */
+  default boolean anyMatches(@NotNull Predicate<? super PackageSet> predicate) {
+    return predicate.test(this);
+  }
 }

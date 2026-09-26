@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 
 package com.intellij.uiDesigner.inspections;
 
@@ -28,42 +14,35 @@ import com.intellij.uiDesigner.quickFixes.QuickFix;
 import com.intellij.uiDesigner.radComponents.RadComponent;
 import org.jetbrains.annotations.NotNull;
 
-import javax.swing.*;
+import javax.swing.JScrollPane;
+import javax.swing.JTextField;
+import javax.swing.Scrollable;
 import java.util.ArrayList;
 import java.util.Collections;
 
-/**
- * @author yole
- */
-public class NoScrollPaneInspection extends BaseFormInspection {
+
+public final class NoScrollPaneInspection extends BaseFormInspection {
   public NoScrollPaneInspection() {
     super("NoScrollPane");
   }
 
-  @NotNull
-  @Override public String getDisplayName() {
-    return UIDesignerBundle.message("inspection.no.scroll.pane");
-  }
-
-  protected void checkComponentProperties(Module module, IComponent component, FormErrorCollector collector) {
+  @Override
+  protected void checkComponentProperties(Module module, @NotNull IComponent component, FormErrorCollector collector) {
     if (FormInspectionUtil.isComponentClass(module, component, Scrollable.class) &&
         !FormInspectionUtil.isComponentClass(module, component, JTextField.class) &&
         !FormInspectionUtil.isComponentClass(module, component.getParentContainer(), JScrollPane.class)) {
       collector.addError(getID(), component, null, UIDesignerBundle.message("inspection.no.scroll.pane"),
-                         new EditorQuickFixProvider() {
-                           public QuickFix createQuickFix(GuiEditor editor, RadComponent component) {
-                             return new MyQuickFix(editor, component);
-                           }
-                         });
+                         MyQuickFix::new);
 
     }
   }
 
   private static class MyQuickFix extends QuickFix {
-    public MyQuickFix(final GuiEditor editor, RadComponent component) {
+    MyQuickFix(final GuiEditor editor, RadComponent component) {
       super(editor, UIDesignerBundle.message("inspection.no.scroll.pane.quickfix"), component);
     }
 
+    @Override
     public void run() {
       String scrollPane = JScrollPane.class.getName();
       ComponentItem item = Palette.getInstance(myEditor.getProject()).getItem(scrollPane);

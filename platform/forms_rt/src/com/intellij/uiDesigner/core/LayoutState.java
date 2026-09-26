@@ -15,11 +15,11 @@
  */
 package com.intellij.uiDesigner.core;
 
-import java.awt.*;
+import java.awt.Component;
+import java.awt.Dimension;
 import java.util.ArrayList;
 
 /**
- * @noinspection unchecked
  */
 public final class LayoutState {
   private final Component[] myComponents;
@@ -42,8 +42,8 @@ public final class LayoutState {
       }
     }
 
-    myComponents = (Component[])componentsList.toArray(new Component[componentsList.size()]);
-    myConstraints = (GridConstraints[])constraintsList.toArray(new GridConstraints[constraintsList.size()]);
+    myComponents = (Component[])componentsList.toArray(new Component[0]);
+    myConstraints = (GridConstraints[])constraintsList.toArray(GridConstraints.EMPTY_ARRAY);
 
     myMinimumSizes = new Dimension[myComponents.length];
     myPreferredSizes = new Dimension[myComponents.length];

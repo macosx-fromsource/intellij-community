@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.java.decompiler.main.rels;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
@@ -32,7 +18,11 @@ import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.BitSet;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class LambdaProcessor {
   @SuppressWarnings("SpellCheckingInspection") private static final String JAVAC_LAMBDA_CLASS = "java/lang/invoke/LambdaMetafactory";
@@ -44,68 +34,63 @@ public class LambdaProcessor {
       processClass(child);
     }
 
-    hasLambda(node);
-  }
-
-  public boolean hasLambda(ClassNode node) throws IOException {
     ClassesProcessor clProcessor = DecompilerContext.getClassProcessor();
     StructClass cl = node.classStruct;
 
-    if (cl.getBytecodeVersion() < CodeConstants.BYTECODE_JAVA_8) { // lambda beginning with Java 8
-      return false;
+    if (!cl.isVersion8()) { // lambda beginning with Java 8
+      return;
     }
 
-    StructBootstrapMethodsAttribute bootstrap =
-      (StructBootstrapMethodsAttribute)cl.getAttributes().getWithKey(StructGeneralAttribute.ATTRIBUTE_BOOTSTRAP_METHODS);
+    StructBootstrapMethodsAttribute bootstrap = cl.getAttribute(StructGeneralAttribute.ATTRIBUTE_BOOTSTRAP_METHODS);
     if (bootstrap == null || bootstrap.getMethodsNumber() == 0) {
-      return false; // no bootstrap constants in pool
+      return; // no bootstrap constants in pool
     }
 
-    BitSet lambda_methods = new BitSet();
+    BitSet lambdaMethods = new BitSet();
 
     // find lambda bootstrap constants
     for (int i = 0; i < bootstrap.getMethodsNumber(); ++i) {
       LinkConstant method_ref = bootstrap.getMethodReference(i); // method handle
 
       // FIXME: extend for Eclipse etc. at some point
-      if (JAVAC_LAMBDA_CLASS.equals(method_ref.classname) &&
-          (JAVAC_LAMBDA_METHOD.equals(method_ref.elementname) || JAVAC_LAMBDA_ALT_METHOD.equals(method_ref.elementname))) {
-        lambda_methods.set(i);
+      if (JAVAC_LAMBDA_CLASS.equals(method_ref.className) &&
+          (JAVAC_LAMBDA_METHOD.equals(method_ref.elementName) || JAVAC_LAMBDA_ALT_METHOD.equals(method_ref.elementName))) {
+        lambdaMethods.set(i);
       }
     }
 
-    if (lambda_methods.isEmpty()) {
-      return false; // no lambda bootstrap constant found
+    if (lambdaMethods.isEmpty()) {
+      return; // no lambda bootstrap constant found
     }
 
     Map<String, String> mapMethodsLambda = new HashMap<>();
 
     // iterate over code and find invocations of bootstrap methods. Replace them with anonymous classes.
     for (StructMethod mt : cl.getMethods()) {
-      mt.expandData();
+      mt.expandData(cl);
 
       InstructionSequence seq = mt.getInstructionSequence();
-      if (seq != null && seq.length() > 0) {
+      if (seq != null && !seq.isEmpty()) {
         int len = seq.length();
 
         for (int i = 0; i < len; ++i) {
           Instruction instr = seq.getInstr(i);
 
           if (instr.opcode == CodeConstants.opc_invokedynamic) {
-            LinkConstant invoke_dynamic = cl.getPool().getLinkConstant(instr.getOperand(0));
+            LinkConstant invoke_dynamic = cl.getPool().getLinkConstant(instr.operand(0));
 
-            if (lambda_methods.get(invoke_dynamic.index1)) { // lambda invocation found
+            if (lambdaMethods.get(invoke_dynamic.index1)) { // lambda invocation found
 
               List<PooledConstant> bootstrap_arguments = bootstrap.getMethodArguments(invoke_dynamic.index1);
               MethodDescriptor md = MethodDescriptor.parseDescriptor(invoke_dynamic.descriptor);
 
-              String lambda_class_name = md.ret.value;
-              String lambda_method_name = invoke_dynamic.elementname;
+              String lambda_class_name = md.ret.getValue();
+              String lambda_method_name = invoke_dynamic.elementName;
               String lambda_method_descriptor = ((PrimitiveConstant)bootstrap_arguments.get(2)).getString(); // method type
 
               LinkConstant content_method_handle = (LinkConstant)bootstrap_arguments.get(1);
 
-              ClassNode node_lambda = new ClassNode(content_method_handle.classname, content_method_handle.elementname,
+              ClassNode node_lambda = new ClassNode(content_method_handle.className, content_method_handle.elementName,
                                                     content_method_handle.descriptor, content_method_handle.index1,
                                                     lambda_class_name, lambda_method_name, lambda_method_descriptor, cl);
               node_lambda.simpleName = cl.qualifiedName + "##Lambda_" + invoke_dynamic.index1 + "_" + invoke_dynamic.index2;
@@ -126,6 +111,8 @@ public class LambdaProcessor {
       mt.releaseResources();
     }
 
+    Collections.sort(node.nested);
+
     // build class hierarchy on lambda
     for (ClassNode nd : node.nested) {
       if (nd.type == ClassNode.CLASS_LAMBDA) {
@@ -135,12 +122,11 @@ public class LambdaProcessor {
 
           parent_class.nested.add(nd);
           nd.parent = parent_class;
+          Collections.sort(parent_class.nested);
         }
       }
     }
 
     // FIXME: mixed hierarchy?
-
-    return false;
   }
 }

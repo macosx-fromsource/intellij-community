@@ -1,164 +1,124 @@
-/*
- * User: anna
- * Date: 26-Aug-2009
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.refactoring.typeMigration.intentions;
 
 import com.intellij.codeInsight.FileModificationService;
+import com.intellij.codeInsight.intention.BaseElementAtCaretIntentionAction;
 import com.intellij.codeInsight.intention.LowPriorityAction;
-import com.intellij.codeInsight.intention.PsiElementBaseIntentionAction;
+import com.intellij.codeInsight.intention.preview.IntentionPreviewInfo;
+import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.lang.java.JavaLanguage;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.psi.*;
-import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiArrayType;
+import com.intellij.psi.PsiClass;
+import com.intellij.psi.PsiClassType;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementFactory;
+import com.intellij.psi.PsiField;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiIdentifier;
+import com.intellij.psi.PsiPrimitiveType;
+import com.intellij.psi.PsiType;
+import com.intellij.psi.PsiTypeParameter;
+import com.intellij.psi.PsiTypes;
 import com.intellij.psi.impl.AllowedApiFilterExtension;
-import com.intellij.psi.impl.PsiDiamondTypeUtil;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiUtil;
-import com.intellij.refactoring.typeMigration.*;
-import com.intellij.refactoring.typeMigration.rules.ThreadLocalConversionRule;
-import com.intellij.refactoring.util.RefactoringUtil;
+import com.intellij.refactoring.typeMigration.TypeMigrationBundle;
+import com.intellij.refactoring.typeMigration.TypeMigrationVariableTypeFixProvider;
 import com.intellij.util.IncorrectOperationException;
-import com.intellij.util.Query;
-import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
+import java.util.Objects;
 
-import static com.intellij.util.ObjectUtils.assertNotNull;
+public final class ConvertFieldToThreadLocalIntention extends BaseElementAtCaretIntentionAction implements LowPriorityAction {
+  private static final Logger LOG = Logger.getInstance(ConvertFieldToThreadLocalIntention.class);
 
-public class ConvertFieldToThreadLocalIntention extends PsiElementBaseIntentionAction implements LowPriorityAction {
-  private static final Logger LOG = Logger.getInstance("#" + ConvertFieldToThreadLocalIntention.class.getName());
-
-  @NotNull
   @Override
-  public String getText() {
-    //noinspection DialogTitleCapitalization
+  public @NotNull String getText() {
     return getFamilyName();
   }
 
-  @NotNull
   @Override
-  public String getFamilyName() {
-    //noinspection DialogTitleCapitalization
-    return "Convert to ThreadLocal";
+  public @NotNull String getFamilyName() {
+    return TypeMigrationBundle.message("convert.to.threadlocal.family.name");
   }
 
   @Override
-  public boolean isAvailable(@NotNull Project project, Editor editor, @NotNull PsiElement element) {
+  public boolean isAvailable(@NotNull Project project, @NotNull Editor editor, @NotNull PsiElement element) {
     if (!(element instanceof PsiIdentifier)) return false;
-    final PsiField psiField = PsiTreeUtil.getParentOfType(element, PsiField.class);
-    if (psiField == null) return false;
-    if (psiField.getLanguage() != JavaLanguage.INSTANCE) return false;
-    if (psiField.getTypeElement() == null) return false;
-    final PsiType fieldType = psiField.getType();
+    PsiElement parent = element.getParent();
+    if (!(parent instanceof PsiField field)) return false;
+    if (field.getLanguage() != JavaLanguage.INSTANCE) return false;
+    if (field.getTypeElement() == null) return false;
+    final PsiType fieldType = field.getType();
     final PsiClass fieldTypeClass = PsiUtil.resolveClassInType(fieldType);
-    if (fieldType instanceof PsiPrimitiveType && !PsiType.VOID.equals(fieldType) || fieldType instanceof PsiArrayType) return true;
+    if (fieldType instanceof PsiPrimitiveType && !PsiTypes.voidType().equals(fieldType) || fieldType instanceof PsiArrayType) return true;
     return fieldTypeClass != null && !Comparing.strEqual(fieldTypeClass.getQualifiedName(), ThreadLocal.class.getName())
            && AllowedApiFilterExtension.isClassAllowed(ThreadLocal.class.getName(), element);
   }
 
   @Override
-  public void invoke(@NotNull Project project, Editor editor, @NotNull PsiElement element) throws IncorrectOperationException {
+  public void invoke(@NotNull Project project, @NotNull Editor editor, @NotNull PsiElement element) throws IncorrectOperationException {
     final PsiField psiField = PsiTreeUtil.getParentOfType(element, PsiField.class);
     LOG.assertTrue(psiField != null);
-    final Query<PsiReference> refs = ReferencesSearch.search(psiField);
 
-    final Set<PsiElement> elements = new HashSet<>();
-    elements.add(element);
-    for (PsiReference reference : refs) {
-      elements.add(reference.getElement());
-    }
-    if (!FileModificationService.getInstance().preparePsiElementsForWrite(elements)) return;
-    psiField.normalizeDeclaration();
-
-    final JavaPsiFacade psiFacade = JavaPsiFacade.getInstance(project);
-    final PsiElementFactory factory = JavaPsiFacade.getElementFactory(project);
     final PsiType fromType = psiField.getType();
 
-    final PsiClass threadLocalClass = psiFacade.findClass(ThreadLocal.class.getName(), GlobalSearchScope.allScope(project));
-    if (threadLocalClass == null) {//show warning
-      return;
-    }
-    final Map<PsiTypeParameter, PsiType> substitutor = ContainerUtil.newHashMap();
-    final PsiTypeParameter[] typeParameters = threadLocalClass.getTypeParameters();
-    if (typeParameters.length == 1) {
-      PsiType type = fromType;
-      if (fromType instanceof PsiPrimitiveType) type = ((PsiPrimitiveType)fromType).getBoxedType(element);
-      substitutor.put(typeParameters[0], type);
-    }
-    final PsiClassType toType = factory.createType(threadLocalClass, factory.createSubstitutor(substitutor));
+    final PsiClassType toType = getMigrationTargetType(fromType, project, element);
+    if (toType == null) return;
 
-    try {
-      final TypeMigrationRules rules = new TypeMigrationRules();
-      rules.setBoundScope(GlobalSearchScope.fileScope(element.getContainingFile()));
-      final TypeMigrationLabeler labeler = new TypeMigrationLabeler(rules, toType);
-      labeler.getMigratedUsages(false, psiField);
-      for (PsiReference reference : refs) {
-        PsiElement psiElement = reference.getElement();
-        if (psiElement instanceof PsiExpression) {
-          final PsiElement parent = psiElement.getParent();
-          if (parent instanceof PsiExpression && !(parent instanceof PsiReferenceExpression || parent instanceof PsiPolyadicExpression)) {
-            psiElement = parent;
-          }
-          final TypeConversionDescriptor conversion = ThreadLocalConversionRule.findDirectConversion(psiElement, toType, fromType, labeler);
-          if (conversion != null) {
-            TypeMigrationReplacementUtil.replaceExpression((PsiExpression)psiElement, project, conversion, new TypeEvaluator(null, null));
-          }
-        }
-      }
-
-      PsiExpression initializer = psiField.getInitializer();
-      if (initializer == null) {
-        final PsiType type = psiField.getType();
-        String initializerText = null;
-        if (PsiType.BOOLEAN.equals(type)) {
-          initializerText = "false";
-        }
-        else if (type instanceof PsiPrimitiveType) {
-          initializerText = "0";
-        }
-        if (initializerText != null) {
-          psiField.setInitializer(factory.createExpressionFromText(initializerText, psiField));
-          initializer = psiField.getInitializer();
-        }
-      }
-      if (initializer != null) {
-        if (initializer instanceof PsiArrayInitializerExpression) {
-          PsiExpression normalizedExpr =
-            RefactoringUtil.createNewExpressionFromArrayInitializer((PsiArrayInitializerExpression)initializer, psiField.getType());
-          initializer = (PsiExpression)initializer.replace(normalizedExpr);
-        }
-        final TypeConversionDescriptor conversion = ThreadLocalConversionRule.wrapWithNewExpression(toType, fromType, initializer);
-        TypeMigrationReplacementUtil.replaceExpression(initializer, project, conversion, new TypeEvaluator(null, null));
-        CodeStyleManager.getInstance(project).reformat(psiField);
-      }
-      else if (!assertNotNull(psiField.getModifierList()).hasModifierProperty(PsiModifier.FINAL)) {
-        final String text = "new " + PsiDiamondTypeUtil.getCollapsedType(toType, psiField) + "()";
-        final PsiExpression newInitializer = factory.createExpressionFromText(text, psiField);
-        psiField.setInitializer(newInitializer);
-      }
-
-      assertNotNull(psiField.getTypeElement()).replace(factory.createTypeElement(toType));
-
-      final PsiModifierList modifierList = assertNotNull(psiField.getModifierList());
-      modifierList.setModifierProperty(PsiModifier.FINAL, true);
-      modifierList.setModifierProperty(PsiModifier.VOLATILE, false);
-    }
-    catch (IncorrectOperationException e) {
-      LOG.error(e);
-    }
+    if (!FileModificationService.getInstance().preparePsiElementsForWrite(psiField)) return;
+    ConvertFieldToAtomicIntention.addExplicitInitializer(psiField);
+    String toTypeCanonicalText = toType.getCanonicalText();
+    TypeMigrationVariableTypeFixProvider.runTypeMigrationOnVariable(psiField, toType, editor, false, false);
+    ConvertFieldToAtomicIntention.postProcessVariable(psiField, toTypeCanonicalText);
   }
 
   @Override
   public boolean startInWriteAction() {
-    return true;
+    return false;
+  }
+
+  @Override
+  public @NotNull IntentionPreviewInfo generatePreview(@NotNull Project project, @NotNull Editor editor, @NotNull PsiFile psiFile) {
+    final PsiField psiField = PsiTreeUtil.getParentOfType(getElement(editor, psiFile), PsiField.class);
+    if (psiField == null) return IntentionPreviewInfo.EMPTY;
+    PsiType type = psiField.getType();
+    if (type == PsiTypes.nullType()) return IntentionPreviewInfo.EMPTY;
+    String fieldName = psiField.getName();
+    String presentableText = type.getPresentableText();
+    String genericArg = presentableText;
+    if (type instanceof PsiPrimitiveType) {
+      genericArg = StringUtil.getShortName(Objects.requireNonNull(((PsiPrimitiveType)type).getBoxedTypeName()));
+    }
+    return new IntentionPreviewInfo.CustomDiff(JavaFileType.INSTANCE, null,
+                                               presentableText + " " + fieldName,
+                                               "ThreadLocal<" + genericArg + "> " + fieldName + " = ThreadLocal.withInitial(...)");
+  }
+
+  private static @Nullable PsiClassType getMigrationTargetType(@NotNull PsiType fromType, @NotNull Project project, @NotNull PsiElement context) {
+    JavaPsiFacade psiFacade = JavaPsiFacade.getInstance(project);
+    final PsiClass threadLocalClass = psiFacade.findClass(ThreadLocal.class.getName(), GlobalSearchScope.allScope(project));
+    if (threadLocalClass == null) {//show warning
+      return null;
+    }
+    final Map<PsiTypeParameter, PsiType> substitutor = new HashMap<>();
+    final PsiTypeParameter[] typeParameters = threadLocalClass.getTypeParameters();
+    if (typeParameters.length == 1) {
+      PsiType type = fromType;
+      if (fromType instanceof PsiPrimitiveType) type = ((PsiPrimitiveType)fromType).getBoxedType(context);
+      substitutor.put(typeParameters[0], type);
+    }
+    PsiElementFactory factory = psiFacade.getElementFactory();
+    return factory.createType(threadLocalClass, factory.createSubstitutor(substitutor));
   }
 }

@@ -1,21 +1,8 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.editor.impl.event;
 
 import com.intellij.openapi.editor.ex.RangeHighlighterEx;
+import com.intellij.openapi.editor.markup.TextAttributes;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.EventListener;
@@ -23,23 +10,26 @@ import java.util.EventListener;
 public interface MarkupModelListener extends EventListener {
   MarkupModelListener[] EMPTY_ARRAY = new MarkupModelListener[0];
 
-  void afterAdded(@NotNull RangeHighlighterEx highlighter);
+  default void afterAdded(@NotNull RangeHighlighterEx highlighter) {
+  }
 
-  void beforeRemoved(@NotNull RangeHighlighterEx highlighter);
+  default void beforeRemoved(@NotNull RangeHighlighterEx highlighter) {
+  }
 
-  void attributesChanged(@NotNull RangeHighlighterEx highlighter, boolean renderersChanged, boolean fontStyleOrColorChanged);
+  /**
+   * Called when the {@code highlighter} is disposed.
+   * Inside this method the {@code highlighter.isValid()} returns {@code false}, so some methods might be unavailable or have undefined behaviour.
+   * For example, all {@code setXXX} methods, e.g., {@link RangeHighlighterEx#setTextAttributes(TextAttributes)} might fail.
+   * Only getters are guaranteed to work.
+   */
+  default void afterRemoved(@NotNull RangeHighlighterEx highlighter) {
+  }
 
-  abstract class Adapter implements MarkupModelListener {
-    @Override
-    public void afterAdded(@NotNull RangeHighlighterEx highlighter) {
-    }
+  default void attributesChanged(@NotNull RangeHighlighterEx highlighter, boolean renderersChanged, boolean fontStyleOrColorChanged) {
+  }
 
-    @Override
-    public void beforeRemoved(@NotNull RangeHighlighterEx highlighter) {
-    }
-
-    @Override
-    public void attributesChanged(@NotNull RangeHighlighterEx highlighter, boolean renderersChanged, boolean fontStyleOrColorChanged) {
-    }
+  default void attributesChanged(@NotNull RangeHighlighterEx highlighter,
+                                 boolean renderersChanged, boolean fontStyleChanged, boolean foregroundColorChanged) {
+    attributesChanged(highlighter, renderersChanged, fontStyleChanged || foregroundColorChanged);
   }
 }

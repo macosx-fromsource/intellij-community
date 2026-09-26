@@ -1,25 +1,14 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.ui.playback.commands;
 
 import com.intellij.openapi.ui.playback.PlaybackContext;
-import com.intellij.openapi.util.ActionCallback;
-import com.intellij.openapi.util.AsyncResult;
 import com.intellij.openapi.util.Pair;
-import com.intellij.util.Consumer;
+import com.intellij.openapi.util.text.StringUtil;
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.concurrency.AsyncPromise;
+import org.jetbrains.concurrency.Promise;
+import org.jetbrains.concurrency.Promises;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -27,9 +16,9 @@ import java.util.Set;
 
 /**
  * Author: kirillk
- * Date: 8/3/11 4:08 PM
  */
-public class CallCommand extends AbstractCommand {
+@ApiStatus.Internal
+public final class CallCommand extends AbstractCommand {
 
   public static final String PREFIX = CMD_PREFIX + "call";
 
@@ -38,26 +27,23 @@ public class CallCommand extends AbstractCommand {
   }
 
   @Override
-  protected ActionCallback _execute(final PlaybackContext context) {
-    final ActionCallback cmdResult = new ActionCallback();
-
+  protected @NotNull Promise<Object> _execute(final @NotNull PlaybackContext context) {
     final String cmd = getText().substring(PREFIX.length()).trim();
     final int open = cmd.indexOf("(");
     if (open == -1) {
       context.error("( expected", getLine());
-      return ActionCallback.DONE;
+      return Promises.resolvedPromise();
     }
 
     final int close = cmd.lastIndexOf(")");
     if (close == -1) {
       context.error(") expected", getLine());
-      return ActionCallback.DONE;
+      return Promises.resolvedPromise();
     }
-
 
     final String methodName = cmd.substring(0, open);
     String[] args = cmd.substring(open + 1, close).split(",");
-    final boolean noArgs = args.length == 1 && args[0].length() == 0;
+    final boolean noArgs = args.length == 1 && args[0].isEmpty();
     Class[] types = noArgs ? new Class[1] : new Class[args.length + 1];
     types[0] = PlaybackContext.class;
     for (int i = 1; i < types.length; i++) {
@@ -65,18 +51,21 @@ public class CallCommand extends AbstractCommand {
     }
 
 
+    final AsyncPromise<Object> cmdResult = new AsyncPromise<>();
     try {
-      Pair<Method, Class> methodClass = findMethod(context, methodName, types);
+      Pair<Method, Class<?>> methodClass = findMethod(context, methodName, types);
       if (methodClass == null) {
-        context.error("No method \"" + methodName + "\" found in facade classes: " + context.getCallClasses(), getLine());
-        return ActionCallback.REJECTED;
+        context.error("No method \"" + methodName + "\" with parameters ["
+                      + StringUtil.join(types, type -> type.getName(), ", ")
+                      + "] found in facade classes: " + context.getCallClasses(), getLine());
+        return Promises.rejectedPromise();
       }
 
       Method m = methodClass.getFirst();
 
-      if (!m.getReturnType().isAssignableFrom(AsyncResult.class)) {
-        context.error("Method " + methodClass.getSecond() + ":" + methodName + " must return AsyncResult object", getLine());
-        return ActionCallback.REJECTED;
+      if (!m.getReturnType().isAssignableFrom(Promise.class)) {
+        context.error("Method " + methodClass.getSecond() + ":" + methodName + " must return Promise object", getLine());
+        return Promises.rejectedPromise();
       }
 
       Object[] actualArgs = noArgs ? new Object[1] : new Object[args.length + 1];
@@ -84,24 +73,23 @@ public class CallCommand extends AbstractCommand {
       System.arraycopy(args, 0, actualArgs, 1, actualArgs.length - 1);
 
 
-      AsyncResult result = (AsyncResult<String>)m.invoke(null, actualArgs);
+      Promise<String> result = (Promise<String>)m.invoke(null, actualArgs);
       if (result == null) {
         context.error("Method " + methodClass.getSecond() + ":" + methodName + " must return AsyncResult object, but was null", getLine());
-        return ActionCallback.REJECTED;
+        return Promises.rejectedPromise();
       }
 
-      result.doWhenDone(new Consumer<String>() {
-        @Override
-        public void consume(String s) {
+      result
+        .onSuccess(s -> {
           if (s != null) {
             context.message(s, getLine());
           }
-          cmdResult.setDone();
-        }
-      }).doWhenRejected(s -> {
-        context.error(s, getLine());
-        cmdResult.setRejected();
-      });
+          cmdResult.setResult(null);
+        })
+        .onError(error -> {
+          context.error(error.getMessage(), getLine());
+          cmdResult.setError(error);
+        });
     }
     catch (InvocationTargetException ignored) {
       context.error("InvocationTargetException while executing command: " + cmd, getLine());
@@ -112,15 +100,14 @@ public class CallCommand extends AbstractCommand {
     return cmdResult;
   }
 
-  private static Pair<Method, Class> findMethod(PlaybackContext context, String methodName, Class[] types) {
-    Set<Class> classes = context.getCallClasses();
-    for (Class eachClass : classes) {
+  private static Pair<Method, Class<?>> findMethod(PlaybackContext context, String methodName, Class[] types) {
+    Set<Class<?>> classes = context.getCallClasses();
+    for (Class<?> eachClass : classes) {
       try {
         Method method = eachClass.getMethod(methodName, types);
         return Pair.create(method, eachClass);
       }
       catch (NoSuchMethodException ignored) {
-        continue;
       }
     }
 

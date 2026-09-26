@@ -14,6 +14,8 @@ Groovy script
       <empty list>
     Implements clause
       <empty list>
+    Permits clause
+      <empty list>
     PsiWhiteSpace(' ')
     Type definition body
       PsiElement({)('{')
@@ -22,14 +24,13 @@ Groovy script
         Modifiers
           PsiElement(def)('def')
         PsiWhiteSpace(' ')
-        PsiErrorElement:Type parameters are unexpected
-          Type parameter list
-            PsiElement(<)('<')
-            Type parameter
-              PsiElement(identifier)('T')
-              Type extends bounds list
-                <empty list>
-            PsiElement(>)('>')
+        Type parameter list
+          PsiElement(<)('<')
+          Type parameter
+            PsiElement(identifier)('T')
+            Type extends bounds list
+              <empty list>
+          PsiElement(>)('>')
         PsiWhiteSpace(' ')
         Field
           PsiElement(identifier)('t')

@@ -15,20 +15,18 @@
  */
 package com.intellij.openapi.externalSystem.service.execution;
 
-import com.intellij.openapi.externalSystem.model.LocationAwareExternalSystemException;
+import com.intellij.openapi.externalSystem.model.ExternalSystemException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * @author Vladislav.Soroka
- * @since 12/12/2014
  */
-public class ExternalSystemJdkException extends LocationAwareExternalSystemException {
+public class ExternalSystemJdkException extends ExternalSystemException {
 
   public ExternalSystemJdkException(@Nullable String message,
-                                    @Nullable String filePath,
                                     @Nullable Throwable cause,
-                                    @NotNull String... quickFixes) {
-    super(message, cause, filePath, -1, -1, quickFixes);
+                                    String @NotNull ... quickFixes) {
+    super(message, cause, quickFixes);
   }
 }

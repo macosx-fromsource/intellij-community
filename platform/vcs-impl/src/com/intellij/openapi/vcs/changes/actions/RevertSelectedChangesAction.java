@@ -15,30 +15,32 @@
  */
 package com.intellij.openapi.vcs.changes.actions;
 
-import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.AnActionEvent;
-import com.intellij.openapi.actionSystem.Presentation;
-import com.intellij.openapi.vcs.VcsBundle;
 import com.intellij.openapi.vcs.VcsDataKeys;
 import com.intellij.openapi.vcs.changes.Change;
 import com.intellij.openapi.vcs.changes.ChangeList;
+import com.intellij.openapi.vcs.changes.committed.CommittedChangesTreeBrowser;
 import com.intellij.openapi.vcs.versionBrowser.CommittedChangeList;
-import com.intellij.util.containers.Convertor;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+@ApiStatus.Internal
+public abstract class RevertSelectedChangesAction extends RevertCommittedStuffAbstractAction {
+  public static class Revert extends RevertSelectedChangesAction {
+    public Revert() {
+      super(true);
+    }
+  }
 
-public class RevertSelectedChangesAction extends RevertCommittedStuffAbstractAction {
-  private static Icon ourIcon;
-  private static String ourText;
+  public static class Apply extends RevertSelectedChangesAction {
+    public Apply() {
+      super(false);
+    }
+  }
 
-  @Override
-  public void update(AnActionEvent e) {
-    final Presentation presentation = e.getPresentation();
-    initPresentation();
-    presentation.setIcon(ourIcon);
-    presentation.setText(ourText);
-    super.update(e);
+  protected RevertSelectedChangesAction(boolean reverse) {
+    super(reverse);
   }
 
   @Override
@@ -61,24 +63,18 @@ public class RevertSelectedChangesAction extends RevertCommittedStuffAbstractAct
     return true;
   }
 
-  private static void initPresentation() {
-    if (ourIcon == null) {
-      ourIcon = AllIcons.Actions.Rollback;
-      ourText = VcsBundle.message("action.revert.selected.changes.text");
+  @Override
+  protected Change @Nullable [] getChanges(@NotNull AnActionEvent e, boolean isFromUpdate) {
+    CommittedChangesTreeBrowser treeBrowser = e.getData(CommittedChangesTreeBrowser.COMMITTED_CHANGES_TREE_DATA_KEY);
+    if (treeBrowser == null) {
+      return e.getData(VcsDataKeys.SELECTED_CHANGES_IN_DETAILS);
     }
-  }
 
-  public RevertSelectedChangesAction() {
-    super(new Convertor<AnActionEvent, Change[]>() {
-      public Change[] convert(AnActionEvent e) {
-        return e.getData(VcsDataKeys.SELECTED_CHANGES_IN_DETAILS);
-      }
-    }, new Convertor<AnActionEvent, Change[]>() {
-      public Change[] convert(AnActionEvent e) {
-        // to ensure directory flags for SVN are initialized
-        e.getData(VcsDataKeys.CHANGES_WITH_MOVED_CHILDREN);
-        return e.getData(VcsDataKeys.SELECTED_CHANGES_IN_DETAILS);
-      }
-    });
+    if (isFromUpdate) {
+      return e.getData(VcsDataKeys.SELECTED_CHANGES_IN_DETAILS);
+    }
+    else {
+      return treeBrowser.collectSelectedChangesWithMovedChildren();
+    }
   }
 }

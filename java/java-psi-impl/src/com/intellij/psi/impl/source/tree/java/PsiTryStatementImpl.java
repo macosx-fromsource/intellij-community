@@ -1,23 +1,18 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl.source.tree.java;
 
+import com.intellij.codeInsight.BlockUtils;
 import com.intellij.lang.ASTNode;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.psi.*;
+import com.intellij.psi.JavaElementVisitor;
+import com.intellij.psi.PsiCatchSection;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiElementVisitor;
+import com.intellij.psi.PsiParameter;
+import com.intellij.psi.PsiResourceList;
+import com.intellij.psi.PsiTryStatement;
+import com.intellij.psi.ResolveState;
 import com.intellij.psi.impl.PsiImplUtil;
 import com.intellij.psi.impl.source.Constants;
 import com.intellij.psi.impl.source.SourceTreeToPsiMap;
@@ -32,7 +27,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 
 public class PsiTryStatementImpl extends CompositePsiElement implements PsiTryStatement, Constants {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.psi.impl.source.tree.java.PsiTryStatementImpl");
+  private static final Logger LOG = Logger.getInstance(PsiTryStatementImpl.class);
 
   private volatile PsiParameter[] myCachedCatchParameters;
 
@@ -52,8 +47,7 @@ public class PsiTryStatementImpl extends CompositePsiElement implements PsiTrySt
   }
 
   @Override
-  @NotNull
-  public PsiCodeBlock[] getCatchBlocks() {
+  public PsiCodeBlock @NotNull [] getCatchBlocks() {
     ASTNode tryBlock = SourceTreeToPsiMap.psiElementToTree(getTryBlock());
     if (tryBlock != null) {
       PsiCatchSection[] catchSections = getCatchSections();
@@ -69,27 +63,25 @@ public class PsiTryStatementImpl extends CompositePsiElement implements PsiTrySt
   }
 
   @Override
-  @NotNull
-  public PsiParameter[] getCatchBlockParameters() {
+  public PsiParameter @NotNull [] getCatchBlockParameters() {
     PsiParameter[] catchParameters = myCachedCatchParameters;
     if (catchParameters == null) {
       PsiCatchSection[] catchSections = getCatchSections();
       if (catchSections.length == 0) return PsiParameter.EMPTY_ARRAY;
       boolean lastIncomplete = catchSections[catchSections.length - 1].getCatchBlock() == null;
       int limit = lastIncomplete ? catchSections.length - 1 : catchSections.length;
-      ArrayList<PsiParameter> parameters = new ArrayList<PsiParameter>();
+      ArrayList<PsiParameter> parameters = new ArrayList<>();
       for (int i = 0; i < limit; i++) {
         PsiParameter parameter = catchSections[i].getParameter();
         if (parameter != null) parameters.add(parameter);
       }
-      myCachedCatchParameters = catchParameters = parameters.toArray(new PsiParameter[parameters.size()]);
+      myCachedCatchParameters = catchParameters = parameters.toArray(PsiParameter.EMPTY_ARRAY);
     }
     return catchParameters;
   }
 
   @Override
-  @NotNull
-  public PsiCatchSection[] getCatchSections() {
+  public PsiCatchSection @NotNull [] getCatchSections() {
     return getChildrenAsPsiElements(CATCH_SECTION_BIT_SET, PsiCatchSection.ARRAY_FACTORY);
   }
 
@@ -107,9 +99,6 @@ public class PsiTryStatementImpl extends CompositePsiElement implements PsiTrySt
   public ASTNode findChildByRole(int role) {
     LOG.assertTrue(ChildRole.isUnique(role));
     switch(role){
-      default:
-        return null;
-
       case ChildRole.TRY_KEYWORD:
         return findChildByType(TRY_KEYWORD);
 
@@ -120,21 +109,22 @@ public class PsiTryStatementImpl extends CompositePsiElement implements PsiTrySt
         return findChildByType(FINALLY_KEYWORD);
 
       case ChildRole.FINALLY_BLOCK:
-        {
-          ASTNode finallyKeyword = findChildByRole(ChildRole.FINALLY_KEYWORD);
-          if (finallyKeyword == null) return null;
-          for(ASTNode child = finallyKeyword.getTreeNext(); child != null; child = child.getTreeNext()){
-            if (child.getElementType() == CODE_BLOCK){
-              return child;
-            }
+        ASTNode finallyKeyword = findChildByRole(ChildRole.FINALLY_KEYWORD);
+        if (finallyKeyword == null) return null;
+        for(ASTNode child = finallyKeyword.getTreeNext(); child != null; child = child.getTreeNext()){
+          if (child.getElementType() == CODE_BLOCK){
+            return child;
           }
-          return null;
         }
+        return null;
+
+      default:
+        return null;
     }
   }
 
   @Override
-  public int getChildRole(ASTNode child) {
+  public int getChildRole(@NotNull ASTNode child) {
     LOG.assertTrue(child.getTreeParent() == this);
     IElementType i = child.getElementType();
     if (i == TRY_KEYWORD) {
@@ -169,10 +159,10 @@ public class PsiTryStatementImpl extends CompositePsiElement implements PsiTrySt
   }
 
   @Override
-  public boolean processDeclarations(@NotNull final PsiScopeProcessor processor,
-                                     @NotNull final ResolveState state,
+  public boolean processDeclarations(final @NotNull PsiScopeProcessor processor,
+                                     final @NotNull ResolveState state,
                                      final PsiElement lastParent,
-                                     @NotNull final PsiElement place) {
+                                     final @NotNull PsiElement place) {
     final PsiResourceList resourceList = getResourceList();
     if (resourceList != null && lastParent instanceof PsiCodeBlock && lastParent == getTryBlock()) {
       return PsiImplUtil.processDeclarationsInResourceList(resourceList, processor, state, lastParent);
@@ -186,21 +176,14 @@ public class PsiTryStatementImpl extends CompositePsiElement implements PsiTrySt
     if (child.getPsi() instanceof PsiResourceList && getCatchBlocks().length == 0 && getFinallyBlock() == null) {
       final PsiCodeBlock tryBlock = getTryBlock();
       if (tryBlock != null) {
-        final PsiCodeBlock block = (PsiCodeBlock)replace(tryBlock);
-        final PsiJavaToken lBrace = block.getLBrace();
-        final PsiJavaToken rBrace = block.getRBrace();
-        if (lBrace != null) {
-          lBrace.delete();
-        }
-        if (rBrace != null) {
-          rBrace.delete();
-        }
+        BlockUtils.unwrapTryBlock(this);
         return;
       }
     }
     super.deleteChildInternal(child);
   }
 
+  @Override
   public String toString() {
     return "PsiTryStatement";
   }

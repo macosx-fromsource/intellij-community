@@ -17,15 +17,11 @@ package com.intellij.uiDesigner.propertyInspector;
 
 import com.intellij.uiDesigner.radComponents.RadRootContainer;
 
-import javax.swing.*;
+import javax.swing.JComponent;
 
-/**
- * @author Anton Katilin
- * @author Vladimir Kondratyev
- */
 public interface PropertyRenderer<V> {
   /**
-   * @return <code>JComponent</code> to represent the <code>value</code>
+   * @return {@code JComponent} to represent the {@code value}
    * somewhere in UI (for example in the JList of in the JTree). To be
    * consistent with other UI additional parameter abount selection and
    * focus are also passed.

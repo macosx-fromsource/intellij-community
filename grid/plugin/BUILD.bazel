@@ -1,0 +1,83 @@
+load("@community//platform/build-scripts/bazel-rules:ij_plugin.bzl", "ij_plugin")
+load("@jps_dynamic_deps_community//:targets.bzl", "dev_dist_plugin")
+load("@rules_jvm//:jvm.bzl", "jvm_library")
+
+### auto-generated section `dev intellij.grid.core.plugin` start
+dev_dist_plugin(
+    content_modules = [
+        # do not sort,
+        "intellij.grid",
+        "intellij.grid.core.impl",
+        "intellij.grid.csv.core.impl",
+        "intellij.grid.impl",
+        "intellij.grid.impl.ide",
+        "intellij.grid.types",
+    ],
+    descriptor = "resources/META-INF/plugin.xml",
+    descriptor_modules = [
+        "intellij.grid",
+        "intellij.grid.core.impl",
+        "intellij.grid.csv.core.impl",
+        "intellij.grid.impl",
+        "intellij.grid.impl.ide",
+        "intellij.grid.types",
+    ],
+    jars = {
+        "lib/grid-core-plugin.jar": ["intellij.grid.core.plugin"],
+    },
+    main_module = "intellij.grid.core.plugin",
+)
+### auto-generated section `dev intellij.grid.core.plugin` end
+
+### auto-generated section `build intellij.grid.core.plugin` start
+jvm_library(
+    name = "plugin",
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.grid.core.plugin",
+    resource_strip_prefix = "resources",
+    resources = glob(
+        ["resources/**/*"],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+jvm_library(
+    name = "plugin_test_lib",
+    testonly = True,
+    srcs = glob(
+        [],
+        allow_empty = True,
+    ),
+    module_name = "intellij.grid.core.plugin",
+    visibility = ["//visibility:public"],
+    runtime_deps = [":plugin"],
+)
+
+ij_plugin(
+    name = "plugin_plugin",
+    descriptor_module = ":plugin",
+    content_modules = [
+        # do not sort,
+        "//grid/api:grid",
+        "//grid/core-impl",
+        "//grid/csv:csv-core-impl",
+        "//grid/impl",
+        "//grid/impl-ide",
+        "//grid/types",
+    ],
+    visibility = ["//visibility:public"],
+)
+### auto-generated section `build intellij.grid.core.plugin` end
+
+### auto-generated section `iml intellij.grid.core.plugin` start
+exports_files(
+    [
+        "intellij.grid.core.plugin.iml",
+        "resources/META-INF/plugin.xml",
+    ],
+    visibility = ["//visibility:public"],
+)
+### auto-generated section `iml intellij.grid.core.plugin` end

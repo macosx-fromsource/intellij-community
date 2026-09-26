@@ -16,11 +16,10 @@
 package com.theoryinpractice.testng.model;
 
 import com.intellij.execution.CantRunException;
-import com.intellij.execution.configurations.RuntimeConfigurationException;
-import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiMethod;
+import com.theoryinpractice.testng.TestngBundle;
 import com.theoryinpractice.testng.configuration.TestNGConfiguration;
 
 import java.util.List;
@@ -37,16 +36,11 @@ public class TestNGSource extends TestNGTestMethod {
   @Override
   public String getGeneratedName() {
     final TestData data = myConfig.getPersistantData();
-    return "Tests for " + StringUtil.getQualifiedName(data.getMainClassName(), data.getMethodName());
+    return TestngBundle.message("action.text.tests.for", StringUtil.getQualifiedName(data.getMainClassName(), data.getMethodName()));
   }
 
   @Override
   public String getActionName() {
     return getGeneratedName();
-  }
-
-  @Override
-  public void checkConfiguration() throws RuntimeConfigurationException {
-    super.checkConfiguration();
   }
 }

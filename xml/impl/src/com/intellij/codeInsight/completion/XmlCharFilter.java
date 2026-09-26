@@ -1,27 +1,5 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * Created by IntelliJ IDEA.
- * User: mike
- * Date: Jul 23, 2002
- * Time: 3:15:07 PM
- * To change template for new class use 
- * Code Style | Class Templates options (Tools | IDE Options).
- */
 package com.intellij.codeInsight.completion;
 
 import com.intellij.codeInsight.editorActions.XmlAutoPopupHandler;
@@ -29,6 +7,7 @@ import com.intellij.codeInsight.lookup.CharFilter;
 import com.intellij.codeInsight.lookup.Lookup;
 import com.intellij.lang.Language;
 import com.intellij.lang.xml.XMLLanguage;
+import com.intellij.openapi.editor.elf.Elf;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
@@ -37,6 +16,7 @@ import com.intellij.psi.xml.XmlDocument;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.psi.xml.XmlTag;
 import com.intellij.psi.xml.XmlText;
+import org.jetbrains.annotations.NotNull;
 
 public class XmlCharFilter extends CharFilter {
 
@@ -46,6 +26,10 @@ public class XmlCharFilter extends CharFilter {
     PsiElement psiElement = lookup.getPsiElement();
     PsiFile file = lookup.getPsiFile();
     if (!(file instanceof XmlFile) && psiElement != null) {
+      if (Elf.getElf().isUnsupportedOperationGuardActive()) {
+        // element.getContainingFile: throws from LeafPsiElement.invalid
+        return false;
+      }
       file = psiElement.getContainingFile();
     }
 
@@ -81,7 +65,7 @@ public class XmlCharFilter extends CharFilter {
   }
 
   @Override
-  public Result acceptChar(char c, final int prefixLength, final Lookup lookup) {
+  public Result acceptChar(char c, int prefixLength, @NotNull Lookup lookup) {
     if (!isInXmlContext(lookup)) return null;
 
     if (Character.isJavaIdentifierPart(c)) return Result.ADD_TO_PREFIX;

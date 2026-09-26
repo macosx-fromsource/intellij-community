@@ -1,4 +1,4 @@
-// "Create class 'MyTableModel'" "true"
+// "Create class 'MyTableModel'" "true-preview"
 
 public class Test {
     public static void main() {
@@ -10,5 +10,5 @@ class JTable {
 }
 interface TableModel {}
 
-<caret>public class MyTableModel implements TableModel {
+public class <caret>MyTableModel implements TableModel {
 }

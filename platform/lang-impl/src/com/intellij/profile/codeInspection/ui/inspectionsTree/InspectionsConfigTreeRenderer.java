@@ -1,23 +1,5 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
-/*
- * User: anna
- * Date: 14-May-2009
- */
 package com.intellij.profile.codeInspection.ui.inspectionsTree;
 
 import com.intellij.codeInspection.InspectionsBundle;
@@ -26,68 +8,85 @@ import com.intellij.codeInspection.ex.GlobalInspectionToolWrapper;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper;
 import com.intellij.ide.ui.search.SearchUtil;
-import com.intellij.profile.codeInspection.ui.ToolDescriptors;
-import com.intellij.ui.ColoredTreeCellRenderer;
+import com.intellij.internal.inspector.PropertyBean;
+import com.intellij.internal.inspector.UiInspectorTreeRendererContextProvider;
+import com.intellij.internal.inspector.UiInspectorUtil;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
+import com.intellij.ui.treeStructure.treetable.TreeTableTree;
 import com.intellij.util.ui.PlatformColors;
 import com.intellij.util.ui.UIUtil;
-import org.jetbrains.annotations.NonNls;
+import org.jdesktop.swingx.renderer.DefaultTreeRenderer;
+import org.jetbrains.annotations.ApiStatus.Internal;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JTree;
+import java.awt.Color;
+import java.awt.Component;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
-public abstract class InspectionsConfigTreeRenderer extends ColoredTreeCellRenderer {
+@Internal
+public abstract class InspectionsConfigTreeRenderer extends DefaultTreeRenderer implements UiInspectorTreeRendererContextProvider {
   protected abstract String getFilter();
 
   @Override
-  public void customizeCellRenderer(@NotNull JTree tree,
-                                    Object value,
-                                    boolean selected,
-                                    boolean expanded,
-                                    boolean leaf,
-                                    int row,
-                                    boolean hasFocus) {
-    if (!(value instanceof InspectionConfigTreeNode)) return;
-    InspectionConfigTreeNode node = (InspectionConfigTreeNode)value;
+  public Component getTreeCellRendererComponent(JTree tree,
+                                                Object value,
+                                                boolean selected,
+                                                boolean expanded,
+                                                boolean leaf,
+                                                int row,
+                                                boolean hasFocus) {
+    final SimpleColoredComponent component = new SimpleColoredComponent();
+    if (!(value instanceof InspectionConfigTreeNode node)) return component;
 
-    Object object = node.getUserObject();
-
+    boolean reallyHasFocus = ((TreeTableTree)tree).getTreeTable().hasFocus();
+    Color background = UIUtil.getTreeBackground(selected, reallyHasFocus);
+    UIUtil.changeBackGround(component, background);
     Color foreground =
-      selected ? UIUtil.getTreeSelectionForeground() : node.isProperSetting() ? PlatformColors.BLUE : UIUtil.getTreeTextForeground();
+      selected ? UIUtil.getTreeSelectionForeground(reallyHasFocus) : node.isProperSetting() ? PlatformColors.BLUE : UIUtil.getTreeForeground();
 
-    @NonNls String text;
     int style = SimpleTextAttributes.STYLE_PLAIN;
     String hint = null;
-    if (object instanceof String) {
-      text = (String)object;
+    if (node instanceof InspectionConfigTreeNode.Group) {
       style = SimpleTextAttributes.STYLE_BOLD;
     }
     else {
-      final ToolDescriptors descriptors = node.getDescriptors();
-      assert descriptors != null;
-      final Descriptor defaultDescriptor = descriptors.getDefaultDescriptor();
-      text = defaultDescriptor.getText();
-      hint = getHint(defaultDescriptor);
+      InspectionConfigTreeNode.Tool toolNode = (InspectionConfigTreeNode.Tool)node;
+      hint = getHint(toolNode.getDefaultDescriptor());
     }
 
-    if (text != null) {
-      SearchUtil.appendFragments(getFilter(), text, style, foreground, getBackground(), this);
-    }
+    SearchUtil.appendFragments(getFilter(), node.getText(), style, foreground, background, component);
     if (hint != null) {
-      append(" " + hint, selected ? new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, foreground) : SimpleTextAttributes.GRAYED_ATTRIBUTES);
+      component.append(" " + hint, selected ? new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, foreground) : SimpleTextAttributes.GRAYED_ATTRIBUTES);
     }
-    setForeground(foreground);
+    component.setForeground(foreground);
+    return component;
   }
 
-  @Nullable
-  private static String getHint(final Descriptor descriptor) {
+  private static @Nullable @NlsContexts.Label String getHint(final Descriptor descriptor) {
     final InspectionToolWrapper toolWrapper = descriptor.getToolWrapper();
+
     if (toolWrapper instanceof LocalInspectionToolWrapper ||
         toolWrapper instanceof GlobalInspectionToolWrapper && !((GlobalInspectionToolWrapper)toolWrapper).worksInBatchModeOnly()) {
       return null;
     }
     return InspectionsBundle.message("inspection.tool.availability.in.tree.node1");
+  }
+
+  @Override
+  public @NotNull List<PropertyBean> getUiInspectorContext(@NotNull JTree tree, @Nullable Object value, int row) {
+    if (value instanceof InspectionConfigTreeNode.Tool toolNode) {
+      List<PropertyBean> result = new ArrayList<>();
+      result.add(new PropertyBean("Inspection Key", toolNode.getKey().getID(), true));
+      result.add(new PropertyBean("Inspection tool Class",
+                                  UiInspectorUtil.getClassPresentation(toolNode.getDefaultDescriptor().getToolWrapper().getTool()), true));
+      return result;
+    }
+    return Collections.emptyList();
   }
 }

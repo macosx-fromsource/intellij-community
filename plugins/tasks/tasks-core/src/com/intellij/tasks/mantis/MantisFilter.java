@@ -1,13 +1,10 @@
+// Copyright 2000-2021 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.tasks.mantis;
 
 import com.intellij.tasks.mantis.model.FilterData;
 import com.intellij.util.xmlb.annotations.Attribute;
 import org.jetbrains.annotations.NotNull;
 
-/**
- * User: evgeny.zakrevsky
- * Date: 9/24/12
- */
 public final class MantisFilter {
   // Used for "[Last task] filter"
   public static final int UNSPECIFIED_FILTER_ID = 0;
@@ -17,7 +14,7 @@ public final class MantisFilter {
   }
 
   private int myId;
-  private String myName;
+  private String myName = "";
 
   @SuppressWarnings({"UnusedDeclaration"})
   public MantisFilter() {
@@ -51,12 +48,12 @@ public final class MantisFilter {
     this.myName = name;
   }
 
-  public final boolean isUnspecified() {
+  public boolean isUnspecified() {
     return getId() == UNSPECIFIED_FILTER_ID;
   }
 
   @Override
-  public final boolean equals(Object o) {
+  public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
 
@@ -64,7 +61,7 @@ public final class MantisFilter {
   }
 
   @Override
-  public final int hashCode() {
+  public int hashCode() {
     return myId;
   }
 

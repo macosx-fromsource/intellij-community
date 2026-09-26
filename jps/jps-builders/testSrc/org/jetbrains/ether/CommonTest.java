@@ -1,146 +1,160 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.ether;
 
+import com.intellij.testFramework.PlatformTestUtil;
+import org.jetbrains.jps.builders.java.JavaBuilderUtil;
+import org.jetbrains.jps.incremental.storage.BuildDataManager;
 import org.jetbrains.jps.model.JpsDummyElement;
 import org.jetbrains.jps.model.JpsModuleRootModificationUtil;
 import org.jetbrains.jps.model.library.sdk.JpsSdk;
 import org.jetbrains.jps.model.module.JpsModule;
 
-/**
- * @author: db
- * Date: 22.09.11
- */
+import java.util.Set;
+
 public class CommonTest extends IncrementalTestCase {
-  public CommonTest() throws Exception {
+  private static final Set<String> GRAPH_ONLY_TESTS = Set.of(
+    "addClassHidingImportedClass", "addClassHidingImportedClass2", "deletePermittedClass", "deleteSealedPermission", "moveInnerClassToTopLevel"
+  );
+
+  public CommonTest() {
     super("common");
   }
+  @Override
+  protected boolean shouldRunTest() {
+    if (JavaBuilderUtil.isDepGraphEnabled()) {
+      return super.shouldRunTest();
+    }
+    return !GRAPH_ONLY_TESTS.contains(getTestName(true));
+  }
 
-  public void testAnonymous() throws Exception {
+  public void testAnonymous() {
     doTest();
   }
 
-  public void testChangeDefinitionToClass() throws Exception {
+  public void testChangeDefinitionToClass() {
     doTest();
   }
 
-  public void testChangeDefinitionToClass2() throws Exception {
+  public void testChangeDefinitionToClass2() {
     doTest();
   }
 
-  public void testDeleteClass() throws Exception {
+  public void testDeleteClass() {
     doTest();
   }
 
-  public void testDeleteClass1() throws Exception {
+  public void testDeleteClass1() {
     doTest();
   }
 
-  public void testDeleteClass2() throws Exception {
+  public void testDeleteClass2() {
     doTest();
   }
 
-  public void testDeleteClassAfterCompileErrors() throws Exception {
+  public void testDeleteClassAfterCompileErrors() {
     setupInitialProject();
 
     doTestBuild(2);
   }
 
-  public void testDontMarkDependentsAfterCompileErrors() throws Exception {
+  public void testDontMarkDependentsAfterCompileErrors() {
     setupInitialProject();
 
     doTestBuild(2);
   }
 
-  public void testDeleteClassPackageDoesntMatchRoot() throws Exception {
+  public void testDeleteClassPackageDoesntMatchRoot() {
     doTest();
   }
 
-  public void testInner() throws Exception {
+  public void testDeleteImportedClass() {
+    doTest().assertFailed();
+  }
+
+  public void testInner() {
     doTest();
   }
 
-  public void testNoResourceDelete() throws Exception {
+  public void testMoveInnerClassToTopLevel() {
     doTest();
   }
 
-  public void testNoSecondFileCompile() throws Exception {
+  public void testNoResourceDelete() {
     doTest();
   }
 
-  public void testNoSecondFileCompile1() throws Exception {
+  public void testNoSecondFileCompile() {
     doTest();
   }
 
-  public void testDependencyUpdate() throws Exception {
+  public void testNoSecondFileCompile1() {
     doTest();
   }
 
-  public void testClass2Interface1() throws Exception {
+  public void testDependencyUpdate() {
     doTest();
   }
 
-  public void testClass2Interface2() throws Exception {
+  public void testClass2Interface1() {
     doTest();
   }
 
-  public void testClass2Interface3() throws Exception {
+  public void testClass2Interface2() {
     doTest();
   }
 
-  public void testDeleteClass3() throws Exception {
+  public void testClass2Interface3() {
     doTest();
   }
 
-  public void testDeleteClass4() throws Exception {
+  public void testDeleteClass3() {
     doTest();
   }
 
-  public void testDeleteInnerClass() throws Exception {
+  public void testDeleteClass4() {
     doTest();
   }
 
-  public void testDeleteInnerClass1() throws Exception {
+  public void testDeletePermittedClass() {
+    doTest().assertFailed();
+  }
+
+  public void testDeleteSealedPermission() {
+    doTest().assertFailed();
+  }
+
+  public void testDeleteInnerClass() {
     doTest();
   }
 
-  public void testAddClass() throws Exception {
+  public void testDeleteInnerClass1() {
     doTest();
   }
 
-  public void testAddDuplicateClass() throws Exception {
+  public void testAddClass() {
     doTest();
   }
 
-  public void testAddClassHidingImportedClass() throws Exception {
+  public void testAddDuplicateClass() {
     doTest();
   }
 
-  public void testAddClassHidingImportedClass2() throws Exception {
+  public void testAddClassHidingImportedClass() {
     doTest();
   }
 
-  public void testMoveClassToDependentModule() throws Exception {
+  public void testAddClassHidingImportedClass2() {
+    doTest();
+  }
+
+  public void testMoveClassToDependentModule() {
     JpsModule moduleA = addModule("moduleA", "moduleA/src");
     JpsModule moduleB = addModule("moduleB", "moduleB/src");
     JpsModuleRootModificationUtil.addDependency(moduleB, moduleA);
     doTestBuild(1).assertSuccessful();
   }
 
-  public void testMoveClassToDependentModuleWithSameOutput() throws Exception {
+  public void testMoveClassToDependentModuleWithSameOutput() {
     final JpsSdk<JpsDummyElement> sdk = getOrCreateJdk();
     final String commonOutput = getAbsolutePath("out");
     JpsModule moduleA = addModule("moduleA", new String[]{getAbsolutePath("moduleA/src")}, commonOutput, commonOutput, sdk);
@@ -149,32 +163,46 @@ public class CommonTest extends IncrementalTestCase {
     doTestBuild(1).assertSuccessful();
   }
 
-  public void testMoveClassFromJavaFileToDependentModule() throws Exception {
+  public void testMoveClassFromJavaFileToDependentModule() {
     JpsModule moduleA = addModule("moduleA", "moduleA/src");
     JpsModule moduleB = addModule("moduleB", "moduleB/src");
     JpsModuleRootModificationUtil.addDependency(moduleB, moduleA);
     doTestBuild(1).assertSuccessful();
   }
 
-  public void testIntegrateOnSuperclassRemovedAndRestored() throws Exception {
+  public void testSameClassesInDifferentModules() {
+    JpsModule moduleA = addModule("moduleA", "moduleA/src");
+    JpsModule moduleB = addModule("moduleB", "moduleB/src");
+    JpsModuleRootModificationUtil.addDependency(moduleB, moduleA); // ensure compilation sequence
+    doTestBuild(1).assertSuccessful();
+  }
+
+  public void testCompileDependenciesOnMovedClassesInFirstRound() {
+    doTest().assertSuccessful();
+  }
+
+  public void testIntegrateOnSuperclassRemovedAndRestored() {
     setupInitialProject();
 
     doTestBuild(2);
   }
 
-  public void testMoveToplevelClassToAnotherFile() throws Exception {
+  public void testMoveToplevelClassToAnotherFile() {
     doTest();
   }
 
-  public void testMoveClassToAnotherRoot() throws Exception {
+  public void testMoveClassToAnotherRoot() {
     doTest();
   }
 
-  public void testIntegrateOnNonIncrementalMake() throws Exception {
-    doTest();
+  public void testIntegrateOnNonIncrementalMake() {
+    PlatformTestUtil.withSystemProperty(BuildDataManager.PROCESS_CONSTANTS_NON_INCREMENTAL_PROPERTY, String.valueOf(true), () -> doTest());
   }
 
-  public void testModuleInfoIncluded() {
-    doTest();
+  public void testConflictingClasses() {
+    JpsModule module1 = addModule("module1", "module1/src");
+    JpsModule module2 = addModule("module2", "module2/src");
+    JpsModuleRootModificationUtil.addDependency(module2, module1);
+    doTestBuild(1).assertSuccessful();
   }
 }

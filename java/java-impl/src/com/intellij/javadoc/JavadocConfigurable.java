@@ -1,31 +1,20 @@
-/*
- * Copyright 2000-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.javadoc;
 
+import com.intellij.java.syntax.parser.JavaKeywords;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.JavadocOrderRootType;
-import com.intellij.psi.PsiKeyword;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.text.StringUtil;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JTextField;
 import java.io.File;
 
 public final class JavadocConfigurable implements Configurable {
-  private JavadocGenerationPanel myPanel;
+  private JavadocGenerationAdditionalUi myPanel;
   private final JavadocConfiguration myConfiguration;
   private final Project myProject;
 
@@ -39,10 +28,11 @@ public final class JavadocConfigurable implements Configurable {
     return sdk != null && sdk.getRootProvider().getFiles(JavadocOrderRootType.getInstance()).length > 0;
   }
 
+  @Override
   public JComponent createComponent() {
-    myPanel = new JavadocGenerationPanel();
+    myPanel = new JavadocGenerationAdditionalUi();
     myPanel.myLinkToJdkDocs.setEnabled(sdkHasJavadocUrls(myProject));
-    return myPanel.myPanel;
+    return myPanel.getPanel();
   }
 
   public void applyTo(JavadocConfiguration configuration) {
@@ -51,7 +41,7 @@ public final class JavadocConfigurable implements Configurable {
     configuration.HEAP_SIZE = convertString(myPanel.myHeapSizeField.getText());
     configuration.LOCALE = convertString(myPanel.myLocaleTextField.getText());
     configuration.OPEN_IN_BROWSER = myPanel.myOpenInBrowserCheckBox.isSelected();
-    configuration.OPTION_SCOPE = convertString(myPanel.getScope());
+    configuration.OPTION_SCOPE = myPanel.myScopeCombo.getItem();
     configuration.OPTION_HIERARCHY = myPanel.myHierarchy.isSelected();
     configuration.OPTION_NAVIGATOR = myPanel.myNavigator.isSelected();
     configuration.OPTION_INDEX = myPanel.myIndex.isSelected();
@@ -71,7 +61,7 @@ public final class JavadocConfigurable implements Configurable {
     myPanel.myHeapSizeField.setText(configuration.HEAP_SIZE);
     myPanel.myLocaleTextField.setText(configuration.LOCALE);
     myPanel.myOpenInBrowserCheckBox.setSelected(configuration.OPEN_IN_BROWSER);
-    myPanel.setScope(configuration.OPTION_SCOPE);
+    myPanel.myScopeCombo.setSelectedItem(configuration.OPTION_SCOPE);
     myPanel.myHierarchy.setSelected(configuration.OPTION_HIERARCHY);
     myPanel.myNavigator.setSelected(configuration.OPTION_NAVIGATOR);
     myPanel.myIndex.setSelected(configuration.OPTION_INDEX);
@@ -89,6 +79,7 @@ public final class JavadocConfigurable implements Configurable {
     myPanel.myLinkToJdkDocs.setSelected(configuration.OPTION_LINK_TO_JDK_DOCS);
   }
 
+  @Override
   public boolean isModified() {
     boolean isModified;
 
@@ -97,7 +88,7 @@ public final class JavadocConfigurable implements Configurable {
     isModified |= !compareStrings(myPanel.myOtherOptionsField.getText(), configuration.OTHER_OPTIONS);
     isModified |= !compareStrings(myPanel.myHeapSizeField.getText(), configuration.HEAP_SIZE);
     isModified |= myPanel.myOpenInBrowserCheckBox.isSelected() != configuration.OPEN_IN_BROWSER;
-    isModified |= !compareStrings(myPanel.getScope(), (configuration.OPTION_SCOPE == null ? PsiKeyword.PROTECTED : configuration.OPTION_SCOPE));
+    isModified |= !compareStrings(myPanel.myScopeCombo.getItem(), (configuration.OPTION_SCOPE == null ? JavaKeywords.PROTECTED : configuration.OPTION_SCOPE));
     isModified |= myPanel.myHierarchy.isSelected() != configuration.OPTION_HIERARCHY;
     isModified |= myPanel.myNavigator.isSelected() != configuration.OPTION_NAVIGATOR;
     isModified |= myPanel.myIndex.isSelected() != configuration.OPTION_INDEX;
@@ -113,10 +104,12 @@ public final class JavadocConfigurable implements Configurable {
     return isModified;
   }
 
-  public final void apply() {
+  @Override
+  public void apply() {
     applyTo(myConfiguration);
   }
 
+  @Override
   public void reset() {
     loadFrom(myConfiguration);
   }
@@ -131,35 +124,35 @@ public final class JavadocConfigurable implements Configurable {
     return string1.equals(string2);
   }
 
+  @Override
   public void disposeUIResources() {
     myPanel = null;
   }
 
   private static String convertString(String s) {
-    if (s != null && s.trim().length() == 0) {
-      return null;
-    }
-    return s;
+    return StringUtil.nullize(s, true);
   }
 
   private static String toSystemIndependentFormat(String directory) {
-    if (directory.length() == 0) {
+    if (directory.isEmpty()) {
       return null;
     }
     return directory.replace(File.separatorChar, '/');
   }
 
-  private static String toUserSystemFormat(String directory) {
+  private static @NlsSafe String toUserSystemFormat(String directory) {
     if (directory == null) {
       return "";
     }
     return directory.replace('/', File.separatorChar);
   }
 
+  @Override
   public String getDisplayName() {
     return null;
   }
 
+  @Override
   public String getHelpTopic() {
     return "project.propJavaDoc";
   }

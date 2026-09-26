@@ -1,53 +1,46 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.svn.integrate;
 
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
+import com.intellij.openapi.progress.util.BackgroundTaskUtil;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vcs.VcsException;
 import com.intellij.openapi.vcs.versionBrowser.CommittedChangeList;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.messages.Topic;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.idea.svn.SvnBundle;
 import org.jetbrains.idea.svn.SvnConfiguration;
 import org.jetbrains.idea.svn.SvnVcs;
+import org.jetbrains.idea.svn.api.ClientFactory;
 import org.jetbrains.idea.svn.api.Depth;
 import org.jetbrains.idea.svn.api.ProgressTracker;
+import org.jetbrains.idea.svn.api.Revision;
+import org.jetbrains.idea.svn.api.RevisionRange;
+import org.jetbrains.idea.svn.api.Target;
+import org.jetbrains.idea.svn.api.Url;
 import org.jetbrains.idea.svn.update.UpdateEventHandler;
-import org.tmatesoft.svn.core.SVNURL;
-import org.tmatesoft.svn.core.wc.SVNRevision;
-import org.tmatesoft.svn.core.wc.SVNRevisionRange;
-import org.tmatesoft.svn.core.wc2.SvnTarget;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
+
+import static com.intellij.openapi.util.text.StringUtil.join;
+import static org.jetbrains.idea.svn.SvnBundle.message;
 
 public class Merger implements IMerger {
   protected final List<CommittedChangeList> myChangeLists;
   protected final File myTarget;
-  @Nullable protected final ProgressTracker myHandler;
+  protected final @Nullable ProgressTracker myHandler;
   private final ProgressIndicator myProgressIndicator;
-  protected final SVNURL myCurrentBranchUrl;
-  private final StringBuilder myCommitMessage;
+  protected final Url myCurrentBranchUrl;
+  private @Nls @NotNull String myCommitMessage = "";
   protected final SvnConfiguration mySvnConfig;
   private final Project myProject;
-  @NotNull protected final SvnVcs myVcs;
+  protected final @NotNull SvnVcs myVcs;
   private final String myBranchName;
   private final boolean myRecordOnly;
   private final boolean myInvertRange;
@@ -56,19 +49,19 @@ public class Merger implements IMerger {
   private MergeChunk myMergeChunk;
 
   public Merger(final SvnVcs vcs,
-                final List<CommittedChangeList> changeLists,
+                final List<? extends CommittedChangeList> changeLists,
                 final File target,
                 final UpdateEventHandler handler,
-                final SVNURL currentBranchUrl,
+                final Url currentBranchUrl,
                 String branchName) {
     this(vcs, changeLists, target, handler, currentBranchUrl, branchName, false, false, false);
   }
 
-  public Merger(final SvnVcs vcs,
-                final List<CommittedChangeList> changeLists,
+  public Merger(@NotNull SvnVcs vcs,
+                final List<? extends CommittedChangeList> changeLists,
                 final File target,
                 final UpdateEventHandler handler,
-                final SVNURL currentBranchUrl,
+                final Url currentBranchUrl,
                 String branchName,
                 boolean recordOnly,
                 boolean invertRange,
@@ -76,22 +69,23 @@ public class Merger implements IMerger {
     myBranchName = branchName;
     myVcs = vcs;
     myProject = vcs.getProject();
-    mySvnConfig = SvnConfiguration.getInstance(vcs.getProject());
+    mySvnConfig = vcs.getSvnConfiguration();
     myCurrentBranchUrl = currentBranchUrl;
     myChangeLists = ContainerUtil.sorted(changeLists, ByNumberChangeListComparator.getInstance());
     myTarget = target;
     myProgressIndicator = ProgressManager.getInstance().getProgressIndicator();
     myHandler = handler;
-    myCommitMessage = new StringBuilder();
     myRecordOnly = recordOnly;
     myInvertRange = invertRange;
     myGroupSequentialChangeLists = groupSequentialChangeLists;
   }
 
+  @Override
   public boolean hasNext() {
     return isInBounds(getNextChunkStart());
   }
 
+  @Override
   public void mergeNext() throws VcsException {
     myMergeChunk = getNextChunk();
 
@@ -104,8 +98,7 @@ public class Merger implements IMerger {
 
   private void setMergeIndicator() {
     if (myProgressIndicator != null) {
-      // TODO: Use values from SvnBundle
-      myProgressIndicator.setText2("Merging changelist(s) " + myMergeChunk);
+      myProgressIndicator.setText2(message("progress.details.merging.changelist.range", myMergeChunk));
     }
   }
 
@@ -113,8 +106,7 @@ public class Merger implements IMerger {
     return myMergeChunk == null ? 0 : myMergeChunk.nextChunkStart();
   }
 
-  @Nullable
-  private MergeChunk getNextChunk() {
+  private @Nullable MergeChunk getNextChunk() {
     int start = getNextChunkStart();
     int size = 0;
 
@@ -138,81 +130,50 @@ public class Merger implements IMerger {
   }
 
   private void appendComment() {
-    appendComment(myCommitMessage, myBranchName, myMergeChunk.changeLists());
-  }
-
-  public static void appendComment(@NotNull StringBuilder builder,
-                                   @NotNull String branch,
-                                   @NotNull Iterable<CommittedChangeList> changeLists) {
-    if (builder.length() == 0) {
-      builder.append("Merged from ").append(branch);
-    }
-    for (CommittedChangeList list : changeLists) {
-      builder.append('\n').append(list.getComment().trim()).append(" [from revision ").append(list.getNumber()).append("]");
-    }
+    myCommitMessage = StringUtil.notNullize(
+      MergerCommitMessage.EP_NAME.computeSafeIfAny(myProject, it -> it.getCommitMessage(this, myMergeChunk.changeLists()))
+    );
   }
 
   protected void doMerge() throws VcsException {
-    SvnTarget source = SvnTarget.fromURL(myCurrentBranchUrl);
-    MergeClient client = myVcs.getFactory(myTarget).createMergeClient();
+    Target source = Target.on(myCurrentBranchUrl);
+    MergeClient client = getClientFactory().createMergeClient();
 
     client.merge(source, myMergeChunk.revisionRange(), myTarget, Depth.INFINITY, mySvnConfig.isMergeDryRun(), myRecordOnly, true,
                  mySvnConfig.getMergeOptions(), myHandler);
   }
 
-  @Nullable
-  public String getInfo() {
-    String result = null;
+  @Override
+  public @Nullable String getInfo() {
+    if (myMergeChunk == null) return null;
 
-    if (myMergeChunk != null) {
-      // TODO: Use values from SvnBundle
-      StringBuilder builder = new StringBuilder("Changelist(s) :");
-
-      for (CommittedChangeList list : myMergeChunk.changeLists()) {
-        final String nextComment = list.getComment().trim().replace('\n', '|');
-        builder.append("\n").append(list.getNumber()).append(" (").append(nextComment).append(")");
-      }
-      builder.append(" merging faced problems");
-      result = builder.toString();
-    }
-
-    return result;
+    return message("label.changelists.merging.faced.problems",
+                   join(myMergeChunk.changeLists(), it -> getChangeListDescription(it), "\n"));
   }
 
-  @Nullable
-  public String getSkipped() {
-    return getSkippedMessage(myMergeChunk != null ? myMergeChunk.chunkAndAfterLists() : ContainerUtil.<CommittedChangeList>emptyList());
+  @Override
+  public @Nullable String getSkipped() {
+    List<? extends CommittedChangeList> changeLists = myMergeChunk != null ? myMergeChunk.chunkAndAfterLists() : ContainerUtil.emptyList();
+    if (changeLists.isEmpty()) return null;
+
+    return message("label.skipped.changelists", join(changeLists, it -> getChangeListDescription(it), ","));
   }
 
-  @Nullable
-  public static String getSkippedMessage(@NotNull List<CommittedChangeList> changeLists) {
-    String result = null;
-
-    if (!changeLists.isEmpty()) {
-      final StringBuilder sb = new StringBuilder();
-      for (int i = 0; i < changeLists.size(); i++) {
-        CommittedChangeList list = changeLists.get(i);
-        if (i != 0) {
-          sb.append(',');
-        }
-        sb.append(list.getNumber()).append(" (").append(list.getComment().replace('\n', '|')).append(')');
-      }
-
-      result = SvnBundle.message("action.Subversion.integrate.changes.warning.skipped.lists.text", sb.toString());
-    }
-
-    return result;
+  private static @Nls @NotNull String getChangeListDescription(@NotNull CommittedChangeList changeList) {
+    return changeList.getNumber() + " (" + changeList.getComment().trim().replace('\n', '|') + ")";
   }
 
-  public String getComment() {
-    return myCommitMessage.toString();
+  @Override
+  public @NotNull String getComment() {
+    return myCommitMessage;
   }
 
-  @Nullable
-  public File getMergeInfoHolder() {
+  @Override
+  public @Nullable File getMergeInfoHolder() {
     return myTarget;
   }
 
+  @Override
   public void afterProcessing() {
     // TODO: Previous logic (previously used GroupMerger) that was applied when grouping was enabled contained its own Topic with no
     // TODO: subscribers - so currently message is sent only when grouping is disabled.
@@ -220,13 +181,22 @@ public class Merger implements IMerger {
     if (!myGroupSequentialChangeLists) {
       List<CommittedChangeList> processed =
         myMergeChunk != null
-        ? ContainerUtil.newArrayList(myMergeChunk.chunkAndBeforeLists())
-        : ContainerUtil.<CommittedChangeList>emptyList();
+        ? new ArrayList<>(myMergeChunk.chunkAndBeforeLists())
+        : ContainerUtil.emptyList();
 
-      myProject.getMessageBus().syncPublisher(COMMITTED_CHANGES_MERGED_STATE).event(processed);
+      BackgroundTaskUtil.syncPublisher(myProject, COMMITTED_CHANGES_MERGED_STATE).event(processed);
     }
   }
 
+  public @NotNull ClientFactory getClientFactory() {
+    return myVcs.getFactory(myTarget);
+  }
+
+  public @NotNull String getBranchName() {
+    return myBranchName;
+  }
+
+  @Topic.ProjectLevel
   public static final Topic<CommittedChangesMergedStateChanged> COMMITTED_CHANGES_MERGED_STATE =
     new Topic<>("COMMITTED_CHANGES_MERGED_STATE", CommittedChangesMergedStateChanged.class);
 
@@ -234,8 +204,7 @@ public class Merger implements IMerger {
     void event(final List<CommittedChangeList> list);
   }
 
-  @NotNull
-  private CommittedChangeList listAt(int index) {
+  private @NotNull CommittedChangeList listAt(int index) {
     return myChangeLists.get(index);
   }
 
@@ -252,7 +221,7 @@ public class Merger implements IMerger {
     private final int myStart;
     private final int mySize;
 
-    public MergeChunk(int start, int size) {
+    MergeChunk(int start, int size) {
       myStart = start;
       mySize = size;
     }
@@ -281,27 +250,23 @@ public class Merger implements IMerger {
       return myChangeLists.get(end()).getNumber();
     }
 
-    @NotNull
-    public List<CommittedChangeList> changeLists() {
+    public @NotNull List<CommittedChangeList> changeLists() {
       return myChangeLists.subList(start(), nextChunkStart());
     }
 
-    @NotNull
-    public List<CommittedChangeList> chunkAndBeforeLists() {
+    public @NotNull List<CommittedChangeList> chunkAndBeforeLists() {
       return myChangeLists.subList(0, nextChunkStart());
     }
 
-    @NotNull
-    public List<CommittedChangeList> chunkAndAfterLists() {
+    public @NotNull List<CommittedChangeList> chunkAndAfterLists() {
       return ContainerUtil.subList(myChangeLists, start());
     }
 
-    @NotNull
-    public SVNRevisionRange revisionRange() {
-      SVNRevision startRevision = SVNRevision.create(lowestNumber() - 1);
-      SVNRevision endRevision = SVNRevision.create(highestNumber());
+    public @NotNull RevisionRange revisionRange() {
+      Revision startRevision = Revision.of(lowestNumber() - 1);
+      Revision endRevision = Revision.of(highestNumber());
 
-      return myInvertRange ? new SVNRevisionRange(endRevision, startRevision) : new SVNRevisionRange(startRevision, endRevision);
+      return myInvertRange ? new RevisionRange(endRevision, startRevision) : new RevisionRange(startRevision, endRevision);
     }
 
     @Override

@@ -1,44 +1,29 @@
-/*
- * Copyright 2000-2011 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.framework.detection.impl.exclude;
 
 import com.intellij.openapi.util.Comparing;
-import com.intellij.util.xmlb.annotations.AbstractCollection;
 import com.intellij.util.xmlb.annotations.Attribute;
 import com.intellij.util.xmlb.annotations.Property;
+import com.intellij.util.xmlb.annotations.XCollection;
+import org.jetbrains.annotations.ApiStatus;
 
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * @author nik
- */
-public class ExcludesConfigurationState {
+@ApiStatus.Internal
+public final class ExcludesConfigurationState {
   private List<String> myFrameworkTypes = new ArrayList<>();
   private List<ExcludedFileState> myFiles = new ArrayList<>();
   private boolean myDetectionEnabled = true;
 
   @Property(surroundWithTag = false)
-  @AbstractCollection(surroundWithTag = false, elementTag = "type", elementValueAttribute = "id")
+  @XCollection(elementName = "type", valueAttributeName = "id")
   public List<String> getFrameworkTypes() {
     return myFrameworkTypes;
   }
 
   @Property(surroundWithTag = false)
-  @AbstractCollection(surroundWithTag = false)
+  @XCollection
   public List<ExcludedFileState> getFiles() {
     return myFiles;
   }
@@ -63,9 +48,8 @@ public class ExcludesConfigurationState {
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
-    if (!(o instanceof ExcludesConfigurationState)) return false;
+    if (!(o instanceof ExcludesConfigurationState state)) return false;
 
-    ExcludesConfigurationState state = (ExcludesConfigurationState)o;
     return myDetectionEnabled == state.myDetectionEnabled && Comparing.haveEqualElements(myFiles, state.myFiles)
            && Comparing.haveEqualElements(myFrameworkTypes, state.myFrameworkTypes);
   }

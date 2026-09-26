@@ -1,12 +1,15 @@
+// Copyright 2000-2023 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.json.highlighting;
 
 import com.intellij.json.JsonElementTypes;
+import com.intellij.json.JsonFileType;
+import com.intellij.json.JsonLanguage;
 import com.intellij.json.JsonLexer;
-import com.intellij.lexer.LayeredLexer;
+import com.intellij.lang.Language;
 import com.intellij.lexer.Lexer;
-import com.intellij.lexer.StringLiteralLexer;
 import com.intellij.openapi.editor.HighlighterColors;
 import com.intellij.openapi.editor.colors.TextAttributesKey;
+import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.fileTypes.SyntaxHighlighter;
 import com.intellij.openapi.fileTypes.SyntaxHighlighterBase;
 import com.intellij.openapi.fileTypes.SyntaxHighlighterFactory;
@@ -21,10 +24,21 @@ import org.jetbrains.annotations.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
-import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.*;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.BLOCK_COMMENT;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.BRACES;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.BRACKETS;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.COMMA;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.IDENTIFIER;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.INSTANCE_FIELD;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.INVALID_STRING_ESCAPE;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.KEYWORD;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.LINE_COMMENT;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.NUMBER;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.SEMICOLON;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.STRING;
+import static com.intellij.openapi.editor.DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE;
 
 public class JsonSyntaxHighlighterFactory extends SyntaxHighlighterFactory {
-
   public static final TextAttributesKey JSON_BRACKETS = TextAttributesKey.createTextAttributesKey("JSON.BRACKETS", BRACKETS);
   public static final TextAttributesKey JSON_BRACES = TextAttributesKey.createTextAttributesKey("JSON.BRACES", BRACES);
   public static final TextAttributesKey JSON_COMMA = TextAttributesKey.createTextAttributesKey("JSON.COMMA", COMMA);
@@ -47,17 +61,20 @@ public class JsonSyntaxHighlighterFactory extends SyntaxHighlighterFactory {
   public static final TextAttributesKey JSON_INVALID_ESCAPE =
     TextAttributesKey.createTextAttributesKey("JSON.INVALID_ESCAPE", INVALID_STRING_ESCAPE);
 
+  public static final TextAttributesKey JSON_PARAMETER = TextAttributesKey.createTextAttributesKey("JSON.PARAMETER", KEYWORD);
 
-  @NotNull
+
   @Override
-  public SyntaxHighlighter getSyntaxHighlighter(@Nullable Project project, @Nullable VirtualFile virtualFile) {
-    return new MyHighlighter();
+  public @NotNull SyntaxHighlighter getSyntaxHighlighter(@Nullable Project project, @Nullable VirtualFile virtualFile) {
+    return new MyHighlighter(virtualFile);
   }
 
-  private static class MyHighlighter extends SyntaxHighlighterBase {
-    private static final Map<IElementType, TextAttributesKey> ourAttributes = new HashMap<>();
+  private final class MyHighlighter extends SyntaxHighlighterBase {
+    private final Map<IElementType, TextAttributesKey> ourAttributes = new HashMap<>();
 
-    static {
+    private final @Nullable VirtualFile myFile;
+
+    {
       fillMap(ourAttributes, JSON_BRACES, JsonElementTypes.L_CURLY, JsonElementTypes.R_CURLY);
       fillMap(ourAttributes, JSON_BRACKETS, JsonElementTypes.L_BRACKET, JsonElementTypes.R_BRACKET);
       fillMap(ourAttributes, JSON_COMMA, JsonElementTypes.COMMA);
@@ -77,21 +94,36 @@ public class JsonSyntaxHighlighterFactory extends SyntaxHighlighterFactory {
       fillMap(ourAttributes, JSON_INVALID_ESCAPE, StringEscapesTokenTypes.INVALID_UNICODE_ESCAPE_TOKEN);
     }
 
-    @NotNull
-    @Override
-    public Lexer getHighlightingLexer() {
-      LayeredLexer layeredLexer = new LayeredLexer(new JsonLexer());
-      layeredLexer.registerSelfStoppingLayer(new StringLiteralLexer('\"', JsonElementTypes.DOUBLE_QUOTED_STRING, false, "/", false, false),
-                                             new IElementType[]{JsonElementTypes.DOUBLE_QUOTED_STRING}, IElementType.EMPTY_ARRAY);
-      layeredLexer.registerSelfStoppingLayer(new StringLiteralLexer('\'', JsonElementTypes.SINGLE_QUOTED_STRING, false, "/", false, false),
-                                             new IElementType[]{JsonElementTypes.SINGLE_QUOTED_STRING}, IElementType.EMPTY_ARRAY);
-      return layeredLexer;
+    MyHighlighter(@Nullable VirtualFile file) {
+      myFile = file;
     }
 
-    @NotNull
     @Override
-    public TextAttributesKey[] getTokenHighlights(IElementType type) {
+    public @NotNull Lexer getHighlightingLexer() {
+      return new JsonHighlightingLexer(isPermissiveDialect(), isCanEscapeEol(), getLexer());
+    }
+
+    private boolean isPermissiveDialect() {
+      FileType fileType = myFile == null ? null : myFile.getFileType();
+      boolean isPermissiveDialect = false;
+      if (fileType instanceof JsonFileType) {
+        Language language = ((JsonFileType)fileType).getLanguage();
+        isPermissiveDialect = language instanceof JsonLanguage && ((JsonLanguage)language).hasPermissiveStrings();
+      }
+      return isPermissiveDialect;
+    }
+
+    @Override
+    public @NotNull TextAttributesKey @NotNull [] getTokenHighlights(@NotNull IElementType type) {
       return pack(ourAttributes.get(type));
     }
+  }
+
+  protected @NotNull Lexer getLexer() {
+    return new JsonLexer();
+  }
+
+  protected boolean isCanEscapeEol() {
+    return false;
   }
 }

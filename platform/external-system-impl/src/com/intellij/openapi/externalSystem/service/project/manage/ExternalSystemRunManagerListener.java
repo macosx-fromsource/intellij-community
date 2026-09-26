@@ -1,53 +1,43 @@
-/*
- * Copyright 2000-2014 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.externalSystem.service.project.manage;
 
+import com.intellij.concurrency.ConcurrentCollectionFactory;
 import com.intellij.execution.RunManager;
-import com.intellij.execution.RunManagerAdapter;
-import com.intellij.execution.RunManagerEx;
+import com.intellij.execution.RunManagerListener;
 import com.intellij.execution.RunnerAndConfigurationSettings;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.externalSystem.ExternalSystemManager;
 import com.intellij.openapi.externalSystem.model.execution.ExternalSystemTaskExecutionSettings;
 import com.intellij.openapi.externalSystem.service.execution.AbstractExternalSystemTaskConfigurationType;
 import com.intellij.openapi.externalSystem.service.execution.ExternalSystemRunConfiguration;
+import com.intellij.openapi.externalSystem.service.project.manage.ExternalProjectsManagerImpl.ExternalProjectsStateProvider;
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Pair;
-import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.ConcurrentIntObjectMap;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 import static com.intellij.openapi.externalSystem.service.project.manage.ExternalSystemTaskActivator.Phase;
 import static com.intellij.openapi.externalSystem.service.project.manage.ExternalSystemTaskActivator.getRunConfigurationActivationTaskName;
 
 /**
  * @author Vladislav.Soroka
- * @since 11/14/2014
  */
-class ExternalSystemRunManagerListener extends RunManagerAdapter {
+class ExternalSystemRunManagerListener implements RunManagerListener {
+  private volatile Disposable eventDisposable;
 
-  private ExternalProjectsManager myManager;
-  private final Map<Integer, Pair<String, RunnerAndConfigurationSettings>> myMap;
+  private final ExternalProjectsManagerImpl myManager;
+  private final ConcurrentIntObjectMap<Pair<String, RunnerAndConfigurationSettings>> myMap =
+    ConcurrentCollectionFactory.createConcurrentIntObjectMap();
 
-  public ExternalSystemRunManagerListener(ExternalProjectsManager manager) {
-    myManager = manager;
-    myMap = ContainerUtil.newConcurrentMap();
+  ExternalSystemRunManagerListener(ExternalProjectsManager manager) {
+    myManager = (ExternalProjectsManagerImpl)manager;
   }
 
   @Override
@@ -61,7 +51,7 @@ class ExternalSystemRunManagerListener extends RunManagerAdapter {
       final Pair<String, RunnerAndConfigurationSettings> pair = myMap.remove(System.identityHashCode(settings));
       if (pair == null) return;
 
-      final ExternalProjectsManager.ExternalProjectsStateProvider stateProvider = myManager.getStateProvider();
+      final ExternalProjectsStateProvider stateProvider = myManager.getStateProvider();
       final ExternalSystemTaskExecutionSettings taskExecutionSettings =
         ((ExternalSystemRunConfiguration)settings.getConfiguration()).getSettings();
 
@@ -87,7 +77,7 @@ class ExternalSystemRunManagerListener extends RunManagerAdapter {
     if (settings.getConfiguration() instanceof ExternalSystemRunConfiguration) {
       final Pair<String, RunnerAndConfigurationSettings> pair = myMap.get(System.identityHashCode(settings));
       if (pair != null) {
-        final ExternalProjectsManager.ExternalProjectsStateProvider stateProvider = myManager.getStateProvider();
+        final ExternalProjectsStateProvider stateProvider = myManager.getStateProvider();
         final ExternalSystemTaskExecutionSettings taskExecutionSettings =
           ((ExternalSystemRunConfiguration)settings.getConfiguration()).getSettings();
 
@@ -98,7 +88,7 @@ class ExternalSystemRunManagerListener extends RunManagerAdapter {
 
         for (Phase phase : Phase.values()) {
           final List<String> modifiableActivationTasks = activation.getTasks(phase);
-          for (String task : ContainerUtil.newArrayList(modifiableActivationTasks)) {
+          for (String task : new ArrayList<>(modifiableActivationTasks)) {
             if (pair.first.equals(task)) {
               modifiableActivationTasks.remove(task);
               final String runConfigurationActivationTaskName = getRunConfigurationActivationTaskName(settings);
@@ -113,28 +103,39 @@ class ExternalSystemRunManagerListener extends RunManagerAdapter {
   }
 
   public void attach() {
+    Project project = myManager.getProject();
+    eventDisposable = Disposer.newDisposable();
+    Disposer.register(project, eventDisposable);
+    project.getMessageBus().connect(eventDisposable).subscribe(RunManagerListener.TOPIC, this);
+  }
+
+  @Override
+  public void stateLoaded(@NotNull RunManager runManager, boolean isFirstLoadState) {
     myMap.clear();
 
     for (ExternalSystemManager<?, ?, ?, ?, ?> systemManager : ExternalSystemApiUtil.getAllManagers()) {
-      final AbstractExternalSystemTaskConfigurationType configurationType =
-        ExternalSystemUtil.findConfigurationType(systemManager.getSystemId());
-      if (configurationType == null) continue;
-      final List<RunnerAndConfigurationSettings> configurationSettingsList =
-        RunManager.getInstance(myManager.getProject()).getConfigurationSettingsList(configurationType);
-      for (RunnerAndConfigurationSettings configurationSettings : configurationSettingsList) {
+      AbstractExternalSystemTaskConfigurationType configurationType = ExternalSystemUtil.findConfigurationType(systemManager.getSystemId());
+      if (configurationType == null) {
+        continue;
+      }
+
+      for (RunnerAndConfigurationSettings configurationSettings : runManager.getConfigurationSettingsList(configurationType)) {
         add(myMap, configurationSettings);
       }
     }
-
-    ((RunManagerEx)RunManager.getInstance(myManager.getProject())).addRunManagerListener(this);
   }
 
   public void detach() {
     myMap.clear();
-    ((RunManagerEx)RunManager.getInstance(myManager.getProject())).removeRunManagerListener(this);
+
+    Disposable disposable = eventDisposable;
+    if (disposable != null) {
+      eventDisposable = null;
+      Disposer.dispose(disposable);
+    }
   }
 
-  private static void add(@NotNull Map<Integer, Pair<String, RunnerAndConfigurationSettings>> map,
+  private static void add(@NotNull ConcurrentIntObjectMap<Pair<String, RunnerAndConfigurationSettings>> map,
                           @NotNull RunnerAndConfigurationSettings settings) {
     if (settings.getConfiguration() instanceof ExternalSystemRunConfiguration) {
       map.put(System.identityHashCode(settings), Pair.create(getRunConfigurationActivationTaskName(settings), settings));

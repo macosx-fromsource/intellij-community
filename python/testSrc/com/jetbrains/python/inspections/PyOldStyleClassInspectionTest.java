@@ -15,34 +15,51 @@
  */
 package com.jetbrains.python.inspections;
 
-import com.jetbrains.python.fixtures.PyTestCase;
+import com.jetbrains.python.allure.Layers;
+import com.jetbrains.python.allure.Subsystems;
+
+import com.intellij.testFramework.LightProjectDescriptor;
+import com.jetbrains.python.fixtures.PyInspectionTestCase;
 import com.jetbrains.python.psi.LanguageLevel;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * User : catherine
  */
-public class PyOldStyleClassInspectionTest extends PyTestCase {
+@Subsystems.Inspections
+@Layers.Functional
+public class PyOldStyleClassInspectionTest extends PyInspectionTestCase {
+
+  @Override
+  protected @Nullable LightProjectDescriptor getProjectDescriptor() {
+    return ourPy2Descriptor;
+  }
 
   public void testSlot() {
-    doTest(getTestName(false));
+    doTest();
   }
 
   public void testGetattr() {
-    doTest(getTestName(false));
+    doTest();
   }
 
   public void testSuper() {
-    doTest(getTestName(false));
+    doTest();
   }
 
   public void testSuper30() {
-    setLanguageLevel(LanguageLevel.PYTHON30);
-    doTest(getTestName(false));
+    runWithLanguageLevel(LanguageLevel.PYTHON34, this::doTest);
   }
 
-  private void doTest(String name) {
-    myFixture.configureByFile("inspections/PyOldStyleClassesInspection/" + name + ".py");
-    myFixture.enableInspections(PyOldStyleClassesInspection.class);
-    myFixture.checkHighlighting(true, false, false);
+  @NotNull
+  @Override
+  protected Class<? extends PyInspection> getInspectionClass() {
+    return PyOldStyleClassesInspection.class;
+  }
+
+  @Override
+  protected boolean isLowerCaseTestFile() {
+    return false;
   }
 }

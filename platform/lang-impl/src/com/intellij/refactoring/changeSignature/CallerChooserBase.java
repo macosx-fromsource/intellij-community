@@ -1,34 +1,25 @@
-/*
- * Copyright 2000-2010 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.refactoring.changeSignature;
 
 import com.intellij.codeInsight.highlighting.HighlightManager;
 import com.intellij.ide.highlighter.HighlighterFactory;
+import com.intellij.lang.injection.InjectedLanguageManager;
+import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.EditorFactory;
 import com.intellij.openapi.editor.colors.EditorColors;
-import com.intellij.openapi.editor.colors.EditorColorsManager;
 import com.intellij.openapi.editor.ex.EditorEx;
-import com.intellij.openapi.editor.markup.TextAttributes;
+import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
 import com.intellij.openapi.ui.Splitter;
+import com.intellij.openapi.util.NlsContexts;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -36,51 +27,68 @@ import com.intellij.psi.PsiReference;
 import com.intellij.psi.search.LocalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.refactoring.RefactoringBundle;
-import com.intellij.ui.*;
+import com.intellij.ui.CheckboxTree;
+import com.intellij.ui.CheckboxTreeBase;
+import com.intellij.ui.CheckedTreeNode;
+import com.intellij.ui.IdeBorderFactory;
+import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.treeStructure.Tree;
 import com.intellij.util.Alarm;
 import com.intellij.util.Consumer;
-import com.intellij.util.Function;
 import com.intellij.util.Query;
+import com.intellij.util.SlowOperations;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.HashSet;
+import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTree;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
-import java.awt.*;
-import java.util.*;
+import java.awt.BorderLayout;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrapper {
   private final M myMethod;
   private final Alarm myAlarm = new Alarm();
-  private MethodNodeBase<M> myRoot;
+  private MemberNodeBase<M> myRoot;
   protected final Project myProject;
   private Tree myTree;
-  private final Consumer<Set<M>> myCallback;
+  private final Consumer<? super Set<M>> myCallback;
   private TreeSelectionListener myTreeSelectionListener;
   private Editor myCallerEditor;
   private Editor myCalleeEditor;
   private final boolean myInitDone;
   private final String myFileName;
+  private final Collection<RangeHighlighter> myHighlighters = new ArrayList<>();
 
-  protected abstract MethodNodeBase<M> createTreeNode(M method, HashSet<M> called, Runnable cancelCallback);
+  protected MemberNodeBase<M> createTreeNodeFor(M method, HashSet<M> called, Runnable cancelCallback) {
+    throw new UnsupportedOperationException();
+  }
 
   protected abstract M[] findDeepestSuperMethods(M method);
 
-  protected String getEmptyCalleeText() {
+  protected @NlsContexts.Label String getEmptyCalleeText() {
     return "";
   }
 
-  protected String getEmptyCallerText() {
+  protected @NlsContexts.Label String getEmptyCallerText() {
     return "";
   }
 
-  public CallerChooserBase(M method, Project project, String title, Tree previousTree, String fileName, Consumer<Set<M>> callback) {
+  public CallerChooserBase(M method, Project project, @NlsContexts.DialogTitle String title, Tree previousTree, @NlsSafe String fileName, Consumer<? super Set<M>> callback) {
     super(true);
     myMethod = method;
     myProject = project;
@@ -105,16 +113,20 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
     }
     else {
       final CheckedTreeNode root = (CheckedTreeNode)myTree.getModel().getRoot();
-      myRoot = (MethodNodeBase)root.getFirstChild();
+      myRoot = (MemberNodeBase)root.getFirstChild();
     }
     myTreeSelectionListener = new TreeSelectionListener() {
       @Override
       public void valueChanged(TreeSelectionEvent e) {
         final TreePath path = e.getPath();
         if (path != null) {
-          final MethodNodeBase<M> node = (MethodNodeBase)path.getLastPathComponent();
+          final MemberNodeBase<M> node = (MemberNodeBase)path.getLastPathComponent();
           myAlarm.cancelAllRequests();
-          myAlarm.addRequest(() -> updateEditorTexts(node), 300);
+          myAlarm.addRequest(() -> {
+            try (AccessToken ignore = SlowOperations.knownIssue("IJPL-162969")) {
+              updateEditorTexts(node);
+            }
+          }, 300);
         }
       }
     };
@@ -129,7 +141,7 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
       myTree.getSelectionModel().addSelectionPath(selectionPath);
     }
 
-    final MethodNodeBase<M> node = (MethodNodeBase)selectionPath.getLastPathComponent();
+    final MemberNodeBase<M> node = (MemberNodeBase)selectionPath.getLastPathComponent();
     updateEditorTexts(node);
 
     splitter.setSecondComponent(callSitesViewer);
@@ -137,12 +149,12 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
     return result;
   }
 
-  private void updateEditorTexts(final MethodNodeBase<M> node) {
-    final MethodNodeBase<M> parentNode = getCalleeNode(node);
-    final MethodNodeBase<M> callerNode = getCallerNode(node);
-    final String callerText = node != myRoot ? getText(callerNode.getMethod()) : getEmptyCallerText();
+  private void updateEditorTexts(final MemberNodeBase<M> node) {
+    final MemberNodeBase<M> parentNode = getCalleeNode(node);
+    final MemberNodeBase<M> callerNode = getCallerNode(node);
+    final String callerText = node != myRoot ? getText(callerNode.getMember()) : getEmptyCallerText();
     final Document callerDocument = myCallerEditor.getDocument();
-    final String calleeText = node != myRoot ? getText(parentNode.getMethod()) : getEmptyCalleeText();
+    final String calleeText = node != myRoot ? getText(parentNode.getMember()) : getEmptyCalleeText();
     final Document calleeDocument = myCalleeEditor.getDocument();
 
     ApplicationManager.getApplication().runWriteAction(() -> {
@@ -150,31 +162,36 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
       calleeDocument.setText(calleeText);
     });
 
-    final M caller = callerNode.getMethod();
+    final M caller = callerNode.getMember();
     final PsiElement callee = parentNode != null ? parentNode.getElementToSearch() : null;
     if (caller != null && caller.isPhysical() && callee != null) {
       HighlightManager highlighter = HighlightManager.getInstance(myProject);
-      EditorColorsManager colorManager = EditorColorsManager.getInstance();
-      TextAttributes attributes = colorManager.getGlobalScheme().getAttributes(EditorColors.TEXT_SEARCH_RESULT_ATTRIBUTES);
+      for (RangeHighlighter r : myHighlighters) {
+        highlighter.removeSegmentHighlighter(myCallerEditor, r);
+      }
+      myHighlighters.clear();
       int start = getStartOffset(caller);
+      InjectedLanguageManager injectedLanguageManager = InjectedLanguageManager.getInstance(myProject);
       for (PsiElement element : findElementsToHighlight(caller, callee)) {
-        highlighter.addRangeHighlight(myCallerEditor, element.getTextRange().getStartOffset() - start,
-                                      element.getTextRange().getEndOffset() - start, attributes, false, null);
+        TextRange textRange = element.getTextRange();
+        textRange = injectedLanguageManager.injectedToHost(element, textRange);
+        highlighter.addRangeHighlight(myCallerEditor, textRange.getStartOffset() - start, textRange.getEndOffset() - start, 
+                                      EditorColors.TEXT_SEARCH_RESULT_ATTRIBUTES, false, myHighlighters);
       }
     }
   }
 
-  protected MethodNodeBase<M> getCalleeNode(MethodNodeBase<M> node) {
-    return (MethodNodeBase<M>)node.getParent();
+  protected MemberNodeBase<M> getCalleeNode(MemberNodeBase<M> node) {
+    return (MemberNodeBase<M>)node.getParent();
   }
 
-  protected MethodNodeBase<M> getCallerNode(MethodNodeBase<M> node) {
+  protected MemberNodeBase<M> getCallerNode(MemberNodeBase<M> node) {
     return node;
   }
 
-  protected Collection<PsiElement> findElementsToHighlight(M caller, PsiElement callee) {
+  protected @Unmodifiable Collection<PsiElement> findElementsToHighlight(M caller, PsiElement callee) {
     Query<PsiReference> references = ReferencesSearch.search(callee, new LocalSearchScope(caller), false);
-    return ContainerUtil.mapNotNull(references, psiReference -> psiReference.getElement());
+    return ContainerUtil.mapNotNull(references.asIterable(), psiReference -> psiReference.getElement());
   }
 
   @Override
@@ -190,16 +207,19 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
   private String getText(final M method) {
     if (method == null) return "";
     final PsiFile file = method.getContainingFile();
-    Document document = PsiDocumentManager.getInstance(myProject).getDocument(file);
+    Document document = file != null ? PsiDocumentManager.getInstance(myProject).getDocument(file) : null;
     if (document != null) {
-      final int start = document.getLineStartOffset(document.getLineNumber(method.getTextRange().getStartOffset()));
-      final int end = document.getLineEndOffset(document.getLineNumber(method.getTextRange().getEndOffset()));
-      return document.getText().substring(start, end);
+      TextRange textRange = method.getTextRange();
+      if (textRange != null) {
+        final int start = document.getLineStartOffset(document.getLineNumber(textRange.getStartOffset()));
+        final int end = document.getLineEndOffset(document.getLineNumber(textRange.getEndOffset()));
+        return document.getText().substring(start, end);
+      }
     }
     return "";
   }
 
-  private int getStartOffset(@NotNull final M method) {
+  private int getStartOffset(final @NotNull M method) {
     final PsiFile file = method.getContainingFile();
     Document document = PsiDocumentManager.getInstance(myProject).getDocument(file);
     return document.getLineStartOffset(document.getLineNumber(method.getTextRange().getStartOffset()));
@@ -214,14 +234,18 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
                                                                   false));
     splitter.setFirstComponent(callerComponent);
     final JComponent calleeComponent = myCalleeEditor.getComponent();
-    calleeComponent.setBorder(IdeBorderFactory.createTitledBorder(RefactoringBundle.message("caller.chooser.callee.method"),
+    calleeComponent.setBorder(IdeBorderFactory.createTitledBorder(getCalleeEditorTitle(),
                                                                   false));
     splitter.setSecondComponent(calleeComponent);
     splitter.setBorder(IdeBorderFactory.createRoundedBorder());
     return splitter;
   }
 
-  private Editor createEditor() {
+  protected @NotNull @Nls String getCalleeEditorTitle() {
+    return RefactoringBundle.message("caller.chooser.callee.method");
+  }
+
+  protected Editor createEditor() {
     final EditorFactory editorFactory = EditorFactory.getInstance();
     final Document document = editorFactory.createDocument("");
     final Editor editor = editorFactory.createViewer(document, myProject);
@@ -238,8 +262,8 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
         throw new ProcessCanceledException();
       }
     };
-    final CheckedTreeNode root = createTreeNode(null, new HashSet<>(), cancelCallback);
-    myRoot = createTreeNode(myMethod, new HashSet<>(), cancelCallback);
+    final CheckedTreeNode root = createTreeNodeFor(null, new HashSet<>(), cancelCallback);
+    myRoot = createTreeNodeFor(myMethod, new HashSet<>(), cancelCallback);
     root.add(myRoot);
     final CheckboxTree.CheckboxTreeCellRenderer cellRenderer = new CheckboxTree.CheckboxTreeCellRenderer(true, false) {
       @Override
@@ -250,8 +274,10 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
                                     boolean leaf,
                                     int row,
                                     boolean hasFocus) {
-        if (value instanceof MethodNodeBase) {
-          ((MethodNodeBase)value).customizeRenderer(getTextRenderer());
+        if (value instanceof MemberNodeBase) {
+          WriteIntentReadAction.run(() -> {
+            ((MemberNodeBase<?>)value).customizeRenderer(getTextRenderer());
+          });
         }
       }
     };
@@ -262,19 +288,19 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
     return tree;
   }
 
-  protected M getTopMethod() {
+  protected M getTopMember() {
     return myMethod;
   }
   
-  private void getSelectedMethods(Set<M> methods) {
-    MethodNodeBase<M> node = myRoot;
+  private void getSelectedMethods(Set<? super M> methods) {
+    MemberNodeBase<M> node = myRoot;
     getSelectedMethodsInner(node, methods);
-    methods.remove(node.getMethod());
+    methods.remove(node.getMember());
   }
 
-  private void getSelectedMethodsInner(final MethodNodeBase<M> node, final Set<M> allMethods) {
+  private void getSelectedMethodsInner(final MemberNodeBase<? extends M> node, final Set<? super M> allMethods) {
     if (node.isChecked()) {
-      M method = node.getMethod();
+      M method = node.getMember();
       final M[] superMethods = method == myMethod ? null : findDeepestSuperMethods(method);
       if (superMethods == null || superMethods.length == 0) {
         allMethods.add(method);
@@ -285,23 +311,23 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
 
       final Enumeration children = node.children();
       while (children.hasMoreElements()) {
-        getSelectedMethodsInner((MethodNodeBase)children.nextElement(), allMethods);
+        getSelectedMethodsInner((MemberNodeBase)children.nextElement(), allMethods);
       }
     }
   }
 
-  protected Set<MethodNodeBase<M>> getSelectedNodes() {
-    final Set<MethodNodeBase<M>> nodes = new LinkedHashSet<>();
+  protected Set<MemberNodeBase<M>> getSelectedNodes() {
+    final Set<MemberNodeBase<M>> nodes = new LinkedHashSet<>();
     collectSelectedNodes(myRoot, nodes);
     return nodes;
   }
   
-  private void collectSelectedNodes(final MethodNodeBase<M> node, final Set<MethodNodeBase<M>> nodes) {
+  private void collectSelectedNodes(final MemberNodeBase<M> node, final Set<? super MemberNodeBase<M>> nodes) {
     if (node.isChecked()) {
       nodes.add(node);
       final Enumeration children = node.children();
       while (children.hasMoreElements()) {
-        collectSelectedNodes((MethodNodeBase)children.nextElement(), nodes);
+        collectSelectedNodes((MemberNodeBase)children.nextElement(), nodes);
       }
     }
   }
@@ -319,9 +345,8 @@ public abstract class CallerChooserBase<M extends PsiElement> extends DialogWrap
     return myTree;
   }
 
-  @Nullable
   @Override
-  protected String getDimensionServiceKey() {
+  protected @Nullable String getDimensionServiceKey() {
     return "caller.chooser.dialog";
   }
 }

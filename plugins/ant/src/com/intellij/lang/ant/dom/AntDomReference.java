@@ -15,14 +15,15 @@
  */
 package com.intellij.lang.ant.dom;
 
+import org.jetbrains.annotations.Nls;
+
 /**
  * @author Eugene Zhuravlev
- *         Date: Aug 13, 2010
  */
 public interface AntDomReference {
   boolean shouldBeSkippedByAnnotator();
 
   void setShouldBeSkippedByAnnotator(boolean value);
 
-  String getUnresolvedMessagePattern();
+  @Nls(capitalization = Nls.Capitalization.Sentence) String getUnresolvedMessagePattern();
 }

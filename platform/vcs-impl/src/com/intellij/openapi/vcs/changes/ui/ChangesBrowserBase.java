@@ -1,481 +1,405 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.vcs.changes.ui;
 
 import com.intellij.diff.DiffDialogHints;
-import com.intellij.diff.util.DiffUserDataKeysEx;
-import com.intellij.ide.DeleteProvider;
-import com.intellij.openapi.Disposable;
-import com.intellij.openapi.actionSystem.*;
+import com.intellij.diff.DiffManager;
+import com.intellij.diff.chains.DiffRequestChain;
+import com.intellij.diff.util.DiffUserDataKeys;
+import com.intellij.diff.util.DiffUtil;
+import com.intellij.openapi.ListSelection;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionToolbar;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.AnActionExtensionProvider;
+import com.intellij.openapi.actionSystem.CommonDataKeys;
+import com.intellij.openapi.actionSystem.DataKey;
+import com.intellij.openapi.actionSystem.DataSink;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.IdeActions;
+import com.intellij.openapi.actionSystem.Separator;
+import com.intellij.openapi.actionSystem.UiCompatibleDataProvider;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
-import com.intellij.openapi.actionSystem.ex.CheckboxAction;
-import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.fileChooser.actions.VirtualFileDeleteProvider;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.vcs.AbstractVcs;
-import com.intellij.openapi.vcs.FilePath;
-import com.intellij.openapi.vcs.VcsBundle;
-import com.intellij.openapi.vcs.VcsDataKeys;
-import com.intellij.openapi.vcs.changes.*;
-import com.intellij.openapi.vcs.changes.actions.diff.ShowDiffAction;
-import com.intellij.openapi.vcs.changes.actions.diff.ShowDiffContext;
-import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.openapi.vcs.changes.Change;
+import com.intellij.openapi.vcs.changes.DiffPreview;
+import com.intellij.openapi.vcs.changes.actions.diff.ChangeDiffRequestProducer;
+import com.intellij.ui.IdeBorderFactory;
 import com.intellij.ui.ScrollPaneFactory;
-import com.intellij.util.ObjectUtils;
+import com.intellij.ui.SideBorder;
+import com.intellij.util.NullableFunction;
 import com.intellij.util.containers.ContainerUtil;
-import org.intellij.lang.annotations.JdkConstants;
-import org.jetbrains.annotations.Contract;
+import com.intellij.util.ui.tree.TreeUtil;
+import org.intellij.lang.annotations.MagicConstant;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Unmodifiable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.SwingConstants;
 import javax.swing.border.Border;
+import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
-import java.awt.*;
-import java.io.File;
-import java.util.*;
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
-import java.util.stream.Stream;
 
-import static com.intellij.openapi.vcs.changes.ChangesUtil.getAfterRevisionsFiles;
-import static com.intellij.openapi.vcs.changes.ChangesUtil.getNavigatableArray;
-import static com.intellij.openapi.vcs.changes.ui.ChangesBrowserNode.UNVERSIONED_FILES_TAG;
-import static com.intellij.openapi.vcs.changes.ui.ChangesListView.*;
+/**
+ * Consider using {@link AsyncChangesBrowserBase} to avoid potentially-expensive tree building operations on EDT.
+ */
+public abstract class ChangesBrowserBase extends JPanel implements UiCompatibleDataProvider {
+  public static final DataKey<ChangesBrowserBase> DATA_KEY =
+    DataKey.create("com.intellij.openapi.vcs.changes.ui.ChangesBrowserBase");
 
-public abstract class ChangesBrowserBase<T> extends JPanel implements TypeSafeDataProvider, Disposable {
-  private static final Logger LOG = Logger.getInstance(ChangesBrowserBase.class);
+  protected final @NotNull Project myProject;
 
-  // for backgroundable rollback to mark
-  private boolean myDataIsDirty;
-  protected final Class<T> myClass;
-  protected final ChangesTreeList<T> myViewer;
-  protected final JScrollPane myViewerScrollPane;
-  protected ChangeList mySelectedChangeList;
-  protected List<T> myChangesToDisplay;
-  protected final Project myProject;
-  private final boolean myCapableOfExcludingChanges;
-  protected final JPanel myHeaderPanel;
-  private JComponent myBottomPanel;
-  private DefaultActionGroup myToolBarGroup;
-  private String myToggleActionTitle = VcsBundle.message("commit.dialog.include.action.name");
+  protected final ChangesTree myViewer;
 
-  private JComponent myDiffBottomComponent;
+  private final DefaultActionGroup myToolBarGroup = new DefaultActionGroup();
+  private final DefaultActionGroup myPopupMenuGroup = new DefaultActionGroup();
+  private final ActionToolbar myToolbar;
+  private final int myToolbarAnchor;
+  private final JScrollPane myViewerScrollPane;
+  private final AnAction myShowDiffAction;
 
-  public static DataKey<ChangesBrowserBase> DATA_KEY = DataKey.create("com.intellij.openapi.vcs.changes.ui.ChangesBrowser");
-  private AnAction myDiffAction;
-  private final VirtualFile myToSelect;
-  @NotNull private final DeleteProvider myDeleteProvider = new VirtualFileDeleteProvider();
+  private @Nullable Runnable myInclusionChangedListener;
+  private @Nullable DiffPreview myDiffPreview;
 
-  public void setChangesToDisplay(final List<T> changes) {
-    myChangesToDisplay = changes;
-    myViewer.setChangesToDisplay(changes);
-  }
 
-  public void setDecorator(final ChangeNodeDecorator decorator) {
-    myViewer.setChangeDecorator(decorator);
-  }
-
-  protected ChangesBrowserBase(@NotNull final Project project,
-                               @NotNull List<T> changes,
-                               final boolean capableOfExcludingChanges,
-                               final boolean highlightProblems,
-                               @Nullable final Runnable inclusionListener,
-                               @NotNull ChangesBrowser.MyUseCase useCase,
-                               @Nullable VirtualFile toSelect,
-                               @NotNull Class<T> clazz) {
-    super(new BorderLayout());
-    setFocusable(false);
-
-    myClass = clazz;
-    myDataIsDirty = false;
+  protected ChangesBrowserBase(@NotNull Project project,
+                               boolean showCheckboxes,
+                               boolean highlightProblems) {
     myProject = project;
-    myCapableOfExcludingChanges = capableOfExcludingChanges;
-    myToSelect = toSelect;
+    myViewer = createTreeList(project, showCheckboxes, highlightProblems);
 
-    ChangeNodeDecorator decorator =
-      ChangesBrowser.MyUseCase.LOCAL_CHANGES.equals(useCase) ? RemoteRevisionsCache.getInstance(myProject).getChangesNodeDecorator() : null;
+    myToolbar = ActionManager.getInstance().createActionToolbar("ChangesBrowser", myToolBarGroup, true);
+    myToolbar.setTargetComponent(myViewer);
+    myToolbarAnchor = getToolbarAnchor();
+    myToolbar.setOrientation(isVerticalToolbar() ? SwingConstants.VERTICAL : SwingConstants.HORIZONTAL);
 
-    myViewer = new ChangesTreeList<T>(myProject, changes, capableOfExcludingChanges, highlightProblems, inclusionListener, decorator) {
-      protected DefaultTreeModel buildTreeModel(final List<T> changes, ChangeNodeDecorator changeNodeDecorator) {
-        return ChangesBrowserBase.this.buildTreeModel(changes, changeNodeDecorator, isShowFlatten());
-      }
+    myViewer.installPopupHandler(myPopupMenuGroup);
 
-      protected List<T> getSelectedObjects(final ChangesBrowserNode<T> node) {
-        return ChangesBrowserBase.this.getSelectedObjects(node);
-      }
+    myViewerScrollPane = ScrollPaneFactory.createScrollPane(myViewer, true);
+    setViewerBorder(createViewerBorder());
 
-      @Nullable
-      protected T getLeadSelectedObject(final ChangesBrowserNode node) {
-        return ChangesBrowserBase.this.getLeadSelectedObject(node);
-      }
+    myShowDiffAction = new MyShowDiffAction();
+  }
 
-      @Override
-      public void setScrollPaneBorder(Border border) {
-        myViewerScrollPane.setBorder(border);
-      }
-    };
-    myViewerScrollPane = ScrollPaneFactory.createScrollPane(myViewer);
-    myHeaderPanel = new JPanel(new BorderLayout());
+  protected @NotNull ChangesTree createTreeList(@NotNull Project project, boolean showCheckboxes, boolean highlightProblems) {
+    return new ChangesBrowserTreeList(this, project, showCheckboxes, highlightProblems);
   }
 
   protected void init() {
-    add(myViewerScrollPane, BorderLayout.CENTER);
+    setLayout(new BorderLayout());
+    setFocusable(false);
 
-    myHeaderPanel.add(createToolbar(), BorderLayout.CENTER);
-    add(myHeaderPanel, BorderLayout.NORTH);
+    JPanel topPanel = new JPanel(new BorderLayout());
 
-    myBottomPanel = new JPanel(new BorderLayout());
-    add(myBottomPanel, BorderLayout.SOUTH);
+    Component toolbarComponent = isVerticalToolbar()
+                                 ? createToolbarComponent()
+                                 : new TreeActionsToolbarPanel(createToolbarComponent(), myViewer);
 
-    myViewer.installPopupHandler(myToolBarGroup);
-    myViewer.setDoubleClickHandler(getDoubleClickHandler());
+    JComponent headerPanel = createHeaderPanel();
+    if (headerPanel != null) topPanel.add(headerPanel, BorderLayout.EAST);
+
+    switch (myToolbarAnchor) {
+      case SwingConstants.TOP -> topPanel.add(toolbarComponent, BorderLayout.CENTER);
+      case SwingConstants.BOTTOM -> add(toolbarComponent, BorderLayout.SOUTH);
+      case SwingConstants.LEFT -> add(toolbarComponent, BorderLayout.WEST);
+      case SwingConstants.RIGHT -> add(toolbarComponent, BorderLayout.EAST);
+    }
+
+    add(topPanel, BorderLayout.NORTH);
+    add(createCenterPanel(), BorderLayout.CENTER);
+
+    myToolBarGroup.addAll(createToolbarActions());
+    myToolBarGroup.addAll(createLastToolbarActions());
+    myPopupMenuGroup.addAll(createPopupMenuActions());
+
+    myShowDiffAction.registerCustomShortcutSet(this, null);
+    DiffUtil.recursiveRegisterShortcutSet(myToolBarGroup, this, null);
   }
 
-  @NotNull
-  protected abstract DefaultTreeModel buildTreeModel(final List<T> changes, ChangeNodeDecorator changeNodeDecorator, boolean showFlatten);
+  protected @NotNull Border createViewerBorder() {
+    return IdeBorderFactory.createBorder(SideBorder.ALL);
+  }
 
-  @NotNull
-  protected abstract List<T> getSelectedObjects(@NotNull ChangesBrowserNode<T> node);
+  public void setViewerBorder(@NotNull Border border) {
+    myViewerScrollPane.setBorder(border);
+  }
 
-  @Nullable
-  protected abstract T getLeadSelectedObject(@NotNull ChangesBrowserNode node);
-
-  @NotNull
-  protected Runnable getDoubleClickHandler() {
-    return new Runnable() {
-      public void run() {
-        showDiff();
-      }
+  public void hideViewerBorder() {
+    int borders = switch (myToolbarAnchor) {
+      case SwingConstants.TOP -> SideBorder.TOP;
+      case SwingConstants.BOTTOM -> SideBorder.BOTTOM;
+      case SwingConstants.LEFT -> SideBorder.LEFT;
+      case SwingConstants.RIGHT -> SideBorder.RIGHT;
+      default -> SideBorder.NONE;
     };
+
+    setViewerBorder(IdeBorderFactory.createBorder(borders));
   }
 
-  protected void setInitialSelection(final List<? extends ChangeList> changeLists,
-                                     @NotNull List<T> changes,
-                                     final ChangeList initialListSelection) {
-    mySelectedChangeList = initialListSelection;
+  @MagicConstant(intValues = {SwingConstants.TOP, SwingConstants.BOTTOM, SwingConstants.LEFT, SwingConstants.RIGHT})
+  protected int getToolbarAnchor() {
+    return SwingConstants.TOP;
   }
 
-  public void dispose() {
+  private boolean isVerticalToolbar() {
+    return myToolbarAnchor == SwingConstants.LEFT || myToolbarAnchor == SwingConstants.RIGHT;
   }
 
-  public void addToolbarAction(AnAction action) {
-    myToolBarGroup.add(action);
+  protected @NotNull JComponent createToolbarComponent() {
+    return myToolbar.getComponent();
   }
 
-  public void setDiffBottomComponent(JComponent diffBottomComponent) {
-    myDiffBottomComponent = diffBottomComponent;
-  }
+  protected abstract @NotNull DefaultTreeModel buildTreeModel();
 
-  public void setToggleActionTitle(final String toggleActionTitle) {
-    myToggleActionTitle = toggleActionTitle;
-  }
 
-  public JPanel getHeaderPanel() {
-    return myHeaderPanel;
-  }
-
-  public ChangesTreeList<T> getViewer() {
-    return myViewer;
-  }
-
-  @NotNull
-  public JScrollPane getViewerScrollPane() {
-    return myViewerScrollPane;
-  }
-
-  public void calcData(DataKey key, DataSink sink) {
-    if (key == VcsDataKeys.CHANGES) {
-      List<Change> list = getSelectedChanges();
-      if (list.isEmpty()) list = getAllChanges();
-      sink.put(VcsDataKeys.CHANGES, list.toArray(new Change[list.size()]));
-    }
-    else if (key == VcsDataKeys.CHANGES_SELECTION) {
-      sink.put(VcsDataKeys.CHANGES_SELECTION, getChangesSelection());
-    }
-    else if (key == VcsDataKeys.CHANGE_LISTS) {
-      sink.put(VcsDataKeys.CHANGE_LISTS, getSelectedChangeLists());
-    }
-    else if (key == VcsDataKeys.CHANGE_LEAD_SELECTION) {
-      final Change highestSelection = ObjectUtils.tryCast(myViewer.getHighestLeadSelection(), Change.class);
-      sink.put(VcsDataKeys.CHANGE_LEAD_SELECTION, (highestSelection == null) ? new Change[]{} : new Change[]{highestSelection});
-    }
-    else if (key == CommonDataKeys.VIRTUAL_FILE_ARRAY) {
-      sink.put(CommonDataKeys.VIRTUAL_FILE_ARRAY, getSelectedFiles().toArray(VirtualFile[]::new));
-    }
-    else if (key == CommonDataKeys.NAVIGATABLE_ARRAY) {
-      sink.put(CommonDataKeys.NAVIGATABLE_ARRAY, getNavigatableArray(myProject, getSelectedFiles()));
-    }
-    else if (VcsDataKeys.IO_FILE_ARRAY.equals(key)) {
-      sink.put(VcsDataKeys.IO_FILE_ARRAY, getSelectedIoFiles());
-    }
-    else if (key == DATA_KEY) {
-      sink.put(DATA_KEY, this);
-    }
-    else if (VcsDataKeys.SELECTED_CHANGES_IN_DETAILS.equals(key)) {
-      final List<Change> selectedChanges = getSelectedChanges();
-      sink.put(VcsDataKeys.SELECTED_CHANGES_IN_DETAILS, selectedChanges.toArray(new Change[selectedChanges.size()]));
-    }
-    else if (UNVERSIONED_FILES_DATA_KEY.equals(key)) {
-      sink.put(UNVERSIONED_FILES_DATA_KEY, getVirtualFiles(myViewer.getSelectionPaths(), UNVERSIONED_FILES_TAG));
-    }
-    else if (PlatformDataKeys.DELETE_ELEMENT_PROVIDER.equals(key)) {
-      sink.put(PlatformDataKeys.DELETE_ELEMENT_PROVIDER, myDeleteProvider);
-    }
-  }
-
-  public void select(List<T> changes) {
-    myViewer.select(changes);
-  }
-
-  public JComponent getBottomPanel() {
-    return myBottomPanel;
-  }
-
-  private class ToggleChangeAction extends CheckboxAction {
-    public ToggleChangeAction() {
-      super(myToggleActionTitle);
-    }
-
-    public boolean isSelected(AnActionEvent e) {
-      T change = ObjectUtils.tryCast(e.getData(VcsDataKeys.CURRENT_CHANGE), myClass);
-      if (change == null) return false;
-
-      return myViewer.isIncluded(change);
-    }
-
-    public void setSelected(AnActionEvent e, boolean state) {
-      T change = ObjectUtils.tryCast(e.getData(VcsDataKeys.CURRENT_CHANGE), myClass);
-      if (change == null) return;
-
-      if (state) {
-        myViewer.includeChange(change);
-      }
-      else {
-        myViewer.excludeChange(change);
-      }
-    }
-  }
-
-  protected void showDiffForChanges(Change[] changesArray, final int indexInSelection) {
-    final ShowDiffContext context = new ShowDiffContext(isInFrame() ? DiffDialogHints.FRAME : DiffDialogHints.MODAL);
-
-    context.addActions(createDiffActions());
-    if (myDiffBottomComponent != null) {
-      context.putChainContext(DiffUserDataKeysEx.BOTTOM_PANEL, myDiffBottomComponent);
-    }
-
-    updateDiffContext(context);
-
-    ShowDiffAction.showDiffForChange(myProject, Arrays.asList(changesArray), indexInSelection, context);
-  }
-
-  protected void updateDiffContext(@NotNull ShowDiffContext context) {
-  }
-
-  private boolean canShowDiff() {
-    return ShowDiffAction.canShowDiff(myProject, getChangesSelection().getChanges());
-  }
-
-  private void showDiff() {
-    ChangesSelection selection = getChangesSelection();
-    List<Change> changes = selection.getChanges();
-
-    Change[] changesArray = changes.toArray(new Change[changes.size()]);
-    showDiffForChanges(changesArray, selection.getIndex());
-
-    afterDiffRefresh();
-  }
-
-  @NotNull
-  protected ChangesSelection getChangesSelection() {
-    final Change leadSelection = ObjectUtils.tryCast(myViewer.getLeadSelection(), Change.class);
-    List<Change> changes = getSelectedChanges();
-
-    if (changes.size() < 2) {
-      List<Change> allChanges = getAllChanges();
-      if (allChanges.size() > 1 || changes.isEmpty()) {
-        changes = allChanges;
-      }
-    }
-
-    if (leadSelection != null) {
-      int indexInSelection = changes.indexOf(leadSelection);
-      if (indexInSelection == -1) {
-        return new ChangesSelection(Collections.singletonList(leadSelection), 0);
-      }
-      else {
-        return new ChangesSelection(changes, indexInSelection);
-      }
-    }
-    else {
-      return new ChangesSelection(changes, 0);
-    }
-  }
-
-  protected void afterDiffRefresh() {
-  }
-
-  private static boolean isInFrame() {
-    return ModalityState.current().equals(ModalityState.NON_MODAL);
-  }
-
-  protected List<AnAction> createDiffActions() {
-    List<AnAction> actions = new ArrayList<>();
-    if (myCapableOfExcludingChanges) {
-      actions.add(new ToggleChangeAction());
-    }
-    return actions;
-  }
-
-  public void rebuildList() {
-    myViewer.setChangesToDisplay(getCurrentDisplayedObjects(), myToSelect);
-  }
-
-  public void setAlwayExpandList(final boolean value) {
-    myViewer.setAlwaysExpandList(value);
-  }
-
-  @NotNull
-  protected JComponent createToolbar() {
-    DefaultActionGroup toolbarGroups = new DefaultActionGroup();
-    myToolBarGroup = new DefaultActionGroup();
-    toolbarGroups.add(myToolBarGroup);
-    buildToolBar(myToolBarGroup);
-
-    toolbarGroups.addSeparator();
-    DefaultActionGroup treeActionsGroup = new DefaultActionGroup();
-    toolbarGroups.add(treeActionsGroup);
-    for (AnAction action : myViewer.getTreeActions()) {
-      treeActionsGroup.add(action);
-    }
-
-    ActionToolbar toolbar = ActionManager.getInstance().createActionToolbar(ActionPlaces.TOOLBAR, toolbarGroups, true);
-    toolbar.setTargetComponent(this);
-    return toolbar.getComponent();
-  }
-
-  protected void buildToolBar(final DefaultActionGroup toolBarGroup) {
-    myDiffAction = new DumbAwareAction() {
-      public void update(AnActionEvent e) {
-        e.getPresentation().setEnabled(canShowDiff());
-      }
-
-      public void actionPerformed(AnActionEvent e) {
-        showDiff();
-      }
-    };
-    ActionUtil.copyFrom(myDiffAction, "ChangesView.Diff");
-    myDiffAction.registerCustomShortcutSet(myViewer, null);
-    toolBarGroup.add(myDiffAction);
-  }
-
-  @NotNull
-  public Set<AbstractVcs> getAffectedVcses() {
-    return ChangesUtil.getAffectedVcses(getCurrentDisplayedChanges(), myProject);
-  }
-
-  @NotNull
-  public abstract List<Change> getCurrentIncludedChanges();
-
-  @NotNull
-  public List<Change> getCurrentDisplayedChanges() {
-    return mySelectedChangeList != null ? ContainerUtil.newArrayList(mySelectedChangeList.getChanges()) : Collections.emptyList();
-  }
-
-  @NotNull
-  public abstract List<T> getCurrentDisplayedObjects();
-
-  @NotNull
-  public List<VirtualFile> getIncludedUnversionedFiles() {
-    return Collections.emptyList();
-  }
-
-  public int getUnversionedFilesCount() {
-    return 0;
-  }
-
-  public ChangeList getSelectedChangeList() {
-    return mySelectedChangeList;
-  }
-
-  public JComponent getPreferredFocusedComponent() {
-    return myViewer.getPreferredFocusedComponent();
-  }
-
-  private ChangeList[] getSelectedChangeLists() {
-    if (mySelectedChangeList != null) {
-      return new ChangeList[]{mySelectedChangeList};
+  protected @Nullable ChangeDiffRequestChain.Producer getDiffRequestProducer(@NotNull Object userObject) {
+    if (userObject instanceof Change) {
+      return ChangeDiffRequestProducer.create(myProject, (Change)userObject);
     }
     return null;
   }
 
-  private File[] getSelectedIoFiles() {
-    final List<Change> changes = getSelectedChanges();
-    final List<File> files = new ArrayList<>();
-    for (Change change : changes) {
-      final ContentRevision afterRevision = change.getAfterRevision();
-      if (afterRevision != null) {
-        final FilePath file = afterRevision.getFile();
-        final File ioFile = file.getIOFile();
-        files.add(ioFile);
+
+  protected @Nullable JComponent createHeaderPanel() {
+    return null;
+  }
+
+  protected @NotNull JComponent createCenterPanel() {
+    return myViewerScrollPane;
+  }
+
+  protected @NotNull @Unmodifiable List<AnAction> createToolbarActions() {
+    return Collections.singletonList(myShowDiffAction);
+  }
+
+  protected @NotNull List<AnAction> createLastToolbarActions() {
+    List<AnAction> result = new ArrayList<>();
+    result.add(Separator.getInstance());
+    result.add(ActionManager.getInstance().getAction(ChangesTree.GROUP_BY_ACTION_GROUP));
+    if (isVerticalToolbar()) {
+      result.add(Separator.getInstance());
+      result.addAll(TreeActionsToolbarPanel.createTreeActions());
+    }
+    return result;
+  }
+
+  protected @NotNull @Unmodifiable List<AnAction> createPopupMenuActions() {
+    List<AnAction> actions = new ArrayList<>();
+    actions.add(myShowDiffAction);
+    ContainerUtil.addIfNotNull(actions, ActionManager.getInstance().getAction("Diff.ShowStandaloneDiff"));
+
+    return actions;
+  }
+
+  protected @NotNull List<AnAction> createDiffActions() {
+    return Collections.emptyList();
+  }
+
+  protected void onDoubleClick() {
+    if (canShowDiff()) showDiff();
+  }
+
+  protected void onIncludedChanged() {
+    if (myInclusionChangedListener != null) myInclusionChangedListener.run();
+  }
+
+
+  public void selectEntries(@NotNull Collection<?> changes) {
+    myViewer.setSelectedChanges(changes);
+  }
+
+  public void setInclusionChangedListener(@Nullable Runnable value) {
+    myInclusionChangedListener = value;
+  }
+
+  public void addToolbarAction(@NotNull AnAction action) {
+    myToolBarGroup.add(action);
+    action.registerCustomShortcutSet(this, null);
+  }
+
+  public void addToolbarSeparator() {
+    myToolBarGroup.addSeparator();
+  }
+
+
+  public @NotNull JComponent getPreferredFocusedComponent() {
+    return myViewer.getPreferredFocusedComponent();
+  }
+
+  public @NotNull ActionToolbar getToolbar() {
+    return myToolbar;
+  }
+
+  public @NotNull JScrollPane getViewerScrollPane() {
+    return myViewerScrollPane;
+  }
+
+  public @NotNull ChangesTree getViewer() {
+    return myViewer;
+  }
+
+  public @NotNull ChangesGroupingPolicyFactory getGrouping() {
+    return myViewer.getGrouping();
+  }
+
+  @Override
+  public void uiDataSnapshot(@NotNull DataSink sink) {
+    sink.set(DATA_KEY, this);
+    DataSink.uiDataSnapshot(sink, myViewer);
+    VcsTreeModelData.uiDataSnapshot(sink, myProject, myViewer);
+  }
+
+
+  public @NotNull AnAction getDiffAction() {
+    return myShowDiffAction;
+  }
+
+  public boolean canShowDiff() {
+    ListSelection<Object> selection = VcsTreeModelData.getListSelectionOrAll(myViewer);
+    return ContainerUtil.exists(selection.getList(), entry -> getDiffRequestProducer(entry) != null);
+  }
+
+  protected @Nullable DiffPreview getShowDiffActionPreview() {
+    return myDiffPreview;
+  }
+
+  public void setShowDiffActionPreview(@Nullable DiffPreview diffPreview) {
+    myDiffPreview = diffPreview;
+  }
+
+  public void showDiff() {
+    DiffPreview diffPreview = getShowDiffActionPreview();
+    if (diffPreview != null) {
+      diffPreview.performDiffAction();
+    }
+    else {
+      showStandaloneDiff(myProject, this);
+    }
+  }
+
+  public static void showStandaloneDiff(@NotNull Project project, @NotNull ChangesBrowserBase changesBrowser) {
+    showStandaloneDiff(project, changesBrowser, VcsTreeModelData.getListSelectionOrAll(changesBrowser.myViewer),
+                       changesBrowser::getDiffRequestProducer);
+  }
+
+  public static <T> void showStandaloneDiff(@NotNull Project project,
+                                            @NotNull ChangesBrowserBase changesBrowser,
+                                            @NotNull ListSelection<T> selection,
+                                            @NotNull NullableFunction<? super T, ? extends ChangeDiffRequestChain.Producer> getDiffRequestProducer) {
+    ListSelection<ChangeDiffRequestChain.Producer> producers = selection.map(getDiffRequestProducer);
+    DiffRequestChain chain = new ChangeDiffRequestChain(producers);
+    changesBrowser.updateDiffContext(chain);
+    DiffManager.getInstance().showDiff(project, chain, new DiffDialogHints(null, changesBrowser));
+  }
+
+  public static void selectObjectWithTag(@NotNull ChangesTree tree,
+                                         @NotNull Object userObject,
+                                         @Nullable ChangesBrowserNode.Tag tag) {
+    TreePath path = findPathToObjectWithTag(tree, userObject, tag);
+    if (path == null) return;
+    TreeUtil.selectPath(tree, path, false);
+  }
+
+  public static @Nullable TreePath findPathToObjectWithTag(@NotNull ChangesTree tree,
+                                                           @NotNull Object userObject,
+                                                           @Nullable ChangesBrowserNode.Tag tag) {
+    DefaultMutableTreeNode root = tree.getRoot();
+    if (tag != null) {
+      DefaultMutableTreeNode tagNode = TreeUtil.findNodeWithObject(root, tag);
+      if (tagNode != null) {
+        root = tagNode;
       }
     }
-    return files.toArray(new File[files.size()]);
+    DefaultMutableTreeNode node = TreeUtil.findNodeWithObject(root, userObject);
+    if (node == null) return null;
+    return TreeUtil.getPathFromRoot(node);
   }
 
-  @NotNull
-  public abstract List<Change> getSelectedChanges();
+  public static class ShowStandaloneDiff implements AnActionExtensionProvider {
 
-  @NotNull
-  public abstract List<Change> getAllChanges();
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.BGT;
+    }
 
-  @NotNull
-  protected Stream<VirtualFile> getSelectedFiles() {
-    return Stream.concat(
-      getAfterRevisionsFiles(getSelectedChanges().stream()),
-      getVirtualFiles(myViewer.getSelectionPaths(), null)
-    ).distinct();
+    @Override
+    public boolean isActive(@NotNull AnActionEvent e) {
+      Project project = e.getProject();
+      ChangesBrowserBase changesBrowser = e.getData(DATA_KEY);
+      return project != null && changesBrowser != null && changesBrowser.canShowDiff();
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+    }
+
+    @Override
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      Project project = e.getData(CommonDataKeys.PROJECT);
+      if (project == null) return;
+      ChangesBrowserBase changesBrowser = e.getData(DATA_KEY);
+      if (changesBrowser == null) return;
+
+      showStandaloneDiff(project, changesBrowser);
+    }
   }
 
-  public AnAction getDiffAction() {
-    return myDiffAction;
+  protected void updateDiffContext(@NotNull DiffRequestChain chain) {
+    chain.putUserData(DiffUserDataKeys.CONTEXT_ACTIONS, createDiffActions());
   }
 
-  public boolean isDataIsDirty() {
-    return myDataIsDirty;
+  private class MyShowDiffAction extends DumbAwareAction {
+    MyShowDiffAction() {
+      ActionUtil.copyFrom(this, IdeActions.ACTION_SHOW_DIFF_COMMON);
+    }
+
+    @Override
+    public @NotNull ActionUpdateThread getActionUpdateThread() {
+      return ActionUpdateThread.BGT;
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      e.getPresentation().setEnabled(canShowDiff() || e.getInputEvent() instanceof KeyEvent);
+    }
+
+    @Override
+    public void actionPerformed(@NotNull AnActionEvent e) {
+      if (canShowDiff()) showDiff();
+    }
   }
 
-  public void setDataIsDirty(boolean dataIsDirty) {
-    myDataIsDirty = dataIsDirty;
-  }
+  private static class ChangesBrowserTreeList extends ChangesTree {
+    private final @NotNull ChangesBrowserBase myBrowser;
 
-  public void setSelectionMode(@JdkConstants.TreeSelectionMode int mode) {
-    myViewer.setSelectionMode(mode);
-  }
+    ChangesBrowserTreeList(@NotNull ChangesBrowserBase browser,
+                           @NotNull Project project,
+                           boolean showCheckboxes,
+                           boolean highlightProblems) {
+      super(project, showCheckboxes, highlightProblems);
+      myBrowser = browser;
+      setDoubleClickAndEnterKeyHandler(myBrowser::onDoubleClick);
+      setInclusionListener(myBrowser::onIncludedChanged);
+    }
 
-  @Contract(pure = true)
-  @NotNull
-  protected static <T> List<Change> findChanges(@NotNull Collection<T> items) {
-    return ContainerUtil.findAll(items, Change.class);
-  }
-
-  static boolean isUnderUnversioned(@NotNull ChangesBrowserNode node) {
-    return isUnderTag(new TreePath(node.getPath()), UNVERSIONED_FILES_TAG);
+    @Override
+    public final void rebuildTree() {
+      DefaultTreeModel newModel = myBrowser.buildTreeModel();
+      updateTreeModel(newModel);
+    }
   }
 }
+

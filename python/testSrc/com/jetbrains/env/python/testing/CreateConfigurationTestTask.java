@@ -1,93 +1,110 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.env.python.testing;
 
-import com.intellij.execution.actions.ConfigurationContext;
-import com.intellij.execution.actions.ConfigurationFromContext;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
-import com.intellij.psi.PsiElement;
+import com.intellij.openapi.application.WriteAction;
+import com.intellij.openapi.projectRoots.Sdk;
+import com.intellij.openapi.roots.ModuleRootManager;
 import com.jetbrains.env.PyExecutionFixtureTestTask;
+import com.jetbrains.python.run.targetBasedConfiguration.PyRunTargetVariant;
 import com.jetbrains.python.sdk.InvalidSdkException;
-import com.jetbrains.python.sdkTools.SdkCreationType;
-import com.jetbrains.python.testing.PythonTestConfigurationProducer;
+import com.jetbrains.python.testing.AbstractPythonTestRunConfiguration;
+import com.jetbrains.python.testing.PyAbstractTestConfiguration;
+import com.jetbrains.python.testing.PyAbstractTestFactory;
 import com.jetbrains.python.testing.TestRunnerService;
 import org.jetbrains.annotations.NotNull;
-import org.junit.Assert;
-
-import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
+import org.jetbrains.annotations.Nullable;
 
 
 /**
- * Task to be run by env test to check tests can create configurations.
+ * Task to be run by env test to check unit tests can create configurations.
  * It sets cursor to unit-style testcase, and creates configuration from it.
  *
  * @author Ilya.Kazakevich
  */
-class CreateConfigurationTestTask extends PyExecutionFixtureTestTask {
+public abstract class CreateConfigurationTestTask<T extends AbstractPythonTestRunConfiguration<?>> extends CreateConfigurationTask<T> {
 
-  @NotNull
+  @Nullable
   private final String myTestRunnerName;
-  @NotNull
-  private final Class<? extends PythonTestConfigurationProducer> myProducer;
 
   /**
-   * @param producer       class of configuration producer to check
-   * @param testRunnerName test runner name (to set as default to make sure producer launched)
+   * @param testRunnerName            test runner name (to set as default to make sure producer launched)
+   * @param expectedConfigurationType type configuration tha should be produced
    */
-  CreateConfigurationTestTask(@NotNull final Class<? extends PythonTestConfigurationProducer> producer,
-                              @NotNull final String testRunnerName) {
-    super("/testRunner/env/createConfigurationTest/");
-    myProducer = producer;
+  CreateConfigurationTestTask(@Nullable final String testRunnerName,
+                              @NotNull final Class<T> expectedConfigurationType) {
+    super(expectedConfigurationType, "/testRunner/env/createConfigurationTest/");
     myTestRunnerName = testRunnerName;
   }
 
+  protected void markFolderAsTestRoot(@NotNull String folderName) {
+    WriteAction.runAndWait(() -> {
+      var manager = ModuleRootManager.getInstance(myFixture.getModule());
+      var model = manager.getModifiableModel();
+      var testRoot = myFixture.findFileInTempDir(folderName);
+      model.getContentEntries()[0].addSourceFolder(testRoot, true);
+      model.commit();
+    });
+  }
+
   @Override
-  public void runTestOn(final String sdkHome) throws InvalidSdkException, IOException {
+  public void runTestOn(@NotNull final String sdkHome, @Nullable Sdk existingSdk) throws InvalidSdkException {
     // Set as default runner to check
-    TestRunnerService.getInstance(myFixture.getModule()).setProjectConfiguration(myTestRunnerName);
-
-    createTempSdk(sdkHome, SdkCreationType.SDK_PACKAGES_ONLY);
-    ApplicationManager.getApplication().invokeAndWait(() -> ApplicationManager.getApplication().runWriteAction(() -> {
-      myFixture.configureByFile("test.py");
-      // Should create configuration from test class
-      checkConfigurationCreatedFrom(myFixture.getElementAtCaret());
-      // And from file
-      checkConfigurationCreatedFrom(myFixture.getElementAtCaret().getContainingFile());
-    }), ModalityState.NON_MODAL);
-  }
-
-
-  private void checkConfigurationCreatedFrom(@NotNull final PsiElement element) {
-
-    final PythonTestConfigurationProducer producer = createProducer();
-    final ConfigurationFromContext context =
-      producer.createConfigurationFromContext(new ConfigurationContext(element));
-    Assert.assertNotNull(String.format("Failed to create context for %s", myTestRunnerName), context);
-    Assert.assertNotNull(String.format("Configuration %s has not name", myTestRunnerName), context.getConfiguration().getName());
-  }
-
-  @NotNull
-  private PythonTestConfigurationProducer createProducer() {
-    try {
-      return myProducer.getConstructor().newInstance();
+    if (myTestRunnerName != null) {
+      TestRunnerService.getInstance(myFixture.getModule()).setProjectConfiguration(myTestRunnerName);
     }
-    catch (final InstantiationException | IllegalAccessException | NoSuchMethodException | InvocationTargetException e) {
-      throw new AssertionError(String.format("Failed to create instance of %s", myProducer), e);
+    super.runTestOn(sdkHome, existingSdk);
+  }
+
+  /**
+   * Task to create configuration
+   */
+  abstract static class PyConfigurationCreationTask<T extends PyAbstractTestConfiguration> extends PyExecutionFixtureTestTask {
+    private volatile T myConfiguration;
+
+
+    PyConfigurationCreationTask() {
+      super(null);
+    }
+
+    @Override
+    public void runTestOn(@NotNull final String sdkHome, @Nullable Sdk existingSdk) {
+      final T configuration =
+        createFactory().createTemplateConfiguration(getProject());
+      configuration.setModule(myFixture.getModule());
+      configuration.setSdkHome(sdkHome);
+      configuration.setSdk(existingSdk);
+      myConfiguration = configuration;
+    }
+
+    @NotNull
+    protected abstract PyAbstractTestFactory<T> createFactory();
+
+    @NotNull
+    T getConfiguration() {
+      final T configuration = myConfiguration;
+      assert configuration != null : "No config created. Run runTestOn()";
+      return configuration;
+    }
+  }
+
+  /**
+   * Validates configuration.
+   * Implement logic in {@link #validateConfiguration}
+   */
+  abstract static class PyConfigurationValidationTask<T extends PyAbstractTestConfiguration> extends PyConfigurationCreationTask<T> {
+    @Override
+    public void runTestOn(@NotNull final String sdkHome, @Nullable Sdk existingSdk) {
+      super.runTestOn(sdkHome, existingSdk);
+      validateConfiguration();
+    }
+
+
+    protected void validateConfiguration() {
+      getConfiguration().getTarget().setTargetType(PyRunTargetVariant.PATH);
+      getConfiguration().getTarget().setTarget("");
+
+      getConfiguration().checkConfiguration();
     }
   }
 }
+

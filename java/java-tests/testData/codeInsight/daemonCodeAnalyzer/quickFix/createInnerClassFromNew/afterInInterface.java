@@ -1,4 +1,4 @@
-// "Create inner class 'MyCollection'" "true"
+// "Create inner class 'MyCollection'" "true-preview"
 import java.util.*;
 
 public interface I {
@@ -6,7 +6,7 @@ public interface I {
         Collection c = new MyCollection(1, "test");
     }
 
-    static class MyCollection implements Collection {
+    class MyCollection implements Collection {
         public MyCollection(int i, String test) {
         }
     }

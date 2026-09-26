@@ -16,11 +16,11 @@
 package org.jetbrains.plugins.groovy.unwrap;
 
 import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiElement;
 import com.intellij.util.IncorrectOperationException;
-import org.jetbrains.plugins.groovy.lang.psi.GroovyFileBase;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock;
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrOpenBlock;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrBlockStatement;
+import org.jetbrains.plugins.groovy.lang.psi.api.util.GrStatementOwner;
 
 public class GroovyBracesUnwrapper extends GroovyUnwrapper {
   public GroovyBracesUnwrapper() {
@@ -28,17 +28,13 @@ public class GroovyBracesUnwrapper extends GroovyUnwrapper {
   }
 
   @Override
-  public boolean isApplicableTo(PsiElement e) {
-    if (e instanceof GrClosableBlock && !((GrClosableBlock)e).hasParametersSection()) {
-      PsiElement parent = e.getParent();
-      return parent instanceof GrOpenBlock || parent instanceof GrClosableBlock || parent instanceof GroovyFileBase;
-    }
-    return false;
+  public boolean isApplicableTo(@NotNull PsiElement e) {
+    return e instanceof GrBlockStatement && e.getParent() instanceof GrStatementOwner;
   }
 
   @Override
   protected void doUnwrap(PsiElement element, Context context) throws IncorrectOperationException {
-    context.extractFromCodeBlock(((GrClosableBlock)element), element);
+    context.extractFromBlockOrSingleStatement((GrBlockStatement)element, element);
     context.delete(element);
   }
 }

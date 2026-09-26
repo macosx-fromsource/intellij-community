@@ -15,26 +15,34 @@
  */
 package com.intellij.codeInsight.unwrap;
 
-import com.intellij.codeInsight.CodeInsightBundle;
-import com.intellij.psi.*;
+import com.intellij.java.JavaBundle;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.LambdaUtil;
+import com.intellij.psi.PsiCodeBlock;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiExpression;
+import com.intellij.psi.PsiLambdaExpression;
+import com.intellij.psi.PsiStatement;
+import com.intellij.psi.PsiTypes;
 import com.intellij.util.IncorrectOperationException;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
 public class JavaLambdaUnwrapper extends JavaUnwrapper {
   public JavaLambdaUnwrapper() {
-    super(CodeInsightBundle.message("unwrap.lambda"));
+    super(JavaBundle.message("unwrap.lambda"));
   }
 
   @Override
-  public boolean isApplicableTo(PsiElement e) {
+  public boolean isApplicableTo(@NotNull PsiElement e) {
     return e instanceof PsiLambdaExpression;
   }
 
   @Override
-  public PsiElement collectAffectedElements(PsiElement e, List<PsiElement> toExtract) {
-    super.collectAffectedElements(e, toExtract);
-    return JavaAnonymousUnwrapper.findElementToExtractFrom(e);
+  public PsiElement collectAffectedElements(@NotNull PsiElement e, @NotNull List<? super PsiElement> toExtract) {
+     super.collectAffectedElements(e, toExtract);
+     return JavaAnonymousUnwrapper.findElementToExtractFrom(e);
   }
 
   @Override
@@ -42,21 +50,26 @@ public class JavaLambdaUnwrapper extends JavaUnwrapper {
     PsiElement from = JavaAnonymousUnwrapper.findElementToExtractFrom(element);
     PsiLambdaExpression lambdaExpression = (PsiLambdaExpression)element;
     PsiElement body = lambdaExpression.getBody();
-    if (body instanceof PsiExpression || body instanceof PsiCodeBlock && ((PsiCodeBlock)body).getStatements().length == 1) {
+    if (body instanceof PsiExpression || body instanceof PsiCodeBlock && ((PsiCodeBlock)body).getStatementCount() == 1) {
       List<PsiExpression> returnExpressions = LambdaUtil.getReturnExpressions(lambdaExpression);
       if (returnExpressions.size() == 1
-          && !PsiType.VOID.equals(returnExpressions.get(0).getType())
+          && !PsiTypes.voidType().equals(returnExpressions.get(0).getType())
           && JavaAnonymousUnwrapper.toAssignment(context, from, returnExpressions.get(0))) {
         return;
       }
     }
 
     if (body instanceof PsiCodeBlock) {
-      context.extractFromCodeBlock((PsiCodeBlock)body, from);
+      if (from.getParent() instanceof PsiLambdaExpression) {
+        context.extractElement(body, from);
+      }
+      else {
+        context.extractFromCodeBlock((PsiCodeBlock)body, from);
+      }
     }
     else {
       context.extractElement(body, from);
-      if (context.myIsEffective && !(from.getParent() instanceof PsiLambdaExpression)) {
+      if (context.isEffective() && !(from.getParent() instanceof PsiLambdaExpression)) {
         PsiStatement emptyStatement = JavaPsiFacade.getElementFactory(from.getProject()).createStatementFromText(";", from);
         from.getParent().addBefore(emptyStatement, from);
       }

@@ -1,12 +1,12 @@
 from _pydevd_bundle.pydevd_comm import CMD_SET_BREAK, CMD_ADD_EXCEPTION_BREAK
 import inspect
-from _pydevd_bundle.pydevd_constants import STATE_SUSPEND, get_thread_id, dict_contains, dict_iter_items, DJANGO_SUSPEND, IS_PY2
+from _pydevd_bundle.pydevd_constants import STATE_SUSPEND, dict_iter_items, DJANGO_SUSPEND, IS_PY2, get_current_thread_id
 from pydevd_file_utils import get_abs_path_real_path_and_base_from_file, normcase
 from _pydevd_bundle.pydevd_breakpoints import LineBreakpoint, get_exception_name
 from _pydevd_bundle import pydevd_vars
 import traceback
 from _pydev_bundle import pydev_log
-from _pydevd_bundle.pydevd_frame_utils import add_exception_to_frame, FCode, just_raised
+from _pydevd_bundle.pydevd_frame_utils import add_exception_to_frame, FCode, just_raised, ignore_exception_trace
 
 IS_DJANGO18 = False
 IS_DJANGO19 = False
@@ -22,20 +22,23 @@ except:
 
 
 class DjangoLineBreakpoint(LineBreakpoint):
-    def __init__(self, file, line, condition, func_name, expression):
+    def __init__(self, file, line, condition, func_name, expression, hit_condition=None, is_logpoint=False):
         self.file = file
-        LineBreakpoint.__init__(self, line, condition, func_name, expression)
+        LineBreakpoint.__init__(self, line, condition, func_name, expression, hit_condition=hit_condition, is_logpoint=is_logpoint)
 
     def is_triggered(self, template_frame_file, template_frame_line):
         return self.file == template_frame_file and self.line == template_frame_line
 
     def __str__(self):
-        return "DjangoLineBreakpoint: %s-%d" %(self.file, self.line)
+        return "DjangoLineBreakpoint: %s-%d" % (self.file, self.line)
+
+    def __repr__(self):
+        return '<DjangoLineBreakpoint(%s, %s, %s, %s, %s)>' % (self.file, self.line, self.condition, self.func_name, self.expression)
 
 
-def add_line_breakpoint(plugin, pydb, type, file, line, condition, expression, func_name):
+def add_line_breakpoint(plugin, pydb, type, file, line, condition, expression, func_name, hit_condition=None, is_logpoint=False):
     if type == 'django-line':
-        breakpoint = DjangoLineBreakpoint(file, line, condition, func_name, expression)
+        breakpoint = DjangoLineBreakpoint(file, line, condition, func_name, expression, hit_condition=hit_condition, is_logpoint=is_logpoint)
         if not hasattr(pydb, 'django_breakpoints'):
             _init_plugin_breaks(pydb)
         return breakpoint, pydb.django_breakpoints
@@ -46,7 +49,6 @@ def add_exception_breakpoint(plugin, pydb, type, exception):
         if not hasattr(pydb, 'django_exception_break'):
             _init_plugin_breaks(pydb)
         pydb.django_exception_break[exception] = True
-        pydb.set_tracing_for_untraced_contexts()
         return True
     return False
 
@@ -85,7 +87,7 @@ def _is_django_render_call(frame):
         if name != 'render':
             return False
 
-        if not dict_contains(frame.f_locals, 'self'):
+        if 'self' not in frame.f_locals:
             return False
 
         cls = frame.f_locals['self'].__class__
@@ -99,7 +101,7 @@ def _is_django_render_call(frame):
         if IS_DJANGO19:
             # in Django 1.9 we need to save the flag that there is included template
             if clsname == 'IncludeNode':
-                if dict_contains(frame.f_locals, 'context'):
+                if 'context' in frame.f_locals:
                     context = frame.f_locals['context']
                     context._has_included_template = True
 
@@ -111,7 +113,7 @@ def _is_django_render_call(frame):
 
 def _is_django_context_get_call(frame):
     try:
-        if not dict_contains(frame.f_locals, 'self'):
+        if 'self' not in frame.f_locals:
             return False
 
         cls = frame.f_locals['self'].__class__
@@ -128,7 +130,7 @@ def _is_django_resolve_call(frame):
         if name != '_resolve_lookup':
             return False
 
-        if not dict_contains(frame.f_locals, 'self'):
+        if 'self' not in frame.f_locals:
             return False
 
         cls = frame.f_locals['self'].__class__
@@ -150,7 +152,7 @@ def suspend_django(main_debugger, thread, frame, cmd=CMD_SET_BREAK):
     if frame.f_lineno is None:
         return None
 
-    pydevd_vars.add_additional_frame_by_id(get_thread_id(thread), {id(frame): frame})
+    pydevd_vars.add_additional_frame_by_id(get_current_thread_id(thread), {id(frame): frame})
 
     main_debugger.set_suspend(thread, cmd)
     thread.additional_info.suspend_type = DJANGO_SUSPEND
@@ -224,18 +226,18 @@ def _get_template_file_name(frame):
     try:
         if IS_DJANGO19:
             # The Node source was removed since Django 1.9
-            if dict_contains(frame.f_locals, 'context'):
+            if 'context' in frame.f_locals:
                 context = frame.f_locals['context']
                 if hasattr(context, '_has_included_template'):
                     #  if there was included template we need to inspect the previous frames and find its name
                     back = frame.f_back
                     while back is not None and frame.f_code.co_name in ('render', '_render'):
                         locals = back.f_locals
-                        if dict_contains(locals, 'self'):
+                        if 'self' in locals:
                             self = locals['self']
                             if self.__class__.__name__ == 'Template' and hasattr(self, 'origin') and \
                                     hasattr(self.origin, 'name'):
-                                return self.origin.name
+                                return normcase(self.origin.name)
                         back = back.f_back
                 else:
                     if hasattr(context, 'template') and hasattr(context.template, 'origin') and \
@@ -244,7 +246,7 @@ def _get_template_file_name(frame):
             return None
         elif IS_DJANGO19_OR_HIGHER:
             # For Django 1.10 and later there is much simpler way to get template name
-            if dict_contains(frame.f_locals, 'self'):
+            if 'self' in frame.f_locals:
                 self = frame.f_locals['self']
                 if hasattr(self, 'origin') and hasattr(self.origin, 'name'):
                     return normcase(self.origin.name)
@@ -331,18 +333,15 @@ def _is_django_exception_break_context(frame):
 # Django Step Commands
 #=======================================================================================================================
 
-def can_not_skip(plugin, main_debugger, pydb_frame, frame):
-    if main_debugger.django_breakpoints and _is_django_render_call(frame):
-        filename = _get_template_file_name(frame)
-        django_breakpoints_for_file = main_debugger.django_breakpoints.get(filename)
-        if django_breakpoints_for_file:
-            return True
-    return False
+def can_not_skip(plugin, main_debugger, frame, info):
+    return main_debugger.django_breakpoints and _is_django_render_call(frame)
+
 
 def has_exception_breaks(plugin):
     if len(plugin.main_debugger.django_exception_break) > 0:
         return True
     return False
+
 
 def has_line_breaks(plugin):
     for file, breakpoints in dict_iter_items(plugin.main_debugger.django_breakpoints):
@@ -352,7 +351,8 @@ def has_line_breaks(plugin):
 
 
 def cmd_step_into(plugin, main_debugger, frame, event, args, stop_info, stop):
-    main_debugger, filename, info, thread = args
+    info = args[2]
+    thread = args[3]
     plugin_stop = False
     if _is_django_suspended(thread):
         stop_info['django_stop'] = event == 'call' and _is_django_render_call(frame)
@@ -364,7 +364,8 @@ def cmd_step_into(plugin, main_debugger, frame, event, args, stop_info, stop):
 
 
 def cmd_step_over(plugin, main_debugger, frame, event, args, stop_info, stop):
-    main_debugger, filename, info, thread = args
+    info = args[2]
+    thread = args[3]
     plugin_stop = False
     if _is_django_suspended(thread):
         stop_info['django_stop'] = event == 'call' and _is_django_render_call(frame)
@@ -377,13 +378,14 @@ def cmd_step_over(plugin, main_debugger, frame, event, args, stop_info, stop):
             info.pydev_step_stop = frame.f_back
             info.pydev_django_resolve_frame = False
             thread.additional_info.suspend_type = DJANGO_SUSPEND
-        stop = info.pydev_step_stop is frame and event in ('line', 'return')
+            stop = info.pydev_step_stop is frame and event in ('line', 'return')
     return stop, plugin_stop
 
 
 def stop(plugin, main_debugger, frame, event, args, stop_info, arg, step_cmd):
-    main_debugger, filename, info, thread = args
-    if dict_contains(stop_info, 'django_stop') and stop_info['django_stop']:
+    main_debugger = args[0]
+    thread = args[3]
+    if 'django_stop' in stop_info and stop_info['django_stop']:
         frame = suspend_django(main_debugger, thread, frame, step_cmd)
         if frame:
             main_debugger.do_wait_suspend(thread, frame, event, arg)
@@ -391,8 +393,10 @@ def stop(plugin, main_debugger, frame, event, args, stop_info, arg, step_cmd):
     return False
 
 
-def get_breakpoint(plugin, main_debugger, pydb_frame, frame, event, args):
-    main_debugger, filename, info, thread = args
+def get_breakpoint(plugin, main_debugger, frame, event, args):
+    main_debugger = args[0]
+    filename = args[1]
+    info = args[2]
     flag = False
     django_breakpoint = None
     new_frame = None
@@ -408,7 +412,7 @@ def get_breakpoint(plugin, main_debugger, pydb_frame, frame, event, args):
             template_line = _get_template_line(frame)
             pydev_log.debug("Tracing template line: %s\n" % str(template_line))
 
-            if dict_contains(django_breakpoints_for_file, template_line):
+            if template_line in django_breakpoints_for_file:
                 django_breakpoint = django_breakpoints_for_file[template_line]
                 flag = True
                 new_frame = DjangoTemplateFrame(frame)
@@ -420,19 +424,20 @@ def suspend(plugin, main_debugger, thread, frame, bp_type):
         return suspend_django(main_debugger, thread, frame)
     return None
 
-def exception_break(plugin, main_debugger, pydb_frame, frame, args, arg):
-    main_debugger, filename, info, thread = args
+def exception_break(plugin, main_debugger, frame, args, arg):
+    main_debugger = args[0]
+    thread = args[3]
     exception, value, trace = arg
     if main_debugger.django_exception_break and \
             get_exception_name(exception) in ['VariableDoesNotExist', 'TemplateDoesNotExist', 'TemplateSyntaxError'] and \
-            just_raised(trace) and _is_django_exception_break_context(frame):
+            just_raised(trace) and not ignore_exception_trace(trace) and _is_django_exception_break_context(frame):
         render_frame = _find_django_render_frame(frame)
         if render_frame:
             suspend_frame = suspend_django(main_debugger, thread, render_frame, CMD_ADD_EXCEPTION_BREAK)
             if suspend_frame:
                 add_exception_to_frame(suspend_frame, (exception, value, trace))
                 flag = True
-                thread.additional_info.pydev_message = 'VariableDoesNotExist'
+                thread.additional_info.pydev_message = 'django-VariableDoesNotExist'
                 suspend_frame.f_back = frame
                 frame = suspend_frame
                 return (flag, frame)

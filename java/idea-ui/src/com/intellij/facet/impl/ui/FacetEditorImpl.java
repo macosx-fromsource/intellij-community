@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.facet.impl.ui;
 
 import com.intellij.facet.Facet;
@@ -20,28 +6,34 @@ import com.intellij.facet.FacetConfiguration;
 import com.intellij.facet.ui.FacetEditor;
 import com.intellij.facet.ui.FacetEditorContext;
 import com.intellij.facet.ui.FacetEditorTab;
+import com.intellij.facet.ui.FacetEditorValidator;
+import com.intellij.facet.ui.ValidationResult;
+import com.intellij.ide.JavaUiBundle;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.UnnamedConfigurable;
 import com.intellij.openapi.options.UnnamedConfigurableGroup;
+import com.intellij.openapi.roots.ProjectModelExternalSource;
+import com.intellij.openapi.roots.ui.configuration.ModificationOfImportedModelWarningComponent;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.wm.IdeFocusManager;
 import com.intellij.ui.TabbedPaneWrapper;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
-import java.awt.*;
+import java.awt.BorderLayout;
 import java.util.HashSet;
 import java.util.Set;
 
-/**
- * @author nik
- */
+@ApiStatus.Internal
 public class FacetEditorImpl extends UnnamedConfigurableGroup implements UnnamedConfigurable, FacetEditor {
   private final FacetEditorTab[] myEditorTabs;
   private final FacetErrorPanel myErrorPanel;
@@ -54,7 +46,7 @@ public class FacetEditorImpl extends UnnamedConfigurableGroup implements Unnamed
 
   public FacetEditorImpl(final FacetEditorContext context, final FacetConfiguration configuration) {
     myContext = context;
-    myErrorPanel = new FacetErrorPanel();
+    myErrorPanel = new FacetErrorPanel(myDisposable);
     myEditorTabs = configuration.createEditorTabs(context, myErrorPanel.getValidatorsManager());
     for (Configurable configurable : myEditorTabs) {
       add(configurable);
@@ -102,6 +94,21 @@ public class FacetEditorImpl extends UnnamedConfigurableGroup implements Unnamed
     else {
       editorComponent = new JPanel();
     }
+    ProjectModelExternalSource externalSource = myContext.getFacet().getExternalSource();
+    if (externalSource != null) {
+      myErrorPanel.getValidatorsManager().registerValidator(new FacetEditorValidator() {
+        @Override
+        public @NotNull ValidationResult check() {
+          if (isModified()) {
+            String text = ModificationOfImportedModelWarningComponent.getWarningText(
+              JavaUiBundle.message("facet.banner.text", myContext.getFacetName()), externalSource);
+            return new ValidationResult(text);
+          }
+          return ValidationResult.OK;
+        }
+      }, editorComponent);
+    }
+
 
     final JComponent errorComponent = myErrorPanel.getComponent();
     UIUtil.addInsets(errorComponent, JBUI.insets(0, 5, 5, 0));
@@ -119,7 +126,7 @@ public class FacetEditorImpl extends UnnamedConfigurableGroup implements Unnamed
       if (preferredFocusedComponent != null) {
         ApplicationManager.getApplication().invokeLater(() -> {
           if (preferredFocusedComponent.isShowing()) {
-            preferredFocusedComponent.requestFocus();
+            IdeFocusManager.getGlobalInstance().doWhenFocusSettlesDown(() -> IdeFocusManager.getGlobalInstance().requestFocus(preferredFocusedComponent, true));
           }
         });
       }
@@ -133,8 +140,7 @@ public class FacetEditorImpl extends UnnamedConfigurableGroup implements Unnamed
     super.disposeUIResources();
   }
 
-  @Nullable
-  public String getHelpTopic() {
+  public @Nullable String getHelpTopic() {
     return 0 <= mySelectedTabIndex && mySelectedTabIndex < myEditorTabs.length ? myEditorTabs[mySelectedTabIndex].getHelpTopic() : null;
   }
 
@@ -172,7 +178,7 @@ public class FacetEditorImpl extends UnnamedConfigurableGroup implements Unnamed
   }
 
   @Override
-  public <T extends FacetEditorTab> T getEditorTab(@NotNull final Class<T> aClass) {
+  public <T extends FacetEditorTab> T getEditorTab(final @NotNull Class<T> aClass) {
     for (FacetEditorTab editorTab : myEditorTabs) {
       if (aClass.isInstance(editorTab)) {
         return aClass.cast(editorTab);

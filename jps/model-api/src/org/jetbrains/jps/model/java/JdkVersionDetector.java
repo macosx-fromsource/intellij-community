@@ -1,76 +1,111 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.jps.model.java;
 
-import com.intellij.openapi.util.Bitness;
+import com.intellij.openapi.util.NlsSafe;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.lang.JavaVersion;
+import com.intellij.util.system.CpuArch;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.jps.service.JpsServiceManager;
 
-import java.util.concurrent.Future;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
 
-/**
- * @author nik
- */
 public abstract class JdkVersionDetector {
   public static JdkVersionDetector getInstance() {
     return JpsServiceManager.getInstance().getService(JdkVersionDetector.class);
   }
 
-  /**
-   * Returns java version for JDK located at {@code homePath} in format like<br>
-   * <tt>java version "1.8.0_40"</tt><br>
-   * by running '<tt>java -version</tt>' command
-   * @param homePath path to JDK home directory
-   * @return version string of {@code null} if version cannot be determined
-   */
-  @Nullable
-  public abstract String detectJdkVersion(@NotNull String homePath);
-
-  @Nullable
-  public abstract String detectJdkVersion(@NotNull String homePath, @NotNull ActionRunner actionRunner);
-
-  @Nullable
-  public abstract JdkVersionInfo detectJdkVersionInfo(@NotNull String homePath);
-
-  @Nullable
-  public abstract JdkVersionInfo detectJdkVersionInfo(@NotNull String homePath, @NotNull ActionRunner actionRunner);
-
-  //todo[nik] replace with a service with different implementations for IDE process and for JPS process (need to exclude jps-builders module from IDEA classpath)
-  public interface ActionRunner {
-    Future<?> run(Runnable runnable);
+  @ApiStatus.Internal
+  protected JdkVersionDetector() {
   }
 
+  public abstract @Nullable JdkVersionInfo detectJdkVersionInfo(@NotNull String homePath);
+
+  public abstract @Nullable JdkVersionInfo detectJdkVersionInfo(@NotNull String homePath, @NotNull ExecutorService actionRunner);
+
+  @SuppressWarnings("SpellCheckingInspection")
+  public enum Variant {
+    AdoptOpenJdk_HS("adopt", "AdoptOpenJDK (HotSpot)"),
+    AdoptOpenJdk_J9("adopt-j9", "AdoptOpenJDK (OpenJ9)"),
+    BiSheng("bisheng", "BiSheng JDK"),
+    Corretto("corretto", "Amazon Corretto"),
+    Dragonwell("dragonwell", "Alibaba Dragonwell"),
+    GraalVM("graalvm", "GraalVM"),
+    GraalVMCE("graalvm-ce", "GraalVM CE"),
+    Homebrew("homebrew", "Homebrew OpenJDK"),
+    IBM("ibm", "IBM JDK"),
+    JBR("jbr", "JetBrains Runtime"),
+    Kona("kona", "Tencent Kona"),
+    Liberica("liberica", "BellSoft Liberica"),
+    Microsoft("ms", "Microsoft OpenJDK"),
+    Ojdkbuild("ojdkbuild", "ojdkbuild"),
+    Oracle(null, "Oracle OpenJDK"),
+    RedHat("redhat", "Red Hat OpenJDK"),
+    SapMachine("sap", "SAP SapMachine"),
+    Semeru("semeru", "IBM Semeru"),
+    Temurin("temurin", "Eclipse Temurin"),
+    Zulu("zulu", "Azul Zulu"),
+
+    Unknown(null, "Unknown");
+
+    public final @Nullable String prefix;
+    public final @NotNull String displayName;
+
+    Variant(@Nullable String prefix, @NotNull String displayName) {
+      this.prefix = prefix;
+      this.displayName = displayName;
+    }
+  }
+
+  @ApiStatus.Internal
+  public static final List<String> VENDORS = ContainerUtil.map(Variant.values(), v -> v.displayName);
+
   public static final class JdkVersionInfo {
-    private final String myVersion;
-    private final Bitness myBitness;
+    public final JavaVersion version;
+    public final Variant variant;
+    public final CpuArch arch;
+    public final String graalVersion;
 
-    public JdkVersionInfo(@NotNull String version, @NotNull Bitness bitness) {
-      myVersion = version;
-      myBitness = bitness;
+    public JdkVersionInfo(@NotNull JavaVersion version, @Nullable Variant variant, @NotNull CpuArch arch) {
+      this(version, variant, arch, null);
     }
 
-    @NotNull
-    public String getVersion() {
-      return myVersion;
+    public JdkVersionInfo(@NotNull JavaVersion version, @Nullable Variant variant, @NotNull CpuArch arch, @Nullable String graalVersion) {
+      this.version = version;
+      this.variant = variant != null ? variant : Variant.Unknown;
+      this.arch = arch;
+      this.graalVersion = graalVersion;
     }
 
-    @NotNull
-    public Bitness getBitness() {
-      return myBitness;
+    public @NotNull String suggestedName() {
+      String f = version.toFeatureString();
+      return variant.prefix != null ? variant.prefix + '-' + f : f;
     }
+
+    public @NotNull @NlsSafe String displayVersionString() {
+      var s = "";
+      final String variantName = variant != Variant.Unknown ? variant.displayName : "Java";
+      s += variantName + ' ' + version;
+      if (graalVersion != null) s += " - VM " + graalVersion;
+      if (arch == CpuArch.ARM64) s += " - aarch64";
+      return s;
+    }
+
+    @Override
+    public String toString() {
+      return version + " " + arch;
+    }
+  }
+
+  public static @NotNull String formatVersionString(@NotNull JavaVersion version) {
+    return "java version \"" + version + '"';
+  }
+
+  public static boolean isVersionString(@NotNull String string) {
+    return string.length() >= 16 && string.startsWith("java version \"") && StringUtil.endsWithChar(string, '"');
   }
 }

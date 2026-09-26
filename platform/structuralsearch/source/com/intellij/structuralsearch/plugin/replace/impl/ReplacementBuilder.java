@@ -1,92 +1,80 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.structuralsearch.plugin.replace.impl;
 
 import com.intellij.codeInsight.template.Template;
 import com.intellij.codeInsight.template.TemplateManager;
-import com.intellij.openapi.fileTypes.FileType;
+import com.intellij.lang.Language;
+import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import com.intellij.structuralsearch.MalformedPatternException;
 import com.intellij.structuralsearch.MatchResult;
+import com.intellij.structuralsearch.PatternContextInfo;
+import com.intellij.structuralsearch.StructuralSearchScriptEngine;
 import com.intellij.structuralsearch.StructuralSearchProfile;
 import com.intellij.structuralsearch.StructuralSearchUtil;
 import com.intellij.structuralsearch.impl.matcher.MatcherImplUtil;
 import com.intellij.structuralsearch.impl.matcher.PatternTreeContext;
 import com.intellij.structuralsearch.impl.matcher.predicates.ScriptSupport;
 import com.intellij.structuralsearch.plugin.replace.ReplaceOptions;
+import com.intellij.structuralsearch.plugin.replace.ReplacementInfo;
 import com.intellij.util.IncorrectOperationException;
+import com.intellij.util.SmartList;
+import com.intellij.util.containers.ContainerUtil;
+import com.intellij.util.containers.MultiMap;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * @author maxim
- * Date: 24.02.2004
- * Time: 15:34:57
  */
 public final class ReplacementBuilder {
-  private final String replacement;
-  private final List<ParameterInfo> parameterizations = new ArrayList<>();
-  private final Map<String, ScriptSupport> replacementVarsMap;
+  private final @NotNull String replacement;
+  private final MultiMap<String, ParameterInfo> parameterizations = MultiMap.createLinked();
+  private final Map<String, ScriptSupport> replacementVarsMap = new HashMap<>();
   private final ReplaceOptions options;
   private final Project myProject;
 
-  ReplacementBuilder(final Project project,final ReplaceOptions options) {
+  ReplacementBuilder(@NotNull Project project, @NotNull ReplaceOptions options) {
     myProject = project;
-    replacementVarsMap = new HashMap<>();
     this.options = options;
-    String _replacement = options.getReplacement();
-    FileType fileType = options.getMatchOptions().getFileType();
 
-    final Template template = TemplateManager.getInstance(project).createTemplate("","",_replacement);
-
-    final int segmentsCount = template.getSegmentsCount();
+    final Template template = TemplateManager.getInstance(project).createTemplate("", "", options.getReplacement());
     replacement = template.getTemplateText();
 
-    for(int i=0;i<segmentsCount;++i) {
+    int prevOffset = 0;
+    for (int i = 0; i < template.getSegmentsCount(); i++) {
       final int offset = template.getSegmentOffset(i);
       final String name = template.getSegmentName(i);
-
-      final ParameterInfo info = new ParameterInfo();
-      info.setStartIndex(offset);
-      info.setName(name);
-      info.setReplacementVariable(options.getVariableDefinition(name) != null);
+      final ParameterInfo info = new ParameterInfo(name, offset, options.getVariableDefinition(name) != null);
 
       // find delimiter
-      int pos;
-      for(pos = offset-1; pos >=0 && pos < replacement.length() && Character.isWhitespace(replacement.charAt(pos));) {
-        --pos;
+      int pos = offset - 1;
+      while (pos >= prevOffset && pos < replacement.length() && StringUtil.isWhiteSpace(replacement.charAt(pos))) {
+        pos--;
       }
 
       if (pos >= 0) {
         if (replacement.charAt(pos) == ',') {
           info.setHasCommaBefore(true);
         }
+        while (pos > prevOffset && StringUtil.isWhiteSpace(replacement.charAt(pos - 1))) {
+          pos--;
+        }
         info.setBeforeDelimiterPos(pos);
       }
 
-      for(pos = offset; pos < replacement.length() && Character.isWhitespace(replacement.charAt(pos));) {
-        ++pos;
+      pos = offset;
+      while (pos < replacement.length() && StringUtil.isWhiteSpace(replacement.charAt(pos))) {
+        pos++;
       }
 
       if (pos < replacement.length()) {
@@ -101,35 +89,35 @@ public final class ReplacementBuilder {
         }
       }
       info.setAfterDelimiterPos(pos);
-
-      parameterizations.add(info);
+      prevOffset = offset;
+      parameterizations.putValue(name, info);
     }
 
-    final StructuralSearchProfile profile = parameterizations != null ? StructuralSearchUtil.getProfileByFileType(fileType) : null;
+    final LanguageFileType fileType = options.getMatchOptions().getFileType();
+    final StructuralSearchProfile profile = StructuralSearchUtil.getProfileByFileType(fileType);
     if (profile != null) {
       try {
-        final PsiElement[] elements = MatcherImplUtil.createTreeFromText(
-          _replacement,
-          PatternTreeContext.Block,
-          fileType,
-          options.getMatchOptions().getDialect(),
-          options.getMatchOptions().getPatternContext(),
-          project,
-          false
-        );
+        final Language dialect = options.getMatchOptions().getDialect();
+        assert dialect != null;
+        final PatternContextInfo context = new PatternContextInfo(PatternTreeContext.Block, options.getMatchOptions().getPatternContext());
+        final PsiElement[] elements =
+          MatcherImplUtil.createTreeFromText(prepareReplacementPattern(), context, fileType, dialect, project, false);
         if (elements.length > 0) {
           final PsiElement patternNode = elements[0].getParent();
           patternNode.accept(new PsiRecursiveElementWalkingVisitor() {
             @Override
-            public void visitElement(PsiElement element) {
-              super.visitElement(element);
+            public void visitElement(@NotNull PsiElement element) {
               final String text = element.getText();
-              if (StructuralSearchUtil.isTypedVariable(text)) {
-                final ParameterInfo parameterInfo = findParameterization(Replacer.stripTypedVariableDecoration(text));
-                if (parameterInfo != null && parameterInfo.getElement() == null) {
-                  parameterInfo.setElement(element);
+              if (profile.isReplacementTypedVariable(text)) {
+                final Collection<ParameterInfo> infos = findParameterization(profile.stripReplacementTypedVariableDecorations(text));
+                for (ParameterInfo info : infos) {
+                  if (info.getElement() == null) {
+                    info.setElement(element);
+                    return;
+                  }
                 }
               }
+              super.visitElement(element);
             }
           });
           profile.provideAdditionalReplaceOptions(patternNode, options, this);
@@ -140,76 +128,91 @@ public final class ReplacementBuilder {
     }
   }
 
-  private static void fill(MatchResult r,Map<String,MatchResult> m) {
-    if (r.getName()!=null) {
-      m.putIfAbsent(r.getName(), r);
-    }
-
-    if (!r.isScopeMatch() || !r.isMultipleMatch()) {
-      for (final MatchResult matchResult : r.getAllSons()) {
-        fill(matchResult, m);
-      }
-    } else if (r.hasSons()) {
-      final List<MatchResult> allSons = r.getAllSons();
-      if (allSons.size() > 0) {
-        fill(allSons.get(0),m);
-      }
-    }
-  }
-
-  String process(MatchResult match, ReplacementInfoImpl replacementInfo, FileType type) {
-    if (parameterizations==null) {
+  @NotNull
+  String process(@NotNull MatchResult match, @NotNull ReplacementInfo replacementInfo, @NotNull LanguageFileType type) {
+    if (parameterizations.isEmpty()) {
       return replacement;
     }
-
-    final StringBuilder result = new StringBuilder(replacement);
-    final HashMap<String, MatchResult> matchMap = new HashMap<>();
-    fill(match, matchMap);
 
     final StructuralSearchProfile profile = StructuralSearchUtil.getProfileByFileType(type);
     assert profile != null;
 
-    int offset = 0;
-    for (final ParameterInfo info : parameterizations) {
-      MatchResult r = matchMap.get(info.getName());
+    final List<ParameterInfo> sorted = new SmartList<>(parameterizations.values());
+    sorted.sort(Comparator.comparingInt(ParameterInfo::getStartIndex).reversed());
+    final StringBuilder result = new StringBuilder(replacement);
+    for (ParameterInfo info : sorted) {
+      final MatchResult r = replacementInfo.getNamedMatchResult(info.getName());
       if (info.isReplacementVariable()) {
-        offset = Replacer.insertSubstitution(result, offset, info, generateReplacement(info, match));
+        final Object replacement = generateReplacement(info, match);
+        if (replacement == null && r != null) {
+          profile.handleSubstitution(info, r, result, replacementInfo);
+        }
+        else {
+          Replacer.insertSubstitution(result, 0, info, String.valueOf(replacement));
+        }
       }
       else if (r != null) {
-        offset = profile.handleSubstitution(info, r, result, offset, matchMap);
+        profile.handleSubstitution(info, r, result, replacementInfo);
       }
       else {
-        offset = profile.handleNoSubstitution(info, offset, result);
+        profile.handleNoSubstitution(info, result);
       }
     }
 
-    replacementInfo.variableMap = matchMap;
     return result.toString();
   }
 
-  private String generateReplacement(ParameterInfo info, MatchResult match) {
+  private @Nullable Object generateReplacement(@NotNull ParameterInfo info, @NotNull MatchResult match) {
     ScriptSupport scriptSupport = replacementVarsMap.get(info.getName());
 
     if (scriptSupport == null) {
-      String constraint = options.getVariableDefinition(info.getName()).getScriptCodeConstraint();
-      scriptSupport = new ScriptSupport(myProject, StringUtil.stripQuotesAroundValue(constraint), info.getName());
-      replacementVarsMap.put(info.getName(), scriptSupport);
+      final String constraint = options.getVariableDefinition(info.getName()).getScriptCodeConstraint();
+      final List<String> variableNames = ContainerUtil.map(options.getVariableDefinitions(), o -> o.getName());
+      final String name = info.getName();
+      final String scriptText = StringUtil.unquoteString(constraint);
+      try {
+        final StructuralSearchScriptEngine.CompiledScript script = ScriptSupport.buildScript(myProject, name, scriptText, options.getMatchOptions());
+        scriptSupport = new ScriptSupport(myProject, script, name, variableNames);
+        replacementVarsMap.put(info.getName(), scriptSupport);
+      } catch (MalformedPatternException e) {
+        return null;
+      }
     }
     return scriptSupport.evaluate(match, null);
   }
 
-  @Nullable
-  public ParameterInfo findParameterization(String name) {
-    for (final ParameterInfo info : parameterizations) {
-      if (info.getName().equals(name)) {
-        return info;
-      }
-    }
-
-    return null;
+  public Collection<ParameterInfo> findParameterization(String name) {
+    return parameterizations.get(name);
   }
 
-  public void addParametrization(@NotNull ParameterInfo e) {
-    parameterizations.add(e);
+  public ParameterInfo findParameterization(PsiElement element) {
+    if (element == null) return null;
+    StructuralSearchProfile profile = StructuralSearchUtil.getProfileByPsiElement(element);
+    assert profile != null;
+    final String text = element.getText();
+    if (!profile.isReplacementTypedVariable(text)) return null;
+    return ContainerUtil.find(findParameterization(profile.stripReplacementTypedVariableDecorations(text)), info -> info.getElement() == element);
+  }
+
+  public @NotNull String prepareReplacementPattern() {
+    final LanguageFileType fileType = options.getMatchOptions().getFileType();
+    final StructuralSearchProfile profile = StructuralSearchUtil.getProfileByFileType(fileType);
+    assert profile != null;
+
+    final StringBuilder buf = new StringBuilder();
+    final Template template = TemplateManager.getInstance(myProject).createTemplate("", "", options.getReplacement());
+    final int segmentsCount = template.getSegmentsCount();
+    final String text = template.getTemplateText();
+
+    int prevOffset = 0;
+    for (int i = 0; i < segmentsCount; i++) {
+      final int offset = template.getSegmentOffset(i);
+      final String name = template.getSegmentName(i);
+      final String compiledName = profile.compileReplacementTypedVariable(name);
+      buf.append(text, prevOffset, offset).append(compiledName);
+      prevOffset = offset;
+    }
+    buf.append(text.substring(prevOffset));
+    return buf.toString();
   }
 }

@@ -20,18 +20,21 @@ import org.jetbrains.annotations.Nullable;
 import org.zmlx.hg4idea.execution.HgCommandExecutor;
 import org.zmlx.hg4idea.execution.HgCommandResult;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class HgShowConfigCommand {
 
-  @NotNull private final Project project;
+  private final @NotNull Project project;
 
   public HgShowConfigCommand(@NotNull Project project) {
     this.project = project;
   }
 
-  @NotNull
-  public Map<String, Map<String, String>> execute(@Nullable VirtualFile repo) {
+  public @NotNull Map<String, Map<String, String>> execute(@Nullable VirtualFile repo) {
     if (repo == null) {
       return Collections.emptyMap();
     }
@@ -39,7 +42,7 @@ public class HgShowConfigCommand {
     final HgCommandExecutor executor = new HgCommandExecutor(project);
     executor.setSilent(true);
     //force override debug option while initialize hg configs
-    HgCommandResult result = executor.executeInCurrentThread(repo, "showconfig", Arrays.asList("--config", "ui.debug=false"));
+    HgCommandResult result = executor.executeInCurrentThread(repo, "showconfig", Arrays.asList("--config", "ui.debug=false"), true);
 
     if (result == null) {
       return Collections.emptyMap();
@@ -55,7 +58,7 @@ public class HgShowConfigCommand {
 
         if (dotIndex > 0) {
           String sectionName = sectionAndName.substring(0, dotIndex);
-          String optionName = sectionAndName.substring(dotIndex + 1, sectionAndName.length());
+          String optionName = sectionAndName.substring(dotIndex + 1);
           if (configMap.containsKey(sectionName)) {
             configMap.get(sectionName).put(optionName, value);
           }

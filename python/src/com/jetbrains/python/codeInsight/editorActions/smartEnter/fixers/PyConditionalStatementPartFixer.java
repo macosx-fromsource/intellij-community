@@ -29,12 +29,6 @@ import org.jetbrains.annotations.NotNull;
 
 import static com.jetbrains.python.psi.PyUtil.sure;
 
-/**
- * Created by IntelliJ IDEA.
- * Author: Alexey.Ivanov
- * Date:   15.04.2010
- * Time:   19:33:14
- */
 public class PyConditionalStatementPartFixer extends PyFixer<PyConditionalStatementPart> {
   public PyConditionalStatementPartFixer() {
     super(PyConditionalStatementPart.class);

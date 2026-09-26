@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2017 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,19 @@
 package org.jetbrains.plugins.groovy.intentions.control;
 
 import com.intellij.psi.PsiElement;
-import org.jetbrains.plugins.groovy.lang.psi.util.ErrorUtil;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.plugins.groovy.intentions.base.PsiElementPredicate;
-import org.jetbrains.plugins.groovy.lang.psi.impl.utils.ComparisonUtils;
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrBinaryExpression;
+import org.jetbrains.plugins.groovy.lang.psi.impl.utils.ComparisonUtils;
+import org.jetbrains.plugins.groovy.lang.psi.util.ErrorUtil;
 
 class ComparisonPredicate implements PsiElementPredicate {
 
   @Override
-  public boolean satisfiedBy(PsiElement element) {
-    if (!(element instanceof GrBinaryExpression)) {
+  public boolean satisfiedBy(@NotNull PsiElement element) {
+    if (!(element instanceof GrBinaryExpression expression)) {
       return false;
     }
-    final GrBinaryExpression expression = (GrBinaryExpression) element;
     if (!ComparisonUtils.isComparison(expression)) {
       return false;
     }

@@ -1,62 +1,28 @@
-/*
- * Copyright 2000-2009 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.hint;
 
-import com.intellij.openapi.util.MixinExtension;
+import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.PsiElement;
+import com.intellij.util.MixinEP;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.HashMap;
-import java.util.Map;
+public final class DeclarationRangeUtil {
+  private static final ExtensionPointName<MixinEP<DeclarationRangeHandler<PsiElement>>> EP_NAME = new ExtensionPointName<>("com.intellij.declarationRangeHandler");
 
-public class DeclarationRangeUtil {
-  public static Map<Class,DeclarationRangeHandler> ourDeclarationRangeRegistry = new HashMap<>();
-
-  private DeclarationRangeUtil() {
-  }
-
-  public static void setDeclarationHandler(@NotNull Class clazz, DeclarationRangeHandler handler) {
-    ourDeclarationRangeRegistry.put(clazz, handler);
-  }
-
-  public static @NotNull TextRange getDeclarationRange(PsiElement container) {
-    final TextRange textRange = getPossibleDeclarationAtRange(container);
-    assert textRange != null :"Declaration range is invalid for "+container.getClass();
+  public static @NotNull TextRange getDeclarationRange(@NotNull PsiElement container) {
+    TextRange textRange = getPossibleDeclarationAtRange(container);
+    assert textRange != null : "Declaration range is invalid for " + container.getClass();
     return textRange;
   }
 
-  public static @Nullable
-  TextRange getPossibleDeclarationAtRange(final PsiElement container) {
-    DeclarationRangeHandler handler = MixinExtension.getInstance(DeclarationRangeHandler.EP_NAME, container);
-    if (handler != null) {
-      return handler.getDeclarationRange(container);
-    }
-    else {
-      for(Class clazz:ourDeclarationRangeRegistry.keySet()) {
-        if (clazz.isInstance(container)) {
-          final DeclarationRangeHandler handler2 = ourDeclarationRangeRegistry.get(clazz);
-          if (handler2 != null) return handler2.getDeclarationRange(container);
-        }
+  public static @Nullable TextRange getPossibleDeclarationAtRange(@NotNull PsiElement container) {
+    for (MixinEP<DeclarationRangeHandler<PsiElement>> ep: EP_NAME.getIterable()) {
+      if (ep.getKey().isInstance(container)) {
+        return ep.getInstance().getDeclarationRange(container);
       }
-
-      return null;
     }
+    return null;
   }
-
 }

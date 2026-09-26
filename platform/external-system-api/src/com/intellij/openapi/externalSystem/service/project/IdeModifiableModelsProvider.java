@@ -17,23 +17,34 @@ package com.intellij.openapi.externalSystem.service.project;
 
 import com.intellij.facet.ModifiableFacetModel;
 import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.extensions.ExtensionPointName;
+import com.intellij.openapi.externalSystem.model.project.ModuleData;
 import com.intellij.openapi.module.ModifiableModuleModel;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.roots.ModifiableRootModel;
+import com.intellij.openapi.roots.ProjectModelExternalSource;
 import com.intellij.openapi.roots.libraries.Library;
 import com.intellij.openapi.roots.libraries.LibraryTable;
-import com.intellij.packaging.artifacts.ModifiableArtifactModel;
-import com.intellij.packaging.elements.PackagingElementResolvingContext;
+import com.intellij.openapi.util.UserDataHolder;
+import com.intellij.platform.workspace.storage.MutableEntityStorage;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * @author Vladislav.Soroka
- * @since 9/11/2015
  */
-public interface IdeModifiableModelsProvider extends IdeModelsProvider {
+public interface IdeModifiableModelsProvider extends IdeModelsProvider, UserDataHolder {
+
+  ExtensionPointName<ModifiableModelsProviderExtension<ModifiableModel>> EP_NAME =
+    ExtensionPointName.create("com.intellij.externalSystem.modifiableModelsProvider");
+
   @NotNull
   Module newModule(@NotNull @NonNls String filePath, final String moduleTypeId);
+
+  @NotNull
+  Module newModule(@NotNull ModuleData moduleData);
 
   @NotNull
   ModifiableModuleModel getModifiableModuleModel();
@@ -44,27 +55,39 @@ public interface IdeModifiableModelsProvider extends IdeModelsProvider {
   @NotNull
   ModifiableFacetModel getModifiableFacetModel(Module module);
 
+  @Nullable
+  @ApiStatus.Experimental
+  <T extends ModifiableModel> T findModifiableModel(@NotNull Class<T> instanceOf);
+
+  @NotNull
+  @ApiStatus.Experimental
+  <T extends ModifiableModel> T getModifiableModel(@NotNull Class<T> instanceOf);
+
   @NotNull
   LibraryTable.ModifiableModel getModifiableProjectLibrariesModel();
 
   Library.ModifiableModel getModifiableLibraryModel(Library library);
 
-  @NotNull
-  ModifiableArtifactModel getModifiableArtifactModel();
-
   Library createLibrary(String name);
+
+  Library createLibrary(String name, @Nullable ProjectModelExternalSource externalSource);
 
   void removeLibrary(Library library);
 
   ModalityState getModalityStateForQuestionDialogs();
-
-  ArtifactExternalDependenciesImporter getArtifactExternalDependenciesImporter();
-
-  PackagingElementResolvingContext getPackagingElementResolvingContext();
 
   void commit();
 
   void dispose();
 
   void setTestModuleProperties(Module testModule, String productionModuleName);
+
+  @Nullable
+  String getProductionModuleName(Module module);
+
+  @ApiStatus.Internal
+  @NotNull MutableEntityStorage getActualStorageBuilder();
+
+  @ApiStatus.Internal
+  boolean isLibrarySubstituted(@NotNull Library library);
 }

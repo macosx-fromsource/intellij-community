@@ -1,12 +1,13 @@
 package com.intellij.remoteServer.agent.impl.util;
 
 import com.intellij.openapi.diagnostic.Logger;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 
 /**
@@ -14,11 +15,11 @@ import java.util.List;
  */
 public class UrlCollector {
 
-  private static final Logger LOG = Logger.getInstance("#" + UrlCollector.class.getName());
+  private static final Logger LOG = Logger.getInstance(UrlCollector.class);
 
   private List<File> myFiles;
 
-  public URL[] collect(Collection<File> libraries) {
+  public URL[] collect(List<Path> libraries) {
     List<File> files = collectFiles(libraries);
     URL[] result = new URL[files.size()];
     for (int i = 0; i < files.size(); i++) {
@@ -32,9 +33,10 @@ public class UrlCollector {
     return result;
   }
 
-  public List<File> collectFiles(Collection<File> libraries) {
+  public List<File> collectFiles(List<Path> libraries) {
     myFiles = new ArrayList<>();
-    for (File library : libraries) {
+    for (Path path : libraries) {
+      File library = path.toFile();
       if (library.exists()) {
         addFile(library);
         if (library.isDirectory()) {
@@ -45,8 +47,15 @@ public class UrlCollector {
     return myFiles;
   }
 
-  private void addLibraries(File dir) {
-    for (File file : dir.listFiles()) {
+  private void addLibraries(@NotNull File dir) {
+    LOG.debug("addLibraries: " + dir.getAbsolutePath() + ", exists: " + dir.exists());
+    File[] subFiles = dir.listFiles();
+    if (subFiles == null) {
+      LOG.warn("Can't list files in " + dir);
+      return;
+    }
+
+    for (File file : subFiles) {
       if (file.isDirectory()) {
         addLibraries(file);
       }
@@ -56,8 +65,8 @@ public class UrlCollector {
     }
   }
 
-  private void addFile(File file) {
-    LOG.debug("addFile: " + file.getAbsolutePath());
+  private void addFile(@NotNull File file) {
+    LOG.debug("addFile: " + file.getAbsolutePath() + ", exists: " + file.exists());
     myFiles.add(file);
   }
 }

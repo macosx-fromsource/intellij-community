@@ -1,156 +1,162 @@
-/*
- * Copyright 2000-2012 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.ether;
 
-/**
- * @author: db
- * Date: 26.09.11
- */
+import org.jetbrains.jps.builders.java.JavaBuilderUtil;
+
+import java.util.Set;
+
 public class GenericTest extends IncrementalTestCase {
-  public GenericTest() throws Exception {
+  private static final Set<String> GRAPH_ONLY_TESTS = Set.of("implicitOverrideMethodSignatureChanged");
+
+  public GenericTest() {
     super("generics");
   }
 
-  public void testAddMethodToBase() throws Exception {
+  @Override
+  protected boolean shouldRunTest() {
+    if (JavaBuilderUtil.isDepGraphEnabled()) {
+      return super.shouldRunTest();
+    }
+    return !GRAPH_ONLY_TESTS.contains(getTestName(true));
+  }
+
+  public void testAddMethodToBase() {
     doTest();
   }
 
-  public void testAddParameterizedMethodToBase() throws Exception {
+  public void testAddParameterizedMethodToBase() {
     doTest();
   }
 
-  public void testChangeBound() throws Exception {
+  public void testChangeBound() {
     doTest();
   }
 
-  public void testChangeBound1() throws Exception {
+  public void testChangeBound1() {
     doTest();
   }
 
-  public void testChangeBoundClass1() throws Exception {
+  public void testChangeBoundClass1() {
     doTest();
   }
 
-  public void testChangeBoundedClass() throws Exception {
+  public void testChangeBoundedClass() {
     doTest();
   }
 
-  public void testChangeBoundInterface1() throws Exception {
+  public void testChangeBoundInterface1() {
     doTest();
   }
 
-  public void testChangeExtends() throws Exception {
+  public void testChangeExtends() {
     doTest();
   }
 
-  public void testChangeExtends1() throws Exception {
+  public void testChangeExtends1() {
     doTest();
   }
 
-  public void testChangeExtends2() throws Exception {
+  public void testChangeExtends2() {
     doTest();
   }
 
-  public void testChangeImplements() throws Exception {
+  public void testChangeImplements() {
     doTest();
   }
 
-  public void testChangeInterfaceTypeParameter() throws Exception {
+  public void testChangeInterfaceTypeParameter() {
     doTest();
   }
 
-  public void testChangeToCovariantMethodInBase() throws Exception {
+  public void testChangeToCovariantMethodInBase() {
     doTest();
   }
 
-  public void testChangeToCovariantMethodInBase2() throws Exception {
+  public void testChangeToCovariantMethodInBase2() {
     doTest();
   }
 
-  /* Not working yet
-  public void testChangeToCovariantMethodInBase3() throws Exception {
-    doTest();
-  }
-  */
-  public void testChangeVarargSignature() throws Exception {
-    doTest();
-  }
-
-  public void testChangeVarargSignature1() throws Exception {
+  public void testChangeToCovariantMethodInBase3() {
+    // Strictly speaking, recompilation of "IImpl" is not necessary, since all needed bridge methods will be included by the compiler into its base "Mediator" class (see the test's classes).
+    // However, at the moment when decision is made, both Mediator and IImpl do not have necessary bridge methods, so the corresponding rule affects both classes.
+    // At the moment we assume that it is fine to recompile more classes rather than make the rule to be more complicated.
     doTest();
   }
 
-  public void testCovariance() throws Exception {
+  public void testChangeToCovariantMethodInBase4() {
     doTest();
   }
 
-  public void testCovariance1() throws Exception {
+  public void testChangeVarargSignature() {
     doTest();
   }
 
-  public void testCovariance2() throws Exception {
+  public void testChangeVarargSignature1() {
     doTest();
   }
 
-  public void testCovarianceNoChanges() throws Exception {
+  public void testCovariance() {
     doTest();
   }
 
-  public void testDegenerify() throws Exception {
+  public void testCovariance1() {
     doTest();
   }
 
-  public void testDegenerify1() throws Exception {
+  public void testCovariance2() {
     doTest();
   }
 
-  public void testFieldTypeChange() throws Exception {
+  public void testCovarianceNoChanges() {
     doTest();
   }
 
-  public void testOverrideAnnotatedAnonymous() throws Exception {
+  public void testDegenerify() {
+    doTest();
+  }
+
+  public void testDegenerify1() {
+    doTest();
+  }
+
+  public void testFieldTypeChange() {
+    doTest();
+  }
+
+  public void testOverrideAnnotatedAnonymous() {
     doTest();
   }
 
   /* Not working yet */
-  public void testOverrideAnnotatedAnonymousNotRecompile() throws Exception {
+  public void testOverrideAnnotatedAnonymousNotRecompile() {
     doTest();
   }
 
-  public void testOverrideAnnotatedInner() throws Exception {
+  public void testOverrideAnnotatedInner() {
     doTest();
   }
 
-  public void testParamTypes() throws Exception {
+  public void testParamTypes() {
     doTest();
   }
 
-  public void testReturnType() throws Exception {
+  public void testReturnType() {
     doTest();
   }
 
-  public void testArgumentContainment() throws Exception {
+  public void testArgumentContainment() {
     doTest();
   }
 
-  public void testArgumentContainment2() throws Exception {
+  public void testArgumentContainment2() {
     doTest();
   }
 
-  public void testArgumentContainment3() throws Exception {
+  public void testArgumentContainment3() {
     doTest();
+  }
+
+  public void testImplicitOverrideMethodSignatureChanged() {
+    doTest().assertFailed();
   }
 }

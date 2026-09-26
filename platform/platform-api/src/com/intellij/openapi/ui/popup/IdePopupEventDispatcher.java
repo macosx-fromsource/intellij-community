@@ -16,9 +16,11 @@
 
 package com.intellij.openapi.ui.popup;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.awt.*;
+import java.awt.AWTEvent;
+import java.awt.Component;
 import java.util.stream.Stream;
 
 public interface IdePopupEventDispatcher {
@@ -26,7 +28,7 @@ public interface IdePopupEventDispatcher {
   @Nullable
   Component getComponent();
 
-  @Nullable
+  @NotNull
   Stream<JBPopup> getPopupStream();
 
   boolean dispatch(AWTEvent event);
@@ -35,5 +37,6 @@ public interface IdePopupEventDispatcher {
 
   boolean close();
 
-  void setRestoreFocusSilentely();
+  default void setRestoreFocusSilently() {
+  }
 }

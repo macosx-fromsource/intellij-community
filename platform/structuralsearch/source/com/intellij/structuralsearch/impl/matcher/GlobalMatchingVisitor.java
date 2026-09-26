@@ -1,26 +1,13 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.structuralsearch.impl.matcher;
 
 import com.intellij.dupLocator.AbstractMatchingVisitor;
 import com.intellij.dupLocator.iterators.NodeIterator;
 import com.intellij.dupLocator.util.NodeFilter;
-import com.intellij.lang.Language;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.util.Key;
+import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementVisitor;
 import com.intellij.structuralsearch.MatchResult;
@@ -31,108 +18,136 @@ import com.intellij.structuralsearch.impl.matcher.handlers.DelegatingHandler;
 import com.intellij.structuralsearch.impl.matcher.handlers.MatchingHandler;
 import com.intellij.structuralsearch.impl.matcher.handlers.SubstitutionHandler;
 import com.intellij.structuralsearch.plugin.ui.Configuration;
-import com.intellij.structuralsearch.plugin.util.SmartPsiPointer;
-import com.intellij.util.containers.HashMap;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
-import java.util.Map;
 
 /**
- * Visitor class to manage pattern matching
+ * GlobalMatchingVisitor does the walking of the pattern tree, and invokes the language specific MatchingVisitor on elements.
+ * It also stores the current code element to match. MatchingVisitor visits pattern elements, not code elements.
+ * A language-specific matching visitor can retrieve the current code element from the GlobalMatchingVisitor by calling
+ * {@link #getElement(Class)} or {@link #getElement()} from inside the visit methods.
  */
-@SuppressWarnings({"RefusedBequest"})
-public class GlobalMatchingVisitor extends AbstractMatchingVisitor {
-  private static final Logger LOG = Logger.getInstance("#com.intellij.structuralsearch.impl.matcher.GlobalMatchingVisitor");
+public final class GlobalMatchingVisitor extends AbstractMatchingVisitor {
+  private static final Logger LOG = Logger.getInstance(GlobalMatchingVisitor.class);
   public static final Key<List<? extends PsiElement>> UNMATCHED_ELEMENTS_KEY = Key.create("UnmatchedElements");
 
-  // the pattern element for visitor check
+  /**
+   *  The current element to match.
+   */
   private PsiElement myElement;
 
-  // the result of matching in visitor
+  /**
+   * The result of matching in the language-specific visitor
+   */
   private boolean myResult;
 
-  // context of matching
-  private MatchContext matchContext;
+  private final MatchContext matchContext = new MatchContext(this);
 
-  private final Map<Language, PsiElementVisitor> myLanguage2MatchingVisitor = new HashMap<>(1);
-
+  /**
+   * @return the current code element to match.
+   */
   public PsiElement getElement() {
     return myElement;
   }
 
+  /**
+   * @return the current element cast to the specified type, null if cast was unsuccessful.
+   * Also sets result to false if the current element can't be cast.
+   */
+  public <T extends PsiElement> T getElement(@NotNull Class<T> aClass) {
+    return setResult(aClass.isInstance(myElement)) ? aClass.cast(myElement) : null;
+  }
+
+  /**
+   * @return the current result.
+   */
   public boolean getResult() {
     return myResult;
   }
 
-  public void setResult(boolean result) {
-    this.myResult = result;
+  /**
+   * Set the current result to the specified value.
+   * @param result  the new result value
+   * @return the current value of a result, i.e., the value just set. To allow a call to this method used as an if condition.
+   */
+  @Contract("true->true;false->false")
+  public boolean setResult(boolean result) {
+    return myResult = result;
   }
 
-  public MatchContext getMatchContext() {
+  public @NotNull MatchContext getMatchContext() {
     return matchContext;
   }
 
   @Override
-  protected boolean doMatchInAnyOrder(NodeIterator elements, NodeIterator elements2) {
-    return matchContext.getPattern().getHandler(elements.current()).matchInAnyOrder(
-      elements,
-      elements2,
-      matchContext
-    );
+  protected boolean doMatchInAnyOrder(@NotNull NodeIterator elements, @NotNull NodeIterator elements2) {
+    return MatchingHandler.matchInAnyOrder(elements, elements2, matchContext);
   }
 
-  @NotNull
   @Override
-  protected NodeFilter getNodeFilter() {
+  public boolean matchOptionally(@Nullable PsiElement patternNode, @Nullable PsiElement matchNode) {
+    if (patternNode == null) {
+      return isLeftLooseMatching();
+    }
+    final MatchingHandler handler = matchContext.getPattern().getHandler(patternNode);
+    return matchNode != null
+           ? handler.match(patternNode, matchNode, matchContext) && handler.validate(matchContext, 1)
+           : handler.validate(matchContext, 0);
+  }
+
+  @Override
+  protected @NotNull NodeFilter getNodeFilter() {
     return LexicalNodesFilter.getInstance();
   }
 
-  public final boolean handleTypedElement(final PsiElement typedElement, final PsiElement match) {
-    MatchingHandler handler = matchContext.getPattern().getHandler(typedElement);
-    final MatchingHandler initialHandler = handler;
+  public boolean handleTypedElement(PsiElement typedElement, PsiElement match) {
+    final MatchingHandler initialHandler = matchContext.getPattern().getHandler(typedElement);
+    MatchingHandler handler = initialHandler;
     if (handler instanceof DelegatingHandler) {
       handler = ((DelegatingHandler)handler).getDelegate();
     }
-    assert handler instanceof SubstitutionHandler :
-      handler != null ? handler.getClass() : "null" + ' ' + (initialHandler != null ? initialHandler.getClass() : "null");
+    assert handler instanceof SubstitutionHandler : typedElement + " has handler " +
+                                                    (handler != null ? handler.getClass() : "null" + ' ' + initialHandler.getClass());
 
     return ((SubstitutionHandler)handler).handle(match, matchContext);
   }
 
-  public boolean allowsAbsenceOfMatch(final PsiElement element) {
+  public boolean allowsAbsenceOfMatch(PsiElement element) {
     final MatchingHandler handler = getMatchContext().getPattern().getHandler(element);
     return handler instanceof SubstitutionHandler && ((SubstitutionHandler)handler).getMinOccurs() == 0;
   }
 
   /**
-   * Identifies the match between given element of program tree and pattern element
+   * Identifies the match between given element of a program tree and pattern element
    *
-   * @param el1 the pattern for matching
-   * @param el2 the tree element for matching
+   * @param patternElement the pattern element
+   * @param matchElement the match element from the code.
    * @return true if equal and false otherwise
    */
   @Override
-  public boolean match(final PsiElement el1, final PsiElement el2) {
-    if (el1 == el2) return true;
-    if (el1 == null) {
-      // absence of pattern element is match
+  public boolean match(PsiElement patternElement, PsiElement matchElement) {
+    ProgressManager.checkCanceled();
+    if (patternElement == matchElement) return true;
+    if (patternElement == null) {
+      // absence of a pattern element is match
       return true;
     }
-    if (el2 == null) {
+    if (matchElement == null) {
       // absence of match element needs check if allowed.
-      return allowsAbsenceOfMatch(el1);
+      return allowsAbsenceOfMatch(patternElement);
     }
 
     // copy changed data to local stack
-    PsiElement prevElement = myElement;
-    myElement = el2;
+    final PsiElement prevElement = myElement;
+    myElement = matchElement;
 
     try {
-      PsiElementVisitor visitor = getVisitorForElement(el1);
+      final PsiElementVisitor visitor = getVisitorForElement(patternElement);
       if (visitor != null) {
-        el1.accept(visitor);
+        patternElement.accept(visitor);
       }
     }
     catch (ClassCastException ex) {
@@ -145,156 +160,74 @@ public class GlobalMatchingVisitor extends AbstractMatchingVisitor {
     return myResult;
   }
 
-  @Nullable
-  private PsiElementVisitor getVisitorForElement(PsiElement element) {
-    Language language = element.getLanguage();
-    PsiElementVisitor visitor = myLanguage2MatchingVisitor.get(language);
-    if (visitor == null) {
-      visitor = createMatchingVisitor(language);
-      myLanguage2MatchingVisitor.put(language, visitor);
-    }
-    return visitor;
-  }
-
-  @Nullable
-  private PsiElementVisitor createMatchingVisitor(Language language) {
-    StructuralSearchProfile profile = StructuralSearchUtil.getProfileByLanguage(language);
+  private @Nullable PsiElementVisitor getVisitorForElement(PsiElement element) {
+    final StructuralSearchProfile profile = StructuralSearchUtil.getProfileByPsiElement(element);
     if (profile == null) {
-      LOG.warn("there is no StructuralSearchProfile for language " + language.getID());
+      LOG.warn("No StructuralSearchProfile found for language " + element.getLanguage().getID());
       return null;
     }
-    else {
-      return profile.createMatchingVisitor(this);
-    }
+    return profile.createMatchingVisitor(this);
   }
 
   /**
    * Matches tree segments starting with given elements to find equality
    *
-   * @param nodes the pattern element for matching
-   * @param nodes2 the tree element for matching
+   * @param patternNodes the pattern element for matching
+   * @param matchNodes the tree element for matching
    * @return if they are equal and false otherwise
    */
   @Override
-  public boolean matchSequentially(NodeIterator nodes, NodeIterator nodes2) {
-    if (!nodes.hasNext()) {
-      return !nodes2.hasNext();
+  public boolean matchSequentially(@NotNull NodeIterator patternNodes, @NotNull NodeIterator matchNodes) {
+    if (!patternNodes.hasNext()) {
+      while (matchNodes.current() instanceof PsiComment) matchNodes.advance();
+      return !matchNodes.hasNext();
     }
-
-    return matchContext.getPattern().getHandler(nodes.current()).matchSequentially(nodes, nodes2, matchContext);
+    final PsiElement current = patternNodes.current();
+    return matchContext.getPattern().getHandler(current).matchSequentially(patternNodes, matchNodes, matchContext);
   }
 
   /**
-   * Descents the tree in depth finding matches
+   * Descends the tree in depth finding matches
    *
-   * @param elements the element for which the sons are looked for match
+   * @param elements  the element of which the children are checked for a match
    */
-  public void matchContext(final NodeIterator elements) {
-    if (matchContext == null) {
-      return;
-    }
+  public void matchContext(@NotNull NodeIterator elements) {
     final CompiledPattern pattern = matchContext.getPattern();
     final NodeIterator patternNodes = pattern.getNodes().clone();
     final MatchResultImpl saveResult = matchContext.hasResult() ? matchContext.getResult() : null;
-    final List<PsiElement> saveMatchedNodes = matchContext.getMatchedNodes();
+    matchContext.saveMatchedNodes();
 
     try {
-      matchContext.setResult(null);
-      matchContext.setMatchedNodes(null);
-
       if (!patternNodes.hasNext()) return;
       final MatchingHandler firstMatchingHandler = pattern.getHandler(patternNodes.current());
 
       for (; elements.hasNext(); elements.advance()) {
+        matchContext.setResult(null);
+        matchContext.clearMatchedNodes();
         final PsiElement elementNode = elements.current();
 
-        boolean matched = firstMatchingHandler.matchSequentially(patternNodes, elements, matchContext);
-
-        if (matched) {
-          MatchingHandler matchingHandler = matchContext.getPattern().getHandler(Configuration.CONTEXT_VAR_NAME);
-          if (matchingHandler != null) {
-            matched = ((SubstitutionHandler)matchingHandler).handle(elementNode, matchContext);
-          }
+        final boolean patternMatched = firstMatchingHandler.matchSequentially(patternNodes, elements, matchContext);
+        final boolean contextMatched;
+        if (patternMatched) {
+          final MatchingHandler matchingHandler = pattern.getHandler(Configuration.CONTEXT_VAR_NAME);
+          contextMatched = matchingHandler == null || ((SubstitutionHandler)matchingHandler).handle(elementNode, matchContext);
+        }
+        else {
+          contextMatched = false;
         }
 
-        final List<PsiElement> matchedNodes = matchContext.getMatchedNodes();
-
-        if (matched) {
-          dispatchMatched(matchedNodes, matchContext.getResult());
-        }
-
-        matchContext.setMatchedNodes(null);
-        matchContext.setResult(null);
+        if (contextMatched) matchContext.dispatchMatched();
 
         patternNodes.reset();
-        if (matchedNodes != null && matchedNodes.size() > 0 && matched) {
+        if (patternMatched) {
           elements.rewind();
         }
       }
     }
     finally {
       matchContext.setResult(saveResult);
-      matchContext.setMatchedNodes(saveMatchedNodes);
+      matchContext.restoreMatchedNodes();
     }
-  }
-
-  private void dispatchMatched(final List<PsiElement> matchedNodes, MatchResultImpl result) {
-    if (!matchContext.getOptions().isResultIsContextMatch() && doDispatch(result, result)) return;
-
-    // There is no substitutions so show the context
-
-    processNoSubstitutionMatch(matchedNodes, result);
-    matchContext.getSink().newMatch(result);
-  }
-
-  private boolean doDispatch(final MatchResult result, MatchResultImpl context) {
-    boolean ret = false;
-
-    for (MatchResult r : result.getAllSons()) {
-      if ((r.isScopeMatch() && !r.isTarget()) || r.isMultipleMatch()) {
-        ret |= doDispatch(r, context);
-      }
-      else if (r.isTarget()) {
-        ((MatchResultImpl)r).setContext(context);
-        matchContext.getSink().newMatch(r);
-        ret = true;
-      }
-    }
-    return ret;
-  }
-
-  private static void processNoSubstitutionMatch(List<PsiElement> matchedNodes, MatchResultImpl result) {
-    boolean complexMatch = matchedNodes.size() > 1;
-    final PsiElement match = matchedNodes.get(0);
-
-    if (!complexMatch) {
-      result.setMatchRef(new SmartPsiPointer(match));
-      result.setMatchImage(match.getText());
-    }
-    else {
-
-      for (final PsiElement matchStatement : matchedNodes) {
-        result.getMatches().add(new MatchResultImpl(
-            MatchResult.LINE_MATCH,
-            matchStatement.getText(),
-            new SmartPsiPointer(matchStatement),
-            true
-          )
-        );
-      }
-
-      result.setMatchRef(
-        new SmartPsiPointer(match)
-      );
-      result.setMatchImage(
-        match.getText()
-      );
-      result.setName(MatchResult.MULTI_LINE_MATCH);
-    }
-  }
-
-  public void setMatchContext(MatchContext matchContext) {
-    this.matchContext = matchContext;
   }
 
   @Override
@@ -308,15 +241,41 @@ public class GlobalMatchingVisitor extends AbstractMatchingVisitor {
   }
 
   public boolean matchText(@Nullable PsiElement left, @Nullable PsiElement right) {
-    if (left == null) {
-      return right == null;
+    if (left == null) return right == null;
+    return right != null && matchText(left.getText(), right.getText());
+  }
+
+  public boolean matchText(String left, String right) {
+    return matchContext.getOptions().isCaseSensitiveMatch() ? left.equals(right) : left.equalsIgnoreCase(right);
+  }
+
+  public void scopeMatch(PsiElement patternNode, boolean typedVar, PsiElement matchNode) {
+    final MatchResultImpl ourResult = matchContext.hasResult() ? matchContext.getResult() : null;
+    matchContext.popResult();
+
+    if (myResult) {
+      if (typedVar) {
+        final SubstitutionHandler handler = (SubstitutionHandler)matchContext.getPattern().getHandler(patternNode);
+        if (ourResult != null) ourResult.setScopeMatch(true);
+        handler.setNestedResult(ourResult);
+        setResult(handler.handle(matchNode, matchContext));
+
+        final MatchResultImpl nestedResult = handler.getNestedResult();
+        if (nestedResult != null) { // some constraint prevents from adding
+          copyResults(nestedResult);
+          handler.setNestedResult(null);
+        }
+      }
+      else if (ourResult != null) {
+        copyResults(ourResult);
+      }
     }
-    else if (right == null) {
-      return false;
+  }
+
+  private void copyResults(MatchResult source) {
+    MatchResultImpl result = matchContext.getResult();
+    for (MatchResult child : source.getChildren()) {
+      result.addChild(child);
     }
-    final boolean caseSensitiveMatch = matchContext.getOptions().isCaseSensitiveMatch();
-    final String leftText = left.getText();
-    final String rightText = right.getText();
-    return caseSensitiveMatch ? leftText.equals(rightText) : leftText.equalsIgnoreCase(rightText);
   }
 }

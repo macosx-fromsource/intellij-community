@@ -14,12 +14,6 @@
  * limitations under the License.
  */
 
-/*
- * Created by IntelliJ IDEA.
- * User: sweinreuter
- * Date: 11.04.2006
- * Time: 00:46:09
- */
 package org.intellij.lang.xpath.context;
 
 import com.intellij.codeInspection.SuppressIntentionAction;
@@ -34,12 +28,13 @@ import org.intellij.lang.xpath.validation.inspections.quickfix.RemoveRedundantCo
 import org.intellij.lang.xpath.validation.inspections.quickfix.XPathQuickFixFactory;
 import org.jetbrains.annotations.NotNull;
 
-public class XPathQuickFixFactoryImpl implements XPathQuickFixFactory {
+public final class XPathQuickFixFactoryImpl implements XPathQuickFixFactory {
     public static final XPathQuickFixFactory INSTANCE = new XPathQuickFixFactoryImpl();
 
     private XPathQuickFixFactoryImpl() {
     }
 
+    @Override
     public Fix<XPathExpression>[] createImplicitTypeConversionFixes(XPathExpression expression, XPathType type, boolean explicit) {
         //noinspection unchecked
         return explicit ? new Fix[]{
@@ -50,6 +45,7 @@ public class XPathQuickFixFactoryImpl implements XPathQuickFixFactory {
         };
     }
 
+    @Override
     public Fix<XPathExpression>[] createRedundantTypeConversionFixes(XPathExpression expression) {
         //noinspection unchecked
         return new Fix[]{
@@ -57,16 +53,18 @@ public class XPathQuickFixFactoryImpl implements XPathQuickFixFactory {
         };
     }
 
+    @Override
     public Fix<XPathNodeTest>[] createUnknownNodeTestFixes(XPathNodeTest test) {
         //noinspection unchecked
         return new Fix[0];
     }
 
-    @NotNull
-    public SuppressIntentionAction[] getSuppressActions(XPathInspection inspection) {
-        return new SuppressIntentionAction[0];
+    @Override
+    public SuppressIntentionAction @NotNull [] getSuppressActions(XPathInspection inspection) {
+        return SuppressIntentionAction.EMPTY_ARRAY;
     }
 
+    @Override
     public boolean isSuppressedFor(PsiElement element, XPathInspection inspection) {
         return false;
     }
