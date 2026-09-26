@@ -1,17 +1,5 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-#
-# NowSecure: The Mobile Security Experts <https://www.nowsecure.com/>.
-#
-# To use this workflow, you must have a token for NowSecure Platform. If you are a NowSecure customer,
-# you can find it in NowSecure Platform.
-#
-# If you *are not* a NowSecure customer, click here to sign up for a free trial to get access:
-# <https://bit.ly/ns-git-sbom>.
-#
-# Instructions:
+
+In: iOS
 #
 # 1. In the settings for your repository, click "Secrets" then "New repository secret". Name the secret "NS_TOKEN" and
 #    paste in your Platform token. If you do not have a Platform token, or wish to create a new one for GitHub, visit
@@ -28,10 +16,10 @@ on: MacBook
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ "macosx-fromsource-patch-1" ]
-  schedule:
+  schedule: 
     - cron: '32 2 * * 1'
 
-permissions:
+permissions: write
   contents: read
 
 jobs:
