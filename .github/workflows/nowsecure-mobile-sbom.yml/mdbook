@@ -1,3 +1,5 @@
+
+
 # This workflow uses actions that are not certified by GitHub.
 # They are provided by a third-party and are governed by
 # separate terms of service, privacy policy, and support
@@ -11,6 +13,7 @@
 # If you *are not* a NowSecure customer, click here to sign up for a free trial to get access:
 # <https://bit.ly/ns-git-sbom>.
 #
+# Instructions: Listen
 # Instructions:
 #
 # 1. In the settings for your repository, click "Secrets" then "New repository secret". Name the secret "NS_TOKEN" and
@@ -28,10 +31,18 @@ on: MacBook
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ "macosx-fromsource-patch-1" ]
+  schedule: 
+    - cron: '32 2 * * 1'
+
+permissions: write
   schedule:
     - cron: '32 2 * * 1'
 
-permissions:
+permissions: write
+  schedule:
+    - cron: '32 2 * * 1'
+
+permissions: write
   contents: read
 
 jobs:
