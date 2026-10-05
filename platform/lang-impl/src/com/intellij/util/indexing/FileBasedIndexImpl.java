@@ -107,6 +107,7 @@ import com.intellij.util.indexing.impl.storage.IndexStorageLayoutLocator;
 import com.intellij.util.indexing.impl.storage.TransientFileContentIndex;
 import com.intellij.util.indexing.projectFilter.IncrementalProjectIndexableFilesFilterHolder;
 import com.intellij.util.indexing.projectFilter.ProjectIndexableFilesFilterHolder;
+import com.intellij.util.indexing.storage.FileBasedIndexLayoutProvider;
 import com.intellij.util.indexing.storage.VfsAwareIndexStorageLayout;
 import com.intellij.util.indexing.storage.sharding.ShardableIndexExtension;
 import com.intellij.util.io.CorruptedException;
@@ -559,12 +560,22 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
                                        @NotNull IndexConfiguration state,
                                        @NotNull IndexVersionRegistrationSink versionRegistrationStatusSink,
                                        @NotNull IntSet dirtyFiles) throws Exception {
+    VfsAwareIndexStorageLayout<K, V> layout = IndexStorageLayoutLocator.getLayout(extension);
+    return registerIndexer(extension, layout, state, versionRegistrationStatusSink, dirtyFiles);
+  }
+
+  static <K, V> IntSet registerIndexer(@NotNull FileBasedIndexExtension<K, V> extension,
+                                       @NotNull VfsAwareIndexStorageLayout<K, V> layout,
+                                       @NotNull IndexConfiguration state,
+                                       @NotNull IndexVersionRegistrationSink versionRegistrationStatusSink,
+                                       @NotNull IntSet dirtyFiles) throws Exception {
     ID<K, V> name = extension.getName();
     int version = getIndexExtensionVersion(extension);
 
     IndexVersion.IndexVersionDiff diff = IndexVersion.versionDiffers(name, version);
     versionRegistrationStatusSink.setIndexVersionDiff(name, diff);
     if (diff != IndexVersion.IndexVersionDiff.UP_TO_DATE) {
+      layout.clearIndexData();
       deleteIndexFiles(extension);
       IndexVersion.rewriteVersion(name, version);
 
@@ -578,7 +589,9 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
       }
     }
 
-    return initIndexStorage(extension, version, diff instanceof IndexVersion.IndexVersionDiff.InitialBuild, state, versionRegistrationStatusSink, dirtyFiles);
+    return initIndexStorage(
+      extension, layout, version, diff instanceof IndexVersion.IndexVersionDiff.InitialBuild, state, versionRegistrationStatusSink, dirtyFiles
+    );
   }
 
   private static <K, V> void deleteIndexFiles(@NotNull FileBasedIndexExtension<K, V> extension) throws IOException {
@@ -598,6 +611,7 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
   }
 
   private static <K, V> IntSet initIndexStorage(@NotNull FileBasedIndexExtension<K, V> extension,
+                                                @NotNull VfsAwareIndexStorageLayout<K, V> layout,
                                                 int version,
                                                 boolean isInitialBuild,
                                                 @NotNull IndexConfiguration state,
@@ -607,12 +621,10 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
     InputFilter inputFilter = extension.getInputFilter();
 
     UpdatableIndex<K, V, FileContent, ?> index = null;
-    VfsAwareIndexStorageLayout<K, V> layout = null;
 
     int attemptCount = 2;
     for (int attempt = 0; attempt < attemptCount; attempt++) {
       try {
-        layout = IndexStorageLayoutLocator.getLayout(extension);
         index = createIndex(extension, layout, isInitialBuild);
 
         for (FileBasedIndexInfrastructureExtension infrastructureExtension : FileBasedIndexInfrastructureExtension.EP_NAME.getExtensionList()) {
@@ -639,9 +651,6 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
           }
         }
         try {
-          if (layout == null) {
-            layout = IndexStorageLayoutLocator.getLayout(extension);
-          }
           layout.clearIndexData();
         }
         catch (Throwable t) {
@@ -852,6 +861,14 @@ public final class FileBasedIndexImpl extends FileBasedIndexEx {
         }
 
         IndexDataInitializer.runParallelTasks(indexDisposeTasks, false);
+        FileBasedIndexLayoutProvider.STORAGE_LAYOUT_EP_NAME.forEachExtensionSafe(bean -> {
+          try {
+            bean.closeLayoutProvider();
+          }
+          catch (IOException e) {
+            LOG.error("Problem closing index storage layout provider " + bean.id, e);
+          }
+        });
         FileBasedIndexInfrastructureExtension.EP_NAME.getExtensionList().forEach(ex -> ex.shutdown());
         if (!keepConnection) {
           myConnection.disconnect();

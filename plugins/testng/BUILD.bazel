@@ -19,10 +19,6 @@ dev_dist_plugin(
         "intellij.testng.rt",
     ],
     descriptor = "resources/META-INF/plugin.xml",
-    descriptor_modules = [
-        "intellij.libraries.testng",
-        "intellij.testng.langInjection",
-    ],
     jars = {
         "lib/intellij.libraries.testng.jar": [
             "intellij.libraries.testng",
@@ -31,7 +27,6 @@ dev_dist_plugin(
         "lib/testng-rt.jar": ["intellij.testng.rt"],
         "lib/testng-plugin.jar": ["intellij.testng"],
     },
-    main_jar_name = "testng-plugin.jar",
     main_module = "intellij.testng",
 )
 ### auto-generated section `dev intellij.testng` end
@@ -103,6 +98,7 @@ jvm_library(
         "//xml/xml-psi-api:psi",
         "//libraries/jgoodies/forms",
         "//platform/execution",
+        "//platform/consoleView",
         "//libraries/kotlinx/collections-immutable:libraries-kotlinx-collections-immutable",
         "//jps/model-api:model",
         "//jps/model-serialization",
@@ -164,6 +160,7 @@ jvm_library(
         "//xml/xml-psi-api:psi_test_lib",
         "//libraries/jgoodies/forms:forms_test_lib",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView:consoleView_test_lib",
         "//libraries/kotlinx/collections-immutable:libraries-kotlinx-collections-immutable_test_lib",
         "//jps/model-api:model_test_lib",
         "//jps/model-serialization:model-serialization_test_lib",
@@ -321,8 +318,8 @@ jvm_library(
         "//jps/model-api:model_test_lib",
         "//platform/statistics",
         "//platform/statistics:statistics_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
         "//java/plugin",
         "//java/plugin:plugin_test_lib",
         "//aether-dependency-resolver/plugin",

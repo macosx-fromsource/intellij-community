@@ -5,6 +5,7 @@
     <module name="intellij.libraries.kotlinx.coroutines.core"/>
     <module name="intellij.platform.analysis"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.ui"/>
     <module name="intellij.platform.editor.ui"/>
@@ -35,19 +36,21 @@
     <extensionPoint qualifiedName="com.intellij.runToolbarProcess" interface="com.intellij.execution.runToolbar.RunToolbarProcess" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.stepsBeforeRunProvider" interface="com.intellij.execution.BeforeRunTaskProvider" area="IDEA_PROJECT" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.runConfigurationTargetEnvironmentAdjusterFactory" interface="com.intellij.execution.target.RunConfigurationTargetEnvironmentAdjuster$Factory" dynamic="true"/>
-    <extensionPoint qualifiedName="com.intellij.consoleActionsPostProcessor" interface="com.intellij.execution.actions.ConsoleActionsPostProcessor" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.configurationProducer" interface="com.intellij.execution.junit.RuntimeConfigurationProducer" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.runConfigurationProducer" interface="com.intellij.execution.actions.RunConfigurationProducer" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.multipleRunLocationsProvider" interface="com.intellij.execution.actions.MultipleRunLocationsProvider" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.runConfigurationProducerSuppressor" interface="com.intellij.execution.RunConfigurationProducerSuppressor" dynamic="true" />
     <extensionPoint qualifiedName="com.intellij.executionTargetType"
                     interface="com.intellij.execution.target.TargetEnvironmentType" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.executionTargetProvider" interface="com.intellij.execution.ExecutionTargetProvider" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.executionTargetLanguageRuntimeType"
                     interface="com.intellij.execution.target.LanguageRuntimeType" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.analyzeStacktraceFilter" interface="com.intellij.execution.filters.Filter" area="IDEA_PROJECT" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.projectTaskRunner" interface="com.intellij.task.ProjectTaskRunner" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.execution.inlineResumeCreator" interface="com.intellij.execution.InlineResumeCreator" dynamic="true"/>
   </extensionPoints>
   <extensions defaultExtensionNs="com.intellij">
+    <projectSettings service="com.intellij.execution.RunConfigurationProducerService"/>
     <projectSettings service="com.intellij.diagnostic.logging.LogConsolePreferences"/>
     <projectSettings service="com.intellij.execution.target.TargetEnvironmentsManager"/>
     <sdkType implementation="com.intellij.openapi.projectRoots.SimpleJavaSdkType"/>

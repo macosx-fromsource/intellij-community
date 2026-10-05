@@ -35,10 +35,10 @@ import com.intellij.ui.components.JBHtmlPane
 import com.intellij.ui.components.JBHtmlPaneConfiguration
 import com.intellij.ui.components.JBHtmlPaneStyleConfiguration
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.NamedColorUtil
 import com.intellij.util.ui.UIUtil
 import org.intellij.plugins.markdown.editor.livepreview.MarkdownLivePreviewSpec
 import org.intellij.plugins.markdown.editor.livepreview.toTextRange
-import org.intellij.plugins.markdown.highlighting.MarkdownHighlighterColors
 import java.awt.Color
 import java.awt.Dimension
 import java.awt.Font
@@ -53,15 +53,6 @@ import javax.swing.text.Element
 import javax.swing.text.html.HTML
 import javax.swing.text.html.HTMLDocument
 
-private val HeadingKeys = listOf(
-  MarkdownHighlighterColors.HEADER_LEVEL_1,
-  MarkdownHighlighterColors.HEADER_LEVEL_2,
-  MarkdownHighlighterColors.HEADER_LEVEL_3,
-  MarkdownHighlighterColors.HEADER_LEVEL_4,
-  MarkdownHighlighterColors.HEADER_LEVEL_5,
-  MarkdownHighlighterColors.HEADER_LEVEL_6,
-)
-
 /** [JBHtmlPane] represents a `<wbr>` with this character. */
 private const val ZERO_WIDTH_SPACE = '\u200B'
 
@@ -73,7 +64,7 @@ private const val MODIFIER_KEYS = InputEvent.SHIFT_DOWN_MASK or InputEvent.CTRL_
 private const val SOURCE_RANGE_ATTRIBUTE = "md-src-pos"
 
 /**
- * Paints each heading line as HTML in a custom fold. The HTML heading element supplies its font size.
+ * Paints each heading line as HTML in a custom fold. The HTML heading element supplies its font size, scaled as in the JCEF preview.
  * While a heading shows its source, a block inlay below it takes the height difference to prevent UI jumps.
  * A plain click on a painted heading moves the caret to the source character under the mouse.
  * The Go-to Declaration mouse shortcut, such as Ctrl+Click, also runs Go to Declaration there.
@@ -182,14 +173,13 @@ internal class MarkdownLivePreviewHeadingRenderer(private val editor: EditorEx) 
       return painter?.takeIf { it.look == look } ?: HeadingPainter(editor, look).also { painter = it }
     }
 
+    /** The look of the JCEF preview: bold, the default foreground, and the info foreground for h6. */
     private fun look(): HeadingLook {
       val scheme = editor.colorsScheme
-      val font = scheme.getFont(EditorFontType.PLAIN)
-      val attributes = scheme.getAttributes(HeadingKeys[heading.level - 1])
       return HeadingLook(
         html = "<h${heading.level}>${heading.html}</h${heading.level}>",
-        font = font.deriveFont(attributes?.fontType ?: Font.BOLD),
-        foreground = attributes?.foregroundColor ?: scheme.defaultForeground,
+        font = scheme.getFont(EditorFontType.BOLD),
+        foreground = if (heading.level == 6) NamedColorUtil.getInactiveTextColor() else scheme.defaultForeground,
         linkColor = scheme.getAttributes(CodeInsightColors.HYPERLINK_ATTRIBUTES)?.foregroundColor ?: scheme.defaultForeground,
       )
     }
@@ -267,7 +257,8 @@ private class HeadingPainter(private val editor: EditorEx, val look: HeadingLook
     val style = if (look.font.isItalic) "italic" else "normal"
     val css = "body { margin: 0; padding: 0; font-family: ${EditorCssFontResolver.EDITOR_FONT_NAME_PLACEHOLDER}; " +
               "font-weight: $weight; font-style: $style } " +
-              "h1, h2, h3, h4, h5, h6 { margin: 0; padding: 0 } " +
+              // The heading sizes of the JCEF preview style sheet, relative to the body font.
+              "h1 { font-size: 2.2em } h2 { font-size: 1.8em } h3 { font-size: 1.3em } h4, h5, h6 { font-size: 1em } " +
               "a { color: #${ColorUtil.toHex(look.linkColor)}; text-decoration: underline } " +
               ".user-del { text-decoration: line-through }"
     return JBHtmlPane(

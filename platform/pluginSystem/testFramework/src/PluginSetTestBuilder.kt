@@ -21,7 +21,7 @@ import com.intellij.ide.plugins.withCustomFactoryInUnitTests
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.util.BuildNumber
 import com.intellij.platform.ide.bootstrap.ZipFilePoolImpl
-import com.intellij.platform.runtime.product.ProductMode
+import com.intellij.platform.productMode.ProductMode
 import com.intellij.util.io.directoryStreamIfExists
 import com.intellij.util.lang.UrlClassLoader
 import java.nio.file.Path
@@ -123,7 +123,7 @@ class PluginSetTestBuilder private constructor(
       }
       override val explicitPluginSubsetToLoad: Set<PluginId>? = this@PluginSetTestBuilder.explicitPluginSubsetToLoad
       override val disableRequiredIfAvailable: Boolean = this@PluginSetTestBuilder.disableRequiredIfAvailable
-      override val currentProductModeId: String = productMode.id
+      override val productMode: ProductMode = this@PluginSetTestBuilder.productMode
       override val environmentConfiguredModules: Map<PluginModuleId, EnvironmentConfiguredModuleData>
         get() = customEnvironmentConfiguredModules ?: super.environmentConfiguredModules
       override fun provideCompatibilityDependenciesForRemainingCandidates(

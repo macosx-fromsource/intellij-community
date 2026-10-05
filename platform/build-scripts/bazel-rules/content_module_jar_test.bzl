@@ -52,11 +52,11 @@ def _packing_test_impl(ctx):
     action = actions[0]
 
     # One action writes the shipped jar. DefaultInfo, the provider and the metadata group name its outputs. The file is
-    # `<target>.production.jar`; the destination is derived from the module name, not from the file.
+    # `<target>/<module>.jar`, so its name is the destination and a `Boot-Class-Path` can name it.
     asserts.equals(env, [info.jar], target[DefaultInfo].files.to_list())
     asserts.equals(env, [info.metadata], groups.file_metadata.to_list())
-    asserts.equals(env, target.label.name + ".production.jar", info.jar.basename)
-    asserts.equals(env, target.label.name + ".production.metadata.json", info.metadata.basename)
+    asserts.true(env, info.jar.path.endswith("/" + target.label.name + "/" + info.module_name + ".jar"), info.jar.path)
+    asserts.true(env, info.metadata.path.endswith("/" + target.label.name + "/" + info.module_name + ".metadata.json"), info.metadata.path)
     asserts.equals(env, info.module_name + ".jar", info.relative_path)
     asserts.equals(env, ctx.attr.member_modules, list(info.member_modules))
     asserts.equals(env, [module[_KtJvmInfo].all_output_jars[0].short_path for module in ctx.attr.modules], [jar.short_path for jar in info.member_jars])
@@ -64,25 +64,17 @@ def _packing_test_impl(ctx):
     for library, entry in zip(ctx.attr.libraries, info.library_jars):
         asserts.equals(env, [jar.short_path for jar in library[JavaInfo].transitive_runtime_jars.to_list()], [jar.short_path for jar in entry.jars])
     library_jars_by_path = {jar.short_path: jar for entry in info.library_jars for jar in entry.jars}
-    coverage_sources = [jar.short_path for jar in ctx.files.coverage_sources]
     spans = groups.trace_spans.to_list()
 
-    # The flag file in grammar order: the output, its metadata, the optional trace file, the flags of the jar, then
-    # the module outputs and then the libraries. A coverage source is followed by its manifest mode.
+    # The flag file in grammar order: the output, its metadata, the optional trace file, the flags of the jar, then the
+    # module outputs and then the libraries.
     expected = ["output=" + info.jar.path, "metadata-file=" + info.metadata.path]
     expected += ["trace-file=" + file.path for file in spans]
     if ctx.attr.keep_manifest:
         expected.append("keep-manifest=true")
     expected.append("merge-entities=true")
-    for jar in info.member_jars:
-        expected.append("module=" + jar.path)
-        if jar.short_path in coverage_sources:
-            expected.append("source-manifest=coverage-agent")
-    for expected_jar in ctx.files.library_jars:
-        jar = library_jars_by_path[expected_jar.short_path]
-        expected.append("library=" + jar.path)
-        if jar.short_path in coverage_sources:
-            expected.append("source-manifest=coverage-agent")
+    expected += ["module=" + jar.path for jar in info.member_jars]
+    expected += ["library=" + library_jars_by_path[jar.short_path].path for jar in ctx.files.library_jars]
     asserts.equals(env, expected, action.argv[1:])
     asserts.equals(env, [info.jar, info.metadata] + spans, action.outputs.to_list())
     asserts.equals(env, 1 if ctx.attr.spans else 0, len(spans))
@@ -97,20 +89,12 @@ _PACKING_ATTRS = {
     "member_modules": attr.string_list(),
     "libraries": attr.label_list(providers = [JavaInfo]),
     "library_jars": attr.label_list(allow_files = [".jar"]),
-    "coverage_sources": attr.label_list(allow_files = [".jar"]),
     "keep_manifest": attr.bool(),
     "spans": attr.bool(),
 }
 
 _packing_test = analysistest.make(_packing_test_impl, attrs = _PACKING_ATTRS, config_settings = {_TRACE_SPANS: False})
 _packing_spans_test = analysistest.make(_packing_test_impl, attrs = _PACKING_ATTRS, config_settings = {_TRACE_SPANS: True})
-
-def _coverage_no_agent_test_impl(ctx):
-    env = analysistest.begin(ctx)
-    asserts.expect_failure(env, "intellij-coverage-agent")
-    return analysistest.end(env)
-
-_coverage_no_agent_test = analysistest.make(_coverage_no_agent_test_impl, expect_failure = True)
 
 def _natives_test_impl(ctx):
     env = analysistest.begin(ctx)
@@ -132,7 +116,8 @@ def _natives_test_impl(ctx):
     asserts.true(env, "native-lib=" + ctx.attr.native_lib in jar_argv, str(jar_argv))
     asserts.false(env, [line for line in jar_argv if line.startswith("native-tree=") or line.startswith("native-variant=")], str(jar_argv))
 
-    # A tree action packs the libraries alone into a scratch jar and writes the tree of its platform beside it.
+    # A tree action packs the libraries alone into a scratch jar and writes the tree of its platform beside it. The
+    # scratch jar states no distribution name.
     for platform in HOST_PLATFORMS:
         native = info.native_trees[platform]
         asserts.true(env, native.tree.is_directory)
@@ -166,21 +151,6 @@ _natives_test = analysistest.make(
     config_settings = {_TRACE_SPANS: False},
 )
 
-def _selected_output_test_impl(ctx):
-    env = analysistest.begin(ctx)
-    info = ctx.attr.owner[ContentModuleJarInfo]
-    expected = info.metadata if ctx.attr.metadata else info.jar
-    asserts.equals(env, [expected], analysistest.target_under_test(env)[DefaultInfo].files.to_list())
-    return analysistest.end(env)
-
-_selected_output_test = analysistest.make(
-    _selected_output_test_impl,
-    attrs = {
-        "owner": attr.label(providers = [ContentModuleJarInfo]),
-        "metadata": attr.bool(),
-    },
-)
-
 def _platform_jar_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
@@ -192,12 +162,21 @@ def _platform_jar_test_impl(ctx):
     asserts.true(env, info.jar.path.endswith("/" + target.label.name + "/" + ctx.attr.destination), info.jar.path)
     asserts.equals(env, ctx.attr.member_modules, list(info.member_modules))
 
-    # The flag file in grammar order. The fixture merges one meaningful source, so the manifest is kept. A residual jar
-    # rejects a native entry, because a presigned library packs as a `content_module_jar`.
-    expected = ["output=" + info.jar.path, "metadata-file=" + info.metadata.path, "keep-manifest=true", "merge-entities=true", "reject-native-entries=true"]
+    # The flag file in grammar order. A fixture of one library keeps its manifest. A jar with a module member
+    # rejects a native entry, because a presigned library packs as a `content_module_jar`. A library-only jar keeps them.
+    expected = ["output=" + info.jar.path, "metadata-file=" + info.metadata.path]
+    expected += ["keep-manifest=true"] if len(ctx.files.library_jars) == 1 and not ctx.attr.member_modules else []
+    expected += ["merge-entities=true"] + (["reject-native-entries=true"] if ctx.attr.member_modules else [])
+
+    # A patch precedes the `module=` line of the patched module, so the packer takes the patch instead of the entry of
+    # the module output.
+    expected += ["patch=%s=%s" % (path, file.path) for file, path in zip(ctx.files.patch_files, ctx.attr.patch_paths)]
     expected += ["module=" + jar.path for jar in info.member_jars]
+    expected += ["library=" + jar.path for jar in ctx.files.library_jars]
     asserts.equals(env, expected, action.argv[1:])
     asserts.equals(env, [info.jar, info.metadata], action.outputs.to_list())
+    for file in ctx.files.patch_files:
+        asserts.true(env, file in action.inputs.to_list(), "the patch %s is not an input" % file.path)
     asserts.equals(env, [info.jar], target[DefaultInfo].files.to_list())
     return analysistest.end(env)
 
@@ -206,6 +185,9 @@ _platform_jar_test = analysistest.make(
     attrs = {
         "destination": attr.string(mandatory = True),
         "member_modules": attr.string_list(),
+        "library_jars": attr.label_list(allow_files = [".jar"]),
+        "patch_files": attr.label_list(allow_files = True),
+        "patch_paths": attr.string_list(),
     },
     config_settings = {_TRACE_SPANS: False},
 )
@@ -222,26 +204,21 @@ _natives_failure_test = analysistest.make(
 )
 
 def content_module_jar_test_suite(name):
-    """Covers source order, first-wins deduplication, meaningful sources, the coverage policy and output selection."""
+    """Covers source order, first-wins deduplication, meaningful sources and output selection."""
     tests = []
     first = name + "_first"
-    second = "intellij-coverage-agent-" + name
+    second = name + "_second"
     for source in [first, second]:
         _fixture_module(name = source, module_name = "test." + source)
     _fixture_library(name = name + "_single_library", jars = [":" + first])
     _fixture_library(name = name + "_library", jars = [":" + second, ":" + first])
     _fixture_library(name = name + "_overlapping_library", jars = [":" + first, ":" + second])
 
-    # `coverage` says the module name selects the coverage policy, so the agent-named jar gets its manifest mode. The
-    # `unrelated_name` case merges the same jar under a name that selects nothing, and expects no mode.
-    for case, module_name, before, after, libraries, library_jars, keep_manifest, coverage in [
-        ("single", "test.production.single", [], [], [], [], True, False),
-        ("wrapper", "intellij.libraries.production.single", [], [], [name + "_single_library"], [first], True, False),
-        ("wrapper_multi", "intellij.libraries.production.multi", [], [], [name + "_library"], [second, first], False, False),
-        ("ordered", "test.production.ordered", [first], [second], [name + "_library", name + "_overlapping_library"], [second, first], False, False),
-        ("coverage", "intellij.platform.coverage.agent", [], [], [name + "_overlapping_library"], [first, second], False, True),
-        ("coverage_name", "test.intellij.platform.coverage.agent.extra", [], [], [name + "_overlapping_library"], [first, second], False, True),
-        ("unrelated_name", "test.production.unrelated", [], [], [name + "_overlapping_library"], [first, second], False, False),
+    for case, module_name, before, after, libraries, library_jars, keep_manifest in [
+        ("single", "test.production.single", [], [], [], [], False),
+        ("wrapper", "intellij.libraries.production.single", [], [], [name + "_single_library"], [first], True),
+        ("wrapper_multi", "intellij.libraries.production.multi", [], [], [name + "_library"], [second, first], False),
+        ("ordered", "test.production.ordered", [first], [second], [name + "_library", name + "_overlapping_library"], [second, first], False),
     ]:
         owner = name + "_" + case
         _fixture_module(name = owner, module_name = module_name)
@@ -261,30 +238,10 @@ def content_module_jar_test_suite(name):
                 member_modules = ["test." + member for member in before] + [module_name] + ["test." + member for member in after],
                 libraries = [":" + library for library in libraries],
                 library_jars = [":" + jar for jar in library_jars],
-                coverage_sources = [":" + second] if coverage else [],
                 keep_manifest = keep_manifest,
                 spans = spans,
             )
             tests.append(test_name)
-
-    # A module whose name selects the coverage policy must merge a jar named after the agent. Otherwise the rule fails
-    # at analysis instead of shipping a manifest it did not rewrite.
-    missing = name + "_coverage_no_agent"
-    _fixture_module(name = missing, module_name = "test.intellij.platform.coverage.agent.missing")
-    content_module_jar(module = ":" + missing, libraries = [":" + name + "_single_library"])
-    _coverage_no_agent_test(name = missing + "_test", target_under_test = content_module_jar_target_name(missing))
-    tests.append(missing + "_test")
-
-    # The predeclared outputs stay label-addressable: the plan files and the plugin chain name the jar by its label.
-    selected_owner = content_module_jar_target_name(name + "_single")
-    for suffix, output_suffix, metadata in [
-        ("jar_label", ".production.jar", False),
-        ("metadata_label", ".production.metadata.json", True),
-    ]:
-        selected = name + "_" + suffix
-        native.filegroup(name = selected, srcs = [":" + selected_owner + output_suffix], tags = ["manual"])
-        _selected_output_test(name = selected + "_test", target_under_test = selected, owner = ":" + selected_owner, metadata = metadata)
-        tests.append(selected + "_test")
 
     # A platform jar states its own destination, and it may name a subdirectory of the plugin's `lib/`. The three
     # residual jars of `idea` do - `ext/platform-main.jar` and the two `frontend-split/` jars - so the destination must
@@ -304,6 +261,80 @@ def content_module_jar_test_suite(name):
             member_modules = ["test." + first],
         )
         tests.append(platform_jar + "_test")
+
+    # The application-info module jar replaces two entries of the module output: the product descriptor and the
+    # stamped application info.
+    patched_jar = name + "_platform_patched"
+    patch_files = [name + "_patched_descriptor.xml", name + "_patched_application_info.xml"]
+    patch_paths = ["META-INF/plugin.xml", "idea/ApplicationInfo.xml"]
+    for file in patch_files:
+        native.genrule(name = file + "_file", outs = [file], cmd = "echo '<idea-plugin/>' > $@", tags = ["manual"])
+    dev_dist_platform_jar(
+        name = patched_jar,
+        relative_output_file = "platform-patched.jar",
+        modules = [":" + first],
+        patches = {":" + file: path for file, path in zip(patch_files, patch_paths)},
+        patched_module = "test." + first,
+        tags = ["manual"],
+    )
+    _platform_jar_test(
+        name = patched_jar + "_test",
+        target_under_test = ":" + patched_jar,
+        destination = "platform-patched.jar",
+        member_modules = ["test." + first],
+        patch_files = [":" + file for file in patch_files],
+        patch_paths = patch_paths,
+    )
+    tests.append(patched_jar + "_test")
+
+    # A patched module that is not a member is refused at analysis.
+    foreign_patch = name + "_platform_foreign_patch"
+    dev_dist_platform_jar(
+        name = foreign_patch,
+        relative_output_file = "platform-foreign.jar",
+        modules = [":" + first],
+        patches = {":" + patch_files[0]: patch_paths[0]},
+        patched_module = "test.absent",
+        tags = ["manual"],
+    )
+    _natives_failure_test(
+        name = foreign_patch + "_test",
+        target_under_test = ":" + foreign_patch,
+        expected_message = "the patched module 'test.absent' is not a member of the jar",
+    )
+    tests.append(foreign_patch + "_test")
+
+    # A library-only jar merges no module and keeps the native files of its libraries, as `JarPackager` does for a
+    # library that the layout places. Its manifest follows the same rule as for any other jar.
+    for case, library, library_jars in [("single", "_single_library", [first]), ("multi", "_library", [second, first])]:
+        library_jar = name + "_platform_library_" + case
+        dev_dist_platform_jar(
+            name = library_jar,
+            relative_output_file = "platform-library-%s.jar" % case,
+            libraries = [":" + name + library],
+            tags = ["manual"],
+        )
+        _platform_jar_test(
+            name = library_jar + "_test",
+            target_under_test = ":" + library_jar,
+            destination = "platform-library-%s.jar" % case,
+            library_jars = [":" + jar for jar in library_jars],
+        )
+        tests.append(library_jar + "_test")
+
+    # A jar with neither a module nor a library is refused at analysis.
+    refused = name + "_platform_refused_empty"
+    dev_dist_platform_jar(
+        name = refused,
+        relative_output_file = "platform-refused.jar",
+        tags = ["manual"],
+    )
+    _natives_failure_test(
+        name = refused + "_test",
+        target_under_test = ":" + refused,
+        expected_message = "a platform jar merges at least one module or library",
+    )
+    tests.append(refused + "_test")
 
     # A content module jar with a presigned library reserves its natives, and one action per platform writes the tree.
     natives_owner = name + "_natives"

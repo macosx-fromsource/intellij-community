@@ -289,9 +289,6 @@ a:com.intellij.collaboration.file.ComplexPathVirtualFileWithoutContent
 - getOutputStream(java.lang.Object,J,J):java.lang.Void
 - pf:getSessionId():java.lang.String
 - hashCode():I
-f:com.intellij.collaboration.messages.CollaborationToolsBundle
-- s:message(java.lang.String,java.lang.Object[]):java.lang.String
-- s:messagePointer(java.lang.String,java.lang.Object[]):java.util.function.Supplier
 e:com.intellij.collaboration.snippets.PathHandlingMode
 - java.lang.Enum
 - sf:Companion:com.intellij.collaboration.snippets.PathHandlingMode$Companion
@@ -389,27 +386,6 @@ f:com.intellij.collaboration.ui.codereview.timeline.comment.CommentTextFieldFact
 - hashCode():I
 f:com.intellij.collaboration.ui.codereview.timeline.comment.CommentTextFieldFactory$IconConfig$Companion
 - f:of(com.intellij.collaboration.ui.codereview.CodeReviewChatItemUIUtil$ComponentType,com.intellij.collaboration.ui.icon.IconsProvider,java.lang.Object):com.intellij.collaboration.ui.codereview.timeline.comment.CommentTextFieldFactory$IconConfig
-com.intellij.collaboration.ui.codereview.timeline.thread.CodeReviewFoldableThreadViewModel
-- a:getCanCreateReplies():kotlinx.coroutines.flow.StateFlow
-- a:getRepliesFolded():kotlinx.coroutines.flow.StateFlow
-- a:getRepliesState():kotlinx.coroutines.flow.StateFlow
-- a:isBusy():kotlinx.coroutines.flow.StateFlow
-- a:unfoldReplies():V
-com.intellij.collaboration.ui.codereview.timeline.thread.CodeReviewFoldableThreadViewModel$RepliesStateData
-- a:getLastReplyDate():java.util.Date
-- a:getRepliesAuthors():java.util.Set
-- a:getRepliesCount():I
-f:com.intellij.collaboration.ui.codereview.timeline.thread.CodeReviewFoldableThreadViewModel$RepliesStateData$Empty
-- com.intellij.collaboration.ui.codereview.timeline.thread.CodeReviewFoldableThreadViewModel$RepliesStateData
-- sf:INSTANCE:com.intellij.collaboration.ui.codereview.timeline.thread.CodeReviewFoldableThreadViewModel$RepliesStateData$Empty
-- getLastReplyDate():java.util.Date
-- getRepliesAuthors():java.util.Set
-- getRepliesCount():I
-com.intellij.collaboration.ui.codereview.timeline.thread.CodeReviewResolvableItemViewModel
-- a:changeResolvedState():V
-- a:getCanChangeResolvedState():kotlinx.coroutines.flow.StateFlow
-- a:isBusy():kotlinx.coroutines.flow.StateFlow
-- a:isResolved():kotlinx.coroutines.flow.StateFlow
 f:com.intellij.collaboration.ui.codereview.timeline.thread.TimelineThreadCommentsPanel
 - com.intellij.util.ui.components.BorderLayoutPanel
 - com.intellij.openapi.actionSystem.UiDataProvider
@@ -422,55 +398,15 @@ f:com.intellij.collaboration.ui.codereview.timeline.thread.TimelineThreadComment
 - uiDataSnapshot(com.intellij.openapi.actionSystem.DataSink):V
 f:com.intellij.collaboration.ui.codereview.timeline.thread.TimelineThreadCommentsPanel$Companion
 - f:createUnfoldComponent(I,kotlin.jvm.functions.Function1):javax.swing.JComponent
-com.intellij.collaboration.ui.codereview.user.CodeReviewUser
-- a:getAvatarUrl():java.lang.String
 f:com.intellij.collaboration.util.ChangesSelectionKt
 - sf:getSelectedChange(com.intellij.collaboration.util.ChangesSelection):com.intellij.collaboration.util.RefComparisonChange
 - sf:withLocation(com.intellij.collaboration.util.ChangesSelection$Precise,kotlin.Pair):com.intellij.collaboration.util.ChangesSelection$Precise
 f:com.intellij.collaboration.util.CodeReviewFilesUtil
 - sf:INSTANCE:com.intellij.collaboration.util.CodeReviewFilesUtil
-f:com.intellij.collaboration.util.CollectionDelta
-- <init>(java.util.Collection,java.util.Collection):V
-- f:getNewCollection():java.util.Collection
-- f:getNewItems():java.util.Collection
-- f:getRemovedItems():java.util.Collection
-- f:isEmpty():Z
 f:com.intellij.collaboration.util.ComputableSequenceKt
-f:com.intellij.collaboration.util.ComputedResult
-- sf:Companion:com.intellij.collaboration.util.ComputedResult$Companion
-- bsf:box-impl(kotlin.Result):com.intellij.collaboration.util.ComputedResult
-- equals(java.lang.Object):Z
-- s:equals-impl(kotlin.Result,java.lang.Object):Z
-- sf:equals-impl0(kotlin.Result,kotlin.Result):Z
-- f:getResult-xLWZpok():kotlin.Result
-- hashCode():I
-- s:hashCode-impl(kotlin.Result):I
-- sf:isInProgress-impl(kotlin.Result):Z
-- sf:isSuccess-impl(kotlin.Result):Z
-- s:toString-impl(kotlin.Result):java.lang.String
-- bf:unbox-impl():kotlin.Result
-f:com.intellij.collaboration.util.ComputedResult$Companion
-- f:compute-Jugeb-E(kotlin.jvm.functions.Function0):com.intellij.collaboration.util.ComputedResult
-- f:failure-NCBHHgM(java.lang.Throwable):kotlin.Result
-- f:fromResult-vAKnILo(java.lang.Object):kotlin.Result
-- f:loading-uUe189E():kotlin.Result
-- f:success-NCBHHgM(java.lang.Object):kotlin.Result
-f:com.intellij.collaboration.util.ComputedResultKt
-- sf:computeEmitting(kotlinx.coroutines.flow.FlowCollector,kotlin.jvm.functions.Function0,kotlin.coroutines.Continuation):java.lang.Object
-- sf:exceptionOrNull-dyXsKJo(kotlin.Result):java.lang.Throwable
-- sf:fold--EiVA6M(kotlin.Result,kotlin.jvm.functions.Function0,kotlin.jvm.functions.Function1,kotlin.jvm.functions.Function1):java.lang.Object
-- sf:getOrNull-dyXsKJo(kotlin.Result):java.lang.Object
-- sf:map-dMZ2rFk(kotlin.Result,kotlin.jvm.functions.Function1):kotlin.Result
-- sf:onFailure-dMZ2rFk(kotlin.Result,kotlin.jvm.functions.Function1):kotlin.Result
-- sf:onInProgress-dMZ2rFk(kotlin.Result,kotlin.jvm.functions.Function0):kotlin.Result
-- sf:onSuccess-dMZ2rFk(kotlin.Result,kotlin.jvm.functions.Function1):kotlin.Result
 f:com.intellij.collaboration.util.ExcludingApproximateChangedRangesShifter
 - sf:INSTANCE:com.intellij.collaboration.util.ExcludingApproximateChangedRangesShifter
 - f:shift(java.lang.Iterable,java.lang.Iterable):java.util.List
-f:com.intellij.collaboration.util.HashingUtil
-- sf:INSTANCE:com.intellij.collaboration.util.HashingUtil
-- f:mappingStrategy(kotlin.jvm.functions.Function1,com.intellij.util.containers.HashingStrategy):com.intellij.util.containers.HashingStrategy
-- bs:mappingStrategy$default(com.intellij.collaboration.util.HashingUtil,kotlin.jvm.functions.Function1,com.intellij.util.containers.HashingStrategy,I,java.lang.Object):com.intellij.util.containers.HashingStrategy
 f:com.intellij.collaboration.util.HideableKt
 - sf:syncOrToggleAll(kotlin.sequences.Sequence):V
 f:com.intellij.collaboration.util.IncrementallyComputedValue

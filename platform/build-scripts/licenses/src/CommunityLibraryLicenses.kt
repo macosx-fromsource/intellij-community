@@ -87,9 +87,6 @@ val COMMUNITY_LICENSES_LIST: List<LibraryLicense> = listOf(
     .apache("https://github.com/apache/commons-compress/blob/master/LICENSE.txt")
     .suppliedByOrganizations(Suppliers.APACHE),
 
-  LibraryLicense("Apache Commons CSV", libraryName = "commons-csv", url = "https://commons.apache.org/proper/commons-csv/")
-    .apache("https://github.com/apache/commons-csv/blob/master/LICENSE.txt"),
-
   LibraryLicense("Apache Commons Discovery", libraryName = "commons-discovery", url = "https://commons.apache.org/dormant/commons-discovery/")
     .apache("https://commons.apache.org/dormant/commons-discovery/license.html")
     .copyrightText("Copyright © 2002-2011 The Apache Software Foundation. All Rights Reserved.")
@@ -305,6 +302,14 @@ val COMMUNITY_LICENSES_LIST: List<LibraryLicense> = listOf(
     .suppliedByOrganizations(Suppliers.GOOGLE),
 
   LibraryLicense("Compose Swing UI", libraryName = "org.jetbrains.compose.swing.swing-ui", url = "https://github.com/JetBrains/compose-swing-ui")
+    .apache("https://github.com/JetBrains/compose-swing-ui/blob/master/LICENSE")
+    .suppliedByOrganizations(Suppliers.JETBRAINS),
+
+  LibraryLicense("Compose Swing UI Animation", libraryName = "org.jetbrains.compose.swing.swing-ui-animation", url = "https://github.com/JetBrains/compose-swing-ui")
+    .apache("https://github.com/JetBrains/compose-swing-ui/blob/master/LICENSE")
+    .suppliedByOrganizations(Suppliers.JETBRAINS),
+
+  LibraryLicense("Compose Swing UI Foundation", libraryName = "org.jetbrains.compose.swing.swing-ui-foundation", url = "https://github.com/JetBrains/compose-swing-ui")
     .apache("https://github.com/JetBrains/compose-swing-ui/blob/master/LICENSE")
     .suppliedByOrganizations(Suppliers.JETBRAINS),
 
@@ -837,32 +842,23 @@ val COMMUNITY_LICENSES_LIST: List<LibraryLicense> = listOf(
     .eplV1("https://junit.org/junit4/license.html")
     .suppliedByPersons("Marc Philipp", "David Saff", "Kevin Cooney", "Stefan Birkner"),
 
-  LibraryLicense("JUnit5", libraryName = "JUnit5", url = "https://junit.org/junit5/")
+  LibraryLicense("JUnit6", libraryName = "JUnit6", url = "https://junit.org/junit5/")
     .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md")
     .suppliedByPersons("Marc Philipp", "David Saff", "Kevin Cooney", "Stefan Birkner"),
 
-  LibraryLicense("JUnit5Jupiter", libraryName = "JUnit5Jupiter", url = "https://junit.org/junit5/")
-    .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
-
-  LibraryLicense("JUnit5Launcher", libraryName = "JUnit5Launcher", url = "https://junit.org/junit5/")
-    .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
-
-  LibraryLicense("JUnit5Params", libraryName = "JUnit5Params", url = "https://junit.org/junit5/")
-    .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
-
-  LibraryLicense("JUnit5Suites", libraryName = "JUnit5Suites", url = "https://junit.org/junit5/")
-    .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
-
-  LibraryLicense("JUnit5Vintage", libraryName = "JUnit5Vintage", url = "https://junit.org/junit5/")
-    .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
-
-  LibraryLicense("JUnit6", libraryName = "JUnit6", url = "https://junit.org/junit5/")
+  LibraryLicense("JUnit6Jupiter", libraryName = "JUnit6Jupiter", url = "https://junit.org/junit5/")
     .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
 
   LibraryLicense("JUnit6Launcher", libraryName = "JUnit6Launcher", url = "https://junit.org/junit5/")
     .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
 
   LibraryLicense("JUnit6Params", libraryName = "JUnit6Params", url = "https://junit.org/junit5/")
+    .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
+
+  LibraryLicense("JUnit6Suites", libraryName = "JUnit6Suites", url = "https://junit.org/junit5/")
+    .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
+
+  LibraryLicense("JUnit6Vintage", libraryName = "JUnit6Vintage", url = "https://junit.org/junit5/")
     .eplV2("https://github.com/junit-team/junit5/blob/main/LICENSE.md"),
 
   LibraryLicense(libraryName = "jzlib", url = "http://www.jcraft.com/jzlib/")
@@ -1188,10 +1184,6 @@ val COMMUNITY_LICENSES_LIST: List<LibraryLicense> = listOf(
   LibraryLicense("OverlayScrollbars", version = "2.1.1", attachedTo = "intellij.idea.community.main", url = "https://kingsora.github.io/OverlayScrollbars")
     .mit("https://github.com/KingSora/OverlayScrollbars/blob/master/LICENSE"),
 
-  LibraryLicense("Package Search API-Client", libraryName = "package-search-api-client", url = "https://github.com/JetBrains/package-search-api-models")
-    .apache("https://github.com/JetBrains/package-search-api-models/blob/master/LICENSE")
-    .suppliedByOrganizations("JetBrains Team"),
-
   LibraryLicense("pip", version = "24.3.1", attachedTo = "intellij.python", url = "https://pip.pypa.io/")
     .mit("https://github.com/pypa/pip/blob/main/LICENSE.txt"),
 
@@ -1346,10 +1338,6 @@ val COMMUNITY_LICENSES_LIST: List<LibraryLicense> = listOf(
 
   LibraryLicense("StreamEx", libraryName = "StreamEx", url = "https://github.com/amaembo/streamex")
     .apache("https://github.com/amaembo/streamex/blob/master/LICENSE"),
-
-  LibraryLicense("swingx", libraryName = "swingx", url = "https://central.sonatype.com/artifact/org.swinglabs/swingx-core/1.6.2-2")
-    .lgpl21("https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html")
-    .suppliedByOrganizations("Sun Microsystems, Inc."),
 
   LibraryLicense("System Stubs Jupiter", libraryName = "uk.webcompere.system.stubs.jupiter", url = "https://github.com/webcompere/system-stubs")
     .mit("https://github.com/webcompere/system-stubs/blob/main/LICENSE")
@@ -1530,6 +1518,7 @@ val COMMUNITY_LICENSES_LIST: List<LibraryLicense> = listOf(
     jetbrainsLibrary("jshell-frontend"),
     jetbrainsLibrary("jvm-native-trusted-roots"),
     jetbrainsLibrary("kotlin-gradle-plugin-idea"),
+    jetbrainsLibrary("kotlin-gradle-plugin-idea-browser-debug"),
     jetbrainsLibrary("kotlin-gradle-plugin-idea-proto"),
     jetbrainsLibrary("kotlin-script-runtime"),
     jetbrainsLibrary("kotlin-test"),
@@ -1548,7 +1537,6 @@ val COMMUNITY_LICENSES_LIST: List<LibraryLicense> = listOf(
     jetbrainsLibrary("kotlinc.kotlin-build-tools-impl"),
     jetbrainsLibrary("kotlinc.kotlin-compiler-cli"),
     jetbrainsLibrary("kotlinc.kotlin-compiler-common"),
-    jetbrainsLibrary("kotlinc.kotlin-compiler-fe10"),
     jetbrainsLibrary("kotlinc.kotlin-compiler-fir"),
     jetbrainsLibrary("kotlinc.kotlin-compiler-ir"),
     jetbrainsLibrary("kotlinc.kotlin-compiler-tests"),

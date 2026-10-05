@@ -100,9 +100,11 @@ jvm_library(
         "//xml/xml-psi-api:psi",
         "//xml/xml-parser:parser",
         "//platform/execution",
+        "//platform/consoleView",
         "//platform/forms_rt:java-guiForms-rt",
         "//java/java-frontback-psi-api:frontback-psi",
         "//platform/lang-api:lang",
+        "//platform/buildView",
     ],
 )
 
@@ -197,9 +199,11 @@ jvm_library(
         "//xml/xml-psi-api:psi_test_lib",
         "//xml/xml-parser:parser_test_lib",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView:consoleView_test_lib",
         "//platform/forms_rt:java-guiForms-rt_test_lib",
         "//java/java-frontback-psi-api:frontback-psi_test_lib",
         "//platform/lang-api:lang_test_lib",
+        "//platform/buildView:buildView_test_lib",
     ],
 )
 ### auto-generated section `build intellij.java.compiler.impl` end

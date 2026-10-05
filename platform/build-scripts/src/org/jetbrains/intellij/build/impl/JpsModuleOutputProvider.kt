@@ -40,7 +40,8 @@ class JpsModuleOutputProviderState(
   }
 }
 
-internal class JpsModuleOutputProvider(
+@Internal
+class JpsModuleOutputProvider(
   private val state: JpsModuleOutputProviderState,
   override val useTestCompilationOutput: Boolean,
 ) : ModuleOutputProvider {

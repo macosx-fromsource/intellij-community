@@ -20,6 +20,9 @@
 
 
   <extensions defaultExtensionNs="com.intellij">
+    <backgroundPostStartupActivity implementation="com.intellij.workspaceModel.ide.impl.VirtualFileUrlsLazyInitializer"/>
+    <postStartupActivity implementation="com.intellij.workspaceModel.ide.impl.WorkspaceEntitiesLifecycleActivity"/>
+    <postStartupActivity implementation="com.intellij.workspaceModel.ide.impl.OrphanageActivity"/>
 
     <projectPreInit
       id="initialProjectSynchronizer"

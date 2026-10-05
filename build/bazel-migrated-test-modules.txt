@@ -4,6 +4,7 @@
 
 language-server.*
 intellij.air.frontend.session.view.tests
+intellij.ant.jps.tests
 intellij.ant.tests
 intellij.commander.tests
 intellij.completionMlRanking.tests
@@ -18,6 +19,7 @@ intellij.devkit.debugger.tests
 intellij.devkit.gradle.tests
 intellij.devkit.i18n.tests
 intellij.devkit.java.tests
+intellij.devkit.jps.tests
 intellij.devkit.testFramework
 intellij.devkit.workspaceModel.tests
 intellij.driver.client.tests
@@ -36,14 +38,17 @@ intellij.html.tools.tests
 intellij.ide.startup.importSettings.tests
 intellij.idea.community.build.tasks.tests
 intellij.idea.community.main.tests
+intellij.java.compiler.heavy.tests
+intellij.java.compiler.tests
 intellij.idea.tools.launch.tests
 intellij.java.byteCodeViewer.tests
 intellij.java.coverage.tests
-intellij.java.debugger.impl
+intellij.java.debugger.impl.tests
 intellij.java.debugger.streams.tests
 intellij.java.frontback.tests
 intellij.java.guiForms.compiler.tests
 intellij.java.guiForms.designer.tests
+intellij.java.guiForms.jps.tests
 intellij.java.i18n.tests
 intellij.java.jshell.console.tests
 intellij.java.jshell.protocol.tests
@@ -53,6 +58,7 @@ intellij.java.typeMigration.tests
 intellij.java.ui.tests
 intellij.javaFX.community.tests
 intellij.javaFX.tests
+intellij.javaee.appServers.weblogic.jps.tests
 intellij.json.networknt.wrapper.tests
 intellij.json.tests
 intellij.jsonpath.tests
@@ -61,8 +67,10 @@ intellij.kotlin.gradle.tooling.impl.tests
 intellij.kotlin.jvm.debugger.eval4j.tests
 intellij.kotlin.onboarding.gradle.tests
 intellij.kotlin.onboarding.tests
+intellij.lombok.tests
 intellij.markdown.tests
 intellij.maven.groovy.tests
+intellij.maven.jps.tests
 intellij.maven.proofreading.tests
 intellij.maven.server.eventListener.tests
 intellij.maven.testFramework.tests
@@ -76,7 +84,9 @@ intellij.performanceTesting.tests
 intellij.performanceTesting.ui.tests
 intellij.platform.backend.observation.tests
 intellij.platform.buildScripts.productDsl.tests
+intellij.platform.buildScripts.runtimeModuleRepository.tests
 intellij.platform.buildScripts.usages.tests
+intellij.platform.buildView.tests
 intellij.platform.builtInServer.tests
 intellij.platform.collaborationTools.tests
 intellij.platform.completion.common.tests
@@ -122,6 +132,8 @@ intellij.platform.jewel.markdown.extensions.gfmAlerts.tests
 intellij.platform.jewel.markdown.extensions.gfmTables.tests
 intellij.platform.jewel.markdown.extensions.images.tests
 intellij.platform.jewel.ui.tests
+intellij.platform.jps.build.tests
+intellij.platform.jps.model.serialization.tests
 intellij.platform.jps.model.tests
 intellij.platform.lang.tests
 intellij.platform.langInjection.tests
@@ -177,6 +189,7 @@ intellij.platform.vcs.dvcs.impl.tests
 intellij.platform.vcs.impl.frontend.tests
 intellij.platform.vcs.impl.shared.tests
 intellij.platform.vcs.impl.tests
+intellij.platform.versionDownloadManager.tests
 intellij.platform.whatsNew.tests
 intellij.platform.workspace.jps.tests
 intellij.platform.workspace.storage.tests
@@ -190,6 +203,7 @@ intellij.python.processOutput.frontend.tests
 intellij.python.pyproject.tests
 intellij.python.pytools.tests
 intellij.python.requirements.tests
+intellij.python.ruff.tests
 intellij.python.sdk.tests
 intellij.python.test.env.junit5
 intellij.python.venv.tests

@@ -7,14 +7,14 @@ import com.intellij.openapi.module.Module
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.python.junit5Tests.framework.pyModuleFixture
+import com.intellij.python.junit5Tests.framework.subdirectoryFixture
 import com.intellij.python.lsp.core.typeEngine.PyTypeEngineUtils
 import com.intellij.python.lsp.core.utils.PyLspToolVersionTracker
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.projectFixture
-import com.intellij.testFramework.junit5.fixture.TestFixture
 import com.intellij.testFramework.junit5.fixture.tempPathFixture
-import com.intellij.testFramework.junit5.fixture.testFixture
 import com.jetbrains.python.junit5.framework.pyMockSdkFixture
+import com.jetbrains.python.project.PyProject.Companion.asPyProject
 import com.jetbrains.python.psi.LanguageLevel
 import com.jetbrains.python.tools.sdkTools.PythonMockSdk
 import com.intellij.python.ty.TyLspClientDescriptor
@@ -25,12 +25,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Test
-import java.nio.file.Path
-import kotlin.io.path.createDirectories
 
 /**
  * One server answers for several modules, so the served set and its order carry weight. The platform
@@ -51,8 +47,8 @@ internal class PyLspServedModulesTest {
 
   @Nested
   inner class Selection {
-    private val withSdkPath = projectPath.subdirectory("b_has_sdk")
-    private val noSdkPath = projectPath.subdirectory("a_no_sdk")
+    private val withSdkPath = projectPath.subdirectoryFixture("b_has_sdk")
+    private val noSdkPath = projectPath.subdirectoryFixture("a_no_sdk")
     private val withSdk = projectFixture.pyModuleFixture(withSdkPath, addPathToSourceRoot = true)
     private val noSdk = projectFixture.pyModuleFixture(noSdkPath, addPathToSourceRoot = true)
     private val sdk = projectFixture.pyMockSdkFixture(withSdk) { PythonMockSdk.create() }
@@ -79,8 +75,8 @@ internal class PyLspServedModulesTest {
 
   @Nested
   inner class Ordering {
-    private val firstPath = projectPath.subdirectory("aaa_root")
-    private val secondPath = projectPath.subdirectory("zzz_root")
+    private val firstPath = projectPath.subdirectoryFixture("aaa_root")
+    private val secondPath = projectPath.subdirectoryFixture("zzz_root")
     private val first = projectFixture.pyModuleFixture(firstPath, addPathToSourceRoot = true)
     private val second = projectFixture.pyModuleFixture(secondPath, addPathToSourceRoot = true)
 
@@ -123,8 +119,8 @@ internal class PyLspServedModulesTest {
   @Nested
   @TestFor(issues = ["PY-92008"])
   inner class Workspaces {
-    private val insidePath = projectPath.subdirectory("aaa_inside")
-    private val alsoInsidePath = projectPath.subdirectory("mmm_also_inside")
+    private val insidePath = projectPath.subdirectoryFixture("aaa_inside")
+    private val alsoInsidePath = projectPath.subdirectoryFixture("mmm_also_inside")
     private val attachedPath = tempPathFixture(prefix = "zzz_attached")
     private val inside = projectFixture.pyModuleFixture(insidePath, addPathToSourceRoot = true)
     private val alsoInside = projectFixture.pyModuleFixture(alsoInsidePath, addPathToSourceRoot = true)
@@ -138,6 +134,11 @@ internal class PyLspServedModulesTest {
       insideSdk.get()
       alsoInsideSdk.get()
       attachedSdk.get()
+    }
+
+    /** The serve key of each module in [modules], read the way a refresh reads it. */
+    private fun serveKeysOf(modules: List<Module>): Map<Module, PyLspServeKey> = runBlocking {
+      modules.associateWith { module -> pyLspServeKeyOf(checkNotNull(module.asPyProject()) { "'${module.name}' is not a PyProject" }, tyTool) }
     }
 
     @Test
@@ -190,7 +191,8 @@ internal class PyLspServedModulesTest {
         tyDescriptorServing(attached.get()),
       )
 
-      assertFalse(pyLspFolderSetIsStale(descriptors, served) { pyLspServeKeyOf(it, tyTool) })
+      val keys = serveKeysOf(served)
+      assertFalse(pyLspFolderSetIsStale(descriptors, served) { keys.getValue(it) })
     }
 
     @Test
@@ -199,7 +201,8 @@ internal class PyLspServedModulesTest {
       val served = listOf(inside.get(), alsoInside.get(), attached.get())
       val descriptor = tyDescriptorServing(inside.get(), alsoInside.get(), attached.get())
 
-      assertTrue(pyLspFolderSetIsStale(listOf(descriptor), served) { pyLspServeKeyOf(it, tyTool) })
+      val keys = serveKeysOf(served)
+      assertTrue(pyLspFolderSetIsStale(listOf(descriptor), served) { keys.getValue(it) })
     }
   }
 
@@ -252,13 +255,13 @@ internal class PyLspServedModulesTest {
 
   @Nested
   inner class SharedServer {
-    private val firstPath = projectPath.subdirectory("aaa_root")
-    private val secondPath = projectPath.subdirectory("zzz_root")
+    private val firstPath = projectPath.subdirectoryFixture("aaa_root")
+    private val secondPath = projectPath.subdirectoryFixture("zzz_root")
     private val first = projectFixture.pyModuleFixture(firstPath, addPathToSourceRoot = true)
     private val second = projectFixture.pyModuleFixture(secondPath, addPathToSourceRoot = true)
     private val firstSdk = projectFixture.pyMockSdkFixture(first) { PythonMockSdk.create(LanguageLevel.PYTHON312) }
     private val secondSdk = projectFixture.pyMockSdkFixture(second) { PythonMockSdk.create(LanguageLevel.PYTHON313) }
-    private val noSdk = projectFixture.pyModuleFixture(projectPath.subdirectory("mmm_no_sdk"), addPathToSourceRoot = true)
+    private val noSdk = projectFixture.pyModuleFixture(projectPath.subdirectoryFixture("mmm_no_sdk"), addPathToSourceRoot = true)
 
     @Test
     fun `every served module goes to one server, the lowest root first`() {
@@ -295,9 +298,9 @@ internal class PyLspServedModulesTest {
   @Nested
   @TestFor(issues = ["PY-92008"])
   inner class VersionGroups {
-    private val firstPath = projectPath.subdirectory("aaa_root")
-    private val secondPath = projectPath.subdirectory("mmm_root")
-    private val thirdPath = projectPath.subdirectory("zzz_root")
+    private val firstPath = projectPath.subdirectoryFixture("aaa_root")
+    private val secondPath = projectPath.subdirectoryFixture("mmm_root")
+    private val thirdPath = projectPath.subdirectoryFixture("zzz_root")
     private val first = projectFixture.pyModuleFixture(firstPath, addPathToSourceRoot = true)
     private val second = projectFixture.pyModuleFixture(secondPath, addPathToSourceRoot = true)
     private val third = projectFixture.pyModuleFixture(thirdPath, addPathToSourceRoot = true)
@@ -359,11 +362,11 @@ internal class PyLspServedModulesTest {
    */
   @Nested
   inner class FolderSet {
-    private val mainPath = projectPath.subdirectory("aaa_main")
-    private val otherPath = projectPath.subdirectory("zzz_other")
+    private val mainPath = projectPath.subdirectoryFixture("aaa_main")
+    private val otherPath = projectPath.subdirectoryFixture("zzz_other")
     private val main = projectFixture.pyModuleFixture(mainPath, addPathToSourceRoot = true)
     private val other = projectFixture.pyModuleFixture(otherPath, addPathToSourceRoot = true)
-    private val unserved = projectFixture.pyModuleFixture(projectPath.subdirectory("mmm_unserved"), addPathToSourceRoot = true)
+    private val unserved = projectFixture.pyModuleFixture(projectPath.subdirectoryFixture("mmm_unserved"), addPathToSourceRoot = true)
 
     /** Every module runs the same version, so the project wants one server for all of them. */
     private val oneVersion: (Module) -> PyLspServeKey = { ownWorkspace("1.1.1") }
@@ -424,12 +427,26 @@ internal class PyLspServedModulesTest {
       assertTrue(pyLspFolderSetIsStale(listOf(descriptor), listOf(other.get()), oneVersion))
     }
 
+    /**
+     * The module gets this server from [pyLspModulesToServeWith], so a stop would start the same server
+     * again, and the group check on its start would stop it again.
+     */
+    @Test
+    @TestFor(issues = ["PY-92008", "PY-86537"])
+    fun `a server of its own for a module the project does not serve is neither stale nor serving nothing`() {
+      val served = listOf(main.get(), other.get())
+      val descriptor = tyDescriptorServing(unserved.get())
+
+      assertFalse(pyLspFolderSetIsStale(listOf(descriptor), served, oneVersion))
+      assertFalse(pyLspServesNothing(descriptor, served))
+    }
+
     /** No folder set suits such a server, so it is not stale. The caller stops it instead. */
     @Test
     @TestFor(issues = ["PY-92008"])
-    fun `a server for a module the project does not serve is not stale, it serves nothing`() {
-      val served = listOf(main.get(), other.get())
-      val descriptor = tyDescriptorServing(unserved.get())
+    fun `a shared server whose modules all left the served set serves nothing`() {
+      val served = listOf(main.get())
+      val descriptor = tyDescriptorServing(other.get(), unserved.get())
 
       assertFalse(pyLspFolderSetIsStale(listOf(descriptor), served, oneVersion))
       assertTrue(pyLspServesNothing(descriptor, served))
@@ -453,7 +470,7 @@ internal class PyLspServedModulesTest {
   @TestFor(issues = ["PY-92008"])
   inner class AncestorWorkspace {
     private val outerPath = tempPathFixture(prefix = "outer")
-    private val innerProjectPath = outerPath.subdirectory("inner_project")
+    private val innerProjectPath = outerPath.subdirectoryFixture("inner_project")
     private val innerProject = projectFixture(innerProjectPath, openAfterCreation = true)
     private val ancestor = innerProject.pyModuleFixture(outerPath, addPathToSourceRoot = true)
 
@@ -470,8 +487,8 @@ internal class PyLspServedModulesTest {
   @Nested
   @TestFor(issues = ["PY-92008"])
   inner class Candidates {
-    private val first = projectFixture.pyModuleFixture(projectPath.subdirectory("aaa_root"), addPathToSourceRoot = true)
-    private val second = projectFixture.pyModuleFixture(projectPath.subdirectory("zzz_root"), addPathToSourceRoot = true)
+    private val first = projectFixture.pyModuleFixture(projectPath.subdirectoryFixture("aaa_root"), addPathToSourceRoot = true)
+    private val second = projectFixture.pyModuleFixture(projectPath.subdirectoryFixture("zzz_root"), addPathToSourceRoot = true)
     private val firstSdk = projectFixture.pyMockSdkFixture(first) { PythonMockSdk.create(LanguageLevel.PYTHON312) }
     private val secondSdk = projectFixture.pyMockSdkFixture(second) { PythonMockSdk.create(LanguageLevel.PYTHON313) }
 
@@ -557,13 +574,13 @@ internal class PyLspServedModulesTest {
   @Nested
   @TestFor(issues = ["PY-92008"])
   inner class ForeignNestedRoots {
-    private val outerPath = projectPath.subdirectory("outer")
-    private val nestedPath = outerPath.subdirectory("nested")
+    private val outerPath = projectPath.subdirectoryFixture("outer")
+    private val nestedPath = outerPath.subdirectoryFixture("nested")
     private val outer = projectFixture.pyModuleFixture(outerPath, addPathToSourceRoot = true)
     private val nested = projectFixture.pyModuleFixture(nestedPath, addPathToSourceRoot = true)
-    private val inner = projectFixture.pyModuleFixture(nestedPath.subdirectory("inner"), addPathToSourceRoot = true)
-    private val globbed = projectFixture.pyModuleFixture(outerPath.subdirectory("glob[bed]"), addPathToSourceRoot = true)
-    private val sibling = projectFixture.pyModuleFixture(projectPath.subdirectory("sibling"), addPathToSourceRoot = true)
+    private val inner = projectFixture.pyModuleFixture(nestedPath.subdirectoryFixture("inner"), addPathToSourceRoot = true)
+    private val globbed = projectFixture.pyModuleFixture(outerPath.subdirectoryFixture("glob[bed]"), addPathToSourceRoot = true)
+    private val sibling = projectFixture.pyModuleFixture(projectPath.subdirectoryFixture("sibling"), addPathToSourceRoot = true)
 
     @Test
     fun `a nested module the server does not serve is excluded`() {
@@ -641,11 +658,3 @@ internal class PyLspServedModulesTest {
   private fun tyDescriptorServing(vararg servedModules: Module) =
     TyLspClientDescriptor(servedModules.first(), servedModules.toList())
 }
-
-/** A directory named [name] inside this fixture's path. The parent fixture deletes the whole tree. */
-private fun TestFixture<Path>.subdirectory(name: String): TestFixture<Path> =
-  testFixture(name) {
-    val parent = this@subdirectory.init()
-    val path = withContext(Dispatchers.IO) { parent.resolve(name).createDirectories() }
-    initialized(path) {}
-  }

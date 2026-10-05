@@ -11,7 +11,6 @@ import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import com.jetbrains.python.PyBundle.message
-import com.jetbrains.python.conda.savePythonCondaPath
 import com.intellij.platform.util.progress.withProgressText
 import com.jetbrains.python.errorProcessing.PyResult
 import com.jetbrains.python.newProject.collector.InterpreterStatisticsInfo
@@ -24,6 +23,7 @@ import com.jetbrains.python.sdk.add.v2.PythonNewEnvironmentCreator
 import com.jetbrains.python.sdk.add.v2.ValidatedPath
 import com.jetbrains.python.sdk.add.v2.ValidatedPathField
 import com.intellij.python.pytools.backend.Version
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.jetbrains.python.sdk.add.v2.createInstallCondaFix
 import com.jetbrains.python.sdk.add.v2.toStatisticsField
 import com.jetbrains.python.sdk.add.v2.validatablePathField
@@ -40,9 +40,7 @@ internal class CondaNewEnvironmentCreator<P : PathHolder>(model: PythonMutableTa
   private lateinit var versionComboBox: ComboBox<LanguageLevel>
   private lateinit var condaExecutable: ValidatedPathField<Version, P, ValidatedPath.Executable<P>>
   override val toolExecutable: ObservableProperty<ValidatedPath.Executable<P>?> = model.condaViewModel.condaExecutable
-  override val toolExecutablePersister: suspend (P) -> Unit = { pathHolder ->
-    (pathHolder as? PathHolder.Eel)?.let { if (model.fileSystem.isLocal) savePythonCondaPath(it.path) }
-  }
+  override val toolExecutablePersister: suspend (P) -> Unit = { model.saveCondaPathIfLocal(it) }
 
   // Conda's reader has no detection fallback, so it keeps persisting the created conda on setup (the
   // persister itself is gated to local). Unchanged from before the "persist only on browse" rule.
@@ -77,7 +75,7 @@ internal class CondaNewEnvironmentCreator<P : PathHolder>(model: PythonMutableTa
     condaExecutable.initialize(scope)
   }
 
-  override suspend fun getOrCreateSdk(moduleOrProject: ModuleOrProject): PyResult<Sdk> {
+  override suspend fun getOrCreateSdk(moduleOrProject: ModuleOrProject): PyResult<PythonInterpreter> {
     return withProgressText(message("python.sdk.progress.conda.creating")) {
       model.createCondaEnvironment(moduleOrProject, NewCondaEnvRequest.EmptyNamedEnv(pythonVersion.get(), model.condaViewModel.newCondaEnvName.get()))
     }

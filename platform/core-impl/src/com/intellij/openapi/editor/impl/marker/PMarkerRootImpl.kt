@@ -4,13 +4,13 @@ package com.intellij.openapi.editor.impl.marker
 import com.intellij.openapi.editor.ex.DocumentText
 import com.intellij.openapi.editor.ex.DocumentTextPatch
 import com.intellij.openapi.editor.impl.marker.PMarkerRoot.MarkerEntry
+import com.intellij.openapi.editor.impl.marker.PMarkerRootImpl.Companion.NULL_NODE
 import com.intellij.openapi.util.TextRange
 import com.intellij.util.Processor
-import com.intellij.util.containers.ConcurrentLongObjectMap
+import com.intellij.util.containers.ConcurrentLongIntMap
 import com.intellij.util.containers.Java11Shim
 import org.jetbrains.annotations.TestOnly
 import java.util.ArrayDeque
-import java.util.NoSuchElementException
 import java.util.function.LongConsumer
 
 /**
@@ -28,8 +28,10 @@ open class PMarkerRootImpl private constructor(
   private val states: PersistentLongMap<StoredNode>,
   /** Number of valid markers that use a persistent policy in the entire tree represented by this root. */
   private val persistentMarkerCount: Int,
+  private val cachedDelta: ConcurrentLongIntMap = Java11Shim.createConcurrentLongIntMap(UNCACHED_DELTA),
 ) : PMarkerRoot {
-  private val cachedDelta: ConcurrentLongObjectMap<Int> = Java11Shim.createConcurrentLongObjectMap()
+  internal val resolutionCacheIdentity: Any
+    get() = cachedDelta
 
   override fun emptyRoot(): PMarkerRootImpl = empty()
 
@@ -111,6 +113,7 @@ open class PMarkerRootImpl private constructor(
         decrementPersistentMarkerCount(persistentMarkerCount, state.entry.spec.policy),
         spec.policy,
       ),
+      cachedDelta,
     )
   }
 
@@ -427,18 +430,44 @@ open class PMarkerRootImpl private constructor(
   }
 
   private fun ancestorDelta(state: ValidNode, markerId: Long): Int {
-    return cachedDelta.computeIfAbsent(markerId) {
-      var result = 0
-      var parentId = state.parentId
-
-      while (parentId != NULL_NODE) {
-        val parent = states.getUnchecked(parentId) as? ValidNode
-                     ?: throw IllegalStateException("Parent $parentId is not a valid marker node")
-        result += parent.lazyOffsetDelta
-        parentId = parent.parentId
-      }
-      result
+    val cached = cachedDelta.get(markerId)
+    if (cached != UNCACHED_DELTA) {
+      return cached
     }
+
+    val path = ArrayDeque<ValidNode>()
+    var node = state
+    var nodeId = markerId
+    var result: Int
+    while (true) {
+      val parentId = node.parentId
+      if (parentId == NULL_NODE) {
+        result = 0
+        if (nodeId != markerId) {
+          cachedDelta.putIfAbsent(nodeId, result)
+        }
+        break
+      }
+
+      path.addLast(node)
+      node = states.getUnchecked(parentId) as? ValidNode
+             ?: throw IllegalStateException("Parent $parentId is not a valid marker node")
+      nodeId = parentId
+      val cached = cachedDelta.get(nodeId)
+      if (cached != UNCACHED_DELTA) {
+        result = cached
+        break
+      }
+    }
+
+    while (path.isNotEmpty()) {
+      result += node.lazyOffsetDelta
+      node = path.removeLast()
+      if (node.entry.markerId != markerId) {
+        cachedDelta.putIfAbsent(node.entry.markerId, result)
+      }
+    }
+    return result
   }
 
   private fun subtreeAggregate(markerId: Long): Int =
@@ -619,6 +648,7 @@ open class PMarkerRootImpl private constructor(
 
   companion object {
     private const val ALL_FLAVOR_FLAGS: Int = 0xFF
+    private const val UNCACHED_DELTA: Int = Int.MIN_VALUE
 
     private val ENTRY_COMPARATOR: Comparator<MarkerEntry> = Comparator { first, second -> PositionKey(first).compareTo(PositionKey(second)) }
     private const val NULL_NODE: Long = 0
@@ -854,17 +884,27 @@ open class PMarkerRootImpl private constructor(
     }
 
     private fun extractMinimum(editor: MapBatchEditor, rootId: Long): ExtractMinimumResult {
-      val root = push(editor, rootId)
-      if (root.leftId == NULL_NODE) {
-        val remainingRoot = root.rightId
-        editor.setParent(remainingRoot, root.parentId)
-        rewrite(editor, rootId, root, NULL_NODE, NULL_NODE, NULL_NODE)
-        return ExtractMinimumResult(remainingRoot, rootId)
+      var minimumId = rootId
+      var minimum = push(editor, minimumId)
+      val subtreeParentId = minimum.parentId
+      while (minimum.leftId != NULL_NODE) {
+        minimumId = minimum.leftId
+        minimum = push(editor, minimumId)
       }
 
-      val extracted = extractMinimum(editor, root.leftId)
-      rewrite(editor, rootId, root, root.parentId, extracted.rootId, root.rightId)
-      return ExtractMinimumResult(rebalance(editor, rootId), extracted.minimumId)
+      var ancestorId = minimum.parentId
+      var remainingRoot = minimum.rightId
+      editor.setParent(remainingRoot, minimum.parentId)
+      rewrite(editor, minimumId, minimum, NULL_NODE, NULL_NODE, NULL_NODE)
+
+      while (ancestorId != subtreeParentId) {
+        val ancestor = editor.valid(ancestorId)
+        val parentId = ancestor.parentId
+        rewrite(editor, ancestorId, ancestor, parentId, remainingRoot, ancestor.rightId)
+        remainingRoot = rebalance(editor, ancestorId)
+        ancestorId = parentId
+      }
+      return ExtractMinimumResult(remainingRoot, minimumId)
     }
 
     private fun checkNotNull(id: Long): Long {

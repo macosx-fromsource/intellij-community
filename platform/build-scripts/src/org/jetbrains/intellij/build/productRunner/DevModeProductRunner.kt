@@ -3,6 +3,7 @@
 
 package org.jetbrains.intellij.build.productRunner
 
+import com.intellij.platform.buildScripts.devLaunch.readVmOptions
 import org.jetbrains.intellij.build.BuildContext
 import org.jetbrains.intellij.build.BuildLifetime
 import org.jetbrains.intellij.build.VmProperties
@@ -13,7 +14,6 @@ import org.jetbrains.intellij.build.dev.configureDevModeBuildOptions
 import org.jetbrains.intellij.build.dev.copyWithDevBuildOverrides
 import org.jetbrains.intellij.build.dev.createDevBuildContext
 import org.jetbrains.intellij.build.dev.createDevBuildPaths
-import org.jetbrains.intellij.build.dev.readVmOptions
 import org.jetbrains.intellij.build.impl.BuildContextImpl
 import org.jetbrains.intellij.build.impl.logging.BuildMessagesHandler
 import org.jetbrains.intellij.build.impl.logging.BuildMessagesImpl

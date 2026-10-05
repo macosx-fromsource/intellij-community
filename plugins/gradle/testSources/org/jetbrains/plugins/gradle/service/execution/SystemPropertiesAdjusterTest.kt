@@ -1,6 +1,7 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.plugins.gradle.service.execution
 
+import com.intellij.jna.JnaLoader
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.util.SystemProperties
 import org.gradle.util.GradleVersion
@@ -28,8 +29,16 @@ class SystemPropertiesAdjusterTest {
   private val originalValues = HashMap<String, String?>()
   private val executor: ExecutorService = Executors.newFixedThreadPool(2)
 
+  /** The boot path that each recorded JNA load of the adjuster saw. An unmasked path means the load ran before the mask. */
+  private val recordedJnaLoads = ArrayList<String?>()
+  private lateinit var originalJnaLoad: () -> Unit
+
   @BeforeEach
   fun setUp() {
+    // The test sets a boot path that holds no library. Load JNA first, so a first JNA user of this JVM cannot fail on it.
+    JnaLoader.load()
+    originalJnaLoad = SystemPropertiesAdjuster.jnaLoad
+    SystemPropertiesAdjuster.jnaLoad = { synchronized(recordedJnaLoads) { recordedJnaLoads.add(System.getProperty("jna.boot.library.path")) } }
     for ((key, value) in JNA_PROPERTIES + (JANSI_PROPERTY to "/ide/lib/jansi")) {
       originalValues[key] = SystemProperties.setProperty(key, value)
     }
@@ -37,6 +46,7 @@ class SystemPropertiesAdjusterTest {
 
   @AfterEach
   fun tearDown() {
+    SystemPropertiesAdjuster.jnaLoad = originalJnaLoad
     for ((key, value) in originalValues) {
       SystemProperties.setProperty(key, value)
     }
@@ -51,6 +61,7 @@ class SystemPropertiesAdjusterTest {
     }
     assertJnaPropertiesUnchanged()
     assertEquals("/ide/lib/jansi", System.getProperty(JANSI_PROPERTY))
+    assertEquals(emptyList<String?>(), recordedJnaLoads, "an operation that masks no jna.* property loads no JNA")
   }
 
   @Test
@@ -59,6 +70,7 @@ class SystemPropertiesAdjusterTest {
       assertJnaPropertiesMasked()
     }
     assertJnaPropertiesUnchanged()
+    assertEquals(listOf(JNA_PROPERTIES.getValue("jna.boot.library.path")), recordedJnaLoads, "JNA loads once, and it sees the boot path before the mask")
   }
 
   @Test

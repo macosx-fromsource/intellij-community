@@ -8,6 +8,9 @@ import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.lsp.ui.frontend.settings.LspServerConfiguration
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.platform.eel.provider.LocalEelDescriptor
+import com.intellij.platform.eel.provider.getEelDescriptor
+import com.intellij.platform.eel.provider.getRemoteProjectBaseNioPath
 import com.intellij.platform.lsp.api.LspCommunicationChannel
 import com.intellij.platform.lsp.api.ProjectWideLspClientDescriptor
 import com.intellij.platform.lsp.api.customization.LspCustomization
@@ -46,11 +49,15 @@ internal class ConfigurableLspClientDescriptor(
 
     val commandLine = GeneralCommandLine(configuration.executablePath)
 
-    configuration.getArgumentsList().forEach { arg ->
-      commandLine.addParameter(arg)
-    }
+    commandLine.addParameters(configuration.getArgumentsList())
 
-    roots.getOrNull(0)?.let { commandLine.withWorkingDirectory(it.toNioPath()) }
+    val workingDirectory = if (project.getEelDescriptor() !is LocalEelDescriptor) {
+      project.getRemoteProjectBaseNioPath()
+    }
+    else {
+      roots.firstOrNull()?.toNioPath()
+    }
+    commandLine.withWorkingDirectory(workingDirectory)
 
     configuration.envVars.get().configureCommandLine(commandLine, true)
 

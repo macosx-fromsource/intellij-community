@@ -234,6 +234,8 @@ fun intellijCommunityBaseFragment(platformPrefix: String? = null): ProductModule
   }
 
   moduleSet(CommunityModuleSets.ideCommon())
+  // the bundled Compose plugin needs the Compose runtime
+  moduleSet(CommunityModuleSets.composeRuntime())
   moduleSet(CommunityModuleSets.platformResourceDefaults())
   moduleSet(CommunityModuleSets.rdCommon())
 
@@ -242,7 +244,6 @@ fun intellijCommunityBaseFragment(platformPrefix: String? = null): ProductModule
   module("intellij.platform.ide.nonModalWelcomeScreen")
   module("intellij.platform.ide.nonModalWelcomeScreen.frontend")
   module("intellij.platform.ide.nonModalWelcomeScreen.backend")
-  module("intellij.platform.ide.nonModalWelcomeScreen.terminal")
 }
 
 inline fun ideaCommunityWindowsCustomizer(

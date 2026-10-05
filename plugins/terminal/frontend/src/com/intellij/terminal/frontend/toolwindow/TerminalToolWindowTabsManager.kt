@@ -20,6 +20,8 @@ interface TerminalToolWindowTabsManager {
   /**
    * List of the opened Reworked Terminal tabs in the Terminal Tool Window.
    * Order can be different from the UI.
+   * The stored tabs are restored when the tool window is shown for the first time.
+   * A restored tab is in the list only after the user selects it for the first time.
    */
   @get:RequiresEdt(generateAssertion = false /* IJPL-115548 */)
   val tabs: List<TerminalToolWindowTab>
@@ -77,11 +79,13 @@ interface TerminalTabsManagerListener {
   /**
    * Called only once after the terminal view is created for the tool window tab.
    * But before the terminal tab is added to the tool window.
+   * For a tab restored on project open, it is called when the user selects the tab or moves it to the editor for the first time.
    */
   fun terminalViewCreated(view: TerminalView) {}
 
   /**
    * Called after the terminal tab is added to the terminal tool window.
+   * For a tab restored on project open, it is called when the user selects the tab or moves it to the editor for the first time.
    *
    * Note that this method is fired both when a new terminal tab is created ([TerminalToolWindowTabBuilder.createTab])
    * and when the terminal tab is attached to the tool window ([TerminalToolWindowTabsManager.attachTab]).

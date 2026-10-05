@@ -145,8 +145,6 @@ jvm_library(
         "//plugins/maven:maven_test_lib",
         "//plugins/maven/src/test:maven-tests",
         "//plugins/maven/src/test:maven-tests_test_lib",
-        "//plugins/maven/src/integrationTest:maven-integration-tests",
-        "//plugins/maven/src/integrationTest:maven-integration-tests_test_lib",
         "//plugins/kotlin/gradle/gradle-java/tests.shared",
         "//plugins/kotlin/gradle/gradle-java/tests.shared:tests.shared_test_lib",
         "//plugins/kotlin/project-configuration",
@@ -184,10 +182,10 @@ jvm_library(
         "//java/java-psi-api:psi_test_lib",
         "//plugins/kotlin/code-insight/inspections-k2:kotlin-codeInsight-inspections",
         "//plugins/kotlin/code-insight/inspections-k2:kotlin-codeInsight-inspections_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
-        "//libraries/junit5-params",
-        "//libraries/junit5-params:junit5-params_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
+        "//libraries/junit6-params",
+        "//libraries/junit6-params:junit6-params_test_lib",
     ],
 )
 ### auto-generated section `build kotlin.project-wizard.tests` end

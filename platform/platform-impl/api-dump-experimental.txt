@@ -21,9 +21,6 @@
 *:com.intellij.execution.impl.EditorTextDecorationId
 - java.lang.Comparable
 - a:getValue():J
-*:com.intellij.execution.impl.FilterApplyResult
-- a:getFilterResult():com.intellij.execution.filters.Filter$Result
-- a:getLineNumber():I
 *:com.intellij.execution.impl.HighlightingBuilder
 - a:getLayer():I
 - a:setLayer(I):V
@@ -40,12 +37,6 @@
 - a:setLayer(I):V
 *:com.intellij.execution.impl.HyperlinkDecoration
 - com.intellij.execution.impl.EditorTextDecoration
-*f:com.intellij.execution.impl.HyperlinksKt
-- *sf:applyToLineRange(com.intellij.execution.filters.Filter,com.intellij.execution.impl.HypertextInput,I,I,kotlin.jvm.functions.Function1):V
-*:com.intellij.execution.impl.HypertextInput
-- a:getLineCount():I
-- a:getLineStartOffset(I):I
-- a:getLineText(I):java.lang.String
 *:com.intellij.execution.impl.InlayBuilder
 *:com.intellij.execution.impl.InlayDecoration
 - com.intellij.execution.impl.EditorTextDecoration
@@ -87,6 +78,8 @@ f:com.intellij.ide.IdeTooltipManager
 - com.intellij.openapi.Disposable
 - *f:isProcessing(java.awt.Component):Z
 - *f:updateShownTooltip(java.awt.Component):V
+*:com.intellij.ide.KeyboardAwareContainer
+- a:skipKeyEventDispatcher(java.awt.Component,java.awt.event.KeyEvent):Z
 f:com.intellij.ide.actionsOnSave.impl.ActionsOnSaveManager
 - *f:awaitPendingActions(kotlin.coroutines.Continuation):java.lang.Object
 - *f:hasPendingActions():Z
@@ -107,9 +100,6 @@ f:com.intellij.ide.plugins.PluginNode
 - a:getShouldNotifyUser():Z
 f:com.intellij.ide.startup.StartupActionScriptManager
 - *s:addActionCommandsToBeginning(java.util.List):V
-*f:com.intellij.ide.trustedProjects.TrustedFiles
-- sf:INSTANCE:com.intellij.ide.trustedProjects.TrustedFiles
-- sf:isTrusted(com.intellij.openapi.vfs.VirtualFile,com.intellij.openapi.project.Project):Z
 *f:com.intellij.ide.ui.PopupLocationTracker
 - <init>():V
 - s:canRectangleBeUsed(java.awt.Component,java.awt.Rectangle,com.intellij.ide.ui.ScreenAreaConsumer):Z
@@ -404,6 +394,29 @@ c:com.intellij.openapi.options.ex.ConfigurableWrapper
 - a:openInChildProcess(java.nio.file.Path,kotlin.coroutines.Continuation):java.lang.Object
 f:com.intellij.openapi.project.impl.P3SupportKt
 - *sf:processPerProjectSupport():com.intellij.openapi.project.impl.P3Support
+*f:com.intellij.openapi.updateSettings.AccessPluginClassLoadersRequest
+- com.intellij.ide.plugins.PluginPermissionRequest
+- <init>(java.lang.String):V
+- f:getMessage():java.lang.String
+*f:com.intellij.openapi.updateSettings.DisablePluginRequest
+- com.intellij.ide.plugins.PluginPermissionRequest
+- <init>(com.intellij.openapi.extensions.PluginId,java.lang.String):V
+- f:getMessage():java.lang.String
+- f:getPluginId():com.intellij.openapi.extensions.PluginId
+*f:com.intellij.openapi.updateSettings.EnablePluginRequest
+- com.intellij.ide.plugins.PluginPermissionRequest
+- <init>(com.intellij.openapi.extensions.PluginId,java.lang.String):V
+- f:getMessage():java.lang.String
+- f:getPluginId():com.intellij.openapi.extensions.PluginId
+*f:com.intellij.openapi.updateSettings.InstallPluginRequest
+- com.intellij.ide.plugins.PluginPermissionRequest
+- <init>(com.intellij.openapi.extensions.PluginId,java.lang.String):V
+- f:getMessage():java.lang.String
+- f:getPluginId():com.intellij.openapi.extensions.PluginId
+*:com.intellij.openapi.updateSettings.PluginManagementAction
+- a:apply():V
+*:com.intellij.openapi.updateSettings.ReadPluginDescriptorsAction
+- a:getPluginDescriptors():java.util.List
 *f:com.intellij.openapi.util.io.CancellableComputation
 - java.util.function.Function
 - *sf:Companion:com.intellij.openapi.util.io.CancellableComputation$Companion
@@ -494,22 +507,6 @@ c:com.intellij.openapi.wm.impl.welcomeScreen.TabbedWelcomeScreen
 - com.intellij.ui.codeFloatingToolbar.FloatingToolbarCustomizer
 - <init>():V
 - getActionGroup():java.lang.String
-*c:com.intellij.ui.components.JBTreeTable
-- javax.swing.JComponent
-- com.intellij.ui.tree.TreePathBackgroundSupplier
-- <init>(com.intellij.ui.treeStructure.treetable.TreeTableModel):V
-- <init>(com.intellij.ui.treeStructure.treetable.TreeTableModel,com.intellij.ui.treeStructure.Tree):V
-- getColumnProportion():F
-- getDefaultRenderer(java.lang.Class):javax.swing.table.TableCellRenderer
-- getModel():com.intellij.ui.treeStructure.treetable.TreeTableModel
-- getPathBackground(javax.swing.tree.TreePath,I):java.awt.Color
-- getTable():com.intellij.ui.table.JBTable
-- getTree():com.intellij.ui.treeStructure.Tree
-- hasFocus():Z
-- setColumnProportion(F):V
-- setDefaultRenderer(java.lang.Class,javax.swing.table.TableCellRenderer):V
-- setModel(com.intellij.ui.treeStructure.treetable.TreeTableModel):V
-- setRowSorter(javax.swing.RowSorter):V
 *:com.intellij.ui.content.custom.options.ContentLayoutStateSettings
 - a:getDisplayName():java.lang.String
 - a:isEnabled():Z
@@ -551,8 +548,6 @@ f:com.intellij.ui.dsl.builder.components.ValidationTooltipKt
 c:com.intellij.ui.popup.list.PopupListElementRenderer
 - com.intellij.ui.popup.list.GroupedItemsListRenderer
 - *p:isShowingTooltipForExtraButton():Z
-*f:com.intellij.ui.tree.TreeStructureDomainModelAdapterKt
-- *sf:buildTreeNodeDescriptorPresentation(com.intellij.ide.util.treeView.PresentableNodeDescriptor,com.intellij.ui.treeStructure.TreeNodePresentationBuilder):com.intellij.ui.treeStructure.TreeNodePresentation
 *f:com.intellij.util.ui.RestartDialogImpl
 - *sf:Companion:com.intellij.util.ui.RestartDialogImpl$Companion
 - <init>():V

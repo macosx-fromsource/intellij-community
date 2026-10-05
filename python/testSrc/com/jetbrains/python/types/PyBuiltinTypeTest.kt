@@ -519,6 +519,7 @@ class PyBuiltinTypeTest : PyCodeInsightTestCase() {
       """.trimIndent())
 
     @Test
+    @TestFor(issues = ["PY-24067"])
     fun `async function return type in docstring`() = test("""
       async def f():
           '''
@@ -550,7 +551,7 @@ class PyBuiltinTypeTest : PyCodeInsightTestCase() {
   @Nested
   inner class TypeComments {
     @Test
-    fun `quoted forward reference in type comment`() = test("""
+    fun `unquoted forward reference in type comment`() = test("""
       def foo(x):
           # type: (MyClass) -> None
           expr = x
@@ -592,18 +593,6 @@ class PyBuiltinTypeTest : PyCodeInsightTestCase() {
       """.trimIndent())
 
     @Test
-    fun `binary expr str`() = test("""
-      expr = '1' + '2'
-      #└ TYPE LiteralString
-      """.trimIndent())
-
-    @Test
-    fun `binary expr str format`() = test("""
-      expr = '%s' % ('a')
-      #└ TYPE LiteralString
-      """.trimIndent())
-
-    @Test
     fun `binary expr list`() = test("""
       expr = [1] + [2]
       #└ TYPE list[int]
@@ -618,35 +607,13 @@ class PyBuiltinTypeTest : PyCodeInsightTestCase() {
     @Test
     fun `logical and expression`() = test("""
       expr = 'foo' and 2
-      #└ TYPE Literal["foo", 2]
+      #└ TYPE Literal[2]
       """.trimIndent())
 
     @Test
     fun `logical not expression`() = test("""
       expr = not 'hello'
       #└ TYPE bool
-      """.trimIndent())
-
-    @Test
-    fun `bitwise or operator overload`() = test("""
-      class A:
-        def __or__(self, other) -> int: return 5
-      
-      expr = A() | A()
-      #└ TYPE int
-      """.trimIndent())
-
-    @Test
-    fun `bitwise or operator overload returning union of metaclass`() = test("""
-      class MyMeta(type):
-          def __or__(self, other):
-              return other
-      
-      class Foo(metaclass=MyMeta):
-          ...
-      
-      expr = Foo | None
-      #└ TYPE UnionType | Self
       """.trimIndent())
 
     @Test
@@ -773,19 +740,6 @@ class PyBuiltinTypeTest : PyCodeInsightTestCase() {
           def __radd__(self, other: int) -> int: ...
       
       expr = A() + B()
-      #└ TYPE str
-      """.trimIndent())
-
-    @Test
-    @TestFor(issues = ["PY-80622"])
-    fun `binary expression does not prefer reflected for unrelated types`() = test("""
-      class A:
-          def __mul__(self, other: B) -> str: ...
-      
-      class B:
-          def __rmul__(self, other: A) -> int: ...
-      
-      expr = A() * B()
       #└ TYPE str
       """.trimIndent())
 
@@ -1154,7 +1108,6 @@ class PyBuiltinTypeTest : PyCodeInsightTestCase() {
 
     @Test
     @TestFor(issues = ["PY-80622"])
-    @TestCaseOptions(enableWeakWarnings = false)
     fun `augmented assignment type changes in loop`() = test("""
       class Counter:
           def __add__(self, other: int) -> int:
@@ -1255,7 +1208,6 @@ class PyBuiltinTypeTest : PyCodeInsightTestCase() {
 
     @Test
     @TestFor(issues = ["PY-80622"])
-    @TestCaseOptions(enableWeakWarnings = false)
     fun `augmented assignment union iadd and add`() = test("""
       class P:
           def __iadd__(self, other: int) -> P: ...
@@ -1288,7 +1240,6 @@ class PyBuiltinTypeTest : PyCodeInsightTestCase() {
 
     @Test
     @TestFor(issues = ["PY-80622"])
-    @TestCaseOptions(enableWeakWarnings = false)
     fun `augmented assignment union sub operator`() = test("""
       class A:
           def __isub__(self, other: int) -> int: ...

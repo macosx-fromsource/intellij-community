@@ -1,6 +1,31 @@
+load("@community//build:bazel_targets_json.bzl", "current_bazel_targets_json")
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
+
+BAZEL_TARGETS_JSON = current_bazel_targets_json()
+
+jps_test(
+    name = "build-tests_test",
+    timeout = "moderate",
+    data = [
+        ":testData",
+        "@community//java/java-tests:testData",
+        BAZEL_TARGETS_JSON,
+    ],
+    jvm_flags = [
+        "-Dintellij.build.bazel.targets.json.file=$(rlocationpath %s)" % BAZEL_TARGETS_JSON,
+    ],
+    tags = ["community-compiler-test"],
+    runtime_deps = [":build-tests_test_lib"],
+)
+### skip generation section `test intellij.platform.jps.build.tests`
+
+filegroup(
+    name = "testData",
+    srcs = glob(["testData/**"]),
+    visibility = ["//visibility:public"],
+)
 
 ### auto-generated section `dev intellij.platform.jps.build` start
 content_module_jar(
@@ -200,6 +225,10 @@ jvm_library(
         "//jps/model-serialization:model-serialization-tests_test_lib",
         "//platform/testFramework",
         "//platform/testFramework:testFramework_test_lib",
+        "//platform/testFramework/impl",
+        "//platform/testFramework/impl:impl_test_lib",
+        "//platform/bazel-runfiles",
+        "//platform/bazel-runfiles:bazel-runfiles_test_lib",
         "//java/compiler/instrumentation-util",
         "//java/compiler/instrumentation-util:instrumentation-util_test_lib",
         "@lib//:eclipse",
@@ -231,8 +260,8 @@ jvm_library(
         "//platform/lang-api:lang_test_lib",
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
     ],
 )
 ### auto-generated section `build intellij.platform.jps.build.tests` end
@@ -245,10 +274,3 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.platform.jps.build.tests` end
-
-### auto-generated section `test intellij.platform.jps.build.tests` start
-jps_test(
-    name = "build-tests_test",
-    runtime_deps = [":build-tests_test_lib"],
-)
-### auto-generated section `test intellij.platform.jps.build.tests` end

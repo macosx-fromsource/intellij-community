@@ -1,12 +1,12 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.intellij.build
 
+import com.intellij.platform.buildScripts.pluginModelTool.discoverCommunityModuleSetSources
+import com.intellij.platform.buildScripts.pluginModelTool.parseGeneratorOptions
+import com.intellij.platform.buildScripts.pluginModelTool.parseJsonArgument
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.jetbrains.intellij.build.productLayout.discoverCommunityModuleSetSources
 import org.jetbrains.intellij.build.productLayout.discovery.ModuleSetSourceLabels
-import org.jetbrains.intellij.build.productLayout.parseGeneratorOptions
-import org.jetbrains.intellij.build.productLayout.parseJsonArgument
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 
@@ -99,5 +99,27 @@ class ModuleSetRunnerTest {
     assertThatThrownBy { parseGeneratorOptions(arrayOf("--trace=")) }
       .isInstanceOf(IllegalArgumentException::class.java)
       .hasMessageContaining("--trace needs a file")
+  }
+
+  @Test
+  fun `a run without the unused inputs argument has no unused inputs file`() {
+    assertThat(parseGeneratorOptions(arrayOf("--check", "--trace=trace.json")).unusedInputsFile).isNull()
+  }
+
+  @Test
+  fun `the unused inputs argument becomes an absolute path`() {
+    val options = parseGeneratorOptions(arrayOf("--unused-inputs=out/unused.txt", "--trace=trace.json"))
+
+    assertThat(options.unusedInputsFile).isAbsolute()
+    assertThat(options.unusedInputsFile).endsWithRaw(Path.of("out", "unused.txt"))
+    assertThat(options.traceFile?.fileName).isEqualTo(Path.of("trace.json"))
+    assertThat(options.commitChanges).isTrue()
+  }
+
+  @Test
+  fun `an empty unused inputs argument throws`() {
+    assertThatThrownBy { parseGeneratorOptions(arrayOf("--unused-inputs=")) }
+      .isInstanceOf(IllegalArgumentException::class.java)
+      .hasMessageContaining("--unused-inputs needs a file")
   }
 }

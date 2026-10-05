@@ -1,6 +1,6 @@
 # Module In Multiple Plugins Validation
 
-Entry point: `collectModulesInMultiplePlugins` in `platform/buildScripts/src/productLayout/ultimateGenerator.kt`.
+Entry point: `collectModulesInMultiplePlugins` in `platform/buildScripts/plugin-model/src/ultimateGenerator.kt`.
 This rule is no `PipelineNode`, so it has no `NodeId`.
 
 ## Overview
@@ -66,7 +66,7 @@ copy of `ModuleIncludeReasons`, which is internal to the `intellij.platform.buil
 ## Suppression and allowlists
 
 `ErrorCategory.MODULE_IN_MULTIPLE_PLUGINS` carries no `suppressionKey`. The allowlist is the whole suppression
-mechanism, and `KNOWN_MODULES_IN_MULTIPLE_PLUGINS` in `platform/buildScripts/src/productLayout/ultimateGenerator.kt`
+mechanism, and `KNOWN_MODULES_IN_MULTIPLE_PLUGINS` in `platform/buildScripts/plugin-model/src/ultimateGenerator.kt`
 holds it, beside the rule.
 
 The allowlist does not live in `platform/buildScripts/suppressions.json`, for three reasons.

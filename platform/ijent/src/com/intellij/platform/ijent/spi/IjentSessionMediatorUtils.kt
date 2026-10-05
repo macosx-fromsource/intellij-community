@@ -3,7 +3,8 @@
 package com.intellij.platform.ijent.spi
 
 import com.intellij.openapi.diagnostic.Attachment
-import com.intellij.platform.eel.channels.EelDelicateApi
+import com.intellij.openapi.diagnostic.ExceptionWithAttachments
+import com.intellij.platform.eel.EelUnavailableException
 import com.intellij.platform.eel.channels.EelReceiveChannel
 import com.intellij.platform.eel.channels.EelReceiveChannelException
 import com.intellij.platform.eel.channels.PeekableEelReceiveChannel
@@ -13,75 +14,30 @@ import com.intellij.platform.eel.channels.useLines
 import com.intellij.platform.ijent.IjentLog
 import com.intellij.platform.ijent.IjentLogger
 import com.intellij.platform.ijent.IjentScope
-import com.intellij.platform.ijent.IjentUnavailableException
-import com.intellij.platform.ijent.ParentOfIjentScopes
-import com.intellij.platform.util.coroutines.childScope
-import com.intellij.util.containers.CollectionFactory
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.takeWhile
-import kotlinx.coroutines.job
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import org.jetbrains.annotations.ApiStatus
 import java.io.IOException
-import java.lang.reflect.Method
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets.US_ASCII
 import java.time.ZonedDateTime
 import java.time.format.DateTimeParseException
-import java.util.Collections
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.toKotlinDuration
 
 @ApiStatus.Internal
 object IjentSessionMediatorUtils {
-  private val loggedErrors = Collections.newSetFromMap(CollectionFactory.createConcurrentWeakMap<Throwable, Boolean>())
-
-  fun createProcessScope(parentScope: ParentOfIjentScopes, ijentLabel: String): IjentScope =
-    parentScope.createIjentScope(ijentLabel)
-
-  fun logIjentError(ijentLabel: String, exception: Throwable) {
-    // Wrapped in a non-cancellable section because this can be called from `invokeOnCompletion`
-    // of an already-cancelled scope, and `logger.error(...)` may create application services
-    // (e.g. error-report submitters) that the service container refuses to instantiate under a
-    // cancelled Job. See [runInNonCancellableSection].
-    runInNonCancellableSection {
-      when (exception) {
-        is IjentUnavailableException -> when (exception) {
-          is IjentUnavailableException.ClosedByApplication -> Unit
-
-          is IjentUnavailableException.CommunicationFailure -> {
-            if (!exception.exitedExpectedly && loggedErrors.add(exception)) {
-              IjentLogger.OTHER_LOG.error("Exception in connection with IJent $ijentLabel: ${exception.message}", exception)
-            }
-          }
-        }
-
-        is CancellationException -> Unit
-
-        else -> {
-          if (loggedErrors.add(exception)) {
-            IjentLogger.OTHER_LOG.error("Unexpected error during communnication with IJent $ijentLabel", exception)
-          }
-        }
-      }
-    }
-  }
-
   suspend fun ijentProcessStderrLogger(
     errorStream: EelReceiveChannel,
     ijentLabel: String,
@@ -246,11 +202,11 @@ object IjentSessionMediatorUtils {
     isExitExpected: Boolean,
   ): Nothing {
     if (isExitExpected) {
-      val error = IjentUnavailableException.ClosedByApplication("IJent process exited successfully", null)
-      currentCoroutineContext()[IjentScope.IjentContext.Key]?.completeExitReason(error)
+      val error = EelUnavailableException.ClosedByApplication("IJent process exited successfully", null)
+      currentCoroutineContext()[IjentScope.Key]?.destroy(error, isRootCause = true)
       IjentLogger.LIFETIME_LOG.debug { error.message }
       // Carrying the domain exception as the cancellation cause makes expected shutdown look like a test failure.
-      throw CancellationException(error.message)
+      throw error
     }
     else {
       val error = withContext(NonCancellable) {
@@ -260,12 +216,16 @@ object IjentSessionMediatorUtils {
         }
         if (timeoutResult == null) stderr.append("\n<didn't collect the whole stderr>")
 
-        IjentUnavailableException.CommunicationFailure(
+        EelUnavailableException.CommunicationFailure(
           "The process $ijentLabel suddenly exited with the code $exitCode",
           null,
-          Attachment("stderr", stderr.toString()),
         ).also {
-          currentCoroutineContext()[IjentScope.IjentContext.Key]?.completeExitReason(it)
+          it.addSuppressed(object : Throwable("", null, true, false), ExceptionWithAttachments {
+            override fun getAttachments(): Array<out Attachment> {
+              return arrayOf(Attachment("stderr", stderr.toString()))
+            }
+          })
+          currentCoroutineContext()[IjentScope.Key]?.destroy(it, isRootCause = true)
         }
       }
       // TODO IJPL-198706 When IJent unexpectedly terminates, users should be asked for further actions.
@@ -295,16 +255,16 @@ object IjentSessionMediatorUtils {
     catch (err: Exception) {
       val actualErrors = generateSequence(err, Throwable::cause).filterTo(mutableListOf()) { it !is CancellationException }
 
-      val existingIjentUnavailableException = actualErrors.filterIsInstance<IjentUnavailableException>().firstOrNull()
+      val existingIjentUnavailableException = actualErrors.filterIsInstance<EelUnavailableException>().firstOrNull()
       if (existingIjentUnavailableException != null) {
-        currentCoroutineContext()[IjentScope.IjentContext.Key]?.completeExitReason(existingIjentUnavailableException)
+        currentCoroutineContext()[IjentScope.Key]?.destroy(existingIjentUnavailableException, isRootCause = true)
         throw existingIjentUnavailableException
       }
 
       if (actualErrors.isEmpty()) {
         // A plain cancellation is an application-initiated close; publish the canonical reason but keep the control flow.
-        val closed = IjentUnavailableException.ClosedByApplication("The coroutine scope of $ijentLabel was cancelled", err)
-        currentCoroutineContext()[IjentScope.IjentContext.Key]?.completeExitReason(closed)
+        val closed = EelUnavailableException.ClosedByApplication("The coroutine scope of $ijentLabel was cancelled", err)
+        currentCoroutineContext()[IjentScope.Key]?.destroy(closed, isRootCause = true)
       }
       // A real failure is not an application close; the exit-code handler publishes the authoritative reason.
       throw err
@@ -328,7 +288,7 @@ object IjentSessionMediatorUtils {
     if (result != null) {
       return result
     }
-    val error = IjentUnavailableException.CommunicationFailure(msg, cause)
+    val error = EelUnavailableException.CommunicationFailure(msg, cause)
     throw error
   }
 
@@ -339,60 +299,13 @@ object IjentSessionMediatorUtils {
         line.append(US_ASCII.decode(buffer))
       }
       if (!pipeReached) {
-        throw IjentUnavailableException.CommunicationFailure(msg, null)
+        throw EelUnavailableException.CommunicationFailure(msg, null)
       }
     }
     catch (err: EelReceiveChannelException) {
-      throw IjentUnavailableException.CommunicationFailure(msg, err)
+      throw EelUnavailableException.CommunicationFailure(msg, err)
     }
     return line.toString()
-  }
-}
-
-/**
- * Runs [block] in a context where the current Job appears active to IntelliJ's cancellation machinery,
- * even if the surrounding coroutine has already been cancelled.
- *
- * Why this exists: [IjentSessionMediatorUtils.logIjentError] is invoked from `invokeOnCompletion { ... }`
- * of a scope that has just been cancelled. Inside, the platform's `Logger.error(message, throwable)` may
- * need to create application services (e.g. an error-report submitter, message-pool listeners) — the
- * service container refuses to do that under a cancelled `Job` and throws `ProcessCanceledException`
- * instead. Wrapping the call masks the cancelled job locally so service creation succeeds; the actual
- * ijent error is what gets logged, not a confusing PCE on top.
- *
- * The implementation reflectively delegates to `com.intellij.openapi.progress.Cancellation`
- * (which installs a `NonCancellable` job into the thread context). It lives in `intellij.platform.util`,
- * which the small ijent core deliberately does not depend on; if the class is not on the runtime
- * classpath (lightweight contexts, no IDE), [block] runs as-is — there is no service container to placate
- * in that case.
- */
-private fun <T> runInNonCancellableSection(block: () -> T): T {
-  val invoker = CANCELLATION_INVOKER ?: return block()
-
-  var result: Any? = null
-  var error: Throwable? = null
-  invoker(Runnable {
-    try {
-      result = block()
-    }
-    catch (t: Throwable) {
-      error = t
-    }
-  })
-  error?.let { throw it }
-  @Suppress("UNCHECKED_CAST")
-  return result as T
-}
-
-private val CANCELLATION_INVOKER: ((Runnable) -> Unit)? = run {
-  try {
-    val method: Method = Class.forName("com.intellij.openapi.progress.Cancellation")
-      .getMethod("executeInNonCancelableSection", Runnable::class.java)
-      .apply { isAccessible = true }
-    return@run { runnable -> method.invoke(null, runnable) }
-  }
-  catch (_: Throwable) {
-    null
   }
 }
 

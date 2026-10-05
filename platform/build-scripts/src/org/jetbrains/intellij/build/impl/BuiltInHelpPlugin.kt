@@ -3,6 +3,7 @@ package org.jetbrains.intellij.build.impl
 
 import com.intellij.platform.buildScripts.concurrency.withLockInterruptibly
 import io.opentelemetry.api.trace.Span
+import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.intellij.build.BuildContext
 import org.jetbrains.intellij.build.CompilationContext
 import org.jetbrains.intellij.build.dev.DevPluginLayoutAssetSpec
@@ -17,7 +18,8 @@ import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.io.path.exists
 
-internal const val BUILT_IN_HELP_MODULE_NAME = "intellij.builtInHelp"
+@ApiStatus.Internal
+const val BUILT_IN_HELP_MODULE_NAME: String = "intellij.builtInHelp"
 
 /**
  * The dev distribution omits the help assets jar. A `HelpIndexer` run builds it from `help/plugin-resources`, which only

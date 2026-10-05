@@ -14,7 +14,10 @@ import com.intellij.openapi.util.NlsSafe
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.io.toNioPathOrNull
 import com.intellij.python.community.common.tools.ToolId
+import com.intellij.python.sdk.backend.PySdkBundle
 import com.intellij.python.sdk.backend.PythonInterpreter
+import com.intellij.python.sdk.backend.flavor
+import com.intellij.python.sdk.common.PyInterpreterRef
 import com.intellij.python.sdk.common.evolution.EvoAddNewDto
 import com.intellij.python.sdk.common.evolution.EvoAddNewOptionDto
 import com.intellij.python.sdk.common.evolution.EvoBasePythonDto
@@ -26,19 +29,16 @@ import com.intellij.python.sdk.common.evolution.EvoNodeKind
 import com.intellij.python.sdk.common.evolution.EvoRecreateDto
 import com.intellij.python.sdk.common.evolution.EvoSectionDto
 import com.intellij.python.sdk.common.evolution.PyEvoRegistry
-import com.intellij.python.sdk.common.PyInterpreterRef
+import com.intellij.python.sdk.common.shortenPath
 import com.jetbrains.python.errorProcessing.ErrorSink
 import com.jetbrains.python.errorProcessing.ExecError
 import com.jetbrains.python.errorProcessing.PyResult
 import com.jetbrains.python.project.PyProject
 import com.jetbrains.python.project.project
-import com.jetbrains.python.sdk.add.v2.FileSystem
-import com.jetbrains.python.sdk.add.v2.PathHolder
-import com.jetbrains.python.sdk.pySdkAdditionalData
 import com.jetbrains.python.sdk.PythonSdkAdditionalData
+import com.jetbrains.python.sdk.add.v2.FileSystemWithEel
 import com.jetbrains.python.sdk.flavors.PythonSdkFlavor
-import com.intellij.python.sdk.backend.PySdkBundle
-import com.intellij.python.sdk.common.shortenPath
+import com.jetbrains.python.sdk.pySdkAdditionalData
 import com.jetbrains.python.venvReader.Directory
 import com.jetbrains.python.venvReader.PRUNED_SCAN_DIRS
 import com.jetbrains.python.venvReader.VirtualEnvReader
@@ -54,9 +54,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.Icon
 import kotlin.io.path.exists
-import kotlin.io.path.name
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
 import kotlin.io.path.pathString
 
 private val LOG: Logger = fileLogger()
@@ -81,14 +81,17 @@ class EvoWorkspace(
   /** Every project of the workspace, the [root] included. A selected interpreter is written to all of them. */
   val members: List<EvoPyProject>,
 ) {
+  /** The project every tool is driven from. */
+  val pyProject: PyProject get() = root.pyProject
+
   /** The module every tool is driven from. */
-  val module: Module get() = root.module
+  val module: Module get() = root.pyProject.residesOnModule
 
   /** The directory every tool runs in. */
-  val baseDir: Directory get() = root.baseDir
+  val baseDir: Directory get() = root.pyProject.baseDir
 
   /** The project every member of this workspace belongs to. */
-  val project: Project get() = root.project
+  val project: Project get() = root.pyProject.project
 
   /** The wire identity of the [root]. See [keyOf]. */
   val rootKey: String get() = root.key
@@ -97,13 +100,14 @@ class EvoWorkspace(
 /**
  * The [PyProject] the widget acts on: one Python module, its own directory and the interpreter it uses.
  *
- * [module], [baseDir] and [interpreter] describe the project the user is looking at, which is what the status bar
+ * [pyProject] and [interpreter] describe the project the user is looking at, which is what the status bar
  * reflects. It states nothing about the workspace it belongs to, because the workspace owns its members and not the
  * other way round — see [EvoWorkspace] for what a tool acts on.
  */
 @ApiStatus.Internal
 class EvoPyProject(
-  private val self: PyProject,
+  /** The project this entry describes. */
+  val pyProject: PyProject,
   /**
    * The interpreter this project uses, as it stood when the snapshot was computed.
    *
@@ -121,19 +125,12 @@ class EvoPyProject(
    */
   val interpreter: PythonInterpreter?,
 ) {
-  val module: Module get() = self.residesOnModule
-
-  val project: Project get() = self.project
-
-  /** This project's own base dir. See [EvoWorkspace.baseDir] for the directory a tool runs in. */
-  val baseDir: Directory get() = self.baseDir
-
   /**
    * This project's wire identity. See [keyOf].
    *
    * A field, so the key travels with the project it addresses. A caller that holds one never has to derive the other.
    */
-  val key: String = keyOf(self)
+  val key: String = keyOf(pyProject)
 }
 
 /**
@@ -167,7 +164,7 @@ private const val SYSTEM_PYTHONS_KEY: String = "core.systemPythons"
 class EvoToolContext(
   val workspace: EvoWorkspace,
   val pyProject: EvoPyProject,
-  val fileSystem: FileSystem<PathHolder.Eel>,
+  val fileSystem: FileSystemWithEel,
   val errorSink: ErrorSink,
   private val systemPythons: suspend (String?) -> List<EvoAddNewOptionDto>,
 ) {
@@ -275,7 +272,7 @@ interface PyEvoEnvironmentProvider {
    * tool, for the same reason [pyvenvMarker] is: which flavor a tool stamps on its SDKs is the tool's own knowledge, and
    * a table of it kept in the core would drift from the tools it names.
    *
-   * A flavor names its node exactly. `PyProjectManager.forSdk` is not usable for this: it resolves uv, poetry and hatch
+   * A flavor names its node exactly. `PyProjectManager.forPythonInterpreter` is not usable for this: it resolves uv, poetry and hatch
    * and answers `ToolId("pip")` for everything else, which is a wrong answer rather than a missing one — and does not
    * even equal the venv node's own id.
    */
@@ -314,7 +311,7 @@ interface PyEvoEnvironmentProvider {
    * Returns a failure rather than a null when the tool cannot adopt the env, so "I could not" is never confused with
    * "not mine" — the pip node builds a generic path-based SDK itself rather than leaving the core to guess.
    */
-  suspend fun createSdkForExistingEnv(context: EvoToolContext, homePath: Path): PyResult<Sdk> = notSupported()
+  suspend fun createSdkForExistingEnv(context: EvoToolContext, homePath: Path): PyResult<PythonInterpreter> = notSupported()
 
   /**
    * Builds the SDK for an environment that does not exist yet, creating it first via the tool's own "create" logic —
@@ -324,7 +321,7 @@ interface PyEvoEnvironmentProvider {
    * put in the leaf it built, and nothing outside this method interprets them. A failure travels back as the result —
    * the core reports it once, so an [ExecError] from a tool command still reaches the process-execution-error dialog.
    */
-  suspend fun createSdkForNewEnv(context: EvoToolContext, ref: PyInterpreterRef.CreateEnv): PyResult<Sdk> = notSupported()
+  suspend fun createSdkForNewEnv(context: EvoToolContext, ref: PyInterpreterRef.CreateEnv): PyResult<PythonInterpreter> = notSupported()
 
   /**
    * The in-widget "add new environment" flow for one of this node's [section]s: the proposed name, where it goes,
@@ -364,7 +361,7 @@ interface PyEvoEnvironmentProvider {
    * There is no rollback and none is expected: destroy, create, and report a failure as the result. A provider that
    * could not destroy the environment must return that failure rather than build over the wreckage.
    */
-  suspend fun recreateEnv(context: EvoToolContext, homePath: Path, spec: EvoRecreateSpec): PyResult<Sdk> = notSupported()
+  suspend fun recreateEnv(context: EvoToolContext, homePath: Path, spec: EvoRecreateSpec): PyResult<PythonInterpreter> = notSupported()
 
   companion object {
     @ApiStatus.Internal
@@ -411,6 +408,13 @@ fun List<PyEvoEnvironmentProvider>.nodeIdForSdk(sdk: Sdk): String? {
   // precondition rather than catch, since an IllegalStateException here could be a ProcessCanceledException.
   if (sdk.sdkAdditionalData !is PythonSdkAdditionalData) return null
   val flavor = sdk.pySdkAdditionalData.flavor
+  return firstOrNull { provider -> provider.sdkFlavor?.isInstance(flavor) == true }?.toolId?.id
+}
+
+/** [nodeIdForSdk] for an interpreter. Null when its SDK records no flavor, or when no node owns the flavor. */
+@ApiStatus.Internal
+fun List<PyEvoEnvironmentProvider>.nodeIdFor(interpreter: PythonInterpreter): String? {
+  val flavor = interpreter.flavor
   return firstOrNull { provider -> provider.sdkFlavor?.isInstance(flavor) == true }?.toolId?.id
 }
 
@@ -772,7 +776,11 @@ fun evoCreateEnvLeaf(
    */
   name: String? = null,
 ): EvoLeafDto =
-  EvoLeafDto(title = title, icon = icon.rpcId(), kind = EvoLeafKind.SELECT_ENV, ref = PyInterpreterRef.CreateEnv(token, name = name), bases = bases)
+  EvoLeafDto(title = title,
+             icon = icon.rpcId(),
+             kind = EvoLeafKind.SELECT_ENV,
+             ref = PyInterpreterRef.CreateEnv(token, name = name),
+             bases = bases)
 
 /**
  * Builds a leaf for a *tool-enumerated* environment (conda/hatch/poetry-per-version) identified by [pythonBinary].

@@ -7,7 +7,7 @@ load("//build:dev_launch_dependencies.bzl", "HOST_PLATFORMS", "platform_parts")
 load(":content_module_jar.bzl", "ContentModuleJarInfo", "library_entries", "module_output_jar")
 load(":dev_dist_content.bzl", "DevDistContentInfo")
 load(":dev_dist_plugin_descriptor.bzl", "DevDistPluginDescriptorInfo", "DevDistProductInfo", "dev_dist_neutral_product_transition")
-load(":dev_plugin.bzl", "dev_dist_plugin_directory")
+load(":dev_plugin.bzl", "DevDistRuntimeLayoutInfo", "dev_dist_plugin_directory")
 load(":dev_plugin_source_tree.bzl", "source_tree_entries", "source_tree_prefix")
 load(":intellij_dev_dist.bzl", "IntellijDevFragmentInfo")
 
@@ -39,6 +39,7 @@ DevPluginRemainderInfo, _new_remainder_info = provider(
         "assets": "File containing the complete ordered asset table.",
         "classpath": "File containing the plugin classpath record.",
         "independent_artifacts": "Independent artifact references, excluded from the packing action.",
+        "refused_modules": "The content modules the product's mode refuses. No jar of them is placed, see `--refused-module`.",
     },
     init = _remainder_info_init,
 )
@@ -327,7 +328,7 @@ dev_plugin_file_graph = rule(
         "platform_values": attr.string_dict(
             doc = "The value of each `{platform:<name>}` slot of the plan file for this chain's platform, keyed by name. Empty for a chain that serves every platform.",
         ),
-        "execution_version": attr.int(mandatory = True, values = [1, 2, 3], doc = "Derived execution_version from the private owner record. The packer checks it against the plan file."),
+        "execution_version": attr.int(mandatory = True, values = [1, 2], doc = "Derived execution_version from the private owner record. The packer checks it against the plan file."),
         "source_tree_targets": attr.string_keyed_label_dict(
             allow_files = True,
             doc = "Declared source targets keyed by the stable artifact ID of each normalized directory. One target may serve two IDs with different prefixes.",
@@ -348,7 +349,7 @@ dev_plugin_file_graph = rule(
 
 def _execution_version(info, name):
     version = getattr(info, "execution_version", None)
-    if type(version) != "int" or version not in [1, 2, 3]:
+    if type(version) != "int" or version not in [1, 2]:
         fail("%s has an invalid execution version: %r" % (name, version))
     graph = getattr(info, "graph", None)
     if type(graph) != "Target" or DevPluginGraphInfo not in graph:
@@ -459,7 +460,7 @@ def _library_members(ctx, identifier, target, artifacts, libraries, members_by_p
     """Registers the member jars of one library container and returns their artifact IDs in merge order.
 
     `library_entries()` expands the container the way `content_module_jar` does, so a complex plugin merges the same
-    jars in the same order. A member ID is `<library ID>/<jar basename>`: the plan file never states it, and the Go
+    jars in the same order. A member ID is `<library ID>/<jar basename>`: the plan file never states it, and the
     packer reads it from the catalogue only. Two libraries can share a jar. The jar is one artifact then, under the ID
     of the library that named it first, and both member lists name that ID.
     """
@@ -516,8 +517,8 @@ def _dev_plugin_artifact_catalogue_impl(ctx):
     # archives. A compiled input is a module target or the `<target>.jar` output file of one; both give the module's
     # own jar, whose owner is the module rule. An archive is one jar of a library the plan names jar by jar, because the
     # library shares another jar with a second library. It arrives as a resource input and is keyed by its own label,
-    # the way `dev_plugin.bzl` carries a jar file token. A descriptor or any other resource is no content, so a fragment
-    # that lays the plugin out without packing it declares neither.
+    # the way `dev_plugin.bzl` carries a jar file token. A descriptor or any other resource is no content, so a
+    # reference that lays the plugin out without packing it declares neither.
     content_module_jars = []
     for target in compiled.inputs.keys():
         if DevDistPluginDescriptorInfo in target:
@@ -608,7 +609,7 @@ def _catalogue_binding(ctx, artifact_catalogue, reused_jars):
                 fail("catalogue artifact %s overlaps independent artifact %s" % (identifier, independent.path))
     return binding
 
-def _remainder_providers(ctx, graph, execution_version, directory, metadata, assets, classpath, independent_artifacts, content):
+def _remainder_providers(ctx, graph, execution_version, directory, metadata, assets, classpath, independent_artifacts, content, refused_modules):
     """The providers of a packed remainder. The component reads this one contract."""
     return [
         DefaultInfo(
@@ -624,6 +625,7 @@ def _remainder_providers(ctx, graph, execution_version, directory, metadata, ass
             assets = assets,
             classpath = classpath,
             independent_artifacts = independent_artifacts,
+            refused_modules = refused_modules,
         ),
         OutputGroupInfo(
             file_metadata = depset([metadata]),
@@ -635,7 +637,7 @@ def _remainder_providers(ctx, graph, execution_version, directory, metadata, ass
     ]
 
 _PACKER = attr.label(
-    default = "//build/content-module-packer/plugin-remainder-packer",
+    default = "//platform/build-scripts/bazel-rules:plugin_remainder_packer",
     executable = True,
     cfg = "exec",
 )
@@ -649,7 +651,11 @@ def _dev_plugin_remainder_from_plan_impl(ctx):
     reused_jars = _reused_jars(ctx)
     binding = _catalogue_binding(ctx, artifact_catalogue, reused_jars)
     classpath_descriptor = _descriptor_classpath_file(descriptor_target)
-    independent_artifacts = depset(reused_jars.values())
+
+    # The content modules the product's mode refuses. The packer omits an asset whose every module is refused, the
+    # runtime layout part omits the same assets, and a reused jar of a refused module is not placed.
+    refused_modules = descriptor_target[DevDistPluginDescriptorInfo].mode_refused_content_modules
+    independent_artifacts = depset([jar for module, jar in reused_jars.items() if module not in refused_modules])
 
     # The raw content of the whole plugin: the catalogue's compiled modules and libraries, plus what each reused content
     # module jar merged.
@@ -685,6 +691,7 @@ def _dev_plugin_remainder_from_plan_impl(ctx):
     arguments.add(assets, format = "--assets=%s")
     arguments.add(classpath, format = "--classpath=%s")
     arguments.add_all(reused_jars.keys(), format_each = "--independent-module=%s")
+    arguments.add_all(refused_modules, format_each = "--refused-module=%s")
     ctx.actions.run(
         mnemonic = "PackDevPluginRemainder",
         executable = ctx.executable._packer,
@@ -693,11 +700,49 @@ def _dev_plugin_remainder_from_plan_impl(ctx):
         arguments = [arguments],
         progress_message = "Packing plugin remainder %{label} from its plan file",
     )
-    return _remainder_providers(ctx, ctx.attr.graph, execution_version, directory, metadata, assets, classpath, independent_artifacts, content)
+
+    # The layout part of the plugin, derived from the same plan file. Built only when a runtime module repository asks for
+    # it, and apart from the packing action, so that it reads no packed byte.
+    runtime_layout = ctx.actions.declare_file(ctx.label.name + ".runtime-layout.json")
+    layout_arguments = ctx.actions.args()
+    layout_arguments.add("plan-part")
+    layout_arguments.add(projection, format = "--plan=%s")
+    layout_arguments.add(binding.catalogue, format = "--catalogue=%s")
+    layout_inputs = [projection, binding.catalogue]
+
+    # A reused jar is not in the catalogue, so its own target states the libraries it merges.
+    if reused_library_jars:
+        independent_libraries = ctx.actions.declare_file(ctx.label.name + ".independent-libraries.json")
+        ctx.actions.write(independent_libraries, json.encode({
+            "version": 1,
+            "libraries": [{"library": entry.label, "jars": [jar.path for jar in entry.jars]} for entry in reused_library_jars],
+        }) + "\n")
+        layout_arguments.add(independent_libraries, format = "--independent-libraries=%s")
+        layout_inputs.append(independent_libraries)
+    layout_arguments.add(descriptor_target[DevDistPluginDescriptorInfo].plugin_main_module, format = "--descriptor-module=%s")
+    layout_arguments.add_all(refused_modules, format_each = "--refused-module=%s")
+    layout_arguments.add(ctx.attr.plugin_directory, format = "--plugin-directory=%s")
+    layout_arguments.add(classpath_descriptor.path, format = "--descriptor=%s")
+    layout_arguments.add(runtime_layout, format = "--output=%s")
+    ctx.actions.run(
+        mnemonic = "DevDistRuntimeLayoutPart",
+        executable = ctx.executable._runtime_layout,
+        inputs = layout_inputs,
+        outputs = [runtime_layout],
+        arguments = [layout_arguments],
+        progress_message = "Deriving the runtime layout part of %{label} from its plan file",
+    )
+    return _remainder_providers(ctx, ctx.attr.graph, execution_version, directory, metadata, assets, classpath, independent_artifacts, content, refused_modules) + [
+        DevDistRuntimeLayoutInfo(
+            part = runtime_layout,
+            descriptor = classpath_descriptor,
+            descriptor_module = descriptor_target[DevDistPluginDescriptorInfo].plugin_main_module,
+        ),
+    ]
 
 dev_plugin_remainder_from_plan = rule(
     implementation = _dev_plugin_remainder_from_plan_impl,
-    doc = """Packs the remainder of one complex plugin in one Go action.
+    doc = """Packs the remainder of one complex plugin in one action.
 
 The packer reads the plan file and the input catalogue in its `--projection` mode. It derives the recipe, runs the
 operations, packs the remainder, and writes the asset table and the plugin classpath record. No recipe and no
@@ -725,6 +770,11 @@ Reset to the neutral product configuration like every compiled input: without th
 reaches each jar's module and compiles it a second time. No input of the action may overlap a reused jar.""",
         ),
         "_packer": _PACKER,
+        "_runtime_layout": attr.label(
+            default = "//platform/build-scripts/bazel-rules:runtime_layout",
+            executable = True,
+            cfg = "exec",
+        ),
         "_allowlist_function_transition": attr.label(default = Label("@bazel_tools//tools/allowlists/function_transition_allowlist")),
     },
 )
@@ -746,8 +796,13 @@ def _dev_plugin_component_impl(ctx):
     identifiers = {}
     declared = {file: True for file in remainder.independent_artifacts.to_list()}
     bound = {}
+    refused = {module: True for module in remainder.refused_modules}
     for target in ctx.attr.independent_artifacts:
         info = target[ContentModuleJarInfo]
+
+        # The run time excludes a refused module, so its reused jar is not placed.
+        if info.module_name in refused:
+            continue
         identifier = _catalogue_id(info.module_name)
         if identifier in identifiers:
             fail("duplicate independent artifact ID: %s" % identifier)
@@ -770,7 +825,7 @@ def _dev_plugin_component_impl(ctx):
         }
 
         # A natives jar has a tree per platform. The component takes the tree of its own platform, and the plan
-        # places it at the distribution root.
+        # places it in the `lib/` directory of the plugin.
         if info.native_trees:
             if not ctx.attr.target_platform:
                 fail("independent artifact %s packs native files, so the component needs a target platform" % identifier)
@@ -791,15 +846,18 @@ def _dev_plugin_component_impl(ctx):
             if _overlapping_artifacts(source, artifact):
                 fail("component metadata %s overlaps payload artifact %s" % (source.path, artifact.path))
 
-    spec = ctx.actions.declare_file(ctx.label.name + ".collection.json")
-    ctx.actions.write(spec, json.encode({
+    collection = {
         "version": execution_version,
         "pluginDirectory": ctx.attr.plugin_directory,
         "remainder": {"directory": remainder.directory.path, "metadata": remainder.metadata.path},
         "assets": remainder.assets.path,
         "classpath": remainder.classpath.path,
         "independent": independent,
-    }) + "\n")
+    }
+    if remainder.refused_modules:
+        collection["refusedModules"] = remainder.refused_modules
+    spec = ctx.actions.declare_file(ctx.label.name + ".collection.json")
+    ctx.actions.write(spec, json.encode(collection) + "\n")
     manifest = ctx.actions.declare_file(ctx.label.name + ".component.json")
     classpath = ctx.actions.declare_file(ctx.label.name + ".plugin-classpath-part")
     outputs = [manifest, classpath]
@@ -836,15 +894,13 @@ def _dev_plugin_component_impl(ctx):
         DefaultInfo(files = depset([manifest, classpath]), runfiles = ctx.runfiles(transitive_files = payload)),
         # The raw content of the plugin, forwarded from the remainder: `dev_dist_plugin_content` unions it per product.
         ctx.attr.remainder[DevDistContentInfo],
+        ctx.attr.remainder[DevDistRuntimeLayoutInfo],
         IntellijDevFragmentInfo(
             name = ctx.attr.component_name,
-            home = None,
             payload = payload,
             manifest = manifest,
             plugin_classpath_part = classpath,
             plugin_classpath_prefix = None,
-            inputs_manifest = None,
-            unused_inputs = None,
         ),
         OutputGroupInfo(
             dev_dist_plugin_outputs = depset([manifest, classpath], transitive = [payload]),
@@ -858,7 +914,7 @@ def _dev_plugin_component_impl(ctx):
 dev_plugin_component = rule(
     implementation = _dev_plugin_component_impl,
     attrs = {
-        "remainder": attr.label(mandatory = True, providers = [DevPluginRemainderInfo]),
+        "remainder": attr.label(mandatory = True, providers = [DevPluginRemainderInfo, DevDistRuntimeLayoutInfo]),
         "independent_artifacts": attr.label_list(
             providers = [ContentModuleJarInfo],
             cfg = _module_transition,
@@ -875,7 +931,7 @@ remainder use.""",
             providers = [DevDistProductInfo],
         ),
         "_trace_spans": attr.label(default = "//platform/build-scripts/bazel-rules:trace_spans", providers = [BuildSettingInfo]),
-        "_collector": attr.label(default = "//build/content-module-packer/dev-dist-collector", executable = True, cfg = "exec"),
+        "_collector": attr.label(default = "//platform/build-scripts/bazel-rules:dev_dist_collector", executable = True, cfg = "exec"),
         "_allowlist_function_transition": attr.label(default = Label("@bazel_tools//tools/allowlists/function_transition_allowlist")),
     },
 )
@@ -894,20 +950,27 @@ def _dict_for_platform(values, platform, what):
         fail("two %s entries name the same key on %s: %s" % (what, platform, sorted(values.keys())))
     return result
 
-def platform_values_error(main_module, platforms, platform_values):
-    """Returns why `platform_values` does not fit `platforms`, or None when it does.
+def platform_values_error(main_module, platforms, platform_values, platform_plans = False):
+    """Returns why `platform_values` and `platform_plans` do not fit `platforms`, or None when they do.
 
-    `dev_dist_complex_plugin` fails with the message at load time. A non-empty dict needs `platforms`. Its keys are
-    exactly `platforms`. Every platform states the same slot names. Every value stands as a whole JSON string leaf.
+    `dev_dist_complex_plugin` fails with the message at load time. `platform_plans` needs `platforms` and excludes
+    `platform_values`, because a plan file per platform has no slot. A non-empty `platform_values` needs `platforms`.
+    Its keys are exactly `platforms`. Every platform states the same slot names. Every value stands as a whole JSON
+    string leaf.
 
     Args:
         main_module: The plugin's main module, named in the message.
         platforms: The `platforms` argument of the call.
         platform_values: The `platform_values` argument of the call.
+        platform_plans: The `platform_plans` argument of the call.
 
     Returns:
         The message, or None.
     """
+    if platform_plans and not platforms:
+        return "%s states platform_plans without platforms" % main_module
+    if platform_plans and platform_values:
+        return "%s states platform_values and platform_plans, but a plan file per platform has no slot" % main_module
     if not platform_values:
         return None
     if not platforms:
@@ -931,6 +994,7 @@ def dev_dist_complex_plugin(
         execution_version,
         platforms = None,
         platform_values = {},
+        platform_plans = False,
         plan_class = "",
         chain_class = "",
         plan_package = "",
@@ -956,7 +1020,8 @@ def dev_dist_complex_plugin(
     descriptor's catalogue entry `descriptor:<main module>`. A `{platform}` token in a label or an ID is replaced by the
     chain's platform, so a plugin whose platform layouts differ only in that token is one call. A plan file holds the
     same token and `{platform:<name>}` slots as whole string leaves. The graph of each chain resolves them from
-    `platform_values`. Each chain is one `dev_dist_complex_plugin_variant`.
+    `platform_values`. The `.<platform>` part of the plan file label follows from `platform_plans` alone. Each chain is
+    one `dev_dist_complex_plugin_variant`.
 
     Args:
         main_module: The plugin's main module. It is the component name and the plan file stem.
@@ -965,9 +1030,12 @@ def dev_dist_complex_plugin(
         platforms: The `HOST_PLATFORMS` entries the plugin is bundled on, one chain each, or `None` for one chain
             that serves every platform.
         platform_values: The value of each plan file slot per platform, `{platform: {slot name: value}}`. A non-empty
-            dict needs `platforms`, names every one of them, states the same slot names on each, and names the plan
-            file `<main module>[.<plan class>].dev-plan.json`. An empty dict with `platforms` names one plan file
-            per chain, `<main module>[.<plan class>].<platform>.dev-plan.json`.
+            dict needs `platforms`, names every one of them, and states the same slot names on each. A folded plan
+            file without a slot states nothing.
+        platform_plans: True when the call names one plan file per platform, because the fold of the plugin's records
+            was refused. A folded or neutral plugin states nothing. With True, each chain reads
+            `<main module>[.<plan class>].<platform>.dev-plan.json`. Otherwise every chain reads
+            `<main module>[.<plan class>].dev-plan.json`. True needs `platforms` and excludes `platform_values`.
         plan_class: The name of a plan text that differs from the baseline text, the first product that states it.
             Empty for the baseline text.
         chain_class: The name of a call that differs from the baseline call, the first product that states it. Empty
@@ -992,14 +1060,14 @@ def dev_dist_complex_plugin(
     for platform in platforms or []:
         if platform not in HOST_PLATFORMS:
             fail("%s names platform '%s', which is not one of %s" % (main_module, platform, HOST_PLATFORMS))
-    error = platform_values_error(main_module, platforms, platform_values)
+    error = platform_values_error(main_module, platforms, platform_values, platform_plans)
     if error:
         fail(error)
     descriptor_id = "descriptor:" + main_module
     plan_stem = plan_package + ":" + main_module + ("." + plan_class if plan_class else "")
     chain_stem = main_module + ("." + chain_class if chain_class else "")
     for platform in platforms or [None]:
-        projection = plan_stem + ("." + platform if platform and not platform_values else "") + ".dev-plan.json"
+        projection = plan_stem + ("." + platform if platform and platform_plans else "") + ".dev-plan.json"
         chain_descriptor = _for_platform(descriptor, platform)
         chain_resources = _dict_for_platform(resource_inputs, platform, "resource_inputs")
         if chain_descriptor in chain_resources:
@@ -1048,7 +1116,7 @@ def dev_dist_complex_plugin_variant(
     `dev_dist_complex_plugin` derives these arguments; this form is for a test that pins one of them. A chain is four
     `manual` targets: `<name>_graph`, `<name>_catalogue`, `<name>_remainder` and `<name>_component`. Only the consumer
     of the component states the product, so no target of the chain builds on its own. The `<name>_remainder` is a
-    `dev_plugin_remainder_from_plan`. Its Go action executes the operations from the plan file.
+    `dev_plugin_remainder_from_plan`. Its action executes the operations from the plan file.
     `DEV_DIST_PLUGIN_COMPONENTS` names the component. The macro merges the declarations only. The actions and their
     cache policies stay separate.
 

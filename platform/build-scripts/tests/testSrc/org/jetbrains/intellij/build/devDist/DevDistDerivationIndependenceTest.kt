@@ -11,7 +11,7 @@ import kotlin.io.path.relativeTo
 import kotlin.io.path.walk
 
 /**
- * The derivation under `org.jetbrains.intellij.build.devDist` reads its own packing facts.
+ * The derivation under `com.intellij.platform.buildScripts.pluginModelTool` reads its own packing facts.
  *
  * The packaging gate compares two producers: the derivation and the distribution build. Both apply one shared rule,
  * `contentModuleJarPath`, over the facts each side reads itself. A derivation that calls the build's own placement
@@ -58,7 +58,7 @@ class DevDistDerivationIndependenceTest {
   }
 }
 
-private const val DERIVATION_DIR_UNDER_COMMUNITY = "platform/build-scripts/src/org/jetbrains/intellij/build/devDist"
+private const val DERIVATION_DIR_UNDER_COMMUNITY = "platform/build-scripts/plugin-model-tool/src"
 
 /**
  * One forbidden member. [pattern] matches the whole identifier only, so a longer identifier with the same prefix

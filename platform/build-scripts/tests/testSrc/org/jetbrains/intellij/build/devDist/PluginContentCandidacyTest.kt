@@ -1,6 +1,13 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.intellij.build.devDist
 
+import com.intellij.platform.buildScripts.pluginModelTool.DerivedPluginCandidacy
+import com.intellij.platform.buildScripts.pluginModelTool.EMBEDDED_LOADING_RULE
+import com.intellij.platform.buildScripts.pluginModelTool.FrontendCompatibility
+import com.intellij.platform.buildScripts.pluginModelTool.PluginContentResidue
+import com.intellij.platform.buildScripts.pluginModelTool.WalkedContentModules
+import com.intellij.platform.buildScripts.pluginModelTool.derivePluginContentCandidacy
+import com.intellij.platform.buildScripts.pluginModelTool.productionModuleLibraryNames
 import org.assertj.core.api.Assertions.assertThat
 import org.jetbrains.jps.model.JpsElementFactory
 import org.jetbrains.jps.model.JpsProject

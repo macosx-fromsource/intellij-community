@@ -122,7 +122,7 @@ class MacDistributionBuilder(
   }
 
   override fun copyNativeBinFiles(binDir: Path, arch: JvmArchitecture): List<Path> {
-    return copyNativeBinDir(context.paths.communityHomeDir.resolve("bin/mac"), binDir, fileFilter = customizer.binFilesFilter)
+    return nativeBinFiles(context.paths.communityHomeDir, OsFamily.MACOS, arch, customizer.binFilesFilter).map { copyNativeBinFileToDir(it, binDir) }
   }
 
   private fun doCopyFilesForOsDistribution(targetPath: Path, arch: JvmArchitecture, copyDistFiles: Boolean) {
@@ -422,7 +422,7 @@ class MacDistributionBuilder(
               generateQodanaLaunchData(context, arch, OsFamily.MACOS),
               generateStdioMcpRunnerLaunchData(context, OsFamily.MACOS)
             )
-            context.productProperties.launcherCommandsCustomizer?.invoke(base, context) ?: base
+            if (context.productProperties.launcherCustomCommands) base else emptyList()
           }
         )
       ),
@@ -504,7 +504,7 @@ class MacDistributionBuilder(
                   zipOutStream.entry("${zipRoot}/${relativePath}", content.file, if (content.isExecutable) executableFileUnixMode else -1)
                 }
                 is InMemoryDistFileContent -> {
-                  zipOutStream.entry("${zipRoot}/${relativePath}", content.data)
+                  zipOutStream.entry("${zipRoot}/${relativePath}", content.readAllBytes())
                 }
               }
             }
@@ -517,7 +517,7 @@ class MacDistributionBuilder(
 
   private fun writeMacOsVmOptions(distBinDir: Path, context: BuildContext): Path {
     val executable = context.productProperties.baseFileName
-    val vmOptions = generateVmOptions(context, extra = listOf("-Dapple.awt.application.appearance=system"))
+    val vmOptions = generateVmOptions(context, extra = osVmOptions(OsFamily.MACOS, context.productProperties.platformPrefix))
     val vmOptionsPath = distBinDir.resolve("${executable}.vmoptions")
     writeVmOptions(vmOptionsPath, vmOptions, separator = "\n")
     return vmOptionsPath

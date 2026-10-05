@@ -42,9 +42,19 @@ private class PyLspToolDetailConfigurable(
         checkBox(requireNotNull(tool.formattingLabel)).bindSelected(settings::formatting.toSafeProperty())
       }
     }
+    settings.formatSortImports?.let {
+      row("") {
+        checkBox(requireNotNull(tool.formatSortImportsLabel)).bindSelected(settings::formatSortImports.toSafeProperty())
+      }
+    }
     settings.sortImports?.let {
       row("") {
         checkBox(requireNotNull(tool.sortImportsLabel)).bindSelected(settings::sortImports.toSafeProperty())
+      }
+    }
+    settings.fixOnSave?.let {
+      row("") {
+        checkBox(requireNotNull(tool.fixOnSaveLabel)).bindSelected(settings::fixOnSave.toSafeProperty())
       }
     }
   }

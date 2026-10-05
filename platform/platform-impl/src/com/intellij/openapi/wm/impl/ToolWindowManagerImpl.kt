@@ -60,6 +60,7 @@ import com.intellij.openapi.wm.ex.ToolWindowManagerEx
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener.ToolWindowManagerEventType
 import com.intellij.openapi.wm.safeToolWindowPaneId
+import com.intellij.platform.ide.diagnostic.startUpPerformanceReporter.FUSProjectHotStartUpMeasurer
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.serviceContainer.NonInjectable
 import com.intellij.toolWindow.InternalDecoratorImpl
@@ -115,6 +116,7 @@ import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JFrame
 import javax.swing.JRootPane
+import kotlin.coroutines.EmptyCoroutineContext
 
 private val LOG = logger<ToolWindowManagerImpl>()
 private val performShowInSeparateTask = System.getProperty("idea.toolwindow.show.separate.task", "false").toBoolean()
@@ -393,11 +395,16 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
     }
   }
 
+  /**
+   * [onDefaultPaneToolWindowsRegistered] runs once on the EDT after the tool windows of the default pane are registered.
+   * At this time, [invokeLater] still puts a task in the queue of the pending tasks.
+   */
   internal suspend fun init(
     pane: ToolWindowPane,
     reopeningEditorJob: Job,
     taskListDeferred: Deferred<List<RegisterToolWindowTaskData>>,
     projectFrameTypeId: String? = null,
+    onDefaultPaneToolWindowsRegistered: (() -> Unit)? = null,
   ) {
     this.projectFrameTypeId = projectFrameTypeId
     doInit(
@@ -406,6 +413,7 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
       reopeningEditorJob = reopeningEditorJob,
       taskListDeferred = taskListDeferred,
       projectFrameTypeId = projectFrameTypeId,
+      onDefaultPaneToolWindowsRegistered = onDefaultPaneToolWindowsRegistered,
     )
   }
 
@@ -417,6 +425,7 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
     reopeningEditorJob: Job,
     taskListDeferred: Deferred<List<RegisterToolWindowTaskData>>?,
     projectFrameTypeId: String? = this.projectFrameTypeId,
+    onDefaultPaneToolWindowsRegistered: (() -> Unit)? = null,
   ) {
     this.projectFrameTypeId = projectFrameTypeId
 
@@ -450,7 +459,11 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
         toolWindowPanes.put(pane.paneId, pane)
       }
       defaultPaneInitialization.join()
-      toolWindowSetInitializer.initUi(reopeningEditorJob, taskListDeferred)
+      toolWindowSetInitializer.initUi(
+        reopeningEditorJob = reopeningEditorJob,
+        taskListDeferred = taskListDeferred,
+        onDefaultPaneToolWindowsRegistered = onDefaultPaneToolWindowsRegistered,
+      )
     }
 
     connection.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
@@ -1485,7 +1498,8 @@ open class ToolWindowManagerImpl @NonInjectable @TestOnly internal constructor(
 
   override fun invokeLater(runnable: Runnable) {
     if (!toolWindowSetInitializer.addToPendingTasksIfNotInitialized(runnable)) {
-      coroutineScope.launch(Dispatchers.UiWithModelAccess + ModalityState.nonModal().asContextElement()) {
+      val startUpContextElement = FUSProjectHotStartUpMeasurer.getStartUpContextElementToPass() ?: EmptyCoroutineContext
+      coroutineScope.launch(Dispatchers.UiWithModelAccess + ModalityState.nonModal().asContextElement() + startUpContextElement) {
         runnable.run()
       }
     }

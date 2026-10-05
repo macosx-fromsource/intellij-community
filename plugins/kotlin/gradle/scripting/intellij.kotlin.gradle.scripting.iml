@@ -38,6 +38,7 @@
     <orderEntry type="module" module-name="intellij.kotlin.base.scripting" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.jvm" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.compiler.impl" />
+    <orderEntry type="module" module-name="intellij.libraries.kotlinc.scripting.compiler.plugin" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.scripting.common" />
     <orderEntry type="module" module-name="intellij.platform.analysis" />
     <orderEntry type="module" module-name="intellij.platform.externalSystem.impl" />
@@ -79,6 +80,7 @@
     <orderEntry type="module" module-name="intellij.libraries.kotlin.tooling.core" />
     <orderEntry type="module" module-name="intellij.platform.lang.core" />
     <orderEntry type="module" module-name="intellij.platform.lang.impl" />
+    <orderEntry type="module" module-name="intellij.platform.buildView" />
     <orderEntry type="module" module-name="intellij.kotlin.preferences" />
     <orderEntry type="module" module-name="intellij.libraries.kotlinc.kotlin.script.runtime" />
     <orderEntry type="module" module-name="intellij.platform.core.ui" />

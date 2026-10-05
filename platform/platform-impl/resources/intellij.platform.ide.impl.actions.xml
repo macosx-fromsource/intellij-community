@@ -14,7 +14,6 @@
     <action id="FileChooser.LightEditGotoOpenedFile"
             class="com.intellij.ide.lightEdit.actions.LightEditGotoOpenedFileAction"
             icon="AllIcons.General.Locate"/>
-    <action id="DumpCodeStyleCache" class="com.intellij.ide.actions.DumpCodeStyleCacheAction" internal="true"/>
     <action id="DumpPluginDescriptorsAction" class="com.intellij.internal.DumpPluginDescriptorsAction" internal="true"/>
     <action id="List-selectFirstRow" class="com.intellij.ui.ListActions$Home" use-shortcut-of="EditorTextStart"/>
     <action id="List-selectFirstRowExtendSelection" class="com.intellij.ui.ListActions$ShiftHome"
@@ -386,8 +385,6 @@
     <action id="SwitchIdeScaleAction" class="com.intellij.ide.actions.SwitchIdeScaleAction">
       <synonym key="action.SwitchIdeScaleAction.text"/>
     </action>
-    <action id="TogglePresentationAssistantAction"
-            class="com.intellij.platform.ide.impl.presentationAssistant.TogglePresentationAssistantAction"/>
     <action id="ViewMainMenu" class="com.intellij.ide.actions.ViewMainMenuAction"/>
     <group id="ChangeMainMenuModeActionGroup"
            class="com.intellij.ide.actions.ChangeMainMenuModeActionGroup" searchable="false" popup="true"/>
@@ -534,7 +531,6 @@
     <action id="CollectZippedLogs" class="com.intellij.ide.actions.CollectZippedLogsAction"/>
     <action id="Performance.ActivityMonitor" class="com.intellij.ide.actions.ActivityMonitorAction"/>
     <action id="Performance.DumpThreads" class="com.intellij.ide.actions.DumpThreadsAction"/>
-    <action id="Performance.MemTester" class="com.intellij.ide.actions.MemTestAction"/>
     <action id="LogDebugConfigure" class="com.intellij.ide.actions.DebugLogConfigureAction"/>
     <action id="BrowseSpecialPaths" class="com.intellij.diagnostic.specialPaths.BrowseSpecialPathsAction"/>
     <action id="CollectTroubleshootingInformation" class="com.intellij.troubleshooting.ui.CollectTroubleshootingInformationAction"
@@ -546,6 +542,7 @@
     <action id="CheckForUpdate" class="com.intellij.openapi.updateSettings.impl.CheckForUpdateAction">
       <override-text place="WelcomeScreen"/>
     </action>
+    <action id="ResetPluginPermissions" class="com.intellij.openapi.updateSettings.impl.ResetPluginPermissionsAction"/>
     <action id="About" class="com.intellij.ide.actions.AboutAction"/>
     <!--suppress PluginXmlCapitalization -->
     <action id="ZoomInIdeAction" class="com.intellij.ide.actions.ZoomInIdeAction">
@@ -572,6 +569,11 @@
     <action id="OpenEditorInOppositeTabGroup" class="com.intellij.openapi.fileEditor.impl.OpenEditorInOppositeTabGroupAction"/>
     <action id="WelcomeScreen.OpenDirectoryProject" class="com.intellij.ide.actions.OpenFileAction$OnWelcomeScreen"/>
     <action id="WelcomeScreen.OpenSelected" class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.OpenSelectedProjectsAction"/>
+    <action id="WelcomeScreen.CancelRecentProjectTask"
+            class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.CancelRecentProjectTaskAction"
+            icon="AllIcons.Actions.DeleteTag"/>
+    <action id="WelcomeScreen.Branches" class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.BranchesRecentProjectAction"
+            icon="AllIcons.Vcs.Branch"/>
     <action id="WelcomeScreen.RevealIn" class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.RevealProjectDirAction"/>
     <action id="WelcomeScreen.CopyProjectPath" class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.CopyProjectPathAction"
             use-shortcut-of="CopyPaths"/>
@@ -624,7 +626,6 @@
     <action id="ChangeIdeScale" class="com.intellij.ide.actions.QuickChangeIdeScaleAction">
       <override-text place="GoToAction"/>
     </action>
-    <action id="ShowExperiments" class="com.intellij.application.ShowExperimentsAction"/>
     <action id="MoveFileToAnotherModule" internal="true" class="com.intellij.ide.actions.MoveFileToAnotherModuleAction"/>
     <action id="CreateAllServicesAndExtensions" internal="true"
             class="com.intellij.ide.plugins.CreateAllServicesAndExtensionsAction"/>
@@ -713,9 +714,6 @@
            popup="false"/>
     <group id="ChangeProjectColorActionGroup"
            class="com.intellij.openapi.wm.impl.welcomeScreen.projectActions.ChangeProjectColorActionGroup" searchable="false" popup="true"/>
-    <group id="PresentationAssistantQuickSettingsGroup"
-           class="com.intellij.platform.ide.impl.presentationAssistant.PresentationAssistantQuickSettingsGroup" searchable="false"
-           popup="true"/>
     <action id="ColoredHeaderAction" class="com.intellij.ide.ui.customization.UseProjectColorsCheckboxAction"/>
     <action id="MergeMenuWithWindowTitleAction" class="com.intellij.ide.actions.MergeMenuWithWindowTitleAction"/>
     <action id="FocusMainToolbar" class="com.intellij.openapi.wm.impl.headertoolbar.FocusMainToolbarAction">

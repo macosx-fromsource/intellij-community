@@ -7,14 +7,9 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.jetbrains.intellij.build.BuildPaths.Companion.COMMUNITY_ROOT
 import org.jetbrains.intellij.build.dev.BuildRequest
-import org.jetbrains.intellij.build.dev.DevBuildComponentEntry
-import org.jetbrains.intellij.build.dev.DevBuildComponentManifest
 import org.jetbrains.intellij.build.dev.DevBuildFragment
-import org.jetbrains.intellij.build.dev.DevBuildOutput
 import org.jetbrains.intellij.build.dev.IdeFingerprintEntry
 import org.jetbrains.intellij.build.dev.PlatformJarSelector
-import org.jetbrains.intellij.build.dev.PluginFragmentSelector
-import org.jetbrains.intellij.build.dev.computeIdeFingerprintFromComponents
 import org.jetbrains.intellij.build.dev.configureDevModeBuildOptions
 import org.jetbrains.intellij.build.dev.configureTargetPlatform
 import org.jetbrains.intellij.build.dev.computeIdeFingerprint
@@ -72,15 +67,11 @@ class IdeBuilderTest {
 
     assertThat(complete.isComplete).isTrue()
     assertThat(complete.platform).isEqualTo(PlatformJarSelector.ALL)
-    assertThat(complete.platformResources).isTrue()
-    assertThat(complete.plugins).isEqualTo(PluginFragmentSelector.All)
     assertThat(complete.runtimeModuleRepository).isTrue()
     assertThat(
       DevBuildFragment(
-        name = "platform_lib",
-        platform = PlatformJarSelector(jars = setOf("intellij.charts.jar"), mode = PlatformJarSelector.Mode.EXCLUDE),
-        platformResources = false,
-        plugins = null,
+        name = "platform_lib_reference",
+        platform = PlatformJarSelector(jars = setOf("intellij.charts.jar"), mode = PlatformJarSelector.Mode.ONLY),
         runtimeModuleRepository = false,
       ).isComplete
     ).isFalse()
@@ -88,19 +79,11 @@ class IdeBuilderTest {
 
   @Test
   fun runtimeModuleRepositoryFragmentIsNotComplete() {
-    val fragment = DevBuildFragment(
-      name = "platform_runtime_module_repository",
-      platform = null,
-      platformResources = false,
-      plugins = null,
-      runtimeModuleRepository = true,
-    )
+    val fragment = DevBuildFragment(name = "platform_runtime_module_repository", platform = null, runtimeModuleRepository = true)
 
     assertThat(fragment.isComplete).isFalse()
     assertThat(fragment.runtimeModuleRepository).isTrue()
     assertThat(fragment.platform).isNull()
-    assertThat(fragment.platformResources).isFalse()
-    assertThat(fragment.plugins).isNull()
   }
 
   @Test
@@ -110,13 +93,7 @@ class IdeBuilderTest {
     configureDevModeBuildOptions(
       options = options,
       request = createBuildRequest(
-        fragment = DevBuildFragment(
-          name = "platform_runtime_module_repository",
-          platform = null,
-          platformResources = false,
-          plugins = null,
-          runtimeModuleRepository = true,
-        ),
+        fragment = DevBuildFragment(name = "platform_runtime_module_repository", platform = null, runtimeModuleRepository = true),
       ),
       buildOptionsTemplate = BuildOptions(),
     )
@@ -125,59 +102,33 @@ class IdeBuilderTest {
   }
 
   @Test
-  fun componentOutputRejectsIncompleteComponentContracts() {
-    assertThatThrownBy {
-      DevBuildOutput.Component(
-        fragment = DevBuildFragment.COMPLETE,
-        manifestFile = tempDir.resolve("complete.json"),
-      )
-    }
-      .isInstanceOf(IllegalArgumentException::class.java)
-      .hasMessageContaining("must use DevBuildOutput.Complete")
-  }
-
-  @Test
-  fun theFragmentAndThePackedJarsComponentPartitionLibJars() {
+  fun theReferenceSelectorOwnsOnlyTheJarsItNames() {
     val packed = setOf("intellij.libraries.asm.jar", "intellij.charts.jar")
-    val fragment = PlatformJarSelector(jars = packed, mode = PlatformJarSelector.Mode.EXCLUDE)
     val reference = PlatformJarSelector(jars = packed, mode = PlatformJarSelector.Mode.ONLY)
-    val jars = listOf(
-      "app-backend.jar",
-      // Named by no module: a project library, or one packing kept in its own jar. The layout never mentions it.
-      "swingx.jar",
-      "intellij.libraries.asm.jar",
-      "intellij.platform.lang.impl.jar",
-      "intellij.charts.jar",
-    )
-
-    // Every jar belongs to exactly one side, so the fragment and the packed jars partition `lib` instead of
-    // overlapping or losing a jar.
-    for (jar in jars) {
-      val owners = listOf(fragment, reference).filter { it.accepts(jar) }
-      assertThat(owners).describedAs(jar).hasSize(1)
+    // `product-backend.jar` is named by no module: it holds project libraries only.
+    for (jar in listOf("app-backend.jar", "product-backend.jar", "intellij.libraries.asm.jar", "intellij.charts.jar")) {
       assertThat(PlatformJarSelector.ALL.accepts(jar)).describedAs(jar).isTrue()
     }
 
-    assertThat(fragment.accepts("app-backend.jar")).isTrue()
-    // A jar nobody named is the fragment's, which is what keeps it out of no fragment at all - and is why ownership
-    // no longer has to be derived from what a jar holds.
-    assertThat(fragment.accepts("swingx.jar")).isTrue()
-    assertThat(fragment.accepts("")).isTrue()
-    assertThat(fragment.accepts("intellij.libraries.asm.jar")).isFalse()
     assertThat(reference.accepts("intellij.charts.jar")).isTrue()
+    assertThat(reference.accepts("intellij.libraries.asm.jar")).isTrue()
     assertThat(reference.accepts("app-backend.jar")).isFalse()
+    assertThat(reference.accepts("product-backend.jar")).isFalse()
   }
 
   @Test
   fun onlyASelectorThatOwnsEveryJarMakesADistributionComplete() {
     assertThat(PlatformJarSelector.ALL.isEverything).isTrue()
     assertThat(
-      PlatformJarSelector(jars = setOf("intellij.charts.jar"), mode = PlatformJarSelector.Mode.EXCLUDE).isEverything
+      PlatformJarSelector(jars = setOf("intellij.charts.jar"), mode = PlatformJarSelector.Mode.ONLY).isEverything
     ).isFalse()
     // A selector that owns only what it names and names nothing owns nothing, which is never what a caller meant.
     assertThatThrownBy { PlatformJarSelector(jars = emptySet(), mode = PlatformJarSelector.Mode.ONLY) }
       .isInstanceOf(IllegalArgumentException::class.java)
       .hasMessageContaining("must name at least one")
+    assertThatThrownBy { PlatformJarSelector(jars = setOf("intellij.charts.jar"), mode = PlatformJarSelector.Mode.ALL) }
+      .isInstanceOf(IllegalArgumentException::class.java)
+      .hasMessageContaining("names none")
   }
 
   @Test
@@ -270,63 +221,20 @@ class IdeBuilderTest {
     assertThat(options.buildDateInSeconds).isEqualTo(getDevModeOrTestBuildDateInSeconds())
   }
 
+  // The reference of the `jars` gate packs the handed-over jars. The application-info module jar is one of them, and the
+  // product descriptor in it carries the inlined content module descriptors.
   @Test
-  fun theReferenceFragmentDoesNotInlineTheProductDescriptor() {
+  fun theReferenceFragmentInlinesTheProductDescriptorBecauseItPacksTheApplicationInfoJar() {
     val options = BuildOptions()
 
     configureDevModeBuildOptions(
       options = options,
       request = createBuildRequest(
         fragment = DevBuildFragment(
-          name = "platform_lib",
+          name = "platform_lib_reference",
           platform = PlatformJarSelector(jars = setOf("intellij.charts.jar"), mode = PlatformJarSelector.Mode.ONLY),
-          platformResources = false,
-          plugins = null,
           runtimeModuleRepository = false,
         ),
-      ),
-      buildOptionsTemplate = BuildOptions(),
-    )
-
-    assertThat(options.embedProductContentModuleDescriptors).isFalse()
-  }
-
-  @Test
-  fun thePlatformFragmentInlinesTheProductDescriptorBecauseItPacksTheJarThatCarriesIt() {
-    val options = BuildOptions()
-
-    configureDevModeBuildOptions(
-      options = options,
-      request = createBuildRequest(
-        fragment = DevBuildFragment(
-          name = "platform_lib",
-          platform = PlatformJarSelector(jars = setOf("intellij.charts.jar"), mode = PlatformJarSelector.Mode.EXCLUDE),
-          platformResources = false,
-          plugins = null,
-          runtimeModuleRepository = false,
-        ),
-      ),
-      buildOptionsTemplate = BuildOptions(),
-    )
-
-    assertThat(options.embedProductContentModuleDescriptors).isTrue()
-  }
-
-  @Test
-  fun theFragmentWritingTheClasspathPrefixInlinesTheProductDescriptorWhateverElseItOwns() {
-    val options = BuildOptions()
-
-    configureDevModeBuildOptions(
-      options = options,
-      request = createBuildRequest(
-        fragment = DevBuildFragment(
-          name = "platform_lib",
-          platform = PlatformJarSelector(jars = setOf("intellij.charts.jar"), mode = PlatformJarSelector.Mode.ONLY),
-          platformResources = false,
-          plugins = null,
-          runtimeModuleRepository = false,
-        ),
-        pluginClasspathPrefixFile = tempDir.resolve("plugin-classpath-prefix"),
       ),
       buildOptionsTemplate = BuildOptions(),
     )
@@ -728,23 +636,6 @@ class IdeBuilderTest {
   }
 
   @Test
-  fun componentFingerprintIsStableAcrossComponentOrderAndIncludesEntryMode() {
-    val platformEntry = DevBuildComponentEntry(relativePath = "lib/platform.jar", type = "module-output", hash = 1)
-    val pluginEntry = DevBuildComponentEntry(relativePath = "plugins/sample/lib/plugin.jar", type = "module-output", hash = 2)
-    val platform = componentManifest(kind = "platform", entries = listOf(platformEntry))
-    val plugins = componentManifest(kind = "plugins", entries = listOf(pluginEntry))
-
-    val fingerprint = computeIdeFingerprintFromComponents(listOf(platform, plugins))
-
-    assertThat(computeIdeFingerprintFromComponents(listOf(plugins, platform))).isEqualTo(fingerprint)
-    assertThat(
-      computeIdeFingerprintFromComponents(
-        listOf(platform.copy(entries = listOf(platformEntry.copy(executable = true))), plugins)
-      )
-    ).isNotEqualTo(fingerprint)
-  }
-
-  @Test
   fun ideFingerprintRejectsAnEntryOutsideKnownRoots() {
     val entry = CustomAssetEntry(path = tempDir.resolve("external/asset.zip"), hash = 1)
 
@@ -760,7 +651,6 @@ class IdeBuilderTest {
     os: OsFamily = OsFamily.currentOs,
     arch: JvmArchitecture = JvmArchitecture.currentJvmArch,
     fragment: DevBuildFragment = DevBuildFragment.COMPLETE,
-    pluginClasspathPrefixFile: Path? = null,
   ): BuildRequest {
     return BuildRequest(
       platformPrefix = "idea",
@@ -771,24 +661,7 @@ class IdeBuilderTest {
       buildDateInSeconds = buildDateInSeconds,
       os = os,
       arch = arch,
-      output = if (fragment.isComplete) DevBuildOutput.Complete else DevBuildOutput.Component(
-        fragment = fragment,
-        manifestFile = tempDir.resolve("${fragment.name}.component.json"),
-        pluginClasspathPrefixFile = pluginClasspathPrefixFile,
-      ),
-    )
-  }
-
-  private fun componentManifest(kind: String, entries: List<DevBuildComponentEntry>): DevBuildComponentManifest {
-    return DevBuildComponentManifest(
-      kind = kind,
-      platformPrefix = "idea",
-      os = OsFamily.currentOs.osId,
-      arch = JvmArchitecture.currentJvmArch.name,
-      additionalModules = emptyList(),
-      mainClass = "com.intellij.idea.Main",
-      coreClassPath = emptyList(),
-      entries = entries,
+      fragment = fragment,
     )
   }
 

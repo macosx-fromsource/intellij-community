@@ -13,13 +13,13 @@ import com.intellij.ide.starter.telemetry.TestTelemetryService
 import com.intellij.ide.starter.telemetry.computeWithSpan
 import com.intellij.openapi.application.PathManager
 import com.intellij.platform.buildScripts.concurrency.withLockInterruptibly
+import com.intellij.platform.buildScripts.devLaunch.readCustomCommand
+import com.intellij.platform.buildScripts.devLaunch.resolveAdditionalJvmArguments
 import com.intellij.tools.ide.util.common.logOutput
 import org.jetbrains.intellij.build.OsFamily
 import org.jetbrains.intellij.build.ScrambleTool
 import org.jetbrains.intellij.build.dev.BuildRequest
 import org.jetbrains.intellij.build.dev.buildProductInProcess
-import org.jetbrains.intellij.build.dev.readCustomCommand
-import org.jetbrains.intellij.build.dev.resolveAdditionalJvmArguments
 import org.kodein.di.direct
 import org.kodein.di.instance
 import java.nio.file.Path
@@ -57,7 +57,7 @@ object DevBuildServerRunnerImpl : DevBuildServerRunner {
   override fun isDevBuildSupported(): Boolean = true
 
   override fun readVmOptions(installationDirectory: Path): List<String> =
-    org.jetbrains.intellij.build.dev.readVmOptions(installationDirectory)
+    com.intellij.platform.buildScripts.devLaunch.readVmOptions(installationDirectory)
 
   override fun readCustomCommandJvmArguments(installationDirectory: Path, command: String): List<String>? =
     readCustomCommand(installationDirectory, command)?.resolveAdditionalJvmArguments(installationDirectory)

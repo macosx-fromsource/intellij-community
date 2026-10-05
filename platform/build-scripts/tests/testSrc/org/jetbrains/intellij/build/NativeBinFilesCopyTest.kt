@@ -11,8 +11,8 @@ import org.jetbrains.intellij.build.dev.DevPluginLayoutAssetTransform
 import org.jetbrains.intellij.build.impl.PlatformLayout
 import org.jetbrains.intellij.build.impl.copyDeclaredOsSpecificFiles
 import org.jetbrains.intellij.build.impl.copyDistFiles
-import org.jetbrains.intellij.build.impl.copyNativeBinDir
 import org.jetbrains.intellij.build.impl.copyNativeBinFileToDir
+import org.jetbrains.intellij.build.impl.nativeBinFiles
 import org.jetbrains.intellij.build.impl.registerPlatformDistFiles
 import org.jetbrains.intellij.build.productLayout.ProductModulesContentSpec
 import org.junit.jupiter.api.Test
@@ -25,6 +25,7 @@ import org.mockito.Mockito.verifyNoMoreInteractions
 import org.mockito.Mockito.`when`
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.function.Predicate
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
@@ -112,24 +113,40 @@ class NativeBinFilesCopyTest {
       it.parent.createDirectories()
       it.writeText("first restarter")
     }
-    val treeSource = tempDir.resolve("checkout/bin").createDirectories()
-    val treeFile = treeSource.resolve("fsnotifier").also { it.writeText("first watcher") }
-    treeSource.resolve("excluded").writeText("excluded")
+    val communityHome = tempDir.resolve("checkout")
+    val macBin = communityHome.resolve("bin/mac").createDirectories()
+    val treeFile = macBin.resolve("fsnotifier").also { it.writeText("first watcher") }
+    macBin.resolve("excluded").writeText("excluded")
+    macBin.resolve(".DS_Store").writeText("finder")
     val binDir = tempDir.resolve("dist/bin").createDirectories()
+    val filter = Predicate<Path> { it.fileName.toString() != "excluded" }
 
     copyNativeBinFileToDir(directSource, binDir)
-    copyNativeBinDir(treeSource, binDir, fileFilter = { it.fileName.toString() != "excluded" })
+    nativeBinFiles(communityHome, OsFamily.MACOS, JvmArchitecture.aarch64, filter).forEach { copyNativeBinFileToDir(it, binDir) }
 
     directSource.writeText("second restarter")
     treeFile.writeText("second watcher")
     val directTarget = copyNativeBinFileToDir(directSource, binDir)
-    val treeTargets = copyNativeBinDir(treeSource, binDir, fileFilter = { it.fileName.toString() != "excluded" })
+    val treeTargets = nativeBinFiles(communityHome, OsFamily.MACOS, JvmArchitecture.aarch64, filter).map { copyNativeBinFileToDir(it, binDir) }
 
     assertThat(directTarget).isEqualTo(binDir.resolve("restarter"))
     assertThat(directTarget).hasContent("second restarter")
     assertThat(treeTargets).containsExactly(binDir.resolve("fsnotifier"))
     assertThat(binDir.resolve("fsnotifier")).hasContent("second watcher")
     assertThat(binDir.resolve("excluded")).doesNotExist()
+    assertThat(binDir.resolve(".DS_Store")).doesNotExist()
+  }
+
+  @Test
+  fun `the windows natives are the architecture directory and the top-level files`(@TempDir communityHome: Path) {
+    val winBin = communityHome.resolve("bin/win")
+    winBin.resolve("amd64").createDirectories().resolve("launcher.exe").writeText("x64 launcher")
+    winBin.resolve("aarch64").createDirectories().resolve("launcher.exe").writeText("arm launcher")
+    winBin.resolve("defender-exclusions.ps1").writeText("script")
+
+    val files = nativeBinFiles(communityHome, OsFamily.WINDOWS, JvmArchitecture.x64)
+
+    assertThat(files).containsExactly(winBin.resolve("amd64/launcher.exe"), winBin.resolve("defender-exclusions.ps1"))
   }
 }
 

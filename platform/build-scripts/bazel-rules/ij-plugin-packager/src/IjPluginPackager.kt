@@ -169,7 +169,7 @@ object IjPluginPackager {
     }
     packedModulesWriter?.addModule(descriptorOutputJar, descriptorModuleArgument.name)
     contentModulesToMergeWithMainJar.forEach {
-      packedModulesWriter?.addModule(descriptorOutputJar, it.moduleElement.name)
+      packedModulesWriter?.addContentModule(descriptorOutputJar, it.moduleElement.name)
     }
     copyNonClasspathData(nonClasspathData, outputDirectory)
     val additionalJars = descriptorModuleArgument.jars.asSequence().drop(1)
@@ -207,7 +207,7 @@ object IjPluginPackager {
           dataFetcher()
         }
       }
-      packedModulesWriter?.addModuleLibrary(targetJar, pluginDescriptorModuleName, targetJarName.removeSuffix(".jar"))
+      packedModulesWriter?.addModuleLibrary(targetJar, pluginDescriptorModuleName, jar.name)
     }
   }
 
@@ -268,8 +268,7 @@ object IjPluginPackager {
       if (packedModulesWriter != null) {
         packedModulesWriter.addContentModule(outputJar, contentModuleElement.name)
         contentModule.jars.asSequence().drop(1).forEach { jar ->
-          val libraryName = removeVersionFromJar(jar.name).removeSuffix(".jar")
-          packedModulesWriter.addModuleLibrary(outputJar, contentModuleElement.name, libraryName)
+          packedModulesWriter.addModuleLibrary(outputJar, contentModuleElement.name, jar.name)
         }
       }
     }

@@ -1,6 +1,6 @@
 <!--suppress PluginXmlPluginLogo -->
 <idea-plugin allow-bundled-update="true">
-  <id>intellij.xml.plugin</id>
+  <id>com.intellij.xml</id>
   <name>XML and HTML</name>
   <vendor>JetBrains</vendor>
   <category>Languages</category>
@@ -10,8 +10,7 @@
   ]]></description>
   <module value="com.intellij.modules.xml"/>
 
-  <!-- intellij.libraries.cglib stays embedded in the core classloader,
-       see embeddedModule("intellij.libraries.cglib") in CommunityModuleSets.ideCommon(). -->
+  <!-- intellij.libraries.cglib stays embedded in the core classloader, see CommunityModuleSets.xmlRuntime(). -->
   <content namespace="jetbrains">
     <module name="intellij.xml.dom"/>
     <module name="intellij.xml.dom.impl"/>

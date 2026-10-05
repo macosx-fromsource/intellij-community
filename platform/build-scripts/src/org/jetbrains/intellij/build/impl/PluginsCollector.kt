@@ -21,6 +21,7 @@ import org.jetbrains.intellij.build.classPath.DescriptorSearchScope
 import org.jetbrains.intellij.build.classPath.XIncludeElementResolverImpl
 import org.jetbrains.intellij.build.classPath.descriptorResolveContext
 import org.jetbrains.intellij.build.classPath.resolveIncludes
+import org.jetbrains.intellij.build.isTestModule
 import org.jetbrains.intellij.build.mapConcurrent
 import org.jetbrains.intellij.build.productLayout.ProductModulesLayout
 import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
@@ -106,7 +107,8 @@ fun collectCompatiblePluginsToPublish(pluginsToPublish: MutableSet<PluginLayout>
   )
 }
 
-internal fun collectCompatiblePluginsToPublish(
+@ApiStatus.Internal
+fun collectCompatiblePluginsToPublish(
   pluginsToPublish: MutableSet<PluginLayout>,
   platformLayout: PlatformLayout,
   productProperties: ProductProperties,
@@ -386,8 +388,7 @@ private fun readPluginDescriptor(
   resolveContext: DescriptorResolveContext,
   descriptorFiles: PluginDescriptorFileCache,
 ): PluginDescriptor? {
-  // when we migrate to Bazel, we will use a test marker to avoid checking the module name for "test" pattern
-  if (moduleName.contains(".tests.") && !allBundledPlugins.contains(moduleName)) {
+  if (resolveContext.outputProvider.findRequiredModule(moduleName).isTestModule() && !allBundledPlugins.contains(moduleName)) {
     return null
   }
 

@@ -24,8 +24,6 @@ internal class WelcomeScreenAwareActionsCustomizer : ActionConfigurationCustomiz
       replaceExistingAction("CloseProject") { WelcomeScreenAwareCloseProjectAction() }
       replaceExistingAction("CloseAllProjects") { WelcomeScreenAwareCloseAllProjectsAction() }
       replaceExistingAction("RenameProject") { hideActionOnWelcomeScreen(it) }
-      replaceExistingAction("NewDir") { hideActionOnWelcomeScreen(it) }
-      replaceExistingAction("NewFile") { WelcomeScreenProxyAction(it, CreateEmptyFileAction()) }
       if (!ApplicationManager.getApplication().isUnitTestMode) {
         replaceExistingAction("SaveAll") { WelcomeFileProxyAction(it) }
         replaceExistingAction("SaveDocument") { WelcomeFileProxyAction(it) }
@@ -39,6 +37,15 @@ internal class WelcomeScreenAwareActionsCustomizer : ActionConfigurationCustomiz
       replaceExistingAction("ExpandRecursively") { hideActionOnWelcomeScreen(it) }
       replaceExistingAction("ExpandAll") { hideActionOnWelcomeScreen(it) }
       replaceExistingAction("CollapseAll") { hideActionOnWelcomeScreen(it) }
+    }
+  }
+}
+
+internal class WelcomeProjectNewActionsCustomizer : ActionConfigurationCustomizer, ActionConfigurationCustomizer.LightCustomizeStrategy {
+  override suspend fun customize(actionRegistrar: ActionRuntimeRegistrar) {
+    actionRegistrar.run {
+      replaceExistingAction("NewDir") { WelcomeProjectHiddenAction(it) }
+      replaceExistingAction("NewFile") { WelcomeProjectHiddenAction(it) }
     }
   }
 }
@@ -73,6 +80,17 @@ internal open class WelcomeScreenHiddenAction(action: AnAction) : AnActionWrappe
   override fun update(e: AnActionEvent) {
     val project = e.project
     if (project != null && e.getData(WELCOME_SCREEN_IS_SHOWN) == true) {
+      e.presentation.isEnabledAndVisible = false
+      return
+    }
+    super.update(e)
+  }
+}
+
+internal class WelcomeProjectHiddenAction(action: AnAction) : AnActionWrapper(action) {
+  override fun update(e: AnActionEvent) {
+    val project = e.project
+    if (project != null && WelcomeUtils.isWelcomeProject(project)) {
       e.presentation.isEnabledAndVisible = false
       return
     }

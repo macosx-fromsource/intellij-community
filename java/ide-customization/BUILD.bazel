@@ -11,10 +11,6 @@ dev_dist_plugin(
         "intellij.java.ide.customization.backend",
     ],
     descriptor = "resources/META-INF/plugin.xml",
-    descriptor_modules = [
-        "intellij.java.ide.customization.backend",
-        "intellij.java.ide.customization.training",
-    ],
     jars = {
         "lib/java-ide-customization.jar": ["intellij.java.ide.customization"],
     },
@@ -43,6 +39,7 @@ jvm_library(
     resource_strip_prefix = "resources",
     resources = glob(
         ["resources/**/*"],
+        exclude = ["resources/**/icon-robots.txt"],
     ),
     visibility = ["//visibility:public"],
     deps = [
@@ -181,8 +178,8 @@ jvm_library(
         "//platform/ide-core",
         "//platform/lang-core",
         "//platform/lang-core:lang-core_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
         "//platform/testFramework",
         "//platform/testFramework:testFramework_test_lib",
         "//platform/testFramework/junit5",

@@ -61,6 +61,7 @@ jvm_library(
     resource_strip_prefix = "resources",
     resources = glob(
         ["resources/**/*"],
+        exclude = ["resources/**/icon-robots.txt"],
     ),
     visibility = ["//visibility:public"],
     exports = [
@@ -98,7 +99,6 @@ jvm_library(
         "//platform/usageView-impl",
         "//platform/util/diff",
         "//platform/workspace/jps",
-        "//libraries/swingx",
         "//libraries/guava",
         "//libraries/gson",
         "//jps/model-impl",
@@ -185,6 +185,8 @@ jvm_library(
         "//platform/testIntegration",
         "//platform/testIntegration-ui",
         "//platform/eel-nioFs",
+        "//platform/consoleView",
+        "//platform/consoleView/impl",
     ],
 )
 
@@ -236,7 +238,6 @@ jvm_library(
         "//platform/usageView-impl:usageView-impl_test_lib",
         "//platform/util/diff:diff_test_lib",
         "//platform/workspace/jps:jps_test_lib",
-        "//libraries/swingx:swingx_test_lib",
         "//libraries/guava:guava_test_lib",
         "//libraries/gson:gson_test_lib",
         "//jps/model-impl:model-impl_test_lib",
@@ -322,6 +323,8 @@ jvm_library(
         "//platform/testIntegration:testIntegration_test_lib",
         "//platform/testIntegration-ui:testIntegration-ui_test_lib",
         "//platform/eel-nioFs:eel-nioFs_test_lib",
+        "//platform/consoleView:consoleView_test_lib",
+        "//platform/consoleView/impl:impl_test_lib",
     ],
 )
 ### auto-generated section `build intellij.platform.lang.impl` end
@@ -404,7 +407,10 @@ jvm_library(
         ],
         allow_empty = True,
     ),
-    module_name = "intellij.platform.lang.tests",
+    associates = [
+        "//platform/lang-impl",
+        "//platform/lang-impl:lang-impl_test_lib",
+    ],
     visibility = ["//visibility:public"],
     exports = [
         # do not sort,
@@ -448,6 +454,10 @@ jvm_library(
         "//platform/editor-ui-api:editor-ui_test_lib",
         "//platform/execution-impl",
         "//platform/execution-impl:execution-impl_test_lib",
+        "//platform/consoleView",
+        "//platform/consoleView:consoleView_test_lib",
+        "//platform/consoleView/impl",
+        "//platform/consoleView/impl:impl_test_lib",
         "//jps/model-api:model",
         "//jps/model-api:model_test_lib",
         "//jps/model-serialization",
@@ -471,8 +481,6 @@ jvm_library(
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
         "//platform/platform-impl:ide-impl",
-        "//platform/lang-impl",
-        "//platform/lang-impl:lang-impl_test_lib",
         "//platform/welcome-screen-impl:welcomeScreen-impl",
         "//platform/welcome-screen-impl:welcomeScreen-impl_test_lib",
         "//platform/usageView",
@@ -604,10 +612,10 @@ jvm_library(
         "//platform/testRunner:testRunner_test_lib",
         "//platform/testRunner/plugin",
         "//platform/testRunner/plugin:plugin_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
-        "//libraries/junit5-params",
-        "//libraries/junit5-params:junit5-params_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
+        "//libraries/junit6-params",
+        "//libraries/junit6-params:junit6-params_test_lib",
         "//platform/bazel-runfiles",
         "//platform/bazel-runfiles:bazel-runfiles_test_lib",
     ],

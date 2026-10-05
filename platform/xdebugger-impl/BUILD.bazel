@@ -47,6 +47,7 @@ jvm_library(
     resource_strip_prefix = "resources",
     resources = glob(
         ["resources/**/*"],
+        exclude = ["resources/**/icon-robots.txt"],
     ),
     visibility = ["//visibility:public"],
     deps = [
@@ -97,6 +98,7 @@ jvm_library(
         "//platform/xdebugger-impl/ui",
         "//platform/remote-topics/shared:rpc-topics",
         "//platform/execution",
+        "//platform/consoleView",
         "//platform/ide-core",
         "//platform/util:util-ui",
         "//fleet/rhizomedb",
@@ -162,6 +164,7 @@ jvm_library(
         "//platform/xdebugger-impl/ui:ui_test_lib",
         "//platform/remote-topics/shared:rpc-topics_test_lib",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView:consoleView_test_lib",
         "//platform/ide-core:ide-core_test_lib",
         "//platform/util:util-ui_test_lib",
         "//fleet/rhizomedb:rhizomedb_test_lib",
@@ -334,8 +337,8 @@ jvm_library(
         "//fleet/rhizomedb:rhizomedb_test_lib",
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
     ],
 )
 ### auto-generated section `build intellij.platform.debugger.impl.tests` end

@@ -40,6 +40,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefRequestHandlerAdapter
@@ -50,7 +51,7 @@ import org.cef.network.CefRequest
 import org.intellij.markdown.html.HtmlGenerator
 import org.intellij.plugins.markdown.extensions.MarkdownBrowserPreviewExtension
 import org.intellij.plugins.markdown.extensions.MarkdownConfigurableExtension
-import org.intellij.plugins.markdown.settings.MarkdownPreviewSettings
+import org.intellij.plugins.markdown.settings.MarkdownSettings
 import org.intellij.plugins.markdown.ui.preview.BrowserPipe
 import org.intellij.plugins.markdown.ui.preview.MarkdownHtmlPanel
 import org.intellij.plugins.markdown.ui.preview.MarkdownHtmlPanelEx
@@ -71,6 +72,7 @@ import java.net.URL
 import javax.swing.JComponent
 import javax.swing.JPanel
 import kotlin.math.round
+import kotlin.time.Duration
 
 class MarkdownJCEFHtmlPanel(private val project: Project?, private val virtualFile: VirtualFile?) : JCEFHtmlPanel(
   isOffScreenRendering = isOffScreenRendering(),
@@ -81,6 +83,10 @@ class MarkdownJCEFHtmlPanel(private val project: Project?, private val virtualFi
 
   private val pageBaseName = "markdown-preview-index-${DigestUtil.randomToken()}.html"
   private val resourceProvider = MyAggregatingResourceProvider()
+
+  @get:ApiStatus.Internal
+  val imageResourceProvider: ResourceProvider = MarkdownImageResourceProvider(project, virtualFile)
+
   private val pageUrl = PreviewStaticServer.getStaticUrl(resourceProvider, pageBaseName)
   private val browserPipe: BrowserPipe = JcefBrowserPipeImpl(browser = this, injectionAllowedUrls = listOf(pageUrl))
 
@@ -152,6 +158,7 @@ class MarkdownJCEFHtmlPanel(private val project: Project?, private val virtualFi
     Disposer.register(browserPipe) { currentExtensions.forEach(Disposer::dispose) }
     Disposer.register(this, browserPipe)
     Disposer.register(this, PreviewStaticServer.instance.registerResourceProvider(resourceProvider))
+    Disposer.register(this, PreviewStaticServer.instance.registerResourceProvider(imageResourceProvider))
 
     jbCefClient.addRequestHandler(MyFilteringRequestHandler(), cefBrowser, this)
     jbCefClient.setProperty(JBCefClient.Properties.JS_QUERY_POOL_SIZE, 20)
@@ -163,14 +170,23 @@ class MarkdownJCEFHtmlPanel(private val project: Project?, private val virtualFi
       }
     })
     val connection = application.messageBus.connect(this)
-    connection.subscribe(MarkdownPreviewSettings.ChangeListener.TOPIC, MarkdownPreviewSettings.ChangeListener { settings ->
-      changeFontSize(settings.state.fontSize)
+    connection.subscribe(MarkdownSettings.ChangeListener.TOPIC, object : MarkdownSettings.ChangeListener {
+      private var fontSize = MarkdownSettings.getInstance().fontSize
+
+      override fun beforeSettingsChanged(settings: MarkdownSettings) {
+        fontSize = settings.fontSize
+      }
+
+      override fun settingsChanged(settings: MarkdownSettings) {
+        if (fontSize != settings.fontSize) {
+          fontSize = settings.fontSize
+          changeFontSize(fontSize)
+        }
+      }
     })
 
     coroutineScope.launch {
       try {
-        val imageResourceProvider = createImageResourceProvider()
-
         loadIndexContent()
         initialization.complete(Unit)
         updateHandler.requests.collectLatest { request ->
@@ -247,6 +263,30 @@ class MarkdownJCEFHtmlPanel(private val project: Project?, private val virtualFi
     val builder = IncrementalDOMBuilder(html, document, imageResourceProvider, resourceProvider)
     val renderClosure = readAction { builder.generateRenderClosure() }
     updateDom(renderClosure, 0, false)
+  }
+
+  /**
+   * Waits until each image of the page loads or fails, but not longer than [timeout].
+   *
+   * A PDF print does not wait for an image. An image that still loads is absent from the PDF.
+   */
+  @ApiStatus.Internal
+  suspend fun waitForImages(timeout: Duration) {
+    // language=JavaScript
+    val code = """
+      (function() {
+        const pending = Array.from(document.images)
+          .filter(image => !image.complete)
+          .map(image => new Promise(resolve => {
+            image.addEventListener("load", resolve, { once: true });
+            image.addEventListener("error", resolve, { once: true });
+          }));
+        return Promise.all(pending);
+      })();
+    """.trimIndent()
+    if (withTimeoutOrNull(timeout) { executeCancellableJavaScript(code) } == null) {
+      logger.warn("Some images of the Markdown preview did not load in $timeout")
+    }
   }
 
   override fun reloadWithOffset(offset: Int) {
@@ -405,13 +445,6 @@ class MarkdownJCEFHtmlPanel(private val project: Project?, private val virtualFi
 
   override fun openDevtools() {
     super.openDevtools()
-  }
-
-  @ApiStatus.Internal
-  fun createImageResourceProvider(): ResourceProvider {
-    val provider = MarkdownImageResourceProvider(project, virtualFile)
-    Disposer.register(this@MarkdownJCEFHtmlPanel, PreviewStaticServer.instance.registerResourceProvider(provider))
-    return provider
   }
 
   private inner class MyAggregatingResourceProvider : ResourceProvider {

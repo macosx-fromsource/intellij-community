@@ -15,8 +15,11 @@
     <module name="intellij.libraries.miglayout.swing"/>
     <module name="intellij.libraries.rd.core"/>
     <module name="intellij.platform.analysis"/>
+    <module name="intellij.platform.analysis.impl"/>
     <module name="intellij.platform.backend.workspace"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
+    <module name="intellij.platform.consoleView.impl"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -48,10 +51,10 @@
     <module name="intellij.platform.refactoring"/>
     <module name="intellij.platform.remote.core"/>
     <module name="intellij.platform.rpc.lite"/>
-    <module name="intellij.platform.rpc.topics"/>
     <module name="intellij.platform.statistics"/>
     <module name="intellij.platform.util.coroutines"/>
     <module name="intellij.platform.util.ex"/>
+    <module name="intellij.platform.util.text.matching"/>
     <module name="intellij.platform.util.ui"/>
     <module name="intellij.platform.workspace.jps"/>
     <module name="intellij.platform.workspace.storage"/>
@@ -70,9 +73,6 @@
                  description="Load run configurations from *.run.xml files in the project content."
                  key="run.configurations.from.arbitrary.files"
                  restartRequired="true"/>
-    <projectFileScanner implementation="com.intellij.execution.impl.RunConfigurationInArbitraryFileScanner"/>
-    <vfs.asyncListener implementation="com.intellij.execution.impl.RCInArbitraryFileListener"/>
-    <editorNotificationProvider implementation="com.intellij.execution.impl.RunConfigEditorNotificationProvider"/>
     <stepsBeforeRunProvider implementation="com.intellij.execution.impl.RunConfigurationBeforeRunProvider"/>
     <stepsBeforeRunProvider implementation="com.intellij.ide.browsers.LaunchBrowserBeforeRunTaskProvider"/>
     <statistics.validation.customValidationRule
@@ -83,7 +83,6 @@
       implementation="com.intellij.execution.impl.statistics.RunConfigurationUsageTriggerCollector$RunTargetValidator"/>
     <statistics.validation.customValidationRule
       implementation="com.intellij.execution.impl.statistics.MacroNameValidationRule"/>
-    <postStartupActivity implementation="com.intellij.execution.impl.RunConfigurationFeatureCollector"/>
     <applicationService serviceInterface="com.intellij.execution.ui.FragmentStatisticsService"
                         serviceImplementation="com.intellij.execution.impl.statistics.FragmentedStatisticsServiceImpl"/>
     <statistics.counterUsagesCollector implementationClass="com.intellij.execution.impl.statistics.RunConfigurationOptionUsagesCollector"/>
@@ -92,6 +91,7 @@
     <statistics.counterUsagesCollector implementationClass="com.intellij.execution.impl.statistics.RunConfigurationUsageTriggerCollector"/>
     <statistics.counterUsagesCollector implementationClass="com.intellij.execution.impl.statistics.MacroUsageCollector"/>
     <statistics.counterUsagesCollector implementationClass="com.intellij.execution.target.TargetCounterUsagesCollector"/>
+    <statistics.counterUsagesCollector implementationClass="com.intellij.task.impl.ProjectTaskManagerStatisticsCollector"/>
     <statistics.collectorExtension implementation="com.intellij.execution.impl.statistics.RunConfigurationUsageLanguageExtension"/>
     <statistics.collectorExtension implementation="com.intellij.execution.impl.statistics.RunConfigurationTypeLanguageExtension"/>
     <refactoring.elementListenerProvider implementation="com.intellij.execution.impl.RunConfigurationRefactoringElementListenerProvider"/>
@@ -109,6 +109,11 @@
                     serviceImplementation="com.intellij.execution.impl.ExecutionManagerImpl"/>
     <projectService serviceInterface="com.intellij.execution.ExecutionTargetManager"
                     serviceImplementation="com.intellij.execution.ExecutionTargetManagerImpl"/>
+    <projectService serviceInterface="com.intellij.execution.runners.ExecutionEnvironmentProvider"
+                    serviceImplementation="com.intellij.task.impl.ExecutionEnvironmentProviderImpl"/>
+    <!-- Project tasks execution (delegation of the build/run actions) -->
+    <projectService serviceInterface="com.intellij.task.ProjectTaskManager"
+                    serviceImplementation="com.intellij.task.impl.ProjectTaskManagerImpl"/>
     <executionTargetProvider implementation="com.intellij.execution.DefaultExecutionTargetProvider"/>
     <configurationType implementation="com.intellij.execution.compound.CompoundRunConfigurationType"/>
     <projectConfigurable groupId="build" id="Runtime.Targets.Configurable" bundle="messages.IdeBundle"
@@ -119,7 +124,6 @@
                          bundle="messages.ExecutionBundle"
                          key="configurable.ProjectStartupConfigurable.display.name"
                          id="preferences.startup.tasks" nonDefaultProject="true"/>
-    <postStartupActivity implementation="com.intellij.execution.startup.ProjectStartupRunner"/>
     <notificationGroup id="Project Startup Tasks Messages" displayType="NONE" bundle="messages.ExecutionBundle"
                        key="notification.group.startup.task"/>
     <codeInsight.lineMarkerProvider language="" implementationClass="com.intellij.execution.lineMarker.RunLineMarkerProvider"/>
@@ -158,6 +162,26 @@
     <projectSettings service="com.intellij.execution.ui.RunConfigurationStartHistory"/>
     <projectSettings service="com.intellij.execution.runToolbar.RunToolbarSettings"/>
     <applicationSettings service="com.intellij.terminal.TerminalUiSettingsManager"/>
+    <projectSettings service="com.intellij.ide.actions.runAnything.RunAnythingCache"/>
+    <projectSettings service="com.intellij.ide.actions.runAnything.RunAnythingContextRecentDirectoryCache"/>
+    <statistics.counterUsagesCollector implementationClass="com.intellij.ide.actions.runAnything.RunAnythingUsageCollector"/>
+    <runAnything.executionProvider implementation="com.intellij.ide.actions.runAnything.activity.RunAnythingRecentProjectProvider"/>
+    <runAnything.executionProvider id="recentCommandProvider"
+                                   implementation="com.intellij.ide.actions.runAnything.activity.RunAnythingRecentCommandProvider"
+                                   order="last"/>
+    <runAnything.executionProvider implementation="com.intellij.ide.actions.runAnything.activity.RunAnythingCommandExecutionProvider"
+                                   order="last"/>
+    <runAnything.executionProvider id="RunAnythingRunConfigurationProvider"
+                                   implementation="com.intellij.ide.actions.runAnything.RunAnythingRunConfigurationProvider"/>
+    <!-- External Tools -->
+    <projectSettings service="com.intellij.tools.ToolsProjectConfig"/>
+    <actionConfigurationCustomizer implementation="com.intellij.tools.ToolManagerActionTuner"/>
+    <applicationConfigurable groupId="tools" instance="com.intellij.tools.ToolConfigurable" id="preferences.externalTools"
+                             key="tools.settings.title"
+                             bundle="messages.ToolsBundle"/>
+    <stepsBeforeRunProvider implementation="com.intellij.tools.ToolBeforeRunTaskProvider"/>
+    <keymapExtension implementation="com.intellij.tools.ToolKeymapExtension"/>
+    <toolsProvider implementation="com.intellij.tools.LocalToolsProvider"/>
   </extensions>
   <extensionPoints>
     <extensionPoint qualifiedName="com.intellij.runLineMarkerContributor" beanClass="com.intellij.lang.LanguageExtensionPoint" dynamic="true">
@@ -166,7 +190,6 @@
     <extensionPoint qualifiedName="com.intellij.beforeRunStartupTasks" interface="com.intellij.execution.startup.BeforeRunStartupTasks" area="IDEA_PROJECT" dynamic="false"/>
     <extensionPoint qualifiedName="com.intellij.runConfigurationTemplateProvider" interface="com.intellij.execution.impl.RunConfigurationTemplateProvider" area="IDEA_PROJECT" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.runConfigurationBeforeRunProviderDelegate" interface="com.intellij.execution.impl.RunConfigurationBeforeRunProviderDelegate" dynamic="true"/>
-    <extensionPoint qualifiedName="com.intellij.console.folding" interface="com.intellij.execution.ConsoleFolding" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.testSrcLocator" interface="com.intellij.testIntegration.TestLocationProvider" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.module.workingDirectoryProvider" interface="com.intellij.openapi.module.WorkingDirectoryProvider" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.runningApplicationUpdaterProvider" interface="com.intellij.execution.update.RunningApplicationUpdaterProvider" dynamic="true"/>
@@ -185,8 +208,17 @@
     <extensionPoint qualifiedName="com.intellij.execution.processHandlerPidProvider"
                     interface="com.intellij.execution.impl.ProcessHandlerPidProvider"
                     dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.projectTaskManagerListener" interface="com.intellij.task.impl.ProjectTaskManagerListenerExtensionPoint" dynamic="true" />
+    <extensionPoint qualifiedName="com.intellij.runAnything.executionProvider" interface="com.intellij.ide.actions.runAnything.activity.RunAnythingProvider" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.runAnything.commandHandler" interface="com.intellij.ide.actions.runAnything.handlers.RunAnythingCommandHandler" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.runAnything.helpGroup" interface="com.intellij.ide.actions.runAnything.groups.RunAnythingHelpGroup" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.runAnything.commandCustomizer" interface="com.intellij.ide.actions.runAnything.commands.RunAnythingCommandCustomizer" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.toolsProvider" interface="com.intellij.tools.ToolsProvider" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.toolsCustomizer" interface="com.intellij.tools.ToolsCustomizer" dynamic="true"/>
   </extensionPoints>
   <projectListeners>
+    <listener class="com.intellij.execution.lineMarker.RunnableStatusListener"
+              topic="com.intellij.codeInsight.daemon.DaemonCodeAnalyzer$DaemonListener"/>
     <listener class="com.intellij.execution.runToolbar.RunToolbarComponentService$MyExecutionListener"
               topic="com.intellij.execution.ExecutionListener"/>
     <listener class="com.intellij.execution.ui.RunPopupVoidExecutionListener"

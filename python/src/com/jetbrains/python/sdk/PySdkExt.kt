@@ -12,6 +12,8 @@ import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.python.sdk.backend.PythonInterpreter
+import com.intellij.python.sdk.backend.getSdkAPI
 import com.jetbrains.python.PyBundle
 import com.jetbrains.python.isCondaVirtualEnv
 import com.jetbrains.python.isNonToolVirtualEnv
@@ -26,7 +28,8 @@ import kotlin.io.path.div
 import com.intellij.python.sdk.backend.pythonInterpreter
 
 @Internal
-fun configurePythonSdk(project: Project, module: Module, sdk: Sdk) {
+fun configurePythonSdk(project: Project, module: Module, pythonInterpreter: PythonInterpreter) {
+  val sdk = pythonInterpreter.getSdkAPI()
   // in case module contains root of the project we consider it as a project wide interpreter
   if (project.basePath == module.baseDir?.path) {
     project.pythonSdk = sdk
@@ -107,6 +110,16 @@ val Sdk.isReadOnly: Boolean
 @get:Internal
 val Sdk.readOnlyErrorMessage: String
   get() = PythonSdkReadOnlyProvider.getReadOnlyMessage(this) ?: PyBundle.message("python.sdk.read.only", name)
+
+/** Whether packages cannot be installed into this interpreter, for example one inside a Docker image. */
+@get:Internal
+val PythonInterpreter.isReadOnly: Boolean
+  get() = getSdkAPI().isReadOnly
+
+/** Why packages cannot be installed into this interpreter. See [isReadOnly]. */
+@get:Internal
+val PythonInterpreter.readOnlyErrorMessage: String
+  get() = getSdkAPI().readOnlyErrorMessage
 
 internal val Sdk.sdkFlavor: PythonSdkFlavor<*> get() = pySdkAdditionalData.flavor
 

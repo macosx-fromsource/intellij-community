@@ -1787,6 +1787,7 @@ a:com.intellij.openapi.vfs.VirtualFileManager
 - sf:VFS_CHANGES_BG:com.intellij.util.messages.Topic
 - a:addAsyncFileListener(kotlinx.coroutines.CoroutineScope,com.intellij.openapi.vfs.AsyncFileListener):V
 - a:addAsyncFileListenerBackgroundable(com.intellij.openapi.vfs.AsyncFileListener,com.intellij.openapi.Disposable):V
+- a:addAsyncFileListenerBackgroundable(kotlinx.coroutines.CoroutineScope,com.intellij.openapi.vfs.AsyncFileListener):V
 - a:addVirtualFileListener(com.intellij.openapi.vfs.VirtualFileListener):V
 - f:asyncRefresh():J
 - a:asyncRefresh(java.lang.Runnable):J
@@ -3370,6 +3371,8 @@ com.intellij.psi.util.ParameterizedCachedValue
 - a:hasUpToDateValue():Z
 com.intellij.psi.util.ParameterizedCachedValueProvider
 - a:compute(java.lang.Object):com.intellij.psi.util.CachedValueProvider$Result
+com.intellij.psi.util.PsiAwareObject
+- a:findElement(com.intellij.openapi.project.Project):com.intellij.psi.PsiElement
 f:com.intellij.psi.util.PsiCacheKey
 - com.intellij.openapi.util.Key
 - getValue(com.intellij.psi.PsiElement):java.lang.Object

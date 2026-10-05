@@ -1,5 +1,6 @@
 load("@jps_dynamic_deps_community//:targets.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
+load("//platform/build-scripts/bazel-rules:dev_plugin_remainder.bzl", "dev_dist_complex_plugin")
 
 ### auto-generated section `dev intellij.jcef.plugin` start
 dev_dist_plugin(
@@ -13,14 +14,6 @@ dev_dist_plugin(
         "intellij.internal.jcef",
     ],
     descriptor = "resources/META-INF/plugin.xml",
-    descriptor_modules = [
-        "intellij.internal.jcef",
-        "intellij.jcef.frontend",
-        "intellij.libraries.jcef",
-        "intellij.platform.ide.impl.jcef",
-        "intellij.platform.ide.newUiOnboarding.jcef",
-        "intellij.platform.ui.jcef",
-    ],
     main_module = "intellij.jcef.plugin",
     variants = [
         "darwin_aarch64",
@@ -32,9 +25,32 @@ dev_dist_plugin(
     ],
 )
 
-exports_files(
-    ["intellij.jcef.plugin.dev-plan.json"],
-    visibility = ["//visibility:public"],
+dev_dist_complex_plugin(
+    artifact_inputs = {
+        "//plugins/jcef/plugin:plugin.jar": "intellij.jcef.plugin",
+    },
+    descriptor = "//plugins/jcef/plugin:intellij.jcef.plugin_{platform}_dev_descriptor",
+    execution_version = 2,
+    independent_artifacts = [
+        "//libraries/jcef:jcef_content_module_jar",
+        "//platform/ui.jcef:ui.jcef_content_module_jar",
+        "//platform/platform-impl/jcef:jcef_content_module_jar",
+        "//platform/new-ui-onboarding/jcef:jcef_content_module_jar",
+        "//plugins/jcef/frontend:frontend_content_module_jar",
+        "//platform/platform-impl/internal/jcef:jcef_content_module_jar",
+    ],
+    main_module = "intellij.jcef.plugin",
+    platforms = [
+        "windows_x64",
+        "windows_aarch64",
+        "darwin_x64",
+        "darwin_aarch64",
+        "linux_x64",
+        "linux_aarch64",
+    ],
+    resource_inputs = {
+        "@dev_launch_{platform}_jcef//:files": "layout-source:resource-generator:0:0",
+    },
 )
 ### auto-generated section `dev intellij.jcef.plugin` end
 

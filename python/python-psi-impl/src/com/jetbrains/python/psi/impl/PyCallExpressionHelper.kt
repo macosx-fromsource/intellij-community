@@ -14,6 +14,8 @@ import com.jetbrains.python.ProtectionLevel
 import com.jetbrains.python.PyNames
 import com.jetbrains.python.PythonRuntimeService
 import com.jetbrains.python.ast.PyAstFunction
+import com.jetbrains.python.codeInsight.PyCodeInsightCounters
+import com.jetbrains.python.codeInsight.PyCodeInsightCounters.Counter
 import com.jetbrains.python.codeInsight.dataflow.scope.ScopeUtil
 import com.jetbrains.python.codeInsight.typing.PyTypedDictTypeProvider.Helper.isTypingTypedDictInheritor
 import com.jetbrains.python.codeInsight.typing.PyTypingTypeProvider
@@ -593,8 +595,8 @@ object PyCallExpressionHelper {
    */
   @JvmStatic
   fun getCallType(expression: PyBinaryExpression, context: TypeEvalContext, @Suppress("unused") key: TypeEvalContext.Key): PyType? {
-    val leftExpr = expression.leftExpression ?: return null
-    val rightExpr = expression.rightExpression ?: return null
+    val leftExpr = expression.leftExpression ?: return PyAnyType.unknown
+    val rightExpr = expression.rightExpression ?: return PyAnyType.unknown
 
     val resolveContext = PyResolveContext.defaultContext(context)
     val callableTypes = multiResolveOperator(expression, resolveContext)
@@ -1444,6 +1446,7 @@ object PyCallExpressionHelper {
   }
 
   private fun matchesByArgumentTypes(function: PyCallableType, arguments: List<PyCallableArgument>, context: TypeEvalContext): Boolean {
+    PyCodeInsightCounters.inc(Counter.OVERLOAD_CANDIDATES_CHECKED)
     val parameters = function.getParameters(context)?.let { unpackParameters(it, arguments, context) } ?: return true
     val mapping = analyzeArguments(arguments, parameters, context)
     return mapping.unmappedParameters.isEmpty() &&

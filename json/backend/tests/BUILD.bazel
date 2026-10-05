@@ -82,6 +82,8 @@ jvm_library(
         "//json/structureView:structureView_test_lib",
         "//json/backend/regexp",
         "//json/backend/regexp:regexp_test_lib",
+        "//json/backend/spellchecker",
+        "//json/backend/spellchecker:spellchecker_test_lib",
         "//spellchecker",
         "//spellchecker:spellchecker_test_lib",
         "//libraries/lucene.common",
@@ -137,8 +139,8 @@ jvm_library(
         "//json/networknt.wrapper:networknt.wrapper_test_lib",
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
     ],
 )
 ### auto-generated section `build intellij.json.tests` end

@@ -5,6 +5,7 @@ import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.python.hatch.BasePythonExecutableNotFoundHatchError
 import com.intellij.python.hatch.HatchVirtualEnvironment
 import com.intellij.python.hatch.PythonVirtualEnvironment
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.jetbrains.python.Result
 import com.jetbrains.python.errorProcessing.PyResult
 import com.jetbrains.python.sdk.add.v2.FileSystem
@@ -31,17 +32,17 @@ suspend fun <P : PathHolder> HatchVirtualEnvironment<P>.createSdk(
   workingDirectoryPath: Path,
   fileSystem: FileSystem<P>,
   targetPanelExtension: TargetPanelExtension? = null,
-): PyResult<Sdk> {
+): PyResult<PythonInterpreter> {
   val existingVirtualEnvironment = when (val virtualEnvironment = pythonVirtualEnvironment) {
     is PythonVirtualEnvironment.Existing -> virtualEnvironment
     is PythonVirtualEnvironment.NotExisting -> {
-      return Result.failure(BasePythonExecutableNotFoundHatchError(virtualEnvironment.pythonHomePath.toString()))
+      return Result.failure(BasePythonExecutableNotFoundHatchError(virtualEnvironment.pythonHomePath.toStringForExecution()))
     }
     null -> return Result.failure(BasePythonExecutableNotFoundHatchError(pathString = null))
   }
   val pythonHomePath = existingVirtualEnvironment.pythonHomePath
   val pythonBinary = withContext(Dispatchers.IO) { fileSystem.resolvePythonBinary(pythonHomePath) }
-                     ?: return Result.failure(BasePythonExecutableNotFoundHatchError(pythonHomePath.toString()))
+                     ?: return Result.failure(BasePythonExecutableNotFoundHatchError(pythonHomePath.toStringForExecution()))
 
   val hatchSdkAdditionalData = HatchSdkAdditionalData(
     hatchWorkingDirectory = workingDirectoryPath,

@@ -122,6 +122,7 @@ internal enum class GhosttyTerminalData(val code: Int) {
   COLOR_FOREGROUND(18),
   COLOR_BACKGROUND(19),
   COLOR_PALETTE(21),
+  COLOR_PALETTE_DEFAULT(25),
   /** Reads a `GhosttyTerminalModeConfig`; the caller must set `mode` before the call. */
   MODE(37),
 }
@@ -173,23 +174,16 @@ internal enum class GhosttyRowData(val code: Int) {
 internal enum class GhosttyTerminalOption(val code: Int) {
   WRITE_PTY(1),
   BELL(2),
+  COLOR_SCHEME(7),
   COLOR_FOREGROUND(11),
   COLOR_BACKGROUND(12),
+  COLOR_PALETTE(14),
   DEFAULT_CURSOR_STYLE(22),
   DEFAULT_CURSOR_BLINK(23),
   SCROLLBACK_MAX_BYTES(27),
   PROGRESS_REPORT(30),
-  RESIZE_SCROLLBACK_PULL(40),
-}
-
-/**
- * `GhosttyTerminalScrollbackPull` (terminal.h) — value for
- * [GhosttyTerminalOption.RESIZE_SCROLLBACK_PULL].
- */
-internal enum class GhosttyTerminalScrollbackPull(val code: Int) {
-  ALWAYS(0),
-  CURSOR_AT_BOTTOM(1),
-  NEVER(2),
+  TERMINFO_NAME(37),
+  RESIZE_PULL_SCROLLBACK(40),
 }
 
 /** `GhosttyTerminalProgressState` (terminal.h) — the state of an `OSC 9;4` progress report. */
@@ -215,6 +209,15 @@ internal enum class GhosttyTerminalProgressState(val code: Int) {
       else -> null
     }
   }
+}
+
+/**
+ * `GhosttyColorScheme` (device.h) — the value that the [GhosttyTerminalOption.COLOR_SCHEME] callback
+ * reports for a color scheme query (`CSI ? 996 n`).
+ */
+internal enum class GhosttyColorScheme(val code: Int) {
+  LIGHT(0),
+  DARK(1),
 }
 
 /** `GhosttyRenderStateData` (render.h) — selector for `ghostty_render_state_get`. */
@@ -370,4 +373,5 @@ internal enum class GhosttyMode(val packed: Int) {
   SGR_PIXELS_MOUSE(1016),
   BRACKETED_PASTE(2004),
   SYNC_OUTPUT(2026),
+  COLOR_SCHEME_REPORT(2031),
 }

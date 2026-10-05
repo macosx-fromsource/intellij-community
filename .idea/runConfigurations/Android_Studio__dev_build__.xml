@@ -6,7 +6,7 @@
     </envs>
     <log_file alias="idea.log" path="$PROJECT_DIR$/out/dev-data/idea/system/log/idea.log" />
     <option name="MAIN_CLASS_NAME" value="org.jetbrains.intellij.build.devServer.DevMainKt" />
-    <module name="intellij.platform.bootstrap.dev" />
+    <module name="intellij.platform.bootstrap.dev.legacy" />
     <shortenClasspath name="ARGS_FILE" />
     <option name="VM_PARAMETERS" value="-Didea.platform.prefix=AndroidStudio -Dawt.toolkit.name=auto" />
     <method v="2">

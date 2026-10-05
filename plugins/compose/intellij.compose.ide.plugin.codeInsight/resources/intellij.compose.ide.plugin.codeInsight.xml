@@ -27,6 +27,7 @@
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.editor.ui"/>
     <module name="intellij.platform.externalSystem.impl"/>
+    <module name="intellij.platform.ide.colorPicker"/>
     <module name="intellij.platform.ide.impl"/>
     <module name="intellij.platform.lang"/>
     <module name="intellij.platform.lang.core"/>
@@ -38,6 +39,7 @@
   <!-- endregion -->
 
   <extensions defaultExtensionNs="org.jetbrains.kotlin">
+    <codeinsight.quickfix.registrar implementation="com.intellij.compose.ide.plugin.codeInsight.intentions.ComposableQuickFixesRegistrar"/>
     <callHighlighterExtension
       implementation="com.intellij.compose.ide.plugin.codeInsight.highlighting.ComposableFunctionCallHighlighterExtension"/>
     <extractFunctionDescriptorModifier implementation="com.intellij.compose.ide.plugin.codeInsight.ComposableAnnotationToExtractedFunctionAdder"

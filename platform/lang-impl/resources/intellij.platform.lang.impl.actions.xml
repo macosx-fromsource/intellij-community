@@ -240,7 +240,6 @@
     <action id="Scratch.ChangeLanguage" class="com.intellij.ide.scratch.ScratchFileActions$ChangeLanguageAction"/>
     <action id="Scratch.ShowFilesPopup" class="com.intellij.ide.scratch.ScratchFileActions$ShowFilesPopupAction"/>
     <action id="Scratch.ExportToScratch" class="com.intellij.ide.scratch.ScratchFileActions$ExportToScratchAction"/>
-    <group id="ExternalToolsGroup" class="com.intellij.tools.ExternalToolsGroup"/>
     <group id="NewWebDevelopment" class="com.intellij.ide.actions.NewWebDevelopmentGroup"/>
     <group id="NewMicroservices" class="com.intellij.ide.actions.NewMicroservicesGroup"/>
     <group id="NewFromTemplate" class="com.intellij.ide.fileTemplates.actions.CreateFromTemplateGroup"/>
@@ -336,7 +335,6 @@
     <action id="SearchEverywhere" class="com.intellij.ide.actions.SearchEverywhereAction" icon="AllIcons.Actions.Find"/>
     <action id="TestSearchContributors" class="com.intellij.ide.actions.searcheverywhere.setesting.TestSearchEverywhereAction"
             internal="true"/>
-    <action id="RunAnything" icon="AllIcons.Actions.RunAnything" class="com.intellij.ide.actions.runAnything.RunAnythingAction"/>
     <action id="FillParagraph" class="com.intellij.codeInsight.editorActions.fillParagraph.FillParagraphAction"/>
     <action id="ExpandRecursively" class="com.intellij.ide.projectView.actions.ExpandRecursivelyAction" icon="AllIcons.Actions.Expandall"
             use-shortcut-of="ExpandRegion"/>
@@ -381,7 +379,6 @@
     <action id="GotoAction" class="com.intellij.ide.actions.GotoActionAction"/>
     <action id="FindSelectionInPath" class="com.intellij.find.actions.FindSelectionInPathAction" use-shortcut-of="FindInPath"/>
     <action id="ConfigureSoftWraps" class="com.intellij.openapi.editor.actions.ConfigureSoftWrapsAction"/>
-    <action id="ShowRegistry" class="com.intellij.openapi.util.registry.ShowRegistryAction"/>
     <action id="ChooseRuntime" class="com.intellij.openapi.projectRoots.impl.jdkDownloader.RuntimeChooserAction">
       <synonym text="Choose Runtime"/>
     </action>
@@ -506,7 +503,6 @@
       <reference ref="Arrangement.Rule.Group.Condition.Move.Down"/>
     </group>
     <group id="Internal.Dump" internal="true" popup="true">
-      <reference ref="DumpCodeStyleCache"/>
       <reference ref="DumpPluginDescriptorsAction"/>
     </group>
     <group id="HierarchyGroup">

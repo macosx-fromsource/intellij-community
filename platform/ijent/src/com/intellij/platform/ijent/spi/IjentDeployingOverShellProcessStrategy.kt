@@ -2,6 +2,8 @@
 package com.intellij.platform.ijent.spi
 
 import com.intellij.platform.eel.EelPlatform
+import com.intellij.platform.eel.EelUnavailableException
+import com.intellij.platform.eel.EelUnavailableException.CommunicationFailure
 import com.intellij.platform.eel.ReadResult.EOF
 import com.intellij.platform.eel.ReadResult.NOT_EOF
 import com.intellij.platform.eel.SafeDeferred
@@ -9,13 +11,11 @@ import com.intellij.platform.eel.channels.EelChannelException
 import com.intellij.platform.eel.channels.sendWholeBuffer
 import com.intellij.platform.eel.provider.utils.consumeAsEelChannel
 import com.intellij.platform.eel.provider.utils.sendWholeText
-import com.intellij.platform.eel.toSafeDeferred
 import com.intellij.platform.ijent.IjentLogger
 import com.intellij.platform.ijent.IjentScope
 import com.intellij.platform.ijent.IjentSession
-import com.intellij.platform.ijent.IjentUnavailableException
-import com.intellij.platform.ijent.IjentUnavailableException.CommunicationFailure
 import com.intellij.platform.ijent.ParentOfIjentScopes
+import com.intellij.platform.ijent.asyncSafe
 import com.intellij.platform.ijent.getIjentGrpcArgv
 import com.intellij.platform.ijent.spi.IjentSessionMediatorUtils.readLineOrThrow
 import com.intellij.platform.ijent.tcp.MutualTlsCertificates
@@ -27,7 +27,6 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
@@ -58,7 +57,7 @@ private val PROCESS_CLEANUP_TIMEOUT: Duration = 3_000.milliseconds
 abstract class IjentDeployingOverShellProcessStrategy(
   parentScope: ParentOfIjentScopes,
   currentDispatcher: CoroutineDispatcher,
-  private val ijentLabel: String
+  private val ijentLabel: String,
 ) : IjentControlledEnvironmentDeployingStrategy() {
 
   /**
@@ -161,12 +160,13 @@ abstract class IjentDeployingOverShellProcessStrategy(
   val communicationStarted: SafeDeferred<Unit> = SafeDeferred(communicationStartedImpl)
 
   private val closed = AtomicBoolean()
+
   /** Non-null while the deployer owns cleanup; cleared on close or when the session takes ownership. */
   private var createdShellProcess: ShellProcessWrapper? = null
 
-  private val ijentProcessScope = IjentSessionMediatorUtils.createProcessScope(parentScope, ijentLabel)
+  private val ijentProcessScope = parentScope.createIjentScope(ijentLabel)
 
-  private val myContext: SafeDeferred<ShellSession> = parentScope.s.async(currentDispatcher, start = CoroutineStart.LAZY) {
+  private val myContext: SafeDeferred<ShellSession> = ijentProcessScope.asyncSafe(currentDispatcher, start = CoroutineStart.LAZY) {
     val processFacade = createShellProcessFacade(ijentProcessScope)
     val mediator = IjentSessionProcessMediator.create(
       parentScope = parentScope,
@@ -209,9 +209,9 @@ abstract class IjentDeployingOverShellProcessStrategy(
         is PowerShellIo -> PowerShellSession(shellIo)
       }
     }
-  }.toSafeDeferred(IjentUnavailableException::unwrapFromCancellationExceptions)
+  }
 
-  private val myDetectedTarget = parentScope.s.async(currentDispatcher, start = CoroutineStart.LAZY) {
+  private val myDetectedTarget = ijentProcessScope.asyncSafe(currentDispatcher, start = CoroutineStart.LAZY) {
     val session = getMyContext()
     session.execCommand {
       detectTarget()
@@ -231,9 +231,11 @@ abstract class IjentDeployingOverShellProcessStrategy(
     return try {
       myDetectedTarget.await()
     }
-    catch (e: CancellationException) {
-      currentCoroutineContext().ensureActive()
-      throw IjentUnavailableException.unwrapFromCancellationExceptions(e) ?: RuntimeException(e)
+    catch (e: SafeDeferred.FailedDeferred) {
+      throw e.cause
+    }
+    catch (e: SafeDeferred.CancelledDeferred) {
+      throw e
     }
   }
 
@@ -348,9 +350,17 @@ private class ShellProcessWrapper(
     }
   }
 
-  /** Returns a failure observed while terminating a process that is still owned by the deployer. */
+  /**
+   * The result of [destroyForciblyAndGetError].
+   *
+   * @property processFailure the canonical failure of the process. It exists only if the process failed by itself.
+   * @property cleanupFailure a failure of the termination itself. It never describes why the deployment failed.
+   */
+  class CleanupResult(val processFailure: EelUnavailableException?, val cleanupFailure: Exception?)
+
+  /** Terminates a process that is still owned by the deployer and returns the failures that it observed. */
   @OptIn(InternalCoroutinesApi::class)
-  suspend fun destroyForciblyAndGetError(): Throwable? = withContext(NonCancellable) {
+  suspend fun destroyForciblyAndGetError(): CleanupResult = withContext(NonCancellable) {
     var cleanupFailure: Exception? = null
     val cleanupStartsNow = cleanupStarted.compareAndSet(false, true)
     val processTerminationWasRequested = when (mediator.process.exitCode.state) {
@@ -369,7 +379,7 @@ private class ShellProcessWrapper(
         catch (e: Exception) {
           cleanupFailure = e
 
-          val error = IjentUnavailableException.ClosedByApplication(
+          val error = EelUnavailableException.ClosedByApplication(
             "Failed to destroy the shell process during deployment cleanup",
             e,
           )
@@ -382,19 +392,17 @@ private class ShellProcessWrapper(
     if (!processCompleted && cleanupFailure == null) {
       val timeoutFailure = CommunicationFailure("Timed out while terminating the deployment shell process", null)
       cleanupFailure = timeoutFailure
-      terminateProcessScope(IjentUnavailableException.ClosedByApplication(timeoutFailure.message, timeoutFailure))
+      terminateProcessScope(EelUnavailableException.ClosedByApplication(timeoutFailure.message, timeoutFailure))
     }
     val processFailure =
       if (processCompleted && !processTerminationWasRequested) {
-        IjentUnavailableException.unwrapFromCancellationExceptions(job.getCancellationException())
+        EelUnavailableException.unwrapFromCancellationExceptions(job.getCancellationException())
       }
       else null
-    processFailure?.also { failure ->
-      cleanupFailure?.let(failure::addSuppressed)
-    } ?: cleanupFailure
+    CleanupResult(processFailure, cleanupFailure)
   }
 
-  private fun terminateProcessScope(error: IjentUnavailableException) {
+  private fun terminateProcessScope(error: EelUnavailableException) {
     mediator.ijentProcessScope.destroy(error, isRootCause = true)
   }
 
@@ -403,7 +411,7 @@ private class ShellProcessWrapper(
   fun close() {
     if (cleanupStarted.compareAndSet(false, true)) {
       mediator.ijentProcessScope.destroy(
-        IjentUnavailableException.ClosedByApplication("Deployment closed before process handoff", null),
+        EelUnavailableException.ClosedByApplication("Deployment closed before process handoff", null),
         isRootCause = true,
       )
     }
@@ -575,27 +583,22 @@ private suspend fun <T : Any> ShellSession.execCommand(block: suspend ShellSessi
     block()
   }
   catch (initialErrorFromStack: Exception) {
-    val errorFromScope = io.process.destroyForciblyAndGetError()
-    val errorFromStack = IjentUnavailableException.unwrapFromCancellationExceptions(initialErrorFromStack)
+    val cleanup = io.process.destroyForciblyAndGetError()
+    val errorFromStack = EelUnavailableException.unwrapFromCancellationExceptions(initialErrorFromStack)
 
     // A process failure may be hidden behind CancellationException. Prefer the canonical failure from the process scope in that case.
     // Other errors may be programmer bugs and must retain their original type so that they reach the error reporter.
-    // A null errorFromScope means the process was killed by this cleanup itself, so the stack error is the root cause.
-    val mainError: Throwable =
-      when {
-        errorFromScope == null -> errorFromStack ?: initialErrorFromStack
-        errorFromStack != null -> errorFromStack
-        initialErrorFromStack is CancellationException -> errorFromScope
-        else -> initialErrorFromStack
-      }
+    // A null processFailure means that this cleanup itself tried to kill the process, so the stack error is the root cause.
+    // That stays true when the kill fails: a cleanup failure is only a consequence, so it never replaces the root cause.
+    val mainError: Throwable = cleanup.processFailure ?: errorFromStack ?: initialErrorFromStack
 
-    for (secondaryError in listOfNotNull(errorFromStack, errorFromScope)) {
+    for (secondaryError in listOfNotNull(errorFromStack, cleanup.processFailure, cleanup.cleanupFailure)) {
       if (mainError !== secondaryError && mainError.suppressed.none { it === secondaryError }) {
         mainError.addSuppressed(secondaryError)
       }
     }
 
-    throw if (mainError is IOException && mainError !is IjentUnavailableException) {
+    throw if (mainError is IOException && mainError !is EelUnavailableException) {
       CommunicationFailure("Deployment shell command failed", mainError)
     }
     else {
@@ -905,9 +908,9 @@ private class PowerShellSession(
       cache.powerShellRestore()
     )
     uploadedBinaryDirectory = paths.singleOrNull { it.startsWith(directoryMarker) }?.removePrefix(directoryMarker)
-      ?: throw CommunicationFailure("PowerShell did not report the uploaded IJent binary directory", null)
+                              ?: throw CommunicationFailure("PowerShell did not report the uploaded IJent binary directory", null)
     val remoteBinaryPath = paths.singleOrNull { it.startsWith(pathMarker) }?.removePrefix(pathMarker)
-      ?: throw CommunicationFailure("PowerShell did not report the uploaded IJent binary path", null)
+                           ?: throw CommunicationFailure("PowerShell did not report the uploaded IJent binary path", null)
     if (paths.any { it == remoteBinaryPath }) {
       return remoteBinaryPath
     }
@@ -954,7 +957,9 @@ private class PowerShellSession(
       val encoded = Base64.getEncoder().encodeToString(it.serverBootstrapPem().toByteArray(StandardCharsets.UTF_8))
       "[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encoded')) | "
     }.orEmpty()
-    val cleanupCommand = uploadedBinaryDirectory?.let { "Remove-Item -LiteralPath ${powerShellQuote(it)} -Recurse -Force -ErrorAction SilentlyContinue; " }.orEmpty()
+    val cleanupCommand = uploadedBinaryDirectory
+      ?.let { "Remove-Item -LiteralPath ${powerShellQuote(it)} -Recurse -Force -ErrorAction SilentlyContinue; " }
+      .orEmpty()
     io.startProcess(
       $$"try { $$tlsBootstrap& $$command; $ijentExitCode = $LASTEXITCODE } " +
       $$"catch { $ijentExitCode = 1; [Console]::Error.WriteLine($_.Exception.ToString()) } " +
@@ -964,6 +969,7 @@ private class PowerShellSession(
     return io.process.processForConnection()
   }
 }
+
 /**
  * [Dash-based shells up to 0.5.12 inclusively have a problem](https://lore.kernel.org/dash/CAMQsgbSZnEac=ETYnR6a_ysnAysaHThwY03pnoDxC=p5FqtAag@mail.gmail.com/).
  *

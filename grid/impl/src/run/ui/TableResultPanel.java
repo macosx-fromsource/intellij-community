@@ -22,7 +22,9 @@ import com.intellij.database.datagrid.GridRequestSource;
 import com.intellij.database.datagrid.GridRow;
 import com.intellij.database.datagrid.GridSelection;
 import com.intellij.database.datagrid.GridSortingModel;
+import com.intellij.database.datagrid.GridUtil;
 import com.intellij.database.datagrid.GridUtilCore;
+import com.intellij.database.datagrid.HierarchicalColumnsDataGridModel.HierarchicalGridColumn;
 import com.intellij.database.datagrid.ModelIndex;
 import com.intellij.database.datagrid.ModelIndexSet;
 import com.intellij.database.datagrid.RawIndexConverter;
@@ -246,6 +248,9 @@ public class TableResultPanel extends UserDataHolderBase
     .childScope(GlobalScope.INSTANCE, getClass().getName(), Dispatchers.getIO(), true);
   private final SimpleModificationTracker myModificationTracker = new SimpleModificationTracker();
   private final SimpleModificationTracker myColumnModificationTracker = new SimpleModificationTracker();
+  private final GridColumnDisplayOrder myColumnsDisplayOrder = new GridColumnDisplayOrder();
+  private boolean mySavedColumnsOrderPendingRestore;
+  private boolean myApplyingColumnsDisplayOrder;
   private final CachedValue<Map<ModelIndex<GridColumn>, DatabaseDisplayObjectFormatterConfig>> myFormatterConfigCached;
 
   public TableResultPanel(@NotNull Project project,
@@ -549,7 +554,7 @@ public class TableResultPanel extends UserDataHolderBase
         if (!myPinnedColumnNamesPendingRestore.isEmpty()) {
           if (success) {
             restorePinnedColumnsByName();
-            restoreColumnsOrder();
+            refreshColumnLayout();
           }
           else {
             myPinnedColumnNamesPendingRestore.clear();
@@ -577,11 +582,13 @@ public class TableResultPanel extends UserDataHolderBase
     myColumnWidthState.retain(columns);
     setOrderingFromModel();
     myResultView.columnsAdded(columnIndices);
-    updateSortKeysFromColumnAttributes();
+    myResultView.updateSortKeysFromColumnAttributes();
     trueLayout();
-    restoreColumnsOrder();
+    restorePendingColumnsOrder();
+    refreshColumnLayout();
     rememberCurrentColumnNames();
     myColumnModificationTracker.incModificationCount();
+    fireContentChanged(null);
   }
 
   private void restorePinnedColumnsByName() {
@@ -625,39 +632,58 @@ public class TableResultPanel extends UserDataHolderBase
   }
 
   protected void columnAttributesUpdated() {
+    mySavedColumnsOrderPendingRestore = true;
     myResultView.columnAttributesUpdated();
-    restoreColumnsOrder();
+    var orderChanged = restorePendingColumnsOrder();
+    refreshColumnLayout();
+    if (orderChanged) fireColumnOrderChanged();
   }
 
-  @Override
-  public void restoreColumnsOrder() {
-    Map<Integer, ModelIndex<GridColumn>> expectedToModel = new LinkedHashMap<>();
-    GridModel<GridRow, GridColumn> model = getDataModel(DATA_WITH_MUTATIONS);
-    JBIterable<ModelIndex<GridColumn>> modelIndices = model.getColumnIndices().asIterable();
-    for (ModelIndex<GridColumn> modelIndex : modelIndices) {
-      GridColumn column = model.getColumn(modelIndex);
-      if (column == null) return;
+  private boolean restorePendingColumnsOrder() {
+    if (!mySavedColumnsOrderPendingRestore) return false;
+    var model = getDataModel(DATA_WITH_MUTATIONS);
+    var savedOrder = savedColumnsOrder();
+    if (savedOrder == null || savedOrder.isEmpty()) return false;
+    if (!model.isUpdatingNow()) {
+      cancelPendingColumnsOrderRestore();
+    }
+    if (savedOrder.equals(getColumnsDisplayOrder())) return false;
+    myColumnsDisplayOrder.set(savedOrder, naturalColumnsOrder());
+    return true;
+  }
+
+  private @Nullable List<ModelIndex<GridColumn>> savedColumnsOrder() {
+    // Saved positions can repeat in older layouts. Keep every column when sorting them.
+    var savedPositions = new ArrayList<Map.Entry<Integer, ModelIndex<GridColumn>>>();
+    var model = getDataModel(DATA_WITH_MUTATIONS);
+    for (var modelIndex : model.getColumnIndices().asIterable()) {
+      var column = model.getColumn(modelIndex);
+      if (column == null) return null;
       int initialPosition = getInitialPosition(column);
-      if (initialPosition == UNKNOWN_COLUMN_POSITION) return;
+      if (initialPosition == UNKNOWN_COLUMN_POSITION) return null;
       if (initialPosition == DEFAULT_OR_HIDDEN_COLUMN_POSITION) {
         initialPosition = modelIndex.value;
       }
       else {
         initialPosition = fromSerializedPosition(initialPosition);
       }
-      expectedToModel.put(initialPosition, modelIndex);
+      savedPositions.add(Map.entry(initialPosition, modelIndex));
     }
+    return savedPositions.stream()
+      .sorted(Comparator.comparingInt(Map.Entry::getKey))
+      .map(Map.Entry::getValue)
+      .toList();
+  }
+
+  @Override
+  public void refreshColumnLayout() {
     restoreInitialPinnedColumns();
-    myResultView.restoreColumnsOrder(expectedToModel);
+    applyColumnsDisplayOrder();
     restoreColumnWidths();
     updateFrozenColumns();
   }
 
-  /**
-   * Restores persisted pin state into the model. Unions the persisted pins on every {@link #restoreColumnsOrder()}
-   * (so pins survive columns arriving in several batches) until the user changes pins, after which it is a no-op so
-   * in-session unpins are not overridden.
-   */
+  /** Restores saved pins as columns arrive, until the user changes the pins. */
   private void restoreInitialPinnedColumns() {
     if (myUserChangedPinState) return;
     GridModel<GridRow, GridColumn> model = getDataModel(DATA_WITH_MUTATIONS);
@@ -736,6 +762,19 @@ public class TableResultPanel extends UserDataHolderBase
   @Override
   public boolean pinnedColumnsFit(@NotNull ModelIndexSet<GridColumn> columns) {
     return columnsFit(myColumnPinModel.pinAll(columns.asIterable()));
+  }
+
+  @Override
+  public @NotNull Set<ModelIndex<GridColumn>> columnsThatCanTogglePin() {
+    Set<ModelIndex<GridColumn>> result = new HashSet<>(myColumnPinModel.pinnedColumns());
+    if (!(myResultView instanceof TableResultView view)) return result;
+    for (int modelIndex : view.columnsThatCanBePinned(myColumnPinModel.pinnedColumns())) result.add(ModelIndex.forColumn(this, modelIndex));
+    if (view.canFitPinnedColumns(myColumnPinModel.pinnedColumns())) {
+      for (var column : getDataModel(DATA_WITH_MUTATIONS).getColumnIndices().asIterable()) {
+        if (!isColumnEnabled(column)) result.add(column);
+      }
+    }
+    return result;
   }
 
   /**
@@ -894,6 +933,10 @@ public class TableResultPanel extends UserDataHolderBase
   public void afterLastRowAdded() {
     clearAllColumnsDisplayTypesAllowableCache();
     myResultView.afterLastRowAdded();
+    if (restorePendingColumnsOrder()) {
+      refreshColumnLayout();
+      fireColumnOrderChanged();
+    }
     ActivityTracker.getInstance().inc();
   }
 
@@ -1210,6 +1253,98 @@ public class TableResultPanel extends UserDataHolderBase
       }
     }
     return myResultView.isViewModified();
+  }
+
+  @Override
+  public void restoreNaturalColumnsOrder() {
+    changeColumnsDisplayOrder(naturalColumnsOrder());
+  }
+
+  @Override
+  public @NotNull List<ModelIndex<GridColumn>> getColumnsDisplayOrder() {
+    return myColumnsDisplayOrder.reconcile(naturalColumnsOrder());
+  }
+
+  /** Applies the user order and reports a column order change. */
+  private void changeColumnsDisplayOrder(@NotNull List<ModelIndex<GridColumn>> order) {
+    cancelPendingColumnsOrderRestore();
+    myColumnsDisplayOrder.set(order, naturalColumnsOrder());
+    applyColumnsDisplayOrder();
+    updateFrozenColumns();
+    fireColumnOrderChanged();
+  }
+
+  private void cancelPendingColumnsOrderRestore() {
+    mySavedColumnsOrderPendingRestore = false;
+  }
+
+  private void fireColumnOrderChanged() {
+    myEventDispatcher.getMulticaster().onColumnOrderChanged(this);
+  }
+
+  private @NotNull List<ModelIndex<GridColumn>> naturalColumnsOrder() {
+    return getDataModel(DATA_WITH_MUTATIONS).getColumnIndices().asList();
+  }
+
+  @Override
+  public boolean applyColumnsDisplayOrder(@NotNull ResultView view) {
+    if (view != myResultView || view.isTransposed()) return false;
+    runWithIgnoreSelectionChanges(this::applyColumnsDisplayOrder);
+    return true;
+  }
+
+  private void applyColumnsDisplayOrder() {
+    if (myResultView == null || myResultView.isTransposed()) return;
+    Map<Integer, ModelIndex<GridColumn>> expectedToModel = new LinkedHashMap<>();
+    int expectedPos = 0;
+    for (var columnIdx : getColumnsDisplayOrder()) {
+      if (isColumnEnabled(columnIdx) && columnIdx.toView(this).asInteger() >= 0) expectedToModel.put(expectedPos++, columnIdx);
+    }
+    boolean previous = myApplyingColumnsDisplayOrder;
+    myApplyingColumnsDisplayOrder = true;
+    try {
+      myResultView.restoreColumnsOrder(expectedToModel);
+    }
+    finally {
+      myApplyingColumnsDisplayOrder = previous;
+    }
+  }
+
+  /** Checks whether a column command can move a column within its pin group in the current view. */
+  @Override
+  public boolean canMoveColumnInDisplayOrder(@NotNull ModelIndex<GridColumn> column, @NotNull ModelIndex<GridColumn> target) {
+    if (!(myResultView instanceof TableResultView) || myResultView.isTransposed() || GridUtil.getDocumentDataHookUp(this) != null) {
+      return false;
+    }
+    if (!column.isValid(this) || !target.isValid(this) || isColumnPinned(column) != isColumnPinned(target)) return false;
+    var model = getDataModel(DATA_WITH_MUTATIONS);
+    for (var index : List.of(column, target)) {
+      if (model.getColumn(index) instanceof HierarchicalGridColumn nested && !nested.isTopLevelColumn()) return false;
+    }
+    return true;
+  }
+
+  @Override
+  public void moveColumnInDisplayOrder(@NotNull ModelIndex<GridColumn> column, @NotNull ModelIndex<GridColumn> target, boolean before) {
+    if (!canMoveColumnInDisplayOrder(column, target) || column.equals(target)) return;
+    var order = myColumnsDisplayOrder.moved(naturalColumnsOrder(), column, target, before);
+    if (order != null) changeColumnsDisplayOrder(order);
+  }
+
+  @Override
+  public void columnMovedInView(@NotNull ResultView view, @NotNull ColumnMove move) {
+    if (view != myResultView || view.isTransposed() || myApplyingColumnsDisplayOrder) return;
+    // The view has already moved the column, so the order follows it without arranging the view again.
+    var order = myColumnsDisplayOrder.moved(naturalColumnsOrder(), move.getColumn(), move.getTarget(), move.getBefore());
+    if (order == null) return;
+    cancelPendingColumnsOrderRestore();
+    myColumnsDisplayOrder.adopt(order);
+    fireColumnOrderChanged();
+  }
+
+  @Override
+  public boolean isColumnsOrderModified() {
+    return !getColumnsDisplayOrder().equals(naturalColumnsOrder());
   }
 
   @Override
@@ -2039,6 +2174,41 @@ public class TableResultPanel extends UserDataHolderBase
     }
   }
 
+  @Override
+  public final void setColumnsEnabled(@NotNull List<ModelIndex<GridColumn>> columns, boolean state) {
+    var model = getDataModel(DATA_WITH_MUTATIONS);
+    var changedColumns = new LinkedHashMap<ModelIndex<GridColumn>, GridColumn>();
+    for (var columnIdx : columns) {
+      var column = model.getColumn(columnIdx);
+      if (column instanceof HierarchicalGridColumn) {
+        DataGrid.super.setColumnsEnabled(columns, state);
+        return;
+      }
+      if (column != null && isColumnEnabled(column) != state) changedColumns.put(columnIdx, column);
+    }
+    if (changedColumns.isEmpty()) return;
+
+    var selection = getSelectionModel().store();
+    for (var entry : changedColumns.entrySet()) {
+      var columnIdx = entry.getKey();
+      var column = entry.getValue();
+      if (!state) rememberCurrentColumnWidth(columnIdx, column);
+      storeOrRestoreSelection(columnIdx, state, selection);
+      myColumnAttributes.setEnabled(column, state);
+    }
+    myResultView.setColumnsEnabled(new ArrayList<>(changedColumns.keySet()), state);
+    runWithIgnoreSelectionChanges(() -> getSelectionModel().restore(selection));
+
+    for (var entry : changedColumns.entrySet()) {
+      afterColumnVisibilityChanged(entry.getValue(), state);
+      if (state && myResultView instanceof ResultViewWithColumns resultView) {
+        restoreColumnWidth(resultView, entry.getKey(), entry.getValue());
+      }
+    }
+    if (hasPinnedColumns()) updateFrozenColumns();
+    fireContentChanged(null);
+  }
+
   /** Columns whose visibility changes together in response to a single request. */
   protected GridColumn @NotNull [] getColumnsAffectedByVisibilityChange(@NotNull GridColumn column, boolean state) {
     return new GridColumn[]{column};
@@ -2245,6 +2415,8 @@ public class TableResultPanel extends UserDataHolderBase
   private void resetOrderingAndVisibility() {
     myColumnAttributes.resetOrdering();
     myColumnAttributes.resetVisibility();
+    cancelPendingColumnsOrderRestore();
+    myColumnsDisplayOrder.reset();
     updateSortKeysFromColumnAttributes();
     updateDataOrderingIfNeeded();
     myResultView.orderingAndVisibilityChanged();

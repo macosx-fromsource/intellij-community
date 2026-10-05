@@ -6,11 +6,11 @@ import com.intellij.openapi.diagnostic.fileLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.platform.ide.productMode.IdeProductMode
+import com.intellij.platform.productMode.ProductMode
 import com.intellij.platform.recentFiles.shared.FileSwitcherApi
 import com.intellij.platform.recentFiles.shared.RecentFileKind
 import com.intellij.platform.recentFiles.shared.RecentFilesCoroutineScopeProvider
 import com.intellij.platform.rpc.lite.LiteRemoteApiProviderService
-import com.intellij.platform.runtime.product.ProductMode
 import com.intellij.platform.util.coroutines.childScope
 import fleet.rpc.client.durable
 import fleet.rpc.remoteApiDescriptor
@@ -44,8 +44,7 @@ internal class RecentFileModelSynchronizer : ProjectActivity {
     if (IdeProductMode.getInstance().currentMode != ProductMode.LIGHT) return
 
     // TODO IJPL-252054 watch the product mode of the applied plugin set instead of the connection, once the platform
-    //  publishes that mode as a flow. `PluginManagerCore.currentInitContextFlow` on the branch
-    //  `khbminus/light-2/monolith-product-mode` is that flow, and it also covers a mode change of any other origin.
+    //  publishes that mode as a flow.
     coroutineScope {
       val subscriptions = launch { synchronizeWithTheModel(frontendRecentFilesModel, project) }
       LiteRemoteApiProviderService.awaitConnectionAndResolve(remoteApiDescriptor<FileSwitcherApi>())

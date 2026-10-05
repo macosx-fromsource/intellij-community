@@ -3,9 +3,6 @@
 
 package org.jetbrains.intellij.build.impl
 
-import io.opentelemetry.api.common.AttributeKey
-import io.opentelemetry.api.common.Attributes
-import io.opentelemetry.api.trace.Span
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentListOf
@@ -23,9 +20,9 @@ import org.jetbrains.intellij.build.OsFamily
 import org.jetbrains.intellij.build.PluginBundlingRestrictions
 import org.jetbrains.intellij.build.CompatibleBuildRange
 import org.jetbrains.intellij.build.dev.DevPluginLayoutAssetOwner
+import org.jetbrains.intellij.build.dev.DevPluginLayoutAssetSource
 import org.jetbrains.intellij.build.dev.DevPluginLayoutAssetSpec
 import org.jetbrains.intellij.build.impl.BuildUtils.checkedReplace
-import java.nio.file.Files
 import java.nio.file.Path
 
 typealias ResourceGenerator = (Path, BuildContext) -> Unit
@@ -118,6 +115,14 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
     private set
 
   var scrambleClasspathFilter: (BuildContext, Path) -> Boolean = { _, _ -> true }
+
+  /**
+   * The checkout directories of modules that a dev-distribution target of another layout reads, see
+   * [PluginLayoutSpec.withDevDistSourceTree]. Production packs none of them.
+   */
+  @Internal
+  var devDistSourceTrees: PersistentList<DevPluginLayoutAssetSource.ModuleDirectory> = persistentListOf()
+    private set
 
   /**
    * See [org.jetbrains.intellij.build.impl.PluginLayout.PluginLayoutSpec.zkmScriptStub]
@@ -215,12 +220,23 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
     private set
 
   /**
-   * The platform resource generators. The dev-distribution generator plans each one from its [DevPluginLayoutAssetSpec].
-   * [DeclaredPluginLayoutResourceGenerator.run] states where each one runs. See [PluginLayoutBuilder.withGeneratedPlatformResources].
+   * The platform resource generators. The dev-distribution generator plans each one from its [DevPluginLayoutAssetSpec],
+   * and the spec states whether the classic dev build runs it. See [PluginLayoutBuilder.withGeneratedPlatformResources].
    */
   @ApiStatus.Internal
   var platformResourceGenerators: PersistentMap<SupportedDistribution, PersistentList<DeclaredPluginLayoutResourceGenerator>> = persistentMapOf()
     private set
+
+  /** The resource generators that a build runs. [classicDev] is true for the classic dev build, see [selectForBuild]. */
+  internal fun resourceGeneratorsFor(classicDev: Boolean): List<ResourceGenerator> = selectForBuild(resourceGenerators, classicDev)
+
+  /** The platform resource generators of [platform] that a build runs, see [selectForBuild]. */
+  internal fun platformResourceGeneratorsFor(platform: SupportedDistribution, classicDev: Boolean): List<ResourceGenerator> {
+    return selectForBuild(platformResourceGenerators.get(platform) ?: persistentListOf(), classicDev)
+  }
+
+  /** The custom assets that a build packs, see [selectForBuild]. */
+  internal fun customAssetsFor(classicDev: Boolean): List<CustomAssetDescriptor> = selectForBuild(customAssets, classicDev)
 
   @ApiStatus.Internal
   var executablePatterns: PersistentMap<SupportedDistribution, PersistentList<String>> = persistentMapOf()
@@ -279,12 +295,14 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
     }
 
     // we cannot break compatibility / risk to change the existing plugin dir name
+    @Deprecated("A new plugin takes the directory name of its main module. Use `pluginAuto`.")
     @Suppress("DEPRECATION")
     fun pluginAutoWithCustomDirName(mainModuleName: String, body: (PluginLayoutSpec) -> Unit): PluginLayout {
       return plugin(mainModuleName = mainModuleName, auto = true, body = body)
     }
 
     // we cannot break compatibility / risk to change the existing plugin dir name
+    @Deprecated("A new plugin takes the directory name of its main module. Use `pluginAuto`.")
     @Suppress("DEPRECATION")
     fun pluginAutoWithCustomDirName(mainModuleName: String, dirName: String, body: (PluginLayoutSpec) -> Unit): PluginLayout {
       return plugin(mainModuleName, auto = true) { spec ->
@@ -401,14 +419,21 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
     /**
      * A resource generator. The dev-distribution generator plans it from [layoutAssetSpec], and
      * [DevPluginLayoutAssetSpec.OMITTED] states that the dev distribution leaves its files out.
-     * [run] states whether classic dev mode also runs [generator].
+     * [DevPluginLayoutAssetSpec.runsInClassicDev] states whether the classic dev build also runs [generator].
      */
-    fun withGeneratedResources(
-      layoutAssetSpec: DevPluginLayoutAssetSpec,
-      run: DeclaredResourceGeneratorRun = DeclaredResourceGeneratorRun.BUNDLED_AND_DEV,
-      generator: ResourceGenerator,
-    ) {
-      layout.resourceGenerators += DeclaredPluginLayoutResourceGenerator(layoutAssetSpec, generator, run)
+    fun withGeneratedResources(layoutAssetSpec: DevPluginLayoutAssetSpec, generator: ResourceGenerator) {
+      layout.resourceGenerators += DeclaredPluginLayoutResourceGenerator(layoutAssetSpec, generator)
+    }
+
+    /**
+     * Declares the checkout directory [tree] as a source tree that a dev-distribution target of another layout reads.
+     * Its path is relative to the first content root of the module. The dev-distribution generator declares the
+     * filegroup of the directory in the package of the module. Production packs nothing for it.
+     */
+    @Internal
+    fun withDevDistSourceTree(tree: DevPluginLayoutAssetSource.ModuleDirectory) {
+      require(tree.exclusions.isEmpty()) { "A dev-distribution source tree states no exclusions: $tree" }
+      layout.devDistSourceTrees += tree
     }
 
     /** Copies a module resource tree through the same declaration in production and development. */
@@ -416,10 +441,10 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
       moduleName: String,
       resourcePath: String,
       relativeOutputPath: String,
-      excludes: List<String> = emptyList(),
-      directoryExcludes: List<String> = emptyList(),
+      excludedFiles: List<String> = emptyList(),
+      excludedDirectories: List<String> = emptyList(),
     ) {
-      layout.resourceGenerators += ModuleResourceTree(moduleName, resourcePath, relativeOutputPath, excludes, directoryExcludes)
+      layout.resourceGenerators += ModuleResourceTree(moduleName, resourcePath, relativeOutputPath, excludedFiles, excludedDirectories)
     }
 
     /**
@@ -456,15 +481,15 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
     /**
      * A platform resource generator. The dev-distribution generator plans it from [layoutAssetSpec], and
      * [DevPluginLayoutAssetSpec.OMITTED] states that the dev distribution leaves its files out.
-     * [run] states whether classic dev mode also runs [generator]. See [platformResourceGenerators].
+     * [DevPluginLayoutAssetSpec.runsInClassicDev] states whether the classic dev build also runs [generator].
+     * See [platformResourceGenerators].
      */
     fun withGeneratedPlatformResources(
       platform: SupportedDistribution,
       layoutAssetSpec: DevPluginLayoutAssetSpec,
-      run: DeclaredResourceGeneratorRun = DeclaredResourceGeneratorRun.BUNDLED_AND_DEV,
       generator: ResourceGenerator,
     ) {
-      val declared = DeclaredPluginLayoutResourceGenerator(layoutAssetSpec, generator, run)
+      val declared = DeclaredPluginLayoutResourceGenerator(layoutAssetSpec, generator)
       layout.platformResourceGenerators += platform to (layout.platformResourceGenerators.get(platform) ?: persistentListOf()) + declared
     }
 
@@ -519,6 +544,7 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
        * (with stripped `intellij` prefix and dots replaced by dashes).
        * **Don't set this property for new plugins**; it is temporarily added to keep the layout of old plugins unchanged.
        */
+      @Deprecated("A new plugin takes the directory name of its main module.")
       set(value) {
         field = value
         directoryNameSetExplicitly = true
@@ -551,23 +577,6 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
       set(value) {
         layout.mainJarName = value
       }
-
-    /**
-     * @param resourcePath path to a resource file or directory relative to `moduleName` module content root
-     * @param relativeOutputFile target path relative to the plugin root directory
-     *
-     * The path stays inside the Bazel package of the module, the directory that holds its `BUILD.bazel`. It uses no `..`
-     * and crosses no nested package. The dev-distribution generator derives `//<package>:dev_dist_resources` from the
-     * declaration and refuses a layout that breaks the rule. Declare a resource against the module whose package holds it.
-     */
-    fun withResourceArchiveFromModule(moduleName: String, resourcePath: String, relativeOutputFile: String) {
-      layout.resourcePaths = layout.resourcePaths.adding(ModuleResourceData(
-        moduleName = moduleName,
-        resourcePath = resourcePath,
-        relativeOutputPath = relativeOutputFile,
-        packToZip = true,
-      ))
-    }
 
     /**
      * By default, a version of a plugin is equal to [org.jetbrains.intellij.build.BuildContext.pluginBuildNumber].
@@ -680,49 +689,6 @@ class PluginLayout(val mainModule: String, @Internal @JvmField val auto: Boolean
      */
     fun scrambleSkip(jar: String, classFilter: String) {
       layout.scrambleSkipStatements += Pair(jar, classFilter)
-    }
-
-    /**
-     * Concatenates `META-INF/services` files with the same name from different modules together.
-     * By default, the first service file silently wins.
-     *
-     * The dev distribution omits the merge. Its jar writer keeps the first service file of a name and reports the
-     * collision, which is the default this method replaces.
-     */
-    fun mergeServiceFiles() {
-      layout.withPatch(DeclaredPluginLayoutPatcher(DevPluginLayoutAssetSpec.OMITTED) { patcher, _, context ->
-        val discoveredServiceFiles = LinkedHashMap<String, LinkedHashSet<Pair<String, Path>>>()
-
-        for (moduleName in layout.includedModules.asSequence().filter { it.relativeOutputFile == layout.mainJarName }.map { it.moduleName }.distinct()) {
-          val path = context.findFileInModuleSources(moduleName, "META-INF/services") ?: continue
-          Files.newDirectoryStream(path).use { dirStream ->
-            dirStream
-              .asSequence()
-              .filter { Files.isRegularFile(it) }
-              .forEach { serviceFile ->
-                discoveredServiceFiles.computeIfAbsent(serviceFile.fileName.toString()) { LinkedHashSet() }
-                  .add(Pair(moduleName, serviceFile))
-              }
-          }
-        }
-
-        for ((serviceFileName, serviceFiles) in discoveredServiceFiles) {
-          if (serviceFiles.size <= 1) {
-            continue
-          }
-
-          val content = serviceFiles.joinToString(separator = "\n") { Files.readString(it.second) }
-          Span.current().addEvent("merge service file)", Attributes.of(
-            AttributeKey.stringKey("serviceFile"), serviceFileName,
-            AttributeKey.stringArrayKey("serviceFiles"), serviceFiles.map { it.first },
-          ))
-          patcher.patchModuleOutput(
-            moduleName = serviceFiles.first().first, // the first one wins
-            path = "META-INF/services/$serviceFileName",
-            content = content,
-          )
-        }
-      })
     }
 
     /**

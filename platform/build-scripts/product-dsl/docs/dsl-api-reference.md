@@ -196,7 +196,7 @@ discovered from this module.
 
 **Example:**
 ```kotlin
-requiredModule("intellij.libraries.junit5")
+requiredModule("intellij.libraries.junit6")
 ```
 
 ---
@@ -322,7 +322,7 @@ fun moduleSet(
 
 | Parameter | Description |
 |-----------|-------------|
-| `name` | Identifier for the set (e.g., `"vcs"`, `"essential.minimal"`) |
+| `name` | Identifier for the set (e.g., `"vcs"`, `"split.core"`) |
 | `alias` | Optional module alias for `<module value="..."/>` |
 | `outputModule` | Module whose resources dir receives generated XML |
 | `selfContained` | If true, validates in isolation (all deps must be within set) |

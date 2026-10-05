@@ -35,6 +35,8 @@
     <module name="intellij.platform.codeStyle"/>
     <module name="intellij.platform.codeStyle.impl"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
+    <module name="intellij.platform.consoleView.impl"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -151,6 +153,7 @@
                             implementation="com.jetbrains.python.requirements.widget.PyDependenciesFileStatusBarWidgetFactory"
                             order="after CodeStyleStatusBarWidget, after EvoPySdkStatusBarWidget, after pythonInterpreterWidget, after git, after hg, after JSONSchemaSelector, before ReadOnlyAttribute"/>
 
+    <registryKey defaultValue="true" description="Support eel for local SDK" key="python.eel.native"/>
     <registryKey defaultValue="20" description="How often conda environments cache must be refreshed (seconds)"
                  key="python.conda.envs.refresh.seconds" restartRequired="true"/>
     <registryKey defaultValue="60" description="TTL of conda environments cache (seconds)" key="python.conda.envs.cache.ttl.seconds"
@@ -159,8 +162,12 @@
     <registryKey defaultValue="true"
                  description="Show non-python modules(different type, no python facet) in Python configurable when they have base dir"
                  key="python.show.modules.with.base.dir" restartRequired="true"/>
-    <registryKey defaultValue="false" description="Master switch for the new Python formatter defaults (PY-85946). When off, the feature is fully disabled: classic formatting everywhere, no migration, no balloon." key="python.formatter.new.defaults.enabled" restartRequired="true"/>
-    <registryKey defaultValue="false" description="Whether this installation uses the new Python formatter defaults (PY-85946). Set automatically per installation (on for new installs, off for upgrades until the user switches); requires the master switch python.formatter.new.defaults.enabled." key="python.formatter.new.defaults" restartRequired="true"/>
+    <registryKey defaultValue="false"
+                 description="Master switch for the new Python formatter defaults (PY-85946). When off, the feature is fully disabled: classic formatting everywhere, no migration, no balloon."
+                 key="python.formatter.new.defaults.enabled" restartRequired="true"/>
+    <registryKey defaultValue="false"
+                 description="Whether this installation uses the new Python formatter defaults (PY-85946). Set automatically per installation (on for new installs, off for upgrades until the user switches); requires the master switch python.formatter.new.defaults.enabled."
+                 key="python.formatter.new.defaults" restartRequired="true"/>
     <fileType name="PyTyped"
               implementationClass="com.jetbrains.python.codeInsight.typing.PyTypedFileType"
               fieldName="INSTANCE"
@@ -419,7 +426,8 @@
     <registryKey key="python.test.autodetect.new.run.config" defaultValue="true" description="Python test autodetect configuration new UI"/>
     <registryKey key="python.run.doctest.via.pytest.configuration" defaultValue="true" description="Run doctest via pytest configuration"/>
     <registryKey key="run.with.py.tool" defaultValue="true" description="Run with Python tool"/>
-    <registryKey key="python.packaging.install.dialog.command.mode" defaultValue="false" description="Enable command mode in the Python Packages install dialog (type a CLI command like `pip ...` to execute it)"/>
+    <registryKey key="python.packaging.install.dialog.command.mode" defaultValue="false"
+                 description="Enable command mode in the Python Packages install dialog (type a CLI command like `pip ...` to execute it)"/>
 
     <configurationType implementation="com.jetbrains.python.testing.PythonTestConfigurationType"/>
     <configurationType implementation="com.jetbrains.python.testing.tox.PyToxConfigurationType"/>
@@ -431,6 +439,8 @@
     <advancedSetting id="python.pytest.show_summary" default="false" groupKey="group.advanced.settings.python"/>
     <advancedSetting id="python.code.vision.usages.limit" default="500" groupKey="group.advanced.settings.python"/>
     <advancedSetting id="python.debugger.attach.timeout" default="20000" groupKey="group.advanced.settings.python"/>
+    <advancedSetting id="python.type.ignore.suppress.include.code" default="true" groupKey="group.advanced.settings.python"/>
+    <advancedSetting id="python.type.ignore.suppress.pycharm.namespace" default="false" groupKey="group.advanced.settings.python"/>
     <runLineMarkerContributor language="Python"
                               implementationClass="com.jetbrains.python.testing.PyTestLineMarkerContributor"/>
     <toolWindow id="Python Console" anchor="right" icon="com.jetbrains.python.icons.PythonIcons.Python.PythonConsoleToolWindow"
@@ -445,7 +455,8 @@
     <callHierarchyProvider language="Python" implementationClass="com.jetbrains.python.hierarchy.call.PyCallHierarchyProvider"/>
     <highlightUsagesHandlerFactory implementation="com.jetbrains.python.codeInsight.highlighting.PyHighlightExitPointsHandlerFactory"/>
     <heavyBracesHighlighter implementation="com.jetbrains.python.codeInsight.highlighting.PyControlFlowKeywordBraceHighlighter"/>
-    <codeBlockSupportHandler language="Python" implementationClass="com.jetbrains.python.codeInsight.highlighting.PyControlFlowKeywordCodeBlockSupportHandler"/>
+    <codeBlockSupportHandler language="Python"
+                             implementationClass="com.jetbrains.python.codeInsight.highlighting.PyControlFlowKeywordCodeBlockSupportHandler"/>
 
     <testFinder implementation="com.jetbrains.python.codeInsight.testIntegration.PyTestFinder"/>
     <testCreator language="Python" implementationClass="com.jetbrains.python.codeInsight.testIntegration.PyTestCreator"/>
@@ -512,6 +523,14 @@
                      groupPathKey="INSP.GROUP.python" groupKey="INSP.GROUP.python.type.hinting"
                      enabledByDefault="false" level="WARNING"
                      implementationClass="com.jetbrains.python.inspections.typeignore.PyTypeIgnoreWithoutCodeInspection"/>
+    <localInspection language="Python" shortName="PyUnknownIgnoreCodeInspection" suppressId="PyUnknownIgnoreCode"
+                     bundle="messages.PyPsiBundle" key="INSP.NAME.unknown.ignore.code"
+                     groupPathKey="INSP.GROUP.python" groupKey="INSP.GROUP.python.type.hinting"
+                     enabledByDefault="true" level="WARNING"
+                     implementationClass="com.jetbrains.python.inspections.typeignore.PyUnknownIgnoreCodeInspection"/>
+    <completion.contributor language="Python" order="first"
+                            implementationClass="com.jetbrains.python.inspections.typeignore.PyIgnoreCodeCompletionContributor"/>
+    <typedHandler implementation="com.jetbrains.python.inspections.typeignore.PyIgnoreCodeTypedHandler"/>
     <localInspection language="Python" shortName="PyRelativeImportInspection" suppressId="PyPackages"
                      bundle="messages.PyPsiBundle" key="INSP.NAME.relative.import"
                      groupPathKey="INSP.GROUP.python" groupKey="INSP.GROUP.python.general"
@@ -639,21 +658,22 @@
     <psi.referenceContributor implementation="com.jetbrains.python.testing.pyMonkeypatch.PyMonkeypatchReferenceContributor"
                               language="Python"/>
 
-    <applicationConfigurable groupId="tools"
+    <applicationConfigurable groupId="python.group.settings"
                              instance="com.jetbrains.python.documentation.PythonDocumentationConfigurable"
                              id="com.jetbrains.python.documentation.PythonDocumentationConfigurable"
-                             key="external.documentation.python.plugin"/> <!--id is used in PyCharmCorePluginConfigurator-->
+                             key="external.documentation.configurable.name"/> <!--id is used in PyCharmCorePluginConfigurator-->
 
     <applicationConfigurable groupId="reference.idesettings.debugger.python"
                              id="debugger.dataViews.python.type.renderers"
                              instance="com.jetbrains.python.debugger.variablesview.usertyperenderers.PyUserTypeRenderersConfigurable"
                              key="configurable.PyUserTypeRenderersConfigurable.display.name"/> <!--id is used in PyCharmCorePluginConfigurator-->
 
-    <projectConfigurable groupId="tools"
+    <projectConfigurable groupId="python.tools.group.settings"
                          id="com.jetbrains.python.configuration.PyIntegratedToolsModulesConfigurable"
                          instance="com.jetbrains.python.configuration.PyIntegratedToolsModulesConfigurable"
                          bundle="messages.PyBundle"
-                         key="configurable.PyIntegratedToolsModulesConfigurable.display.name"/> <!--id is used in PyCharmProjectConfigurableStartupActivity-->
+                         key="configurable.PyIntegratedToolsModulesConfigurable.display.name"
+                         groupWeight="20"/>
 
     <search.optionContributor implementation="com.jetbrains.python.PySearchableOptionContributor"/>
 
@@ -753,7 +773,8 @@
     <registryKey defaultValue="false" description="Save preferences what type of data view will be used: the old data view or the new one."
                  restartRequired="false" key="python.data.view.allow.save.preferences.community.vs.powerful.data.view"/>
 
-    <registryKey defaultValue="64" description="Minimum scroll-bar distance (px) from the bottom that triggers loading the next page of search results in the Install Package dialog."
+    <registryKey defaultValue="64"
+                 description="Minimum scroll-bar distance (px) from the bottom that triggers loading the next page of search results in the Install Package dialog."
                  restartRequired="false" key="python.packaging.install.dialog.results.list.load.more.threshold.px"/>
 
     <!-- typing -->
@@ -1064,10 +1085,6 @@
                     interface="com.jetbrains.python.configuration.PyIntegratedToolsTestPanelCustomizer"
                     dynamic="true"/>
 
-    <extensionPoint qualifiedName="Pythonid.PythonPackageRequiresExtractorProvider"
-                    interface="com.jetbrains.python.packaging.packageRequirements.PythonPackageRequiresExtractorProvider"
-                    dynamic="true"/>
-
     <extensionPoint qualifiedName="Pythonid.pyRunToolProvider"
                     interface="com.jetbrains.python.run.features.PyRunToolProvider"
                     dynamic="true"/>
@@ -1145,7 +1162,7 @@
 
     <!-- PyDocstring -->
     <visitorFilter language="Doctest" implementationClass="com.jetbrains.python.documentation.PyDoctestVisitorFilter"/>
-    <visitorFilter language="Python" implementationClass="com.jetbrains.python.documentation.doctest.PyDocstringCodeBlockVisitorFilter"/>
+    <visitorFilter language="PythonDocstringCodeBlock" implementationClass="com.jetbrains.python.documentation.PyDocstringCodeBlockVisitorFilter"/>
 
     <!-- Console -->
     <visitorFilter language="Python" implementationClass="com.jetbrains.python.console.ConsoleVisitorFilter"/>
@@ -1200,8 +1217,6 @@
 
     <pyDependenciesFileProvider implementation="com.jetbrains.python.sdk.pipenv.PipfileFileProvider"/>
 
-    <PythonPackageRequiresExtractorProvider implementation="com.jetbrains.python.poetry.packaging.PoetryRequiresExtractorProvider"/>
-    <PythonPackageRequiresExtractorProvider implementation="com.jetbrains.python.uv.packaging.UvPackageRequiresExtractorProvider"/>
 
     <systemPythonProvider implementation="com.jetbrains.python.sdk.uv.UvSystemPythonProvider"/>
 
@@ -1232,7 +1247,7 @@
 
   <actions resource-bundle="messages.PyBundle">
     <action id="PyInstallPackageAction"
-              class="com.jetbrains.python.packaging.toolwindow.actions.PyInstallPackageAction"
+            class="com.jetbrains.python.packaging.toolwindow.actions.PyInstallPackageAction"
             icon="AllIcons.ToolbarDecorator.Export">
       <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift O"/>
     </action>

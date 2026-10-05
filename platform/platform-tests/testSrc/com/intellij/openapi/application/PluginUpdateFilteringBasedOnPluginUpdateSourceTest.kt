@@ -7,9 +7,12 @@ import com.intellij.openapi.updateSettings.impl.PluginUpdateSourceService
 import com.intellij.openapi.updateSettings.impl.UpdateCheckerFacade
 import com.intellij.openapi.updateSettings.impl.createNightlyAndMarketplacePluginUpdateSourceId
 import com.intellij.openapi.updateSettings.impl.createNightlyPluginUpdateSourceId
+import com.intellij.openapi.updateSettings.impl.FORCE_INTERNAL_USER_FOR_TESTS_IN_PLUGIN_UPDATE_SOURCES
 import com.intellij.testFramework.PlatformTestUtil.withSystemProperty
+import com.intellij.testFramework.TestModeFlags
 import com.intellij.testFramework.junit5.RegistryKey
 import com.intellij.testFramework.junit5.TestApplication
+import com.intellij.testFramework.junit5.http.url
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
@@ -144,6 +147,7 @@ internal class PluginUpdateFilteringBasedOnPluginUpdateSourceTest : UpdateChecke
     assertEquals(setOf(UPDATEABLE_BUNDLED_JETBRAINS, UPDATEABLE_BUNDLED_NOT_JETBRAINS), marketplaceRequestedIds)
   }
 
+  @RegistryKey(key = "platform.disable.plugin.update.sources.ui.and.filtering.for.internal.users", value = "false")
   @Test
   fun `plugins from nightly servers are updated from current nightly servers, and from Marketplace if added to source`() {
     val oldNightlyServer = createTestServer("old-nightly-server")
@@ -170,18 +174,46 @@ internal class PluginUpdateFilteringBasedOnPluginUpdateSourceTest : UpdateChecke
       .setPluginUpdateSourceId(PluginId.getId(NIGHTLY_SOURCE_PLUGIN), createNightlyPluginUpdateSourceId())
 
     installedPluginsFacade.setHosts(listOf(oldNightlyServer.url, firstNightlyServer.url, secondNightlyServer.url))
-    withSystemProperty<RuntimeException>(CUSTOM_BUILT_IN_PLUGIN_REPOSITORY_PROPERTY,
-                                         listOf(firstNightlyServer.url, secondNightlyServer.url).joinToString(",")) {
-      val internalResult = UpdateCheckerFacade.getInstance().checkInstalledPluginUpdates()
-      assertEquals(emptyMap<String?, Exception>(), internalResult.errors)
-      val result = internalResult.pluginUpdates
+    TestModeFlags.runWithFlag(FORCE_INTERNAL_USER_FOR_TESTS_IN_PLUGIN_UPDATE_SOURCES, true) {
+      withSystemProperty<RuntimeException>(CUSTOM_BUILT_IN_PLUGIN_REPOSITORY_PROPERTY,
+                                           listOf(firstNightlyServer.url, secondNightlyServer.url).joinToString(",")) {
+        val internalResult = UpdateCheckerFacade.getInstance().checkInstalledPluginUpdates()
+        assertEquals(emptyMap<String?, Exception>(), internalResult.errors)
+        val result = internalResult.pluginUpdates
 
-      val updatesById = result.allEnabled.associateBy { it.id.idString }
-      assertEquals(setOf(NIGHTLY_AND_MARKETPLACE_SOURCE_PLUGIN, NIGHTLY_SOURCE_PLUGIN), updatesById.keys)
-      assertEquals("9.0", updatesById.getValue(NIGHTLY_AND_MARKETPLACE_SOURCE_PLUGIN).pluginVersion)
-      assertEquals("7.0", updatesById.getValue(NIGHTLY_SOURCE_PLUGIN).pluginVersion)
-      assertTrue(result.allDisabled.isEmpty())
+        val updatesById = result.allEnabled.associateBy { it.id.idString }
+        assertEquals(setOf(NIGHTLY_AND_MARKETPLACE_SOURCE_PLUGIN, NIGHTLY_SOURCE_PLUGIN), updatesById.keys)
+        assertEquals("9.0", updatesById.getValue(NIGHTLY_AND_MARKETPLACE_SOURCE_PLUGIN).pluginVersion)
+        assertEquals("7.0", updatesById.getValue(NIGHTLY_SOURCE_PLUGIN).pluginVersion)
+        assertTrue(result.allDisabled.isEmpty())
+      }
     }
+  }
+
+  @Test
+  fun `plugins with Marketplace source are updated from Marketplace custom repositories`() {
+    val marketplaceCustomServer = Server(server, "plugins/beta/9185")
+    replaceMarketplaceChannelUrlService(server.url + "/plugins")
+
+    setInstalledPluginMocks(installedPlugin(MARKETPLACE_SOURCE_MARKETPLACE_CHANNEL_CUSTOM_REPOSITORY))
+    installedPluginsFacade.setHosts(listOf(marketplaceCustomServer.url))
+
+    setMarketplacePlugins(emptyList(), listOf(MARKETPLACE_SOURCE_MARKETPLACE_CHANNEL_CUSTOM_REPOSITORY))
+    setCustomRepositoryPlugins(marketplaceCustomServer, listOf(
+      CustomRepositoryPlugin(MARKETPLACE_SOURCE_MARKETPLACE_CHANNEL_CUSTOM_REPOSITORY, "9.0"),
+    ))
+
+    setPluginUpdateSources(PluginUpdateSourceService.getInstance().createMarketplacePluginUpdateSourceId(),
+                           MARKETPLACE_SOURCE_MARKETPLACE_CHANNEL_CUSTOM_REPOSITORY)
+
+    val internalResult = UpdateCheckerFacade.getInstance().getPluginUpdates(
+      listOf(PluginId.getId(MARKETPLACE_SOURCE_MARKETPLACE_CHANNEL_CUSTOM_REPOSITORY))
+    )
+    assertEquals(emptyMap<String?, Exception>(), internalResult.errors)
+    val updatesById = internalResult.pluginUpdates.allEnabled.associateBy { it.id.idString }
+    assertEquals(setOf(MARKETPLACE_SOURCE_MARKETPLACE_CHANNEL_CUSTOM_REPOSITORY), updatesById.keys)
+    assertEquals("9.0", updatesById.getValue(MARKETPLACE_SOURCE_MARKETPLACE_CHANNEL_CUSTOM_REPOSITORY).pluginVersion)
+    assertTrue(internalResult.pluginUpdates.allDisabled.isEmpty())
   }
 
   private fun setMarketplacePlugins(plugins: List<RepositoryPluginMock>, knownPluginIds: Collection<String>) {
@@ -248,5 +280,6 @@ internal class PluginUpdateFilteringBasedOnPluginUpdateSourceTest : UpdateChecke
 
     const val NIGHTLY_AND_MARKETPLACE_SOURCE_PLUGIN = "test.nightly.and.marketplace.source"
     const val NIGHTLY_SOURCE_PLUGIN = "test.nightly.source"
+    const val MARKETPLACE_SOURCE_MARKETPLACE_CHANNEL_CUSTOM_REPOSITORY = "test.marketplace.source.marketplace.channel.custom.repository"
   }
 }

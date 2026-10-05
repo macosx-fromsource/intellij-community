@@ -6,8 +6,12 @@ load("@rules_kotlin//kotlin/internal:defs.bzl", _KtJvmInfo = "KtJvmInfo")
 load(":content_module_jar.bzl", "ContentModuleJarInfo", "content_module_jar", "content_module_jar_target_name")
 load(":dev_dist_content.bzl", "DevDistContentInfo")
 load(":dev_dist_plugin_descriptor.bzl", "DevDistPluginDescriptorInfo", "DevDistProductInfo", "dev_dist_plugin_descriptor", "dev_dist_plugin_descriptor_target_name", "dev_dist_product_info", "dev_dist_product_info_transition")
+load(":dev_plugin.bzl", "DevDistRuntimeLayoutInfo")
 load(":dev_plugin_remainder.bzl", "DevPluginArtifactCatalogueInfo", "DevPluginGraphInfo", "DevPluginRemainderInfo", "dev_dist_complex_plugin", "dev_dist_complex_plugin_variant", "dev_plugin_artifact_catalogue", "dev_plugin_component", "dev_plugin_file_graph", "dev_plugin_remainder_from_plan", "platform_values_error")
 load(":intellij_dev_dist.bzl", "IntellijDevFragmentInfo")
+
+# The application info of the fixture product, an EAP product without a release date.
+_FIXTURE_APPLICATION_INFO = Label("//platform/build-scripts/bazel-rules:testdata/ApplicationInfo.xml")
 
 _EMPTY_JAR = "PK\005\006" + ("\000" * 18)
 
@@ -67,17 +71,17 @@ _file = rule(
 
 def _product_scoped_file_impl(ctx):
     product = ctx.attr._product_info[DevDistProductInfo]
-    if product.release_date != ctx.attr.release_date or product.release_version != ctx.attr.release_version:
-        fail("expected product info, got %s/%s" % (product.release_date, product.release_version))
+    application_info = str(product.application_info.owner) if product.application_info != None else None
+    if application_info != ctx.attr.application_info:
+        fail("expected product info, got the application info %s" % application_info)
     output = ctx.actions.declare_file(ctx.label.name + ".xml")
-    ctx.actions.write(output, product.release_date + "/" + product.release_version + "\n")
+    ctx.actions.write(output, application_info + "\n")
     return [DefaultInfo(files = depset([output]))]
 
 _product_scoped_file = rule(
     implementation = _product_scoped_file_impl,
     attrs = {
-        "release_date": attr.string(mandatory = True),
-        "release_version": attr.string(mandatory = True),
+        "application_info": attr.string(mandatory = True, doc = "The label of the application info that the product states."),
         "_product_info": attr.label(
             default = Label("//build:dev_dist_product_info"),
             providers = [DevDistProductInfo],
@@ -384,7 +388,7 @@ _derived_remainder_test = analysistest.make(
 )
 
 def _remainder_from_plan_test_impl(ctx):
-    """A chain packs the remainder from the plan file in one Go action. The action reads the plan file, the input
+    """A chain packs the remainder from the plan file in one action. The action reads the plan file, the input
     catalogue, the classpath descriptor and every catalogue artifact. It writes the remainder, the inventory, the
     asset table and the classpath record, and the provider hands all four to the component."""
     env = analysistest.begin(ctx)
@@ -425,7 +429,7 @@ def _remainder_from_plan_test_impl(ctx):
     asserts.equals(env, ["true" if ctx.attr.separate_classpath_descriptor else "false"], classpath_reserialize)
     asserts.equals(env, [] if ctx.attr.separate_classpath_descriptor else [classpath_descriptor], reserialized_output)
     actions = analysistest.target_actions(env)
-    asserts.equals(env, ["PackDevPluginRemainder"], [action.mnemonic for action in actions])
+    asserts.equals(env, ["PackDevPluginRemainder", "DevDistRuntimeLayoutPart"], [action.mnemonic for action in actions])
     action = actions[0]
     asserts.equals(env, ctx.attr.graph[0].label, remainder.graph.label)
     asserts.equals(env, graph.execution_version, remainder.execution_version)
@@ -452,6 +456,26 @@ def _remainder_from_plan_test_impl(ctx):
         "--classpath=" + remainder.classpath.path,
     ], action.argv[1:])
     asserts.equals(env, [remainder.directory], target[DefaultInfo].files.to_list())
+
+    # The layout part comes from the same plan file and catalogue, in an action of its own that reads no packed byte.
+    layout = target[DevDistRuntimeLayoutInfo]
+    layout_action = actions[1]
+    asserts.equals(env, [layout.part], layout_action.outputs.to_list())
+    asserts.equals(env, classpath_descriptor.short_path, layout.descriptor.short_path)
+    layout_tool = layout_action.argv[0]
+    asserts.true(env, layout_tool.split("/")[-1].startswith("runtime-layout"), layout_tool)
+    layout_inputs = [file for file in layout_action.inputs.to_list() if not file.path.startswith(layout_tool)]
+    asserts.equals(env, sorted(_short_paths([graph.projection, catalogue.catalogue])), sorted(_short_paths(layout_inputs)))
+    asserts.equals(env, [
+        "plan-part",
+        "--plan=" + input_by_short_path[graph.projection.short_path].path,
+        "--catalogue=" + input_by_short_path[catalogue.catalogue.short_path].path,
+        "--descriptor-module=" + descriptor_info.plugin_main_module,
+        "--plugin-directory=plugins/test",
+        "--descriptor=" + layout.descriptor.path,
+        "--output=" + layout.part.path,
+    ], layout_action.argv[1:])
+
     groups = target[OutputGroupInfo]
     asserts.equals(env, [remainder.directory], groups.dev_dist_plugin_remainder.to_list())
     asserts.equals(env, [remainder.metadata], groups.file_metadata.to_list())
@@ -518,53 +542,65 @@ def _check_chain_shape(chain, component_visibility = ["//visibility:public"]):
     if visibility != component_visibility:
         fail("chain %s declares %s_component with the visibility %s; expected %s" % (chain, chain, visibility, component_visibility))
 
-def _plan(variant, layout_signature, destination):
-    """The plan file of a fixture: one jar packed from a module-filter operation over the raw input. An analysis test
+def _plan(variant, destination):
+    """The plan file of a fixture: one jar packed from a layout-assets operation over the raw input. An analysis test
     runs no action, so the packer never reads it. The content states what the chain would pack."""
     return json.encode({
         "version": 1,
         "plugin": "test.plugin",
         "variant": variant,
-        "layoutSignature": layout_signature,
         "assets": [{
             "destination": destination,
             "recipe": {
                 "sources": [
-                    {"input": "module-filter:raw:output", "kind": "prepared", "filter": "prepared"},
+                    {"input": "layout-assets:raw:output", "kind": "prepared", "filter": "prepared"},
                     {"input": "descriptor", "kind": "file", "filter": "none", "entry": "META-INF/plugin.xml", "options": ["patch"]},
                 ],
                 "writer": {"manifest": "drop", "mergeEntities": True},
             },
         }],
-        "preparations": [{"id": "module-filter:raw", "inputs": ["raw"], "outputs": ["module-filter:raw:output"], "modelSignature": "0" * 64}],
-        "operations": [{"id": "module-filter:raw", "input": {"artifact": "raw"}, "output": "module-filter:raw:output", "manifest": "keep", "excludes": ["drop/**"]}],
+        "preparations": [{"id": "layout-assets:raw", "inputs": ["raw"], "outputs": ["layout-assets:raw:output"], "modelSignature": "0" * 64}],
+        "operations": [{
+            "id": "layout-assets:raw",
+            "kind": "layout-assets",
+            "inputs": [{"artifact": "raw"}],
+            "output": "layout-assets:raw:output",
+            "manifest": "keep",
+            "layoutAssets": {"format": "entries", "assets": [{"destination": "", "sources": [0]}]},
+        }],
     }) + "\n"
 
-_PLAN = _plan("", "0" * 64, "lib/test.jar")
+_PLAN = _plan("", "lib/test.jar")
 
-# The folded form of the same plan: the variant is the chain's platform, and the two leaves that differ per platform
-# are slots. The graph of each chain resolves them from the call's `platform_values`.
-_FOLDED_PLAN = _plan("{platform}", "{platform:layoutSignature}", "{platform:destination}")
+# The folded form of the same plan: the variant is the chain's platform, and the leaf that differs per platform is a
+# slot. The graph of each chain resolves it from the call's `platform_values`.
+_FOLDED_PLAN = _plan("{platform}", "{platform:destination}")
+
+# A folded plan without a slot: only the variant differs per platform. The call states neither `platform_values` nor
+# `platform_plans`.
+_ZERO_SLOT_PLAN = _plan("{platform}", "lib/test.jar")
 
 def _check_platform_values_refusals(main_module):
     """Fails at load time when `platform_values_error` accepts a shape or a value the macro must refuse, or refuses a
-    dict that fits its platforms."""
+    call that fits its platforms."""
     platforms = ["linux_x64", "darwin_aarch64"]
-    values = {"linux_x64": {"layoutSignature": "1" * 64}, "darwin_aarch64": {"layoutSignature": "2" * 64}}
-    for call_platforms, platform_values, expected in [
-        (None, values, "platform_values without platforms"),
-        (["linux_x64"], values, "but its platforms are"),
-        (platforms, {"linux_x64": {"layoutSignature": "1" * 64}, "darwin_aarch64": {"destination": "lib/test.jar"}}, "states the slots"),
-        (platforms, {"linux_x64": {"layoutSignature": 'a"b'}, "darwin_aarch64": {"layoutSignature": "b"}}, "needs JSON escaping"),
-        (platforms, {"linux_x64": {"layoutSignature": "{platform}"}, "darwin_aarch64": {"layoutSignature": "b"}}, "holds a token"),
+    values = {"linux_x64": {"destination": "lib/linux"}, "darwin_aarch64": {"destination": "lib/darwin"}}
+    for call_platforms, platform_values, platform_plans, expected in [
+        (None, values, False, "platform_values without platforms"),
+        (["linux_x64"], values, False, "but its platforms are"),
+        (platforms, {"linux_x64": {"destination": "lib/linux"}, "darwin_aarch64": {"pattern": "libx"}}, False, "states the slots"),
+        (platforms, {"linux_x64": {"destination": 'a"b'}, "darwin_aarch64": {"destination": "b"}}, False, "needs JSON escaping"),
+        (platforms, {"linux_x64": {"destination": "{platform}"}, "darwin_aarch64": {"destination": "b"}}, False, "holds a token"),
+        (None, {}, True, "platform_plans without platforms"),
+        (platforms, values, True, "states platform_values and platform_plans"),
     ]:
-        error = platform_values_error(main_module, call_platforms, platform_values)
+        error = platform_values_error(main_module, call_platforms, platform_values, platform_plans)
         if error == None or expected not in error:
-            fail("platform_values_error accepted %s with platforms %s: %s" % (platform_values, call_platforms, error))
-    for accepted in [{}, values]:
-        error = platform_values_error(main_module, platforms, accepted)
+            fail("platform_values_error accepted %s and platform_plans %s with platforms %s: %s" % (platform_values, platform_plans, call_platforms, error))
+    for accepted, platform_plans in [({}, False), (values, False), ({}, True)]:
+        error = platform_values_error(main_module, platforms, accepted, platform_plans)
         if error != None:
-            fail("platform_values_error refused %s: %s" % (accepted, error))
+            fail("platform_values_error refused %s and platform_plans %s: %s" % (accepted, platform_plans, error))
 
 def _reused_component_test_impl(ctx):
     env = analysistest.begin(ctx)
@@ -591,6 +627,10 @@ def _reused_component_test_impl(ctx):
     sources = [row["source"] for row in spec["independent"]]
     asserts.equals(env, 1, len(sources))
     asserts.true(env, sources[0].endswith("/" + content.jar.short_path.removeprefix("../")), sources[0])
+
+    # The component forwards the layout part of its remainder, and no action of its own writes one.
+    layout = ctx.attr.remainder[0][DevDistRuntimeLayoutInfo]
+    asserts.equals(env, layout.part.short_path, target[DevDistRuntimeLayoutInfo].part.short_path)
     return analysistest.end(env)
 
 _reused_component_test = analysistest.make(
@@ -641,33 +681,27 @@ def dev_plugin_remainder_test_suite(name):
     for target in [projection, raw]:
         _file(name = target)
     product_info = name + "_product_info"
-    release_date = "20260101"
-    release_version = "2026300"
     dev_dist_product_info(
         name = product_info,
-        release_date = release_date,
-        release_version = release_version,
+        application_info = _FIXTURE_APPLICATION_INFO,
         platform_prefix = "idea",
     )
     _product_scoped_file(
         name = descriptor_source,
-        release_date = release_date,
-        release_version = release_version,
+        application_info = str(_FIXTURE_APPLICATION_INFO),
         tags = ["manual"],
     )
     normal_main_module = "test.%s.normal" % name
     normal_descriptor = dev_dist_plugin_descriptor_target_name(normal_main_module)
     dev_dist_plugin_descriptor(
         main_module = normal_main_module,
-        descriptor_module = ":" + descriptor_source,
-        descriptor = descriptor_source,
+        descriptor = ":" + descriptor_source,
     )
     scrambled_main_module = "test.%s.scrambled" % name
     scrambled_descriptor = dev_dist_plugin_descriptor_target_name(scrambled_main_module)
     dev_dist_plugin_descriptor(
         main_module = scrambled_main_module,
-        descriptor_module = ":" + descriptor_source,
-        descriptor = descriptor_source,
+        descriptor = ":" + descriptor_source,
         embed_content_modules = False,
     )
 
@@ -985,7 +1019,7 @@ def dev_plugin_remainder_test_suite(name):
         content_jar = ":" + content_jar,
     )
 
-    # A chain over a plan file with a module-filter operation. The Go packer executes the operation in the remainder
+    # A chain over a plan file with a layout-assets operation. The packer executes the operation in the remainder
     # action. The same action writes the asset table and the classpath record the component reads.
     plan_chain = name + "_plan_chain"
     dev_dist_complex_plugin_variant(
@@ -1031,6 +1065,7 @@ def dev_plugin_remainder_test_suite(name):
 
     # The derived form: one call, one chain per platform, the plan label `<main module>.<platform>.dev-plan.json` in
     # the package of the call and the descriptor entry derived, and the platform token substituted in a label.
+    # `platform_plans` states that the call keeps a plan file per platform.
     derived_module = "test.%s.derived" % name
     derived_platforms = ["linux_x64", "darwin_aarch64"]
     for platform in derived_platforms:
@@ -1041,6 +1076,7 @@ def dev_plugin_remainder_test_suite(name):
         descriptor = ":" + normal_descriptor,
         execution_version = 1,
         platforms = derived_platforms,
+        platform_plans = True,
         resource_inputs = {":" + name + "_derived_raw_{platform}": "raw"},
     )
     derived_tests = []
@@ -1082,6 +1118,7 @@ def dev_plugin_remainder_test_suite(name):
         descriptor = ":" + normal_descriptor,
         execution_version = 1,
         platforms = ["linux_x64"],
+        platform_plans = True,
         resource_inputs = {":" + plan_home_raw: "raw"},
         tags = ["manual"],
     )
@@ -1102,8 +1139,8 @@ def dev_plugin_remainder_test_suite(name):
     folded_module = "test.%s.folded" % name
     folded_platforms = ["linux_x64", "darwin_aarch64"]
     folded_values = {
-        "linux_x64": {"destination": "lib/linux-x64/test.jar", "layoutSignature": "1" * 64},
-        "darwin_aarch64": {"destination": "lib/darwin-aarch64/test.jar", "layoutSignature": "2" * 64},
+        "linux_x64": {"destination": "lib/linux-x64/test.jar"},
+        "darwin_aarch64": {"destination": "lib/darwin-aarch64/test.jar"},
     }
     _check_platform_values_refusals(folded_module)
     folded_projection = folded_module + ".dev-plan.json"
@@ -1135,6 +1172,35 @@ def dev_plugin_remainder_test_suite(name):
         )
         folded_tests.append(folded_test)
 
+    # The folded form without a slot: the call states neither `platform_values` nor `platform_plans`, so every chain
+    # reads `<main module>.dev-plan.json`, and its graph substitutes the platform token alone.
+    zero_slot_module = "test.%s.zero_slot" % name
+    zero_slot_projection = zero_slot_module + ".dev-plan.json"
+    _file(name = zero_slot_projection, content = _ZERO_SLOT_PLAN)
+    for platform in folded_platforms:
+        _file(name = name + "_zero_slot_raw_" + platform)
+    dev_dist_complex_plugin(
+        main_module = zero_slot_module,
+        descriptor = ":" + normal_descriptor,
+        execution_version = 1,
+        platforms = folded_platforms,
+        resource_inputs = {":" + name + "_zero_slot_raw_{platform}": "raw"},
+        tags = ["manual"],
+    )
+    for platform in folded_platforms:
+        stem = zero_slot_module + "_" + platform
+        _check_chain_shape(stem)
+        zero_slot_test = stem + "_graph_test"
+        _graph_resolution_test(
+            name = zero_slot_test,
+            target_under_test = ":" + stem + "_graph",
+            projection = ":" + zero_slot_projection,
+            platform = platform,
+            execution_version = 1,
+            consumer = ":" + stem + "_remainder",
+        )
+        folded_tests.append(zero_slot_test)
+
     # The plan class: `plan_class` names a plan text that differs from the baseline text, `<main module>.<plan_class>`,
     # before the platform of a refused fold and alone for a folded plan. The descriptor entry stays
     # `descriptor:<main module>`, and the chain stem does not change.
@@ -1149,6 +1215,7 @@ def dev_plugin_remainder_test_suite(name):
         descriptor = ":" + normal_descriptor,
         execution_version = 1,
         platforms = class_platforms,
+        platform_plans = True,
         resource_inputs = {":" + name + "_plan_class_raw_{platform}": "raw"},
         tags = ["manual"],
     )
@@ -1221,6 +1288,7 @@ def dev_plugin_remainder_test_suite(name):
         descriptor = ":" + normal_descriptor,
         execution_version = 1,
         platforms = chain_class_platforms,
+        platform_plans = True,
         resource_inputs = {":" + name + "_chain_class_raw_{platform}": "raw"},
         tags = ["manual"],
     )
@@ -1250,7 +1318,7 @@ def dev_plugin_remainder_test_suite(name):
     # JSON string leaf.
     refused_graph_tests = []
     for suffix, platform, platform_values, expected_message in [
-        ("neutral_values", "", {"layoutSignature": "0" * 64}, "serves every platform"),
+        ("neutral_values", "", {"destination": "lib/test.jar"}, "serves every platform"),
         ("quoted_value", "linux_x64", {"destination": 'lib/"test".jar'}, "needs JSON escaping"),
         ("token_value", "linux_x64", {"destination": "lib/{platform}/test.jar"}, "holds a token"),
     ]:

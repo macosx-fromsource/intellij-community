@@ -33,7 +33,7 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="intellij.platform.bootstrap.coroutine" scope="TEST" />
     <orderEntry type="library" scope="TEST" name="kotlin-stdlib" level="project" />
-    <orderEntry type="module" module-name="intellij.libraries.junit5" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.junit6" scope="TEST" />
     <orderEntry type="module" module-name="intellij.idea.community.main" scope="TEST" />
     <orderEntry type="module" module-name="intellij.java.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.java.dumb.completion.tests" scope="TEST" />
@@ -70,7 +70,7 @@
     <orderEntry type="module" module-name="intellij.textmate.backend" scope="TEST" />
     <orderEntry type="module" module-name="intellij.space.java.jps" scope="TEST" />
     <orderEntry type="module" module-name="intellij.idea.community.build.tasks" scope="TEST" />
-    <orderEntry type="module" module-name="intellij.junit.v5.rt.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.junit.rt.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.properties.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.properties.propertyBased.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.execution.tests" scope="TEST" />
@@ -111,6 +111,7 @@
     <orderEntry type="module" module-name="intellij.platform.util.coroutines.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.util.progress.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.util.nanoxml.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.versionDownloadManager.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.testFramework.junit5.jimfs" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.whatsNew" scope="TEST" />
     <orderEntry type="module" module-name="intellij.remoteDev.util" scope="TEST" />
@@ -136,6 +137,7 @@
     <orderEntry type="module" module-name="intellij.python.pyproject.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.python.requirements.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.python.pytools.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.ruff.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.python.mcp.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.python.community.services.internal.impl.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.python.test.env.common" scope="TEST" />
@@ -152,6 +154,7 @@
     <orderEntry type="module" module-name="intellij.platform.vcs.impl.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.debugger.impl.frontend.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.debugger.impl.ui.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.buildView.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.relaxng.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.vcs.git.coverage" scope="TEST" />
     <orderEntry type="module" module-name="intellij.java.rareRefactorings" scope="TEST" />
@@ -222,6 +225,7 @@
     <orderEntry type="module" module-name="intellij.performanceTesting.ui.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.backend.observation.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.productDsl.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.buildScripts.runtimeModuleRepository.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.collaborationTools.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.compose.swing.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.compose.tests" scope="TEST" />
@@ -234,6 +238,7 @@
     <orderEntry type="module" module-name="intellij.platform.externalProcessAuthHelper.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.ide.concurrency.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.ide.nonModalWelcomeScreen.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.ide.presentationAssistant" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.usages.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.ijent.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.images.build.tests" scope="TEST" />
@@ -325,6 +330,7 @@
     <orderEntry type="module" module-name="intellij.platform.vcs.tests.main" scope="TEST" />
     <orderEntry type="module" module-name="intellij.java.tests.main" scope="TEST" />
     <orderEntry type="module" module-name="intellij.groovy.tests.main" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.groovy.compiler.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.exploratory.tests.main" scope="TEST" />
     <orderEntry type="module" module-name="intellij.java.propertyBased.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.groovy.propertyBased.tests" scope="TEST" />
@@ -342,5 +348,6 @@
     <orderEntry type="module" module-name="intellij.platform.testFramework" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.rpc.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.core.impl.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.java.debugger.impl.tests" scope="TEST" />
   </component>
 </module>

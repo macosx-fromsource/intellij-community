@@ -1,6 +1,7 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ide.plugins.unified
 
+import com.intellij.core.CoreBundle
 import com.intellij.ide.plugins.InstalledPluginsTabSearchResultPanel
 import com.intellij.ide.plugins.MarketplaceTabSearchSortByOptions
 import com.intellij.ide.plugins.newui.MyPluginModel
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import org.jetbrains.annotations.Nls
 
 internal data class UnifiedPluginMarketplaceSourceState(
   val queryRevision: Long,
@@ -43,7 +45,15 @@ internal data class UnifiedPluginsPageSourceState(
   val mayEstablishSelection: Boolean,
   val searchControls: UnifiedPluginsSearchControlsState = UnifiedPluginsSearchControlsState(),
   val internalDescriptorSettled: Boolean = true,
-)
+  /** Identifies the query used by the last completed page projection. */
+  val projectedQueryRevision: Long = query.revision,
+) {
+  val sourcesSettled: Boolean
+    get() = projectedQueryRevision == query.revision &&
+            internalDescriptorSettled &&
+            repositoryPlugins != null &&
+            sections.none { it.status is PluginSectionStatus.Loading }
+}
 
 internal data class UnifiedPluginSourceProjection(
   val eligible: Boolean,
@@ -690,9 +700,16 @@ private fun localPluginComparator(
       val firstDisabled = first.item.rowInput?.enabled == false
       val secondDisabled = second.item.rowInput?.enabled == false
       val relevanceComparison = second.relevance.compareTo(first.relevance)
+      val categoryComparison = if (categoryRelevance && !hasTextSearch) {
+        compareBundledCategories(first.item, second.item)
+      }
+      else {
+        0
+      }
       when {
         firstHasErrors != secondHasErrors -> if (firstHasErrors) -1 else 1
         hasTextSearch && relevanceComparison != 0 -> relevanceComparison
+        categoryComparison != 0 -> categoryComparison
         firstDisabled != secondDisabled -> if (firstDisabled) 1 else -1
         relevanceComparison != 0 -> relevanceComparison
         categoryRelevance -> compareBundledItems(first.item, second.item)
@@ -709,16 +726,25 @@ private fun localPluginComparator(
 }
 
 private fun compareBundledItems(first: PluginItemState, second: PluginItemState): Int {
+  val categoryComparison = compareBundledCategories(first, second)
+  return if (categoryComparison != 0) categoryComparison else comparePluginNames(first, second)
+}
+
+private fun compareBundledCategories(first: PluginItemState, second: PluginItemState): Int {
   val firstCategory = bundledPluginCategory(first.searchCategory)
   val secondCategory = bundledPluginCategory(second.searchCategory)
-  val otherCategory = bundledPluginCategory(null)
-  val categoryComparison = when {
-    firstCategory == secondCategory -> 0
-    firstCategory == otherCategory -> 1
-    secondCategory == otherCategory -> -1
-    else -> StringUtil.compare(firstCategory, secondCategory, false)
+  if (firstCategory == secondCategory) return 0
+  val rankComparison = bundledCategoryRank(firstCategory).compareTo(bundledCategoryRank(secondCategory))
+  return if (rankComparison != 0) rankComparison else StringUtil.compare(firstCategory, secondCategory, false)
+}
+
+/** Named categories come first, then Other, then Libraries. */
+private fun bundledCategoryRank(category: @Nls String): Int {
+  return when (category) {
+    bundledPluginCategory(null) -> 1
+    CoreBundle.message("plugin.category.Libraries") -> 2
+    else -> 0
   }
-  return if (categoryComparison != 0) categoryComparison else comparePluginNames(first, second)
 }
 
 private fun <T : Comparable<T>> localPluginMetadataComparator(

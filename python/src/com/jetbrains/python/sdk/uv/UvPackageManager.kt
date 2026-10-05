@@ -16,6 +16,8 @@ import com.intellij.python.pyproject.PyProjectTomlFile
 import com.intellij.python.pyproject.model.internal.workspaceBridge.getToolWorkspaceLayout
 import com.intellij.python.pyproject.model.spi.ProjectName
 import com.intellij.python.pytools.resolveExecutable
+import com.intellij.python.sdk.backend.PythonInterpreter
+import com.intellij.python.sdk.backend.getSdkAPI
 import com.intellij.python.uv.backend.UvPyTool
 import com.intellij.python.uv.common.UV_TOOL_ID
 import com.jetbrains.python.PyBundle.message
@@ -46,15 +48,16 @@ import com.jetbrains.python.packaging.packageRequirements.extractDeclaredDepende
 import com.jetbrains.python.packaging.packageRequirements.packagesUnavailable
 import com.jetbrains.python.packaging.pip.PipRepositoryManager
 import com.jetbrains.python.packaging.utils.PyPackageCoroutine
+import com.jetbrains.python.project.PyProject.Companion.asPyProject
 import com.jetbrains.python.requirements.PyDependenciesFile
 import com.jetbrains.python.sdk.PythonSdkAdditionalData
 import com.jetbrains.python.sdk.add.v2.EelFileSystem
 import com.jetbrains.python.sdk.findModuleForSdk
 import com.jetbrains.python.uv.UV_LOCK
+import java.nio.file.Path
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.nio.file.Path
 
 internal class UvPackageManager internal constructor(
   project: Project,
@@ -273,7 +276,8 @@ internal class UvPackageManager internal constructor(
   override fun updateLockedAction(): suspend () -> PyResult<Unit> = suspend { syncLocked().mapSuccess { } }
 
   private suspend fun resolvePackageName(module: Module): String {
-    val pyProjectFile = PyProjectToml.findPyProjectTomlFile(module) ?: return module.name
+    val pyProject = module.asPyProject() ?: return module.name
+    val pyProjectFile = PyProjectToml.findPyProjectTomlFile(pyProject) ?: return module.name
     return PyProjectToml.parseCached(module.project, pyProjectFile.virtualFile)?.project?.name ?: module.name
   }
 
@@ -288,7 +292,9 @@ internal class UvPackageManager internal constructor(
       } ?: return@readAction emptyList()
       rootModule.getToolWorkspaceLayout(UV_TOOL_ID)?.memberModules.orEmpty()
     }
-    val memberFiles = memberModules.mapNotNull { member -> PyProjectToml.findPyProjectTomlFile(member) }
+    val memberFiles = memberModules.mapNotNull { member ->
+      member.asPyProject()?.let { PyProjectToml.findPyProjectTomlFile(it) }
+    }
     return listOf(rootPyProjectToml) + memberFiles
   }
 
@@ -360,13 +366,15 @@ private class UvWorkspaceSupport(private val project: Project, private val sdk: 
 }
 
 internal class UvPackageManagerProvider : PythonPackageManagerProvider {
-  override fun createPackageManagerForSdk(project: Project, sdk: Sdk): PythonPackageManager? {
-    if (!sdk.isUv) {
+  // The manager constructor still takes the SDK.
+  @Suppress("DEPRECATION")
+  override fun createPackageManager(project: Project, interpreter: PythonInterpreter): PythonPackageManager? {
+    if (!interpreter.isUv) {
       return null
     }
 
-    val uvExecutionContext = sdk.getUvExecutionContextAsync(PyPackageCoroutine.getScope(project), project) ?: return null
-    return UvPackageManager(project, sdk, uvExecutionContext)
+    val uvExecutionContext = interpreter.getUvExecutionContextAsync(PyPackageCoroutine.getScope(project), project) ?: return null
+    return UvPackageManager(project, interpreter.getSdkAPI(), uvExecutionContext)
   }
 }
 

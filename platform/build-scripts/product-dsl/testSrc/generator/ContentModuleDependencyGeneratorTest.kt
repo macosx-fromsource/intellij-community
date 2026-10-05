@@ -237,17 +237,17 @@ class ContentModuleDependencyGeneratorTest {
     fun `test plugin content modules are processed`(@TempDir tempDir: Path) {
       runBlocking(Dispatchers.Default) {
         val setup = pluginTestSetup(tempDir) {
-          contentModule("intellij.libraries.junit5.vintage") {
+          contentModule("intellij.libraries.junit6.vintage") {
             descriptor = """<idea-plugin package="org.junit.vintage"/>"""
           }
           contentModule("intellij.tools.testsBootstrap") {
             descriptor = """<idea-plugin package="com.intellij.tests.bootstrap"/>"""
-            jpsDependency("intellij.libraries.junit5.vintage", JpsJavaDependencyScope.COMPILE)
+            jpsDependency("intellij.libraries.junit6.vintage", JpsJavaDependencyScope.COMPILE)
           }
           plugin("intellij.test.plugin") {
             isTestPlugin = true
             content("intellij.tools.testsBootstrap")
-            content("intellij.libraries.junit5.vintage")
+            content("intellij.libraries.junit6.vintage")
           }
         }
 
@@ -274,7 +274,7 @@ class ContentModuleDependencyGeneratorTest {
           .describedAs("Test plugin content module should be processed by dependency planner")
           .isNotNull()
         assertThat(testBootstrapDiff!!.expectedContent)
-          .contains("<module name=\"intellij.libraries.junit5.vintage\"/>")
+          .contains("<module name=\"intellij.libraries.junit6.vintage\"/>")
       }
     }
 
@@ -343,7 +343,7 @@ class ContentModuleDependencyGeneratorTest {
     fun `production content module with test-support-like name keeps TEST scope dependency out of written deps`(@TempDir tempDir: Path) {
       runBlocking(Dispatchers.Default) {
         val busModule = ContentModuleName("intellij.tools.ide.starter.bus")
-        val junit5 = ContentModuleName("intellij.libraries.junit5")
+        val junit5 = ContentModuleName("intellij.libraries.junit6")
         val setup = pluginTestSetup(tempDir) {
           contentModule(junit5.value) {
             descriptor = """<idea-plugin package="junit5"/>"""

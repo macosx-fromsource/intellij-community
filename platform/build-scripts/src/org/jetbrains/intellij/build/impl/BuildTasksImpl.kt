@@ -197,33 +197,38 @@ fun createIdeaPropertyFile(context: BuildContext): CharSequence {
     builder.append('\n').append(Files.readString(it))
   }
 
-  //todo introduce special systemSelectorWithoutVersion instead?
-  val settingsDir = context.systemSelector.replaceFirst(Regex("\\d+(\\.\\d+)?"), "")
   val temp = builder.toString()
   builder.setLength(0)
   val map = LinkedHashMap<String, String>(1)
-  map["settings_dir"] = settingsDir
+  map["settings_dir"] = ideaPropertiesSettingsDir(context.systemSelector)
   builder.append(BuildUtils.replaceAll(temp, map, "@@"))
 
   if (!context.isLanguageServer) {
-    builder.append(
-      if (context.applicationInfo.isEAP) {
-        "\n#-----------------------------------------------------------------------\n" +
-        "# Change to 'disabled' if you don't want to receive instant visual notifications\n" +
-        "# about fatal errors that happen to an IDE or plugins installed.\n" +
-        "#-----------------------------------------------------------------------\n" +
-        "idea.fatal.error.notification=enabled\n"
-      }
-      else {
-        "\n#-----------------------------------------------------------------------\n" +
-        "# Change to 'enabled' if you want to receive instant visual notifications\n" +
-        "# about fatal errors that happen to an IDE or plugins installed.\n" +
-        "#-----------------------------------------------------------------------\n" +
-        "idea.fatal.error.notification=disabled\n"
-      }
-    )
+    builder.append(ideaPropertiesFatalErrorNotification(context.applicationInfo.isEAP))
   }
   return builder
+}
+
+/** The `@@settings_dir@@` value of `idea.properties`: the system selector without its version. */
+//todo introduce special systemSelectorWithoutVersion instead?
+internal fun ideaPropertiesSettingsDir(systemSelector: String): String = systemSelector.replaceFirst(Regex("\\d+(\\.\\d+)?"), "")
+
+/** The block an IDE that is not a language server appends to `idea.properties`. */
+internal fun ideaPropertiesFatalErrorNotification(isEap: Boolean): String {
+  return if (isEap) {
+    "\n#-----------------------------------------------------------------------\n" +
+    "# Change to 'disabled' if you don't want to receive instant visual notifications\n" +
+    "# about fatal errors that happen to an IDE or plugins installed.\n" +
+    "#-----------------------------------------------------------------------\n" +
+    "idea.fatal.error.notification=enabled\n"
+  }
+  else {
+    "\n#-----------------------------------------------------------------------\n" +
+    "# Change to 'enabled' if you want to receive instant visual notifications\n" +
+    "# about fatal errors that happen to an IDE or plugins installed.\n" +
+    "#-----------------------------------------------------------------------\n" +
+    "idea.fatal.error.notification=disabled\n"
+  }
 }
 
 private fun layoutShared(context: BuildContext) {
@@ -672,7 +677,6 @@ private fun checkProductLayout(context: BuildContext) {
   }
   val outputProvider = context.outputProvider
   checkModules(layout.productImplementationModules, "productProperties.productLayout.productImplementationModules", outputProvider)
-  checkModules(layout.moduleExcludes.keys, "productProperties.productLayout.moduleExcludes", outputProvider)
   for (plugin in pluginLayouts) {
     checkBaseLayout(plugin, "'${plugin.mainModule}' plugin", context)
   }
@@ -961,9 +965,11 @@ internal fun getOsDistributionBuilder(os: OsFamily, libcImpl: LibcImpl, ideaProp
   }
 }
 
+internal fun getLinuxFrameClass(context: BuildContext): String = linuxFrameClass(context.applicationInfo.productNameWithEdition)
+
 // keep in sync with AppUIUtil#getFrameClass
-internal fun getLinuxFrameClass(context: BuildContext): String {
-  val name = context.applicationInfo.productNameWithEdition
+internal fun linuxFrameClass(productNameWithEdition: String): String {
+  val name = productNameWithEdition
     .lowercase()
     .replace(' ', '-')
     .replace("intellij-idea", "idea")
@@ -1145,7 +1151,7 @@ private fun crossPlatformZip(
         if (zipFileUniqueGuard.putIfAbsent(distFile.relativePath, content) == null) {
           when (content) {
             is LocalDistFileContent -> out.entry(distFile.relativePath, content.file)
-            is InMemoryDistFileContent -> out.entry(distFile.relativePath, content.data)
+            is InMemoryDistFileContent -> out.entry(distFile.relativePath, content.readAllBytes())
           }
         }
       }
@@ -1280,7 +1286,7 @@ internal fun copyDistFiles(
       }
     }
     else {
-      Files.write(targetFile, (item.content as InMemoryDistFileContent).data)
+      Files.newOutputStream(targetFile).use { (item.content as InMemoryDistFileContent).writeTo(it) }
     }
   }
 }

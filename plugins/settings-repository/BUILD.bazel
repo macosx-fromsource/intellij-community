@@ -9,6 +9,19 @@ dev_dist_plugin(
         "intellij.libraries.sshd.osgi",
         "intellij.libraries.jgit.ssh",
     ],
+    descriptor = "resources/META-INF/plugin.xml",
+    jars = {
+        "lib/intellij.libraries.sshd.osgi.jar": [
+            "intellij.libraries.sshd.osgi",
+            "@lib//:libraries-sshd-osgi-apache-sshd-osgi",
+        ],
+        "lib/intellij.libraries.jgit.ssh.jar": [
+            "intellij.libraries.jgit.ssh",
+            "@lib//:libraries-jgit-ssh-eclipse-jgit-ssh-apache",
+            "@lib//:libraries-jgit-ssh-eclipse-jgit-ssh-apache-agent",
+        ],
+        "lib/settingsRepository.jar": ["intellij.settingsRepository"],
+    },
     main_module = "intellij.settingsRepository",
 )
 ### auto-generated section `dev intellij.settingsRepository` end

@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.platform.ijent.community.impl
 
 import com.intellij.openapi.application.ex.ApplicationManagerEx
@@ -7,6 +7,7 @@ import com.intellij.platform.eel.EelDescriptor
 import com.intellij.platform.eel.EelDescriptorWithInteractiveDeployment
 import com.intellij.platform.eel.EelOsFamily
 import com.intellij.platform.eel.EelResult
+import com.intellij.platform.eel.EelUnavailableException
 import com.intellij.platform.eel.EelUserPosixInfo
 import com.intellij.platform.eel.EelUserWindowsInfo
 import com.intellij.platform.eel.fs.EelFileInfo
@@ -26,7 +27,6 @@ import com.intellij.platform.ijent.IjentApi
 import com.intellij.platform.ijent.IjentCallerContext
 import com.intellij.platform.ijent.IjentCallerContextElement
 import com.intellij.platform.ijent.IjentPosixApi
-import com.intellij.platform.ijent.IjentUnavailableException
 import com.intellij.platform.ijent.IjentWindowsApi
 import com.intellij.platform.ijent.community.impl.nio.computeCallerContext
 import com.intellij.platform.ijent.community.impl.nio.fsBlocking
@@ -42,19 +42,18 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.runBlocking
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * A wrapper for [IjentFileSystemApi] that launches a new IJent through [delegateFactory] if an operation
- * with an already created IJent throws [IjentUnavailableException.CommunicationFailure].
+ * with an already created IJent throws [EelUnavailableException.CommunicationFailure].
  *
- * [delegateFactory] is NOT called if the delegated instance throws [IjentUnavailableException.ClosedByApplication].
+ * [delegateFactory] is NOT called if the delegated instance throws [EelUnavailableException.ClosedByApplication].
  *
  * [delegateFactory] can be called at most once.
- * If the just created new IJent throws [IjentUnavailableException.CommunicationFailure] again, the error is rethrown,
+ * If the just created new IJent throws [EelUnavailableException.CommunicationFailure] again, the error is rethrown,
  * but the next attempt to do something with IJent will trigger [delegateFactory] again.
  *
  * [coroutineScope] is used for calling [delegateFactory], but cancellation of [coroutineScope] does NOT close already created
@@ -112,8 +111,7 @@ private class DelegateHolder<I : IjentApi, F : IjentFileSystemApi>(
         oldDelegate != null && (
           !oldDelegate.isCompleted ||
           oldDelegate.getCompletionExceptionOrNull() == null &&
-          oldDelegate.getCompleted().isRunning
-        )
+          oldDelegate.getCompleted().isRunning)
       )
         oldDelegate
       else
@@ -133,11 +131,11 @@ private class DelegateHolder<I : IjentApi, F : IjentFileSystemApi>(
       withDelegateFirstAttempt(callerContext, block)
     }
     catch (err: Throwable) {
-      when (val unwrapped = IjentUnavailableException.unwrapFromCancellationExceptions(err)) {
+      when (val unwrapped = EelUnavailableException.unwrapFromCancellationExceptions(err)) {
         // TODO There must be a request ID, in order to ensure in idempotency of mutating calls.
-        is IjentUnavailableException.CommunicationFailure -> withDelegateSecondAttempt(callerContext, block)
-        is IjentUnavailableException.ClosedByApplication -> throw unwrapped
-        null -> throw err
+        is EelUnavailableException.CommunicationFailure -> withDelegateSecondAttempt(callerContext, block)
+        is EelUnavailableException.ClosedByApplication -> throw unwrapped
+        else -> throw err
       }
     }
   }
@@ -159,7 +157,7 @@ private class DelegateHolder<I : IjentApi, F : IjentFileSystemApi>(
 
   /** The function exists just to have a special marker in stacktraces. */
   private suspend fun <R> withDelegateSecondAttempt(callerContext: IjentCallerContextElement?, block: suspend F.() -> R): R =
-    IjentUnavailableException.unwrapFromCancellationExceptions {
+    EelUnavailableException.unwrapFromCancellationExceptions {
       @Suppress("UNCHECKED_CAST") (awaitDelegate(callerContext).fs as F).block()
     }
 }
@@ -205,7 +203,7 @@ private fun checkEarlyAccess(callerContext: IjentCallerContextElement?) {
  */
 private class IjentFailSafeFileSystemPosixApiImpl(
   private val holder: DelegateHolder<IjentPosixApi, IjentFileSystemPosixApi>,
-  override val descriptor: EelDescriptor
+  override val descriptor: EelDescriptor,
 ) : IjentFileSystemPosixApi {
   // TODO Make user suspendable again?
   override val user: EelUserPosixInfo by lazy {
@@ -229,10 +227,14 @@ private class IjentFailSafeFileSystemPosixApiImpl(
     }
   }
 
-  override suspend fun streamingWrite(chunks: Flow<ByteBuffer>, targetFileOpenOptions: EelFileSystemApi.WriteOptions): StreamingWriteResult =
+  override suspend fun streamingWrite(
+    chunks: Flow<ByteBuffer>,
+    targetFileOpenOptions: EelFileSystemApi.WriteOptions,
+  ): StreamingWriteResult =
     holder.withDelegateRetrying {
       streamingWrite(chunks, targetFileOpenOptions)
     }
+
   override suspend fun streamingRead(path: EelPath): Flow<StreamingReadResult> =
     holder.withDelegateRetrying {
       streamingRead(path)
@@ -371,9 +373,10 @@ private class IjentFailSafeFileSystemPosixApiImpl(
       createTemporaryDirectory(options)
     }
 
-  override suspend fun createTemporaryFile(options: EelFileSystemApi.CreateTemporaryEntryOptions): EelResult<EelPath, EelFileSystemApi.CreateTemporaryEntryError> = holder.withDelegateRetrying {
-    createTemporaryFile(options)
-  }
+  override suspend fun createTemporaryFile(options: EelFileSystemApi.CreateTemporaryEntryOptions): EelResult<EelPath, EelFileSystemApi.CreateTemporaryEntryError> =
+    holder.withDelegateRetrying {
+      createTemporaryFile(options)
+    }
 
   override suspend fun watchChanges(): Flow<EelFileSystemApi.PathChange> =
     holder.withDelegateRetrying { watchChanges() }
@@ -391,13 +394,11 @@ private class IjentFailSafeFileSystemPosixApiImpl(
  */
 private class IjentFailSafeFileSystemWindowsApiImpl(
   private val holder: DelegateHolder<IjentWindowsApi, IjentFileSystemWindowsApi>,
-  override val descriptor: EelDescriptor
+  override val descriptor: EelDescriptor,
 ) : IjentFileSystemWindowsApi {
   // TODO Make user suspendable again?
   override val user: EelUserWindowsInfo by lazy {
-    // A plain runBlocking would carry no IjentCalledContextElement; capture the thread state (EDT, locks)
-    // afresh so that awaitDelegate can detect a deployment awaited from a blocking call (IJPL-245001).
-    runBlocking(IjentCallerContextElement(IjentCallerContext.computeCallerContext())) {
+    fsBlocking {
       holder.withDelegateRetrying { user }
     }
   }
@@ -417,10 +418,14 @@ private class IjentFailSafeFileSystemWindowsApiImpl(
     }
   }
 
-  override suspend fun streamingWrite(chunks: Flow<ByteBuffer>, targetFileOpenOptions: EelFileSystemApi.WriteOptions): StreamingWriteResult =
+  override suspend fun streamingWrite(
+    chunks: Flow<ByteBuffer>,
+    targetFileOpenOptions: EelFileSystemApi.WriteOptions,
+  ): StreamingWriteResult =
     holder.withDelegateRetrying {
       streamingWrite(chunks, targetFileOpenOptions)
     }
+
   override suspend fun streamingRead(path: EelPath): Flow<StreamingReadResult> =
     holder.withDelegateRetrying {
       streamingRead(path)
@@ -562,9 +567,10 @@ private class IjentFailSafeFileSystemWindowsApiImpl(
       createTemporaryDirectory(options)
     }
 
-  override suspend fun createTemporaryFile(options: EelFileSystemApi.CreateTemporaryEntryOptions): EelResult<EelPath, EelFileSystemApi.CreateTemporaryEntryError> = holder.withDelegateRetrying {
-    createTemporaryFile(options)
-  }
+  override suspend fun createTemporaryFile(options: EelFileSystemApi.CreateTemporaryEntryOptions): EelResult<EelPath, EelFileSystemApi.CreateTemporaryEntryError> =
+    holder.withDelegateRetrying {
+      createTemporaryFile(options)
+    }
 
   override suspend fun watchChanges(): Flow<EelFileSystemApi.PathChange> =
     holder.withDelegateRetrying { watchChanges() }

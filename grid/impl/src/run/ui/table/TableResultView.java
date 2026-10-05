@@ -36,6 +36,7 @@ import com.intellij.database.run.ui.DataAccessType;
 import com.intellij.database.run.ui.DataGridRequestPlace;
 import com.intellij.database.run.ui.EditMaximizedView;
 import com.intellij.database.run.ui.GridTableCellEditor;
+import com.intellij.database.run.ui.ColumnMove;
 import com.intellij.database.run.ui.ColumnOrderRestorer;
 import com.intellij.database.run.ui.ResultViewWithCells;
 import com.intellij.database.run.ui.ResultViewWithColumns;
@@ -91,7 +92,6 @@ import com.intellij.openapi.ui.popup.LightweightWindowEvent;
 import com.intellij.openapi.ui.popup.ListPopup;
 import com.intellij.openapi.util.ActionCallback;
 import com.intellij.openapi.util.Comparing;
-import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.NlsSafe;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.Ref;
@@ -263,6 +263,8 @@ public class TableResultView extends JBTableWithResizableCells
   private final AtomicInteger editingBlocked = new AtomicInteger(0); // TODO: currently only locks column reordering
   private HoveredRowBgHighlightMode myHoveredRowMode = HoveredRowBgHighlightMode.AUTO;
   private TableFloatingToolbar myFloatingToolbar;
+  /** False once this view is disposed, after which it stops driving the column order of the grid. */
+  private boolean myDrivesColumnOrder = true;
 
   private StatisticsTableHeader myStatisticsHeader;
 
@@ -272,6 +274,16 @@ public class TableResultView extends JBTableWithResizableCells
   private Int2ObjectMap<ColumnWidthState> myUntransposedColumnWidths;
 
   private record ColumnWidthState(int width, boolean setByUser) {
+  }
+
+  /** The grid that owns the column order, or null while this view must arrange its columns itself. */
+  private @Nullable ColumnOrderRestorer columnOrderOwner() {
+    return myDrivesColumnOrder && myResultPanel instanceof ColumnOrderRestorer owner ? owner : null;
+  }
+
+  private boolean applyColumnsDisplayOrder() {
+    ColumnOrderRestorer owner = columnOrderOwner();
+    return owner != null && owner.applyColumnsDisplayOrder(this);
   }
 
   /**
@@ -679,7 +691,7 @@ public class TableResultView extends JBTableWithResizableCells
       doTranspose();
       createDefaultColumnsFromModel();
       if (!transposed) {
-        if (myResultPanel instanceof ColumnOrderRestorer grid) grid.restoreColumnsOrder();
+        if (myResultPanel instanceof ColumnOrderRestorer grid) grid.refreshColumnLayout();
         restoreUntransposedColumnWidths();
       }
     });
@@ -786,15 +798,28 @@ public class TableResultView extends JBTableWithResizableCells
     }
   }
 
+  @Override
+  public void columnMoved(TableColumnModelEvent event) {
+    super.columnMoved(event);
+    ColumnOrderRestorer owner = columnOrderOwner();
+    if (owner != null && event.getFromIndex() != event.getToIndex()) {
+      int target = event.getToIndex() + (event.getFromIndex() < event.getToIndex() ? -1 : 1);
+      var column = ModelIndex.forColumn(myResultPanel, getColumnModel().getColumn(event.getToIndex()).getModelIndex());
+      var neighbour = ModelIndex.forColumn(myResultPanel, getColumnModel().getColumn(target).getModelIndex());
+      owner.columnMovedInView(this, new ColumnMove(column, neighbour, event.getFromIndex() > event.getToIndex()));
+    }
+  }
+
   private void removeViewColumnFromColumnModel(ViewIndex<?> viewColumnIdx) {
     getTableHeader().setDraggedColumn(null); // a workaround for JDK-6586009
     myResultPanel.runWithIgnoreSelectionChanges(
       () -> getColumnModel().removeColumn(getColumnModel().getColumn(viewColumnIdx.asInteger())));
   }
 
-  private void addColumnAndMoveToTheCorrectPosition(ModelIndex<?> modelColumnIdx) {
+  private void addColumnAndMoveToTheCorrectPosition(ModelIndex<?> modelColumnIdx, boolean restoreOrder) {
     addColumn(getColumnCache().getOrCreateColumn(modelColumnIdx.asInteger()));
 
+    if (!restoreOrder || applyColumnsDisplayOrder()) return;
     int lastColumnIndex = getColumnCount() - 1;
     myResultPanel.runWithIgnoreSelectionChanges(() -> {
       for (int viewTargetColumnIdx = 0; viewTargetColumnIdx < lastColumnIndex; viewTargetColumnIdx++) {
@@ -807,10 +832,14 @@ public class TableResultView extends JBTableWithResizableCells
   }
 
   public void setViewColumnVisible(ModelIndex<?> modelColumnIdx, boolean visible) {
+    setViewColumnVisible(modelColumnIdx, visible, true);
+  }
+
+  private void setViewColumnVisible(ModelIndex<?> modelColumnIdx, boolean visible, boolean restoreOrder) {
     ViewIndex<?> viewColumnIdx = modelColumnIdx.toView(myResultPanel);
     if (visible && viewColumnIdx.asInteger() < 0) {
       boolean firstTimeShown = !getColumnCache().hasCachedColumn(modelColumnIdx.asInteger());
-      addColumnAndMoveToTheCorrectPosition(modelColumnIdx);
+      addColumnAndMoveToTheCorrectPosition(modelColumnIdx, restoreOrder);
       if (firstTimeShown) {
         myColumnLayout.columnsShown(
           isTransposed() ?
@@ -875,6 +904,18 @@ public class TableResultView extends JBTableWithResizableCells
     else {
       setViewColumnVisible(columnIdx, state);
     }
+  }
+
+  @Override
+  public void setColumnsEnabled(@NotNull List<ModelIndex<GridColumn>> columns, boolean state) {
+    if (columns.isEmpty()) return;
+    if (isTransposed()) {
+      getModel().fireTableDataChanged();
+      return;
+    }
+    boolean deferOrder = state && myResultPanel.getResultView() == this && columnOrderOwner() != null;
+    for (var column : columns) setViewColumnVisible(column, state, !deferOrder);
+    if (deferOrder) applyColumnsDisplayOrder();
   }
 
   @Override
@@ -1391,6 +1432,7 @@ public class TableResultView extends JBTableWithResizableCells
 
   @Override
   public void dispose() {
+    myDrivesColumnOrder = false;
     removeEditor();
   }
 
@@ -1418,19 +1460,17 @@ public class TableResultView extends JBTableWithResizableCells
     forEachRenderedColumn(column -> column.setColumnWidthByUser(columnWidth));
   }
 
-  /**
-   * The width the columns share: the scrollable viewport plus the pinned strip, which is the row header and so sits
-   * outside that viewport. Zero or less while the grid is not laid out.
-   */
+  /** Returns the viewport width, or the table width when it has no viewport. */
   public int getAvailableColumnsWidth() {
     int mainWidth = getParent() instanceof JViewport viewport ? viewport.getExtentSize().width : getWidth();
     return mainWidth;
   }
 
   /**
-   * Brings the leftmost of {@code columns} back into view. The rows stay where they are, because unpinning returns
-   * the columns and must not move the caller's place in the data.
+   * Aligns the leftmost requested column with the visible area in an untransposed table.
+   * Keeps the current vertical scroll position.
    */
+  @Override
   public void scrollColumnsIntoView(@NotNull List<ModelIndex<GridColumn>> columns) {
     if (isTransposed()) return;
     IntUnaryOperator column2View = getRawIndexConverter().column2View();
@@ -1442,16 +1482,43 @@ public class TableResultView extends JBTableWithResizableCells
     if (target < 0) return;
     Rectangle visible = getVisibleRect();
     Rectangle cell = getCellRect(Math.max(0, getSelectionModel().getLeadSelectionIndex()), target, true);
-    cell.y = visible.y;
-    cell.height = visible.height;
+    // Use the viewport width to show the start of a column wider than the viewport.
+    cell.setBounds(cell.x, visible.y, visible.width, visible.height);
     scrollRectToVisible(cell);
   }
 
-  /**
-   * Whether pinning exactly {@code pinnedColumns} would leave the unpinned table usable. Widths are the ones the
-   * strip would render, so the scroll position does not matter and a column hidden from the view counts for nothing,
-   * just as the pin operation skips it.
-   */
+  /** Returns the unpinned columns that fit in the pinned strip. */
+  public @NotNull IntSet columnsThatCanBePinned(@NotNull Set<ModelIndex<GridColumn>> pinnedColumns) {
+    IntSet pinned = new IntOpenHashSet(pinnedColumns.size());
+    for (ModelIndex<GridColumn> column : pinnedColumns) pinned.add(column.value);
+    var candidates = new ArrayList<TableResultViewColumn>();
+    int pinnedWidth = 0;
+    int unpinnedWidth = 0;
+    TableColumnModel columnModel = getColumnModel();
+    for (int viewColumn = 0; viewColumn < columnModel.getColumnCount(); viewColumn++) {
+      if (!(renderedColumnAt(viewColumn) instanceof TableResultViewColumn column)) continue;
+      int modelIndex = columnModel.getColumn(viewColumn).getModelIndex();
+      int width = column.getFrozenStripWidth();
+      if (pinned.contains(modelIndex)) {
+        pinnedWidth += width;
+      }
+      else {
+        unpinnedWidth += width;
+        candidates.add(column);
+      }
+    }
+    IntSet result = new IntOpenHashSet(candidates.size());
+    int availableWidth = getAvailableColumnsWidth();
+    for (var column : candidates) {
+      int width = column.getFrozenStripWidth();
+      if (availableWidth <= 0 || PinnedColumnsFit.fits(pinnedWidth + width, unpinnedWidth - width, availableWidth)) {
+        result.add(column.getModelIndex());
+      }
+    }
+    return result;
+  }
+
+  /** Checks whether the visible pinned columns leave enough width for the unpinned columns. */
   public boolean canFitPinnedColumns(@NotNull Set<ModelIndex<GridColumn>> pinnedColumns) {
     int availableWidth = getAvailableColumnsWidth();
     if (availableWidth <= 0) return true;
@@ -2011,6 +2078,7 @@ public class TableResultView extends JBTableWithResizableCells
       }
     }
 
+    applyColumnsDisplayOrder();
     if (!newColumnIndices.isEmpty()) {
       ModelIndexSet<?> dataIndices = isTransposed() ?
                                      ModelIndexSet.forRows(myResultPanel, newColumnIndices.toIntArray()) :

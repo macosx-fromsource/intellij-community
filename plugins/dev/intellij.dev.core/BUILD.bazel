@@ -38,6 +38,7 @@ jvm_library(
         "//platform/ide-core",
         "//platform/ide-core-impl",
         "//platform/platform-impl:ide-impl",
+        "//platform/platform-impl/color-picker",
         "//platform/platform-impl/internal",
         "//platform/progress/shared:ide-progress",
         "//platform/platform-impl/ui",
@@ -66,6 +67,7 @@ jvm_library(
         "//platform/util",
         "//platform/util/jdom",
         "//platform/execution-impl",
+        "//platform/consoleView",
         "//platform/platform-util-io-impl:ide-util-io-impl",
         "//platform/util-class-loader:util-classLoader",
         "//libraries/fastutil",
@@ -73,6 +75,7 @@ jvm_library(
         "//libraries/kotlinx/serialization/json",
         "//libraries/gson",
         "//libraries/jackson3/jackson:libraries-jackson3",
+        "//libraries/jbr",
     ],
 )
 
@@ -101,6 +104,7 @@ jvm_library(
         "//platform/ide-core:ide-core_test_lib",
         "//platform/ide-core-impl:ide-core-impl_test_lib",
         "//platform/platform-impl:ide-impl_test_lib",
+        "//platform/platform-impl/color-picker:color-picker_test_lib",
         "//platform/platform-impl/internal:internal_test_lib",
         "//platform/progress/shared:ide-progress_test_lib",
         "//platform/platform-impl/ui:ui_test_lib",
@@ -129,6 +133,7 @@ jvm_library(
         "//platform/util:util_test_lib",
         "//platform/util/jdom:jdom_test_lib",
         "//platform/execution-impl:execution-impl_test_lib",
+        "//platform/consoleView:consoleView_test_lib",
         "//platform/platform-util-io-impl:ide-util-io-impl_test_lib",
         "//platform/util-class-loader:util-classLoader_test_lib",
         "//libraries/fastutil:fastutil_test_lib",
@@ -136,6 +141,7 @@ jvm_library(
         "//libraries/kotlinx/serialization/json:json_test_lib",
         "//libraries/gson:gson_test_lib",
         "//libraries/jackson3/jackson:libraries-jackson3_test_lib",
+        "//libraries/jbr:jbr_test_lib",
     ],
 )
 ### auto-generated section `build intellij.dev.core` end

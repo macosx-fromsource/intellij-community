@@ -1,23 +1,5 @@
-load("@jps_dynamic_deps_community//:targets.bzl", "dev_dist_plugin")
 load("@rules_jvm//:jvm.bzl", "jvm_library", "jvm_provided_library")
 load("//build:compiler-options.bzl", "create_kotlinc_options")
-
-### auto-generated section `dev intellij.kotlin.jsr223.plugin` start
-dev_dist_plugin(
-    content_modules = [
-        # do not sort,
-        "intellij.kotlin.jsr223",
-        "intellij.libraries.kotlinc.kotlin.script.runtime",
-        "intellij.libraries.kotlinc.kotlin.scripting.common",
-        "intellij.libraries.kotlinc.kotlin.scripting.jvm",
-        "intellij.kotlin.buildToolsRuntime",
-        "intellij.libraries.kotlin.tooling.core",
-        "intellij.libraries.kotlinc.kotlin.compiler.common",
-        "intellij.libraries.kotlinc.kotlin.compiler.fe10",
-    ],
-    main_module = "intellij.kotlin.jsr223.plugin",
-)
-### auto-generated section `dev intellij.kotlin.jsr223.plugin` end
 
 ### auto-generated section `build intellij.kotlin.jsr223.plugin` start
 create_kotlinc_options(
@@ -40,6 +22,16 @@ create_kotlinc_options(
 jvm_provided_library(
     name = "libraries_kotlinc_libraries-kotlinc-kotlin-compiler-common_provided",
     lib = "//libraries/kotlinc/kotlin-compiler-common:libraries-kotlinc-kotlin-compiler-common",
+)
+
+jvm_provided_library(
+    name = "libraries_kotlinc_libraries-kotlinc-kotlin-scripting-common_provided",
+    lib = "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common",
+)
+
+jvm_provided_library(
+    name = "libraries_kotlinc_libraries-kotlinc-kotlin-scripting-jvm_provided",
+    lib = "//libraries/kotlinc/kotlin-scripting-jvm:libraries-kotlinc-kotlin-scripting-jvm",
 )
 
 jvm_library(
@@ -66,6 +58,8 @@ jvm_library(
         "//plugins/kotlin/build-tools-runtime",
         "//platform/util",
         ":libraries_kotlinc_libraries-kotlinc-kotlin-compiler-common_provided",
+        ":libraries_kotlinc_libraries-kotlinc-kotlin-scripting-common_provided",
+        ":libraries_kotlinc_libraries-kotlinc-kotlin-scripting-jvm_provided",
     ],
 )
 
@@ -87,6 +81,10 @@ jvm_library(
         "//platform/util:util_test_lib",
         "//libraries/kotlinc/kotlin-compiler-common:libraries-kotlinc-kotlin-compiler-common",
         "//libraries/kotlinc/kotlin-compiler-common:libraries-kotlinc-kotlin-compiler-common_test_lib",
+        "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common",
+        "//libraries/kotlinc/kotlin-scripting-common:libraries-kotlinc-kotlin-scripting-common_test_lib",
+        "//libraries/kotlinc/kotlin-scripting-jvm:libraries-kotlinc-kotlin-scripting-jvm",
+        "//libraries/kotlinc/kotlin-scripting-jvm:libraries-kotlinc-kotlin-scripting-jvm_test_lib",
     ],
 )
 ### auto-generated section `build intellij.kotlin.jsr223.plugin` end

@@ -47,7 +47,7 @@ fun getCompatiblePlatformVersionRange(compatibleBuildRange: CompatibleBuildRange
 /**
  * Every fact [applyPluginDescriptorPatch] needs, as data.
  *
- * The assembly builds this request from the product layout. The Go patcher of `dev_dist_plugin_descriptor` is a port of
+ * The assembly builds this request from the product layout. The descriptor writer of `dev_dist_plugin_descriptor` is a port of
  * the same patch. It reads a generated plan, with no JPS project model and no product layout. So the type holds no
  * build context, no plugin layout and no platform layout, and the body cannot reach one through it.
  */
@@ -72,7 +72,7 @@ internal class PluginDescriptorPatchRequest(
 /**
  * Applies the descriptor patch and returns the text the plugin's main jar receives.
  *
- * This body has one caller, the assembly. The Go patcher of `dev_dist_plugin_descriptor` is a port of it and produces
+ * This body has one caller, the assembly. The descriptor writer of `dev_dist_plugin_descriptor` is a port of it and produces
  * the same text for the dev distribution.
  *
  * @param embedContentModules the content-module stage. It is not data: it runs over the element this body parsed, and
@@ -172,8 +172,9 @@ internal fun patchPluginXml(
     embedContentModules = { element ->
       val dependencyHelper = (context as BuildContextImpl).jarPackagerDependencyHelper
       val frontendModuleFilter = context.getFrontendModuleFilter()
-      filterAndProcessContentModules(rootElement = element, pluginMainModuleName = pluginLayout.mainModule, context = context) { moduleElement, moduleName, _ ->
-        if (!embedsContentModules) {
+      filterAndProcessContentModules(rootElement = element, pluginMainModuleName = pluginLayout.mainModule, context = context) { moduleElement, moduleName, _, refused ->
+        // A refused module has no jar in the distribution, so the run time reads its descriptor here to exclude it.
+        if (!embedsContentModules && !refused) {
           return@filterAndProcessContentModules
         }
 

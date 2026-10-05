@@ -2,15 +2,18 @@
 package com.intellij.openapi.application
 
 import com.intellij.openapi.extensions.PluginId
+import com.intellij.openapi.updateSettings.impl.FORCE_INTERNAL_USER_FOR_TESTS_IN_PLUGIN_UPDATE_SOURCES
 import com.intellij.openapi.updateSettings.impl.PluginUpdateSource
 import com.intellij.openapi.updateSettings.impl.PluginUpdateSourceInitializationActivity
 import com.intellij.openapi.updateSettings.impl.PluginUpdateSourceInitializer
 import com.intellij.openapi.updateSettings.impl.PluginUpdateSourceService
 import com.intellij.openapi.updateSettings.impl.UpdateSettings
+import com.intellij.testFramework.TestModeFlags
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.junit5.RegistryKey
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.testFramework.junit5.fixture.projectFixture
+import com.intellij.testFramework.junit5.http.url
 import com.intellij.util.SystemProperties
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -93,6 +96,7 @@ internal class PluginUpdateSourceInitializationActivityTest : UpdateCheckerTestB
       }
     }
 
+  @RegistryKey(key = "platform.disable.plugin.update.sources.ui.and.filtering.for.internal.users", value = "false")
   @Test
   fun `plugin update sources are initialized only for unambiguous plugins and only once with nightly servers`(): Unit = timeoutRunBlocking {
     val customServer = createTestServer()
@@ -101,7 +105,7 @@ internal class PluginUpdateSourceInitializationActivityTest : UpdateCheckerTestB
 
     setInstalledPluginMocks(*INSTALLED_PLUGINS.toTypedArray())
     setCustomRepositoryHosts(listOf(customServer.url))
-    withSystemProperty(CUSTOM_BUILT_IN_PLUGIN_REPOSITORY_PROPERTY, "${firstNightlyServer.url},${secondNightlyServer.url}") {
+    withCustomRepoAndInternalUserFlag("${firstNightlyServer.url},${secondNightlyServer.url}") {
       setCustomRepositoryPlugins(customServer, listOf(CustomRepositoryPlugin(NIGHTLY_AND_CUSTOM_REPOSITORIES_PLUGIN, "9.0")))
       setCustomRepositoryPlugins(firstNightlyServer,
                                  listOf(
@@ -149,6 +153,36 @@ internal class PluginUpdateSourceInitializationActivityTest : UpdateCheckerTestB
   }
 
   @Test
+  fun `plugins from Marketplace channel custom repositories get Marketplace update source`(): Unit = timeoutRunBlocking {
+    val firstMarketplaceCustomServer = Server(server, "plugins/beta/9185")
+    val secondMarketplaceCustomServer = Server(server, "plugins/eap/9185")
+    replaceMarketplaceChannelUrlService(server.url + "/plugins")
+
+    setInstalledPluginMocks(installedPlugin(FIRST_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN),
+                            installedPlugin(SECOND_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN))
+    setCustomRepositoryHosts(listOf(firstMarketplaceCustomServer.url, secondMarketplaceCustomServer.url))
+    setCustomRepositoryPlugins(firstMarketplaceCustomServer, listOf(
+      CustomRepositoryPlugin(FIRST_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN, "2.0"),
+    ))
+    setCustomRepositoryPlugins(secondMarketplaceCustomServer, listOf(
+      CustomRepositoryPlugin(SECOND_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN, "3.0"),
+    ))
+
+    executeInitializationActivity()
+
+    val pluginUpdateSourceService = PluginUpdateSourceService.getInstance()
+    val marketplaceUpdateSourceId = pluginUpdateSourceService.createMarketplacePluginUpdateSourceId()
+    val firstMarketplaceChannelUpdateSourceId =
+      pluginUpdateSourceService.createCustomRepositoryPluginUpdateSourceId(firstMarketplaceCustomServer.url)
+    val secondMarketplaceChannelUpdateSourceId =
+      pluginUpdateSourceService.createCustomRepositoryPluginUpdateSourceId(secondMarketplaceCustomServer.url)
+    assertPluginUpdateSource(FIRST_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN, firstMarketplaceChannelUpdateSourceId)
+    assertTrue(firstMarketplaceChannelUpdateSourceId.canInstallUpdatesFrom(marketplaceUpdateSourceId))
+    assertPluginUpdateSource(SECOND_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN, secondMarketplaceChannelUpdateSourceId)
+    assertTrue(secondMarketplaceChannelUpdateSourceId.canInstallUpdatesFrom(marketplaceUpdateSourceId))
+  }
+
+  @Test
   fun `enforced initialization returns success result`() {
     setCustomRepositoryHosts(emptyList())
     setInstalledPluginMocks(installedPlugin(UNKNOWN_PLUGIN))
@@ -183,13 +217,17 @@ internal class PluginUpdateSourceInitializationActivityTest : UpdateCheckerTestB
     }
   }
 
-  private suspend fun withSystemProperty(key: String, value: String?, task: suspend () -> Unit) {
-    val original = if (value != null) System.setProperty(key, value) else System.clearProperty(key)
+  private suspend fun withCustomRepoAndInternalUserFlag(customRepositories: String?, task: suspend () -> Unit) {
+    val key = CUSTOM_BUILT_IN_PLUGIN_REPOSITORY_PROPERTY
+    val flag = FORCE_INTERNAL_USER_FOR_TESTS_IN_PLUGIN_UPDATE_SOURCES
+    val oldValue = TestModeFlags.set(flag, true)
+    val original = if (customRepositories != null) System.setProperty(key, customRepositories) else System.clearProperty(key)
     try {
       task.invoke()
     }
     finally {
       SystemProperties.setProperty(key, original)
+      TestModeFlags.set(flag, oldValue)
     }
   }
 
@@ -238,6 +276,8 @@ internal class PluginUpdateSourceInitializationActivityTest : UpdateCheckerTestB
     const val BUNDLED_UPDATEABLE_JET_BRAINS_PLUGIN_NIGHTLY_REPOSITORY_PLUGIN = "test.bundled.updateable.jet.brains.in.nightly.repository"
     const val MULTIPLE_NIGHTLY_REPOSITORIES_PLUGIN = "test.multiple.nightly.repositories"
     const val NIGHTLY_AND_CUSTOM_REPOSITORIES_PLUGIN = "test.nightly.and.custom.repositories"
+    const val FIRST_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN = "test.first.marketplace.channel.custom.repository"
+    const val SECOND_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN = "test.second.marketplace.channel.custom.repository"
 
     val INSTALLED_PLUGINS = listOf(
       installedPlugin(ALREADY_INITIALIZED_PLUGIN),
@@ -266,6 +306,8 @@ internal class PluginUpdateSourceInitializationActivityTest : UpdateCheckerTestB
     val TESTED_PLUGIN_IDS = buildList {
       addAll(INSTALLED_PLUGINS.map { it.id })
       add(UNKNOWN_PLUGIN)
+      add(FIRST_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN)
+      add(SECOND_MARKETPLACE_CUSTOM_REPOSITORY_PLUGIN)
     }
 
     private fun installedPlugin(

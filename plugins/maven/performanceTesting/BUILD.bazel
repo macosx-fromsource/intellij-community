@@ -34,7 +34,6 @@ jvm_library(
         "//platform/editor-ui-api:editor-ui",
         "//platform/util",
         "//platform/platform-impl:ide-impl",
-        "//plugins/repository-search/common",
         "//platform/execution-impl",
         "//platform/lang-core",
         "//java/java-impl:impl",
@@ -44,6 +43,7 @@ jvm_library(
         "//platform/backend/workspace",
         "//platform/workspace/storage",
         "//platform/lang-api:lang",
+        "//platform/buildView",
     ],
 )
 
@@ -68,7 +68,6 @@ jvm_library(
         "//platform/editor-ui-api:editor-ui_test_lib",
         "//platform/util:util_test_lib",
         "//platform/platform-impl:ide-impl_test_lib",
-        "//plugins/repository-search/common:common_test_lib",
         "//platform/execution-impl:execution-impl_test_lib",
         "//platform/lang-core:lang-core_test_lib",
         "//java/java-impl:impl_test_lib",
@@ -78,6 +77,7 @@ jvm_library(
         "//platform/backend/workspace:workspace_test_lib",
         "//platform/workspace/storage:storage_test_lib",
         "//platform/lang-api:lang_test_lib",
+        "//platform/buildView:buildView_test_lib",
     ],
 )
 ### auto-generated section `build intellij.maven.performanceTesting` end

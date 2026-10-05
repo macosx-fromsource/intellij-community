@@ -41,6 +41,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
+ * Provides a column structure view for Big Data Tools Core.
+ * Table editors use Manage Columns instead.
+ *
  * @author Sergey.Rieder
  */
 @ApiStatus.Internal
@@ -66,6 +69,15 @@ public final class TableEditorStructureViewModel implements StructureViewModel, 
 
       @Override
       public void onContentChanged(DataGrid dataGrid, @Nullable GridRequestSource.RequestPlace place) {
+        notifyModelChanged();
+      }
+
+      @Override
+      public void onColumnOrderChanged(DataGrid dataGrid) {
+        notifyModelChanged();
+      }
+
+      private void notifyModelChanged() {
         for (Object listener : myListeners) {
           if (listener instanceof ModelListener modelListener) {
             modelListener.onModelChanged();

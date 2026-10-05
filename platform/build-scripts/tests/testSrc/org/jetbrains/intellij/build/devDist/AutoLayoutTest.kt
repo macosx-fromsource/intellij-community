@@ -1,6 +1,7 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.intellij.build.devDist
 
+import com.intellij.platform.buildScripts.pluginModelTool.autoLayoutChildren
 import org.assertj.core.api.Assertions.assertThat
 import org.jetbrains.jps.model.JpsElementFactory
 import org.jetbrains.jps.model.java.JpsJavaDependencyScope

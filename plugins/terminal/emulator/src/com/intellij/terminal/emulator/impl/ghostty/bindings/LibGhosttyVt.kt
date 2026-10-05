@@ -302,6 +302,16 @@ internal object LibGhosttyVt {
     MOUSE_EVENT_SET_POSITION.invokeExact(event, position)
   }
 
+  // ---- color scheme report encoding (color_scheme.h) ----
+
+  /**
+   * `ghostty_color_scheme_report_encode`: encode the color scheme report (`CSI ? 997 ; Ps n`) for [scheme]
+   * ([GhosttyColorScheme]) into [buf] (capacity [bufLen]); [outWritten] receives the byte count (or the
+   * required size on `OUT_OF_SPACE`).
+   */
+  fun colorSchemeReportEncode(scheme: Int, buf: MemorySegment, bufLen: Long, outWritten: MemorySegment): GhosttyResult =
+    GhosttyResult.of(COLOR_SCHEME_REPORT_ENCODE.invokeExact(scheme, buf, bufLen, outWritten) as Int)
+
   // ---- sys interface (sys.h): process-global, runtime-swappable hooks ----
 
   /**
@@ -348,6 +358,14 @@ internal object LibGhosttyVt {
     LINKER.upcallStub(handle, PROGRESS_REPORT_DESC, arena)
 
   /**
+   * Bind [handle] as a native upcall stub for the COLOR_SCHEME callback `bool(terminal, userdata, out)`,
+   * scoped to [arena]. The bound method's signature must be `(MemorySegment, MemorySegment, MemorySegment) -> boolean`;
+   * `out` points at the `GhosttyColorScheme` to fill when the method returns `true`.
+   */
+  fun colorSchemeUpcallStub(handle: MethodHandle, arena: Arena): MemorySegment =
+    LINKER.upcallStub(handle, COLOR_SCHEME_DESC, arena)
+
+  /**
    * Bind [handle] as a native upcall stub for the sys log callback
    * `void(userdata, level, scope, scope_len, message, message_len)`. The bound method's signature
    * must be `(MemorySegment, int, MemorySegment, long, MemorySegment, long) -> void`.
@@ -375,6 +393,9 @@ internal object LibGhosttyVt {
 
   // GhosttyTerminalProgressReportFn: void(terminal, userdata, const GhosttyTerminalProgressReport*).
   private val PROGRESS_REPORT_DESC: FunctionDescriptor = FunctionDescriptor.ofVoid(C_PTR, C_PTR, C_PTR)
+
+  // GhosttyTerminalColorSchemeFn: bool(terminal, userdata, GhosttyColorScheme* out).
+  private val COLOR_SCHEME_DESC: FunctionDescriptor = FunctionDescriptor.of(C_BOOL, C_PTR, C_PTR, C_PTR)
 
   // GhosttySysLogFn: void(userdata, level, scope, scope_len, message, message_len); size_t -> C_LONG.
   private val LOG_CB_DESC: FunctionDescriptor = FunctionDescriptor.ofVoid(C_PTR, C_INT, C_PTR, C_LONG, C_PTR, C_LONG)
@@ -436,6 +457,8 @@ internal object LibGhosttyVt {
     FunctionDescriptor.of(C_INT, C_PTR, C_INT, C_PTR)) }
   private val TRACKED_GRID_REF_SET: MethodHandle by lazy { downcall("ghostty_tracked_grid_ref_set",
     FunctionDescriptor.of(C_INT, C_PTR, C_PTR, POINT)) }
+  private val COLOR_SCHEME_REPORT_ENCODE: MethodHandle by lazy { downcall("ghostty_color_scheme_report_encode",
+    FunctionDescriptor.of(C_INT, C_INT, C_PTR, C_LONG, C_PTR)) }
   private val SYS_SET: MethodHandle by lazy { downcall("ghostty_sys_set",
     FunctionDescriptor.of(C_INT, C_INT, C_PTR)) }
   private val TYPE_JSON: MethodHandle by lazy { downcall("ghostty_type_json",

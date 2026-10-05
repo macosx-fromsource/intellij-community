@@ -32,6 +32,7 @@
     <orderEntry type="module" module-name="intellij.libraries.junit4" scope="TEST" />
     <orderEntry type="module" module-name="intellij.libraries.commons.cli" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.downloader" />
+    <orderEntry type="module" module-name="intellij.platform.buildScripts.devLaunch" />
     <orderEntry type="module" module-name="intellij.libraries.commons.compress" />
     <orderEntry type="module" module-name="intellij.platform.util" />
     <orderEntry type="module" module-name="intellij.platform.bazel.runfiles" />
@@ -49,6 +50,7 @@
     <orderEntry type="module" module-name="intellij.platform.jps.build.javac.rt" />
     <orderEntry type="module" module-name="intellij.platform.jps.model.serialization" />
     <orderEntry type="module" module-name="intellij.platform.runtime.repository" />
+    <orderEntry type="module" module-name="intellij.platform.buildScripts.runtimeModuleRepository" />
     <orderEntry type="module" module-name="intellij.platform.testFramework.core" />
     <orderEntry type="module" module-name="intellij.platform.util.classLoader" />
     <orderEntry type="module" module-name="intellij.libraries.jackson3.jr.objects" />
@@ -140,8 +142,7 @@
       </library>
     </orderEntry>
     <orderEntry type="library" name="intellij-plugin-structure" level="project" />
-    <orderEntry type="library" scope="RUNTIME" name="jaxb-api" level="project" />
-    <orderEntry type="library" scope="RUNTIME" name="jaxb-runtime" level="project" />
+    <orderEntry type="module" module-name="intellij.libraries.jaxb" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.libraries.javax.activation" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.libraries.teamcity.service.messages" />
     <orderEntry type="module" module-name="intellij.libraries.kotlin.reflect" scope="RUNTIME" />

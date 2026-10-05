@@ -281,6 +281,82 @@ class TypeIgnoreInspectionSuppressorTest : PyTestCase() {
     """)
   }
 
+  // PY-90787: short codes inside brackets.
+
+  @TestFor(issues = ["PY-90787"])
+  fun testGranularShortCodeSuppressesOnlyThatCategory() {
+    doTestByText("""
+      def foo(x: str):
+          print(2 + 'foo', x.<warning descr="Unresolved attribute reference 'bar' for class 'str'">bar</warning>)  # type: ignore[unsupported-operator]
+    """)
+  }
+
+  @TestFor(issues = ["PY-90787"])
+  fun testKebabAliasShortCodeSuppressesWholeInspection() {
+    doTestByText("""
+      def foo(x: str):
+          print(2 + <warning descr="Expected type 'int', got 'Literal[\"foo\"]' instead">'foo'</warning>, x.bar)  # type: ignore[unresolved-references]
+    """)
+  }
+
+  @TestFor(issues = ["PY-90787"])
+  fun testDifferentGranularShortCodeDoesNotSuppress() {
+    doTestByText("""
+      print(2 + <warning descr="Expected type 'int', got 'Literal[\"foo\"]' instead">'foo'</warning>)  # type: ignore[bad-return]
+    """)
+  }
+
+  @TestFor(issues = ["PY-90787"])
+  fun testPyCharmNamespacedGranularShortCode() {
+    doTestByText("""
+      print(2 + 'foo')  # type: ignore[pycharm:unsupported-operator]
+    """)
+  }
+
+  @TestFor(issues = ["PY-92114"])
+  fun testUnknownNamespacedCodeSuppressesNothing() {
+    doTestByText("""
+      print(2 + <warning descr="Expected type 'int', got 'Literal[\"foo\"]' instead">'foo'</warning>)  # type: ignore[pycharm:amongus]
+    """)
+  }
+
+  /** A `Py` id that no loaded inspection owns targets only that id. It is not a blanket suppression. */
+  @TestFor(issues = ["PY-92114"])
+  fun testNamespacedPyIdOfNoLoadedInspectionSuppressesNothingElse() {
+    doTestByText("""
+      print(2 + <warning descr="Expected type 'int', got 'Literal[\"foo\"]' instead">'foo'</warning>)  # type: ignore[pycharm:PyNotLoadedInspection]
+    """)
+  }
+
+  // PY-90627: the `# pycharm: ignore[...]` directive.
+
+  @TestFor(issues = ["PY-90627", "PY-90787"])
+  fun testPyCharmIgnoreDirectiveGranularCode() {
+    doTestByText("""
+      print(2 + 'foo')  # pycharm: ignore[unsupported-operator]
+      print(2 + <warning descr="Expected type 'int', got 'Literal[\"foo\"]' instead">'foo'</warning>)
+    """)
+  }
+
+  @TestFor(issues = ["PY-90627"])
+  fun testPyCharmIgnoreDirectiveWholeInspection() {
+    doTestByText("""
+      def foo(x: str):
+          print(x.bar)  # pycharm: ignore[PyUnresolvedReferences]
+          print(x.<warning descr="Unresolved attribute reference 'bar' for class 'str'">bar</warning>)
+    """)
+  }
+
+  @TestFor(issues = ["PY-90627"])
+  fun testPyCharmIgnoreDirectiveAtFileLevel() {
+    doTestByText("""
+      # pycharm: ignore[PyUnresolvedReferences]
+      def foo(x: str):
+          print(x.bar)
+          print(2 + <warning descr="Expected type 'int', got 'Literal[\"foo\"]' instead">'foo'</warning>)
+    """)
+  }
+
   private fun doTestByText(notTrimmedText: String) {
     val text = notTrimmedText.trimIndent()
     myFixture.enableInspections(inspections)

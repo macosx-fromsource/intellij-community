@@ -11,7 +11,7 @@ import com.intellij.ide.impl.runUnderModalProgressIfIsEdt
 import com.intellij.ide.impl.toOpenProjectTask
 import com.intellij.ide.lightEdit.LightEditService
 import com.intellij.ide.lightEdit.isClaimedByWelcomeScreenProject
-import com.intellij.ide.trustedProjects.TrustedFiles
+import com.intellij.ide.TrustedFiles
 import com.intellij.ide.util.PsiNavigationSupport
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
@@ -74,6 +74,10 @@ fun isConfiguredByPlatformProcessor(project: Project): Boolean = project.getUser
 internal fun isLoadedFromCacheButHasNoModules(project: Project): Boolean {
   return project.getUserData(PROJECT_LOADED_FROM_CACHE_BUT_HAS_NO_MODULES) == true
 }
+
+/** A project opens with no module: directory project configurators do not run, and JPS files do not contribute modules. */
+@Internal
+fun isProjectOpenWithoutModule(): Boolean = Registry.`is`("ide.project.open.without.module")
 
 class PlatformProjectOpenProcessor : ProjectOpenProcessor(), CommandLineProjectOpenProcessor {
   enum class Option {

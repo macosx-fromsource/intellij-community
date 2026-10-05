@@ -23,15 +23,6 @@ dev_dist_plugin(
         "intellij.libraries.git.learning.project",
     ],
     descriptor = "res/META-INF/plugin.xml",
-    descriptor_modules = [
-        "intellij.featuresTrainer.onboarding",
-        "intellij.featuresTrainer.tips",
-        "intellij.kotlin.onboarding.promoter",
-        "intellij.libraries.assertj.core",
-        "intellij.libraries.assertj.swing",
-        "intellij.libraries.git.learning.project",
-        "intellij.vcs.git.featuresTrainer",
-    ],
     jars = {
         "lib/featuresTrainer.jar": [
             "intellij.featuresTrainer",
@@ -48,6 +39,14 @@ dev_dist_plugin(
         ],
     },
     main_module = "intellij.featuresTrainer",
+    mode_refused_content_modules = {
+        "frontend": [
+            "intellij.vcs.git.featuresTrainer",
+            "intellij.featuresTrainer.onboarding",
+            "intellij.kotlin.onboarding.promoter",
+            "intellij.featuresTrainer.tips",
+        ],
+    },
 )
 ### auto-generated section `dev intellij.featuresTrainer` end
 
@@ -334,8 +333,8 @@ jvm_library(
         "//platform/xdebugger-impl/ui:ui_test_lib",
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
     ],
 )
 ### auto-generated section `build intellij.featuresTrainer.tests` end

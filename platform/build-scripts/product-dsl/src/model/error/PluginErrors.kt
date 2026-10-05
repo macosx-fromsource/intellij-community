@@ -787,7 +787,7 @@ data class ModuleInMultiplePluginsError(
     const val ALLOWLIST_CONTEXT: String = "allowlist"
 
     private const val ALLOWLIST_NAME = "KNOWN_MODULES_IN_MULTIPLE_PLUGINS"
-    private const val ALLOWLIST_FILE = "platform/buildScripts/src/productLayout/ultimateGenerator.kt"
+    private const val ALLOWLIST_FILE = "platform/buildScripts/plugin-model/src/ultimateGenerator.kt"
   }
 }
 

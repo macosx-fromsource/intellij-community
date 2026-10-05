@@ -53,7 +53,14 @@ fun zip(targetFile: Path, dir: Path, context: CompilationContext) {
  * @return a list of JVM args for opened packages (JBR17+) in a format `--add-opens=PACKAGE=ALL-UNNAMED` for a specified or current OS
  */
 internal fun getCommandLineArgumentsForOpenPackages(context: CompilationContext, target: OsFamily? = null): List<String> {
-  val file = context.paths.communityHomeDir.resolve("platform/platform-impl/resources/META-INF/OpenedPackages.txt")
+  return openedPackagesArguments(openedPackagesFile(context.paths.communityHomeDir), target)
+}
+
+/** The `OpenedPackages.txt` of the community checkout at [communityHome]. */
+internal fun openedPackagesFile(communityHome: Path): Path = communityHome.resolve("platform/platform-impl/resources/META-INF/OpenedPackages.txt")
+
+/** The `--add-opens` lines of [file] that apply to [target], or to the current OS when it is `null`. */
+internal fun openedPackagesArguments(file: Path, target: OsFamily?): List<String> {
   val os = when (target) {
     OsFamily.WINDOWS -> OS.Windows
     OsFamily.MACOS -> OS.macOS

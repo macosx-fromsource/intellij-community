@@ -31,7 +31,6 @@
     <module name="intellij.platform.diff"/>
     <module name="intellij.platform.diff.impl"/>
     <module name="intellij.platform.editor.ui"/>
-    <module name="intellij.platform.eel.provider"/>
     <module name="intellij.platform.externalProcessAuthHelper"/>
     <module name="intellij.platform.ide.core"/>
     <module name="intellij.platform.ide.core.impl"/>
@@ -181,6 +180,8 @@
     <gitFetchHandler implementation="org.jetbrains.plugins.github.extensions.GHProtectedBranchRulesLoader"/>
     <gitCurrentBranchPresenter
       implementation="org.jetbrains.plugins.github.pullrequest.ui.review.GHPROnCurrentBranchService$BranchPresenter"/>
+    <gitBranchReviewPresenter
+      implementation="org.jetbrains.plugins.github.pullrequest.ui.review.GHBranchReviewPresenter"/>
     <gitPushNotificationCustomizer implementation="org.jetbrains.plugins.github.notification.GHPushNotificationCustomizer"/>
   </extensions>
 

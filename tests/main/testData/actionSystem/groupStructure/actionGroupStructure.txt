@@ -216,8 +216,8 @@
         <separator>
         ToggleCompactMode
       SwitchIdeScaleAction
+      <separator>
       UIToggleActions
-        <separator>
         TogglePresentationAssistantAction
         <separator>
         ViewMainMenu
@@ -391,6 +391,7 @@
       InspectCodeGroup
         InspectCode
         CodeCleanup
+        Ruff.FixScope
       AnalyzeActionsPopup
         AnalyzeActions
           SilentCodeCleanup
@@ -587,10 +588,10 @@
       <separator>
       <separator>
       BuildArtifact
-    UpdateIdeFromSources
     Groovy.CheckResources
       Groovy.CheckResources.Make
       Groovy.CheckResources.Rebuild
+    UpdateIdeFromSources
     PluginDeployActions
       MakeJarAction
       MakeAllJarsAction
@@ -728,16 +729,18 @@
         WorkspaceEntitiesJsonLog
         WorkspaceEntitiesJsonLogFile
         PrintModulesAndEntitySources
+        ReloadProject
       <separator>
       Internal.Editor
-        AddInlayInternalAction
-        AddAfterLineEndInlayInternalAction
-        AddInlayBlockInternalAction
-        DumpEditorStateInternalAction
+        AddInlayInternal
+        AddAfterLineEndInlayInternal
+        AddInlayBlockInternal
+        DumpEditorStateInternal
         SetCaretVisualAttributesInternalAction
         EditorRenderingBenchmarkAction
         EditorAddCustomWrap
         EditorRemoveCustomWrapsAtCaret
+        ShowEditorHighlighterTokens
       Internal.UI
         ShowSplash
         EnableMetalRendering
@@ -751,7 +754,6 @@
             JEditorPaneDemoAction
             JBTabsDemo
             TestTooltipsAction
-            ShowInlineBanner
             ToolbarDemo
             TreeViewModelDemo
           WriteActionUnderProgress
@@ -760,9 +762,10 @@
           FrequentBackgroundReadAction
           TestProgressWindow
           TestCoroutineProgress
-          PositionTrackerTestAction
+          PositionTrackerTest
           UIFreeze
           PooledFreeze
+          UiDebugger
           Internal.UI.Animation
             AnimationPanelTestAction
             AnimatorTestAction
@@ -797,10 +800,10 @@
           ShowWslSatisfactionDialog
           OnboardingKotlin
             org.jetbrains.kotlin.onboarding.ShowKotlinOnboardingFeedbackDialogAction
-          MavenBuildProcessSatisfaction
-            org.jetbrains.kotlin.onboarding.maven.ShowMavenBuildProcessSatisfactionDialogAction
           BuildProcessSatisfaction
             org.jetbrains.kotlin.onboarding.gradle.ShowBuildProcessSatisfactionDialogAction
+          MavenBuildProcessSatisfaction
+            org.jetbrains.kotlin.onboarding.maven.ShowMavenBuildProcessSatisfactionDialogAction
         UiInspectorGroup
           UiInspector
           UiThemeColorPickerAction
@@ -829,10 +832,10 @@
       MaintenanceGroup
         ShowRegistry
         ShowExperiments
+        ShowPropertiesComponent
         DumpMLCompletionFeatures
         DumpLookupElementWeights
         IdeScriptingConsole
-        UiDebugger
         com.intellij.searchEverywhereMl.ranking.core.actions.OpenFeaturesInScratchFileAction
         com.intellij.searchEverywhereMl.typos.actions.DumpDictionaryToFileAction
         com.intellij.searchEverywhereMl.typos.actions.CorpusToFileAction
@@ -858,30 +861,31 @@
         DumpVfsInfoForExcludedFiles
         DumpVfsInfoForFsRoot
         DumpWatchedRoots
-        CountVfsFileChildrenAction
+        CountVfsFileChildren
       Internal.Dump
-        DumpCodeStyleCache
         DumpPluginDescriptorsAction
+        DumpCodeStyleCache
         DumpExtensions
         DumpInspectionDescriptions
         DumpIntentionsDescriptions
-        ScanSourceCommentsAction
+        ScanSourceComments
         DumpScreenConfiguration
-        DumpIElementTypesAction
-        DumpLoadedInspectionsAction
-        DumpRunConfigurationTypesAction
+        DumpIElementTypes
+        DumpLoadedInspections
+        DumpRunConfigurationTypes
         DumpFormattingModel
         CheckClassLoading
         DumpGroovyControlFlowAction
       DetectProjectLeaks
       TestJbProtocolCommand
-      PythonPsiInternalGroup
-        PyTypeBenchmarkAction
+      ShowUpdateDialogAction
       FeatureUsage.Internal
         OpenStatisticsEventLogAction
         RecordStateCollectors
         AddGroupToTestSchemeAction
         CollectFUStatisticsAction
+      PythonPsiInternalGroup
+        PyTypeBenchmarkAction
       Vcs.Internal
         Vcs.Log.Internal
           Vcs.Log.InvalidateCaches
@@ -898,7 +902,6 @@
         SetCurrentLessonAsPassed
         ResetOnboardingFeedbackState
         ShowDemoAltClickPromoter
-      ReloadProjectAction
       Internal.Ex
         ClearIDEStatistics
         ShowMainMenu
@@ -906,11 +909,10 @@
         ToggleIncompleteMode
         ResetGotItTooltips
         Internal.Performance
+          ShowEdtUtilizationChart
           LaggingMode
           TypingLatencyReport
           RetypeFile
-        ShowUpdateDialogAction
-        ShowEdtUtilizationChart
         ShortDumbMode
         DumbModeTremble
         IoFlooding
@@ -921,17 +923,17 @@
         TopAnomalies
         KeymapToCsv
         CompareKeymaps
-      TriggerProjectIndexableFilesFilterHealthCheckAction
+      PythonGenerateDictionaries
+      Internal.Python
+        PyUpdateProjectSdk
+        PySetPropertyAction
+      TriggerProjectIndexableFilesFilterHealthCheck
       ImageDuplicates
       TestIconMappings
       ShowNonRetinaImages
       ShowSearchEverywhereItemInfo
       CompletionQualityStats
-      ShowControlFlowAction
-      PythonGenerateDictionaries
-      Internal.Python
-        PyUpdateProjectSdk
-        PySetPropertyAction
+      ShowControlFlow
       UastInternal
         DumpUastLog
         DumpUastLogByElement
@@ -973,7 +975,7 @@
         ShowHelpPageById
         DevKit.AnalyzePersistentSyntaxTreeOverhead
         AnalyzeUnloadablePlugins
-      ShowEditorHighlighterTokens
+        PluginPermissionServiceDemo
       tasks.internal
         show.certificate
         deadlock.with.certificate.dialog
@@ -992,7 +994,7 @@
       AddAntBuildFile
     ExternalToolsGroup
     ShowPluginLoadingState
-    com.intellij.mcpserver.actions.ShowMcpToolsAction
+    ShowMcpTools
     com.jetbrains.python.console.RunPythonOrDebugConsoleAction
     PyPackagingMenu
       CreateSetupPy
@@ -1003,8 +1005,8 @@
       ShowKotlinBytecode
       ConfigureKotlinInProject
       DecompileKotlinToJava
-    WorkspaceModelGeneration
     Groovy.Console
+    WorkspaceModelGeneration
   VcsGroups
     Vcs.MainMenu
       Start.Use.Vcs
@@ -1077,6 +1079,38 @@
           Github.Sync.Fork
           Github.Create.Pull.Request
           Github.View.Pull.Request
+        hg4idea.file.menu
+          CheckinFiles
+          hg4idea.add
+          Hg.Ignore.File
+          ChangesView.Revert
+          ChangesView.RevertFiles
+          <separator>
+          Compare.SameVersion
+          Compare.Selected
+          hg4idea.CompareWithBranch
+          Vcs.ShowTabbedFileHistory
+          Vcs.ShowHistoryForBlock
+          Annotate
+          <separator>
+          hg4idea.pull
+          Vcs.Push
+          <separator>
+          hg4idea.run.conflict.resolver
+          hg4idea.merge.files
+          <separator>
+          hg4idea.branches
+          hg4idea.tag
+          hg4idea.updateTo
+          hg4idea.resolve.mark
+          <separator>
+          hg4idea.Graft.Continue
+          hg4idea.Rebase.Abort
+          hg4idea.Rebase.Continue
+          <separator>
+          hg4idea.mq.ShowUnAppliedPatches
+          ChangesView.Browse
+          <separator>
         SubversionFilePopupGroup
           SubversionGroup
             Subversion.Share
@@ -1113,38 +1147,6 @@
             <separator>
             ChangesView.Browse
             <separator>
-        hg4idea.file.menu
-          CheckinFiles
-          hg4idea.add
-          Hg.Ignore.File
-          ChangesView.Revert
-          ChangesView.RevertFiles
-          <separator>
-          Compare.SameVersion
-          Compare.Selected
-          hg4idea.CompareWithBranch
-          Vcs.ShowTabbedFileHistory
-          Vcs.ShowHistoryForBlock
-          Annotate
-          <separator>
-          hg4idea.pull
-          Vcs.Push
-          <separator>
-          hg4idea.run.conflict.resolver
-          hg4idea.merge.files
-          <separator>
-          hg4idea.branches
-          hg4idea.tag
-          hg4idea.updateTo
-          hg4idea.resolve.mark
-          <separator>
-          hg4idea.Graft.Continue
-          hg4idea.Rebase.Abort
-          hg4idea.Rebase.Continue
-          <separator>
-          hg4idea.mq.ShowUnAppliedPatches
-          ChangesView.Browse
-          <separator>
         <separator>
         ChangesView.CreatePatch
         ChangesView.ApplyPatch
@@ -1157,9 +1159,9 @@
         Git.Log
       <separator>
       Vcs.Import
-        Hg.Init
         Subversion.ImportToSVNRepository
         Subversion.ShareWholeProject
+        Hg.Init
         Git.Init
     Git.MainMenu
       CheckinProject
@@ -1363,7 +1365,6 @@
     HelpDiagnosticTools
       Performance.ActivityMonitor
       Performance.DumpThreads
-      Performance.MemTester
       <separator>
       LogDebugConfigure
       BrowseSpecialPaths
@@ -1499,8 +1500,8 @@
   ToggleBreakpointEnabled
 [group BuildMenu]
   Java.BuildMenu
-  UpdateIdeFromSources
   Groovy.CheckResources
+  UpdateIdeFromSources
   PluginDeployActions
   AntBuildGroup
   RunTargetAction
@@ -1875,10 +1876,8 @@
   CompareClipboardWithSelection
   Code.Review.Editor.Show.Diff
   Code.Review.Editor.New.Comment
-  Gradle.ImportExternalProject
   XmlGenerateToolsGroup
   OpenInSceneBuilder
-  Maven.AddFileAsMavenProject
   Maven.GlobalProjectMenu
   Git.Stage.Index.File.Menu
   GitLab.Create.Snippet
@@ -1973,8 +1972,8 @@
   EditorTabPopupMenuEx
   ConvertJavaToKotlin
   ConvertJavaToKotlinGroup
-  OpenInSceneBuilder
   ExcludeFromStubGeneration
+  OpenInSceneBuilder
   GitLab.Create.Snippet
   Github.Create.Gist
 [group EditorTabPopupMenuEx]
@@ -2232,13 +2231,13 @@
   DelegateMethods
   GenerateFromTestCreatorsGroup
   Markdown.InsertGroup
-  org.editorconfig.configmanagement.generate.EditorConfigGenerateLanguagePropertiesAction
   GenerateCopyright
+  HtmlAddTableColumnBefore
+  HtmlAddTableColumnAfter
+  org.editorconfig.configmanagement.generate.EditorConfigGenerateLanguagePropertiesAction
   JavaGenerateGroup2
   KotlinMavenGenerate
   GenerateExternalization
-  HtmlAddTableColumnBefore
-  HtmlAddTableColumnAfter
   GuiDesigner.GenerateMain
 [group GoToCodeGroup]
   <separator>
@@ -2287,7 +2286,6 @@
 [group HelpDiagnosticTools]
   Performance.ActivityMonitor
   Performance.DumpThreads
-  Performance.MemTester
   <separator>
   LogDebugConfigure
   BrowseSpecialPaths
@@ -2370,6 +2368,7 @@
 [group InspectCodeGroup]
   InspectCode
   CodeCleanup
+  Ruff.FixScope
 [group InspectCodeInCodeMenuGroup]
   <separator>
   InspectCodeGroup
@@ -2573,18 +2572,17 @@
   GoToChangeMarkerGroup
 [group NewFromTemplate]
 [group NewGroup]
-  AddNewPropertyFile
   NewGroup1
   Groovy.NewClass
   Kotlin.NewFile
+  AddNewPropertyFile
   NewPythonFile
   NewFile
   WelcomeNewEmptyFile
   NewScratchFile
   NewDir
-  NewRemoteDevModule
-  compose.newVectorAsset
   JavaFxCreateActions
+  compose.newVectorAsset
   NewJavaSpecialFile
   AddPyProject
   NewPythonPackage
@@ -2593,15 +2591,15 @@
   NewWebDevelopment
   NewMicroservices
   NewFromTemplate
+  CreateEditorConfigFile
   DevkitNewActions
   CreateResourceBundle
-  CreateEditorConfigFile
   Markdown.NewFile
   NewXmlDescriptor
-  DevkitObsoleteNewActions
-  DevKit.NewTheme
   Groovy.NewScript
   Gant.NewScript
+  DevkitObsoleteNewActions
+  DevKit.NewTheme
   GuiDesigner.NewActions
 [group NewMicroservices]
 [group NewProjectOrModuleGroup]
@@ -2730,27 +2728,27 @@
   ExternalToolsGroup
   <separator>
   ProjectViewPopupMenuSettingsGroup
-  XmlGenerateToolsGroup
   UpdateCopyright
+  DissociateResourceBundleAction
+  CombinePropertiesFilesAction
+  Images.SetBackgroundImage
+  XmlGenerateToolsGroup
   ConvertJavaToKotlin
   ConvertJavaToKotlinGroup
   OpenInSceneBuilder
-  DissociateResourceBundleAction
-  CombinePropertiesFilesAction
   Maven.AddFileAsMavenProject
   Maven.GlobalProjectMenu
-  Images.SetBackgroundImage
+  AddAntBuildFile
+  XPathView.XSLT.Associations
   GitLab.Create.Snippet
   Github.Create.Gist
   Mermaid.ExportDiagram
-  AddAntBuildFile
-  XPathView.XSLT.Associations
   Gradle.ProjectViewDependencyAnalyzer
+  Images.EditExternally
+  Images.ConvertSvgToPng
   PackageFile
   Maven.ProjectViewDependencyAnalyzer
   PluginDeployActions
-  Images.EditExternally
-  Images.ConvertSvgToPng
 [group ProjectViewPopupMenuModifyGroup]
   ProjectViewAnalysisGroup
   ReformatCode
@@ -2834,8 +2832,8 @@
   OpenInAssociatedApplication
   OpenInBrowserGroup
   ShowFilePath
-  Terminal.OpenInTerminal
   PyOpenInPythonConsole
+  Terminal.OpenInTerminal
   Terminal.OpenInReworkedTerminal
   Git.Hosting.Open.In.Browser.Group
 [group RightToolbarSideGroup]
@@ -3119,13 +3117,13 @@
   ToolsXmlGroup
   ExternalToolsGroup
   ShowPluginLoadingState
-  com.intellij.mcpserver.actions.ShowMcpToolsAction
+  ShowMcpTools
   com.jetbrains.python.console.RunPythonOrDebugConsoleAction
   PyPackagingMenu
   DevKit.Bootstrap
   KotlinToolsGroup
-  WorkspaceModelGeneration
   Groovy.Console
+  WorkspaceModelGeneration
 [group ToolsMenu.Services]
 [group TopStripeActionGroup]
 [group TouchBar]
@@ -3206,7 +3204,6 @@
   <separator>
   HierarchyPopupMenu.Common
 [group UIToggleActions]
-  <separator>
   TogglePresentationAssistantAction
   <separator>
   ViewMainMenu
@@ -3256,6 +3253,7 @@
 [group ViewAppearanceGroup]
   ToggleFullScreenGroup
   SwitchIdeScaleAction
+  <separator>
   UIToggleActions
 [group ViewMenu]
   ToolWindowsGroup

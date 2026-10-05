@@ -47,7 +47,6 @@ import org.jetbrains.intellij.build.productLayout.createPluginLayoutSet
 import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
 import org.jetbrains.intellij.build.telemetry.use
 import org.jetbrains.jps.util.JpsPathUtil
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.listDirectoryEntries
@@ -620,11 +619,6 @@ internal fun layoutPlatformDistribution(
       if (selectedModuleNames.contains("intellij.platform.ide.impl")) {
         createStatisticsRecorderBundledMetadataProviderTask(moduleOutputPatcher, context)
       }
-      if (selectedModuleNames.contains("intellij.platform.resources")) {
-        fork("patch keymap with Alt click reassigned to multiple carets") {
-          patchKeyMapWithAltClickReassignedToMultipleCarets(moduleOutputPatcher, context)
-        }
-      }
       // The stamped resource is the only application-info source at run time. See ApplicationNamesInfo.loadData.
       val appInfoModuleName = context.productProperties.applicationInfoModule
       if (selectedModuleNames.contains(appInfoModuleName)) fork("write application info resource") {
@@ -696,22 +690,6 @@ fun checkApplicationInfoResourceOwner(
     "The resource '$resourcePath' must be in the application-info module '$applicationInfoModule' only, " +
     "but the platform also packs it from: ${otherOwners.joinToString()}"
   }
-}
-
-private fun patchKeyMapWithAltClickReassignedToMultipleCarets(moduleOutputPatcher: ModuleOutputPatcher, context: BuildContext) {
-  if (!context.productProperties.reassignAltClickToMultipleCarets) {
-    return
-  }
-
-  val moduleName = "intellij.platform.resources"
-  val relativePath = $$"keymaps/$default.xml"
-  val sourceFileContent = context.outputProvider.readFileContentFromModuleOutput(module = context.outputProvider.findRequiredModule(moduleName), relativePath = relativePath)
-                          ?: error("Not found '$relativePath' in module $moduleName output")
-  var text = String(sourceFileContent, StandardCharsets.UTF_8)
-  text = text.replace("<mouse-shortcut keystroke=\"alt button1\"/>", "<mouse-shortcut keystroke=\"to be alt shift button1\"/>")
-  text = text.replace("<mouse-shortcut keystroke=\"alt shift button1\"/>", "<mouse-shortcut keystroke=\"alt button1\"/>")
-  text = text.replace("<mouse-shortcut keystroke=\"to be alt shift button1\"/>", "<mouse-shortcut keystroke=\"alt shift button1\"/>")
-  moduleOutputPatcher.patchModuleOutput(moduleName, relativePath, text)
 }
 
 fun getOsAndArchSpecificDistDirectory(osFamily: OsFamily, arch: JvmArchitecture, libc: LibcImpl, context: BuildContext): Path {
@@ -857,7 +835,7 @@ internal fun layoutDistribution(
 
       Files.createDirectories(targetDir)
       // patchers must be executed _before_ packing, because patchers patch the module output
-      val patchers = layout.patchers
+      val patchers = layout.patchersFor(classicDev = context.options.isDevDistribution)
       if (!patchers.isEmpty()) {
         spanBuilder("execute custom patchers").setAttribute("count", patchers.size.toLong()).use {
           for (patcher in patchers) {
@@ -919,16 +897,11 @@ private fun layoutResourcePaths(layout: BaseLayout, targetDirectory: Path, outpu
       continue
     }
     val target = targetDirectory.resolve(resourceData.relativeOutputPath).normalize()
-    if (resourceData.packToZip) {
-      writeResourceArchive(source, target)
+    if (Files.isRegularFile(source)) {
+      copyFileToDir(source, target)
     }
     else {
-      if (Files.isRegularFile(source)) {
-        copyFileToDir(source, target)
-      }
-      else {
-        copyDir(source, target)
-      }
+      copyDir(source, target)
     }
   }
 
@@ -937,17 +910,13 @@ private fun layoutResourcePaths(layout: BaseLayout, targetDirectory: Path, outpu
   }
 }
 
-internal fun writeResourceArchive(source: Path, target: Path): Path = writeResourceArchiveImpl(source, target)
-
 private fun layoutAdditionalResources(layout: BaseLayout, targetDirectory: Path, context: BuildContext) {
   layoutResourcePaths(layout = layout, targetDirectory = targetDirectory, outputProvider = context.outputProvider)
   if (layout !is PluginLayout) {
     return
   }
 
-  val resourceGenerators = layout.resourceGenerators.let { all ->
-    if (context.options.isDevDistribution) all.filter(::runsInClassicDevMode) else all
-  }
+  val resourceGenerators = layout.resourceGeneratorsFor(classicDev = context.options.isDevDistribution)
   if (!resourceGenerators.isEmpty()) {
     spanBuilder("generate and pack resources").use {
       for (item in resourceGenerators) {

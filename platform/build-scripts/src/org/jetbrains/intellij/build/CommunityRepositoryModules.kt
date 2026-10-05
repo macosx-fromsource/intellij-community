@@ -3,7 +3,6 @@
 
 package org.jetbrains.intellij.build
 
-import io.opentelemetry.api.trace.Span
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.persistentListOf
 import org.jetbrains.intellij.build.dependencies.BuildDependenciesDownloader
@@ -34,9 +33,7 @@ import org.jetbrains.intellij.build.io.copyFile
 import org.jetbrains.intellij.build.io.copyFileToDir
 import org.jetbrains.intellij.build.io.defaultLibrarySourcesNamesFilter
 import org.jetbrains.intellij.build.kotlin.CommunityKotlinPluginBuilder
-import org.jetbrains.intellij.build.python.PYREFLY_BUNDLE_ENABLED_PROPERTY
 import org.jetbrains.intellij.build.python.PythonCommunityPluginModules
-import org.jetbrains.intellij.build.python.isPyreflyBundlingEnabled
 import org.jetbrains.intellij.build.python.withBundledPyrefly
 import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
 import org.jetbrains.intellij.build.telemetry.use
@@ -251,12 +248,7 @@ fun getCommunityRepositoryPlugins(): PersistentList<PluginLayout> {
       spec.withResourceFromModule("intellij.textmate", "lib/bundles", "lib/bundles")
     },
     PythonCommunityPluginModules.pythonCommunityPluginLayout { spec ->
-      if (isPyreflyBundlingEnabled()) {
-        spec.withBundledPyrefly()
-      }
-      else {
-        Span.current().addEvent("skip the Pyrefly bundling, because '$PYREFLY_BUNDLE_ENABLED_PROPERTY' is false")
-      }
+      spec.withBundledPyrefly()
     },
     androidDesignPlugin(),
     pluginAuto(listOf("intellij.completionMlRankingModels")) { spec ->
@@ -725,7 +717,7 @@ private fun createAndroidPluginLayout(
     //  "//tools/adt/idea/artwork:device-art-resources-bundle",  # duplicated in android.jar
     spec.withResourceFromModule("intellij.android.artwork", "resources/device-art-resources", "resources/device-art-resources")
     //  "//tools/adt/idea/android/annotations:androidAnnotations",
-    spec.withResourceArchiveFromModule("intellij.android.core", "annotations", "resources/androidAnnotations.jar")
+    spec.withModule("intellij.android.externalAnnotations", "resources/androidAnnotations.jar")
     //  "//tools/adt/idea/emulator/native:native_lib",
     spec.withResourceFromModule("intellij.android.streaming", "native/linux", "resources/native/linux")
     spec.withResourceFromModule("intellij.android.streaming", "native/mac", "resources/native/mac")
@@ -780,10 +772,9 @@ fun groovyPlugin(additionalModules: List<String> = emptyList(), addition: ((Plug
     spec.withModule("intellij.groovy.constants.rt", "groovy-constants-rt.jar")
     spec.withModules(additionalModules)
 
-    spec.excludeFromModule("intellij.groovy.psi", "standardDsls/**")
-    spec.withResourceFromModule("intellij.groovy.psi", "resources/standardDsls", "lib/standardDsls")
+    spec.withResourceFromModule("intellij.groovy.psi", "standardDsls", "lib/standardDsls")
     spec.withResource("hotswap/gragent.jar", "lib/agent")
-    spec.withResourceFromModule("intellij.groovy.psi", "resources/conf", "lib")
+    spec.withResourceFromModule("intellij.groovy.psi", "resources/conf/console.groovy", "lib")
     addition?.invoke(spec)
   }
 }
@@ -867,24 +858,16 @@ private fun maven3LibrariesLayoutAssetSpec(): DevPluginLayoutAssetSpec {
       mavenLibrariesDirectory("@dev_launch_maven3_libraries//:files", "maven3-libraries"),
       mavenLibrariesDirectory("@dev_launch_maven_telemetry_libraries//:files", "maven-telemetry-libraries"),
     ),
-    assets = listOf(DevPluginLayoutAsset(
-      destination = "lib/intellij.maven.server3",
-      sources = listOf(0, 1),
-      transform = DevPluginLayoutAssetTransform.treeMap(listOf(DevPluginLayoutAssetMapping())),
-      mode = 420,
-    )),
+    assets = listOf(0, 1).map { source ->
+      DevPluginLayoutAsset(destination = "lib/intellij.maven.server3", sources = listOf(source), mode = 420)
+    },
   )
 }
 
 private fun maven4LibrariesLayoutAssetSpec(): DevPluginLayoutAssetSpec {
   return DevPluginLayoutAssetSpec(
     sources = listOf(mavenLibrariesDirectory("@dev_launch_maven_telemetry_libraries//:files", "maven-telemetry-libraries")),
-    assets = listOf(DevPluginLayoutAsset(
-      destination = "lib/intellij.maven.server4",
-      sources = listOf(0),
-      transform = DevPluginLayoutAssetTransform.treeMap(listOf(DevPluginLayoutAssetMapping())),
-      mode = 420,
-    )),
+    assets = listOf(DevPluginLayoutAsset(destination = "lib/intellij.maven.server4", sources = listOf(0), mode = 420)),
   )
 }
 

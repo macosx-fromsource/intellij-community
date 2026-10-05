@@ -87,7 +87,7 @@ class GitLabMergeRequestEditorReviewViewModel internal constructor(
   private val openMergeRequestDiff: (String, Boolean) -> Unit,
 ) : GitLabMergeRequestReviewViewModelBase(
   parentCs.childScope("GitLab Merge Request Editor Review VM"),
-  currentUser, mergeRequest,
+  project, currentUser, mergeRequest,
   if (project.service<GitLabMergeRequestsPreferences>().editorReviewEnabled) DiscussionsViewOption.UNRESOLVED_ONLY else DiscussionsViewOption.DONT_SHOW
 ), CodeReviewInEditorViewModel {
   private val preferences = project.service<GitLabMergeRequestsPreferences>()
@@ -146,7 +146,11 @@ class GitLabMergeRequestEditorReviewViewModel internal constructor(
       val discussions = discussionsResult.getOrNull() ?: emptyList()
       val draftNotes = draftNotesResult.getOrNull() ?: emptyList()
 
-      (discussions + draftNotes + newDiscussions).associateBy { note -> note.trackingId }
+      buildList {
+        addAll(discussions)
+        addAll(draftNotes)
+        addAll(newDiscussions)
+      }.associateBy { note -> note.trackingId }
     }
 
   @OptIn(ExperimentalCoroutinesApi::class)

@@ -77,10 +77,7 @@ internal class WindowsDistributionBuilder(
     get() = WindowsLibcImpl.DEFAULT
 
   override fun copyNativeBinFiles(binDir: Path, arch: JvmArchitecture): List<Path> {
-    val sourceBinDir = context.paths.communityHomeDir.resolve("bin/win")
-    return copyNativeBinDir(sourceBinDir.resolve(arch.dirName), binDir) +
-           // the top-level files of `bin/win` only - the other architecture's directory is not ours
-           copyNativeBinDir(sourceBinDir, binDir, dirFilter = { it == sourceBinDir })
+    return nativeBinFiles(context.paths.communityHomeDir, OsFamily.WINDOWS, arch).map { copyNativeBinFileToDir(it, binDir) }
   }
 
   override fun copyFilesForOsDistribution(targetPath: Path, arch: JvmArchitecture) {
@@ -532,7 +529,7 @@ internal class WindowsDistributionBuilder(
 
   private fun writeWindowsVmOptions(distBinDir: Path, context: BuildContext): Path {
     val vmOptionsFile = distBinDir.resolve("${context.add64IfNeeded(context.productProperties.baseFileName)}.exe.vmoptions")
-    val vmOptions = generateVmOptions(context, extra = emptyList())
+    val vmOptions = generateVmOptions(context, extra = osVmOptions(OsFamily.WINDOWS, context.productProperties.platformPrefix))
     writeVmOptions(vmOptionsFile, vmOptions, separator = "\r\n")
     return vmOptionsFile
   }
@@ -563,7 +560,7 @@ internal class WindowsDistributionBuilder(
               generateQodanaLaunchData(context, arch, OsFamily.WINDOWS),
               generateStdioMcpRunnerLaunchData(context, OsFamily.WINDOWS)
             )
-            context.productProperties.launcherCommandsCustomizer?.invoke(base, context) ?: base
+            if (context.productProperties.launcherCustomCommands) base else emptyList()
           },
         )
       ),

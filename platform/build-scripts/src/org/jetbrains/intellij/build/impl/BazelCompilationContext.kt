@@ -213,7 +213,8 @@ fun isRunningFromBazelOut(): Boolean = bazelOutputRoot != null
 @Internal
 fun isDevBuildBazelBacked(): Boolean = isRunningFromBazelOut() || BazelRunfiles.isRunningFromBazel || BazelBuildInputs.isConfigured
 
-internal val bazelOutputRoot: Path? by lazy {
+@get:Internal
+val bazelOutputRoot: Path? by lazy {
   val url = BazelCompilationContext::class.java.getResource("${BazelCompilationContext::class.java.simpleName}.class")
             ?: error("Unable to get '${BazelCompilationContext::class.java.simpleName}.class' file from resources")
 

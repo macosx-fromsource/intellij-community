@@ -5,6 +5,12 @@ load("@rules_jvm//:jvm.bzl", "jvm_library")
 
 BAZEL_TARGETS_JSON = current_bazel_targets_json()
 
+filegroup(
+    name = "testData",
+    srcs = glob(["testData/**"]),
+    visibility = ["//visibility:public"],
+)
+
 jps_test(
     name = "tests_test",
     timeout = "eternal",
@@ -275,8 +281,8 @@ jvm_library(
         "//platform/util/xmlDom:xmlDom_test_lib",
         "//platform/platform-util-io-impl:ide-util-io-impl",
         "//platform/platform-util-netty:ide-util-netty",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
         "//platform/util/zip",
         "//platform/util/zip:zip_test_lib",
         "//platform/util/rt-java8",
@@ -305,8 +311,8 @@ jvm_library(
         "//platform/util/text-matching:text-matching_test_lib",
         "//platform/lang-impl/testEntities",
         "//platform/lang-impl/testEntities:testEntities_test_lib",
-        "//libraries/junit5-suites",
-        "//libraries/junit5-suites:junit5-suites_test_lib",
+        "//libraries/junit6-suites",
+        "//libraries/junit6-suites:junit6-suites_test_lib",
         "//platform/backend/workspace",
         "//platform/backend/workspace:workspace_test_lib",
         "//platform/diagnostic/telemetry",
@@ -414,6 +420,10 @@ jvm_library(
         "//platform/vcs-impl/shared:shared_test_lib",
         "//platform/execution",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView",
+        "//platform/consoleView:consoleView_test_lib",
+        "//platform/consoleView/impl",
+        "//platform/consoleView/impl:impl_test_lib",
         "//libraries/jetcheck",
         "//libraries/jetcheck:jetcheck_test_lib",
         "//libraries/jediterm-core",
@@ -433,8 +443,8 @@ jvm_library(
         "//platform/workspace/storage/testEntities:testEntities_test_lib",
         "//platform/eel-impl-base",
         "//platform/eel-impl-base:eel-impl-base_test_lib",
-        "//libraries/junit5-params",
-        "//libraries/junit5-params:junit5-params_test_lib",
+        "//libraries/junit6-params",
+        "//libraries/junit6-params:junit6-params_test_lib",
         "//plugins/webp/tests",
         "//plugins/webp/tests:tests_test_lib",
         "//platform/searchEverywhere/backend",

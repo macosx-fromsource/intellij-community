@@ -9,6 +9,7 @@ import com.intellij.python.community.impl.poetry.common.icons.PythonCommunityImp
 import com.intellij.python.community.impl.poetry.common.POETRY_TOOL_ID
 import com.intellij.python.pytools.backend.PyTool
 import com.intellij.python.sdk.backend.PySdkBundle
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.python.sdk.backend.evolution.DiscoveredVenv
 import com.intellij.python.sdk.backend.evolution.EvoPyProject
 import com.intellij.python.sdk.backend.evolution.EvoRecreateSpec
@@ -31,7 +32,7 @@ import com.intellij.python.sdk.common.evolution.EvoRecreateDto
 import com.intellij.python.sdk.common.evolution.EvoSectionDto
 import com.jetbrains.python.errorProcessing.PyResult
 import com.jetbrains.python.getOrNull
-import com.jetbrains.python.sdk.add.v2.FileSystem
+import com.jetbrains.python.sdk.add.v2.EelOrJustPath.Companion.asEelOrJustPath
 import com.jetbrains.python.sdk.add.v2.PathHolder
 import com.jetbrains.python.sdk.evolution.deleteEnvDir
 import com.jetbrains.python.sdk.evolution.systemPythonOptions
@@ -91,7 +92,7 @@ internal class PoetryEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
     if (options.isEmpty()) return result
     // Poetry's cache environments, as full env-root paths. Force `virtualenvs.in-project=false` (as the v2 dialog does)
     // so poetry enumerates the cache envs even when an in-project `.venv` exists — otherwise it reports only `.venv`.
-    val poetryEnvRoots: List<Path> = runPoetry(projectDir, "env", "list", "--full-path", inProjectEnv = false).getOrNull()
+    val poetryEnvRoots: List<Path> = runPoetry(projectDir.asEelOrJustPath(), "env", "list", "--full-path", inProjectEnv = false).getOrNull()
       ?.lineSequence()
       ?.map { Path.of(it.removeSuffix("(Activated)").trim()) }
       ?.filter { it.name.isNotBlank() }
@@ -127,7 +128,7 @@ internal class PoetryEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
   }
 
   /** Adopts an existing poetry env (in-project `.venv` or a cache env) as a poetry-typed SDK. */
-  override suspend fun createSdkForExistingEnv(context: EvoToolContext, homePath: Path): PyResult<Sdk> =
+  override suspend fun createSdkForExistingEnv(context: EvoToolContext, homePath: Path): PyResult<PythonInterpreter> =
     createPoetrySdk(context.workspace.baseDir, PathHolder.Eel(homePath), context.fileSystem)
 
   /**
@@ -138,7 +139,7 @@ internal class PoetryEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
    * frontend fills it with the row's own create token, and a per-version row's token is a base interpreter path. So
    * "is it set" answered yes for every row, and every environment was built in the project.
    */
-  override suspend fun createSdkForNewEnv(context: EvoToolContext, ref: PyInterpreterRef.CreateEnv): PyResult<Sdk> {
+  override suspend fun createSdkForNewEnv(context: EvoToolContext, ref: PyInterpreterRef.CreateEnv): PyResult<PythonInterpreter> {
     val poetryExecutable = executableOrNull(context.fileSystem) ?: return toolMissing()
     val baseDir = context.workspace.baseDir
     val inProject = ref.folder?.toNioPathOrNull()?.normalize() == defaultVenvDir(baseDir).normalize()
@@ -188,7 +189,7 @@ internal class PoetryEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
    * `virtualenvs.in-project` then puts the new environment back in the same place. Passing it for a cache environment
    * moved that environment into the project, which is not what a rebuild does.
    */
-  override suspend fun recreateEnv(context: EvoToolContext, homePath: Path, spec: EvoRecreateSpec): PyResult<Sdk> {
+  override suspend fun recreateEnv(context: EvoToolContext, homePath: Path, spec: EvoRecreateSpec): PyResult<PythonInterpreter> {
     val poetryExecutable = executableOrNull(context.fileSystem) ?: return toolMissing()
     val projectDir = context.workspace.baseDir
     val envHome = VirtualEnvReader().resolvePythonHomeFromPythonBinary(homePath)
@@ -198,7 +199,7 @@ internal class PoetryEvoEnvironmentProvider : PyToolEvoEnvironmentProvider() {
     }
     else {
       // By the name poetry knows it by, which is the folder's own name — `poetry env list` prints exactly these.
-      runPoetry(projectDir, "env", "remove", envHome.name, inProjectEnv = false).getOr { return it }
+      runPoetry(projectDir.asEelOrJustPath(), "env", "remove", envHome.name, inProjectEnv = false).getOr { return it }
     }
     return createNewPoetrySdk(
       moduleBasePath = projectDir,

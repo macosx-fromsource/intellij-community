@@ -63,8 +63,7 @@ class LinuxDistributionBuilder(
     get() = OsFamily.LINUX
 
   override fun copyNativeBinFiles(binDir: Path, arch: JvmArchitecture): List<Path> {
-    val sourceBinDir = context.paths.communityHomeDir.resolve("bin/linux")
-    return listOf(copyNativeBinFileToDir(sourceBinDir.resolve("${arch.dirName}/fsnotifier"), binDir))
+    return nativeBinFiles(context.paths.communityHomeDir, OsFamily.LINUX, arch).map { copyNativeBinFileToDir(it, binDir) }
   }
 
   override fun copyFilesForOsDistribution(targetPath: Path, arch: JvmArchitecture) {
@@ -412,7 +411,7 @@ class LinuxDistributionBuilder(
               generateQodanaLaunchData(context, arch, OsFamily.LINUX),
               generateStdioMcpRunnerLaunchData(context, OsFamily.LINUX)
             )
-            context.productProperties.launcherCommandsCustomizer?.invoke(base, context) ?: base
+            if (context.productProperties.launcherCustomCommands) base else emptyList()
           }
         )
       ),
@@ -513,12 +512,7 @@ class LinuxDistributionBuilder(
 
   private fun writeLinuxVmOptions(distBinDir: Path, context: BuildContext): Path {
     val vmOptionsFile = distBinDir.resolve("${context.add64IfNeeded(context.productProperties.baseFileName)}.vmoptions")
-    val vmOptions = generateVmOptions(context, extra = listOfNotNull(
-      "-Dsun.tools.attach.tmp.only=true",
-      "-Dawt.lock.fair=true",
-      // disabled for Gateway until JBR supports system tray in the Wayland toolkit (IJPL-231661/JBR-9966)
-      "-Dawt.toolkit.name=auto".takeIf { context.productProperties.platformPrefix != "Gateway" },
-    ))
+    val vmOptions = generateVmOptions(context, extra = osVmOptions(OsFamily.LINUX, context.productProperties.platformPrefix))
     writeVmOptions(vmOptionsFile, vmOptions, separator = "\n")
     return vmOptionsFile
   }

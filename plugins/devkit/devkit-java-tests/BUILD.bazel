@@ -118,6 +118,8 @@ jvm_library(
         "//java/execution/openapi:java-execution_test_lib",
         "//platform/execution",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView",
+        "//platform/consoleView:consoleView_test_lib",
         "//java/idea-ui:ui",
         "//java/idea-ui:ui_test_lib",
         "//java/java-syntax:syntax",
@@ -193,10 +195,10 @@ jvm_library(
         "//plugins/devkit/intellij.devkit.themes:themes-tests_test_lib",
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
-        "//libraries/junit5-params",
-        "//libraries/junit5-params:junit5-params_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
+        "//libraries/junit6-params",
+        "//libraries/junit6-params:junit6-params_test_lib",
     ],
 )
 ### auto-generated section `build intellij.devkit.java.tests` end

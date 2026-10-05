@@ -747,6 +747,7 @@ f:com.intellij.openapi.fileEditor.TextEditorLocation
 - getPosition():com.intellij.openapi.editor.LogicalPosition
 a:com.intellij.openapi.fileEditor.UniqueVFilePathBuilder
 - s:getInstance():com.intellij.openapi.fileEditor.UniqueVFilePathBuilder
+- a:getUniqueVirtualFilePathWithinFiles(com.intellij.openapi.project.Project,com.intellij.openapi.vfs.VirtualFile,java.util.Collection):java.lang.String
 com.intellij.openapi.fileTypes.FileTypeConsumer
 - sf:EXTENSION_DELIMITER:java.lang.String
 - a:consume(com.intellij.openapi.fileTypes.FileType):V
@@ -828,6 +829,10 @@ com.intellij.openapi.options.Configurable$WithEpDependencies
 - a:getDependencies():java.util.Collection
 c:com.intellij.openapi.options.ConfigurableEP
 - com.intellij.openapi.extensions.PluginAware
+- beta:Z
+- newOptions:Z
+- promo:Z
+- promoIcon:java.lang.String
 - p:<init>():V
 - createConfigurable():com.intellij.openapi.options.UnnamedConfigurable
 - getDisplayName():java.lang.String

@@ -1,6 +1,10 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.platform.buildScripts.testFramework.distributionContent
 
+import com.intellij.platform.buildScripts.pluginModelTool.PlatformJarRows
+import com.intellij.platform.buildScripts.pluginModelTool.derivePlatformJars
+import com.intellij.platform.buildScripts.pluginModelTool.deriveProductReviewReport
+import com.intellij.platform.buildScripts.pluginModelTool.devDistProductToken
 import com.intellij.platform.distributionContent.DevDistProductReport
 import com.intellij.platform.distributionContent.DistFileRow
 import com.intellij.platform.distributionContent.FileEntry
@@ -8,10 +12,6 @@ import com.intellij.platform.distributionContent.ProductReviewReport
 import com.intellij.platform.distributionContent.writeDevDistProductReport
 import com.intellij.platform.distributionContent.writeProductReviewReport
 import org.jetbrains.annotations.ApiStatus.Internal
-import org.jetbrains.intellij.build.devDist.PlatformJarRows
-import org.jetbrains.intellij.build.devDist.derivePlatformJars
-import org.jetbrains.intellij.build.devDist.deriveProductReviewReport
-import org.jetbrains.intellij.build.devDist.devDistProductToken
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists

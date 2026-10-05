@@ -55,7 +55,7 @@ internal fun generateProductInfoJson(
     emptyList()
   }
   val productProperties = context.productProperties
-  val productFlavors = productProperties.getProductFlavors(context).map { ProductFlavorData(it) }
+  val productFlavors = productProperties.getProductFlavors().map { ProductFlavorData(it) }
   val json = ProductInfoData.create(
     name = appInfo.fullProductName,
     version = appInfo.fullVersion,
@@ -141,6 +141,15 @@ internal fun generateEmbeddedFrontendLaunchData(
   )
 }
 
+/** The JVM arguments the `ijLight` command adds to those of the frontend it starts. */
+internal val IJ_LIGHT_JVM_ARGUMENTS: List<String> = listOf(
+  "-Dintellij.platform.product.mode=light",
+  "-Dintellij.platform.use.proxies.for.open.services=true",
+  "-Didea.vfs.max-file-length-to-cache=0",
+  "-Dcom.intellij.openapi.fileTypes.impl.FileTypeDetectionService.allowDetectionByContent=false",
+  "-Ddisable.implicit.soft.compatibility.dependencies=true",
+)
+
 internal fun generateIjLightLaunchData(
   arch: JvmArchitecture,
   os: OsFamily,
@@ -158,11 +167,7 @@ internal fun generateIjLightLaunchData(
     additionalJvmArguments = buildList {
       addAll(clientContext.getAdditionalJvmArguments(os, arch))
       addAll(getAdditionalEmbeddedClientVmOptions(os, ideContext))
-      add("-Dintellij.platform.product.mode=light")
-      add("-Dintellij.platform.use.proxies.for.open.services=true")
-      add("-Didea.vfs.max-file-length-to-cache=0")
-      add("-Dcom.intellij.openapi.fileTypes.impl.FileTypeDetectionService.allowDetectionByContent=false")
-      add("-Ddisable.implicit.soft.compatibility.dependencies=true")
+      addAll(IJ_LIGHT_JVM_ARGUMENTS)
     },
     mainClass = clientContext.ideMainClassName,
     envVarBaseName = "JETBRAINS_CLIENT",

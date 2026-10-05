@@ -12,10 +12,12 @@ import com.intellij.openapi.observable.properties.GraphProperty
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
+import com.intellij.python.sdk.backend.getSdkAPI
 import com.intellij.ui.dsl.builder.Panel
+import com.jetbrains.python.DEFAULT_EEL_FOR_NEW_PROJECTS
 import com.jetbrains.python.PyBundle
-import com.jetbrains.python.sdk.runWithSdkConfigurationLock
 import com.jetbrains.python.PythonModuleTypeBase
+import com.jetbrains.python.errorProcessing.ErrorSink
 import com.jetbrains.python.errorProcessing.emit
 import com.jetbrains.python.newProjectWizard.projectPath.ProjectPathFlows
 import com.jetbrains.python.onFailure
@@ -24,7 +26,7 @@ import com.jetbrains.python.sdk.add.v2.PySdkCreator
 import com.jetbrains.python.sdk.add.v2.PythonSdkPanelBuilderAndSdkCreator
 import com.jetbrains.python.sdk.configurePythonSdk
 import com.jetbrains.python.sdk.moduleIfExists
-import com.jetbrains.python.errorProcessing.ErrorSink
+import com.jetbrains.python.sdk.runWithSdkConfigurationLock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -72,11 +74,11 @@ private fun <T> GraphProperty<T>.toFlow(): Flow<T> {
  * It works for both PyCharm (where the *.iml file resides in .idea/ directory and the SDK is set for the project) and other
  * IntelliJ-based IDEs (where the *.iml file resides in the module directory and the SDK is set for the module).
  */
-class NewPythonProjectStep(parent: NewProjectWizardStep, val createPythonModuleStructure: Boolean)
-  : AbstractNewProjectWizardStep(parent),
-    NewProjectWizardBaseData by parent.baseData!!,
-    NewProjectWizardPythonData {
-  constructor(parent: NewProjectWizardStep) : this(parent, false) // a separated constructor was made for compatibility with existing plugins
+class NewPythonProjectStep(parent: NewProjectWizardStep, val createPythonModuleStructure: Boolean) : AbstractNewProjectWizardStep(parent),
+                                                                                                     NewProjectWizardBaseData by parent.baseData!!,
+                                                                                                     NewProjectWizardPythonData {
+  constructor(parent: NewProjectWizardStep) : this(parent,
+                                                   false) // a separated constructor was made for compatibility with existing plugins
 
   override val pythonSdkProperty: GraphProperty<Sdk?> = propertyGraph.property(null)
   override var pythonSdk: Sdk? by pythonSdkProperty
@@ -87,6 +89,10 @@ class NewPythonProjectStep(parent: NewProjectWizardStep, val createPythonModuleS
   private lateinit var pySdkCreator: PySdkCreator
   private val errorSink: ErrorSink = ErrorSink()
 
+  /**
+   * We only support new projets on local eel in Idea. To create remote projects, use Pycharm.
+   */
+  private val theOnlySupportedEel = DEFAULT_EEL_FOR_NEW_PROJECTS
   private val projectPathFlows = ProjectPathFlows.create(
     pathProperty.toFlow().combine(nameProperty.toFlow()) { dirPath, projectName ->
       try {
@@ -95,16 +101,14 @@ class NewPythonProjectStep(parent: NewProjectWizardStep, val createPythonModuleS
       catch (_: InvalidPathException) {
         "$dirPath$SystemPathSeparator$projectName"
       }
-    }
+    }, onlyAllowPathsOn = theOnlySupportedEel.descriptor
   )
 
   override fun setupUI(builder: Panel) {
     val onShowTrigger = object : JComponent() {}
     builder.row { cell(onShowTrigger) }
 
-    val sdkPanelBuilder = PythonSdkPanelBuilderAndSdkCreator(
-        module = null,
-    )
+    val sdkPanelBuilder = PythonSdkPanelBuilderAndSdkCreator(eel = theOnlySupportedEel)
 
     sdkPanelBuilder.buildPanel(builder, projectPathFlows)
     sdkPanelBuilder.onShownInitialization(onShowTrigger)
@@ -133,13 +137,13 @@ class NewPythonProjectStep(parent: NewProjectWizardStep, val createPythonModuleS
     }
 
     runWithSdkConfigurationLock(project) {
-      val (sdk, _) = pySdkCreator.getSdk(moduleOrProject).getOr {
+      val (pythonInterpreter, _) = pySdkCreator.getSdk(moduleOrProject).getOr {
         errorSink.emit(it.error, project)
         return@runWithSdkConfigurationLock
       }
-      pythonSdk = sdk
+      pythonSdk = pythonInterpreter.getSdkAPI()
       moduleOrProject.moduleIfExists?.let { module ->
-        configurePythonSdk(project, module, sdk)
+        configurePythonSdk(project, module, pythonInterpreter)
       }
     }
   }

@@ -1,6 +1,14 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
 
+jps_test(
+    name = "tests_test",
+    timeout = "short",
+    tags = ["community-aggregator"],
+    runtime_deps = [":tests_test_lib"],
+)
+### skip generation section `test intellij.platform.projectView.tests` end
+
 ### auto-generated section `build intellij.platform.projectView.tests` start
 jvm_library(
     name = "tests",
@@ -74,8 +82,8 @@ jvm_library(
         "//platform/util/coroutines",
         "//platform/util/coroutines:coroutines_test_lib",
         "@lib//:kotlin-stdlib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
         "//libraries/kotlinx/coroutines/core",
         "//libraries/kotlinx/coroutines/core:core_test_lib",
         "//platform/testFramework",
@@ -112,10 +120,3 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 ### auto-generated section `iml intellij.platform.projectView.tests` end
-
-### auto-generated section `test intellij.platform.projectView.tests` start
-jps_test(
-    name = "tests_test",
-    runtime_deps = [":tests_test_lib"],
-)
-### auto-generated section `test intellij.platform.projectView.tests` end

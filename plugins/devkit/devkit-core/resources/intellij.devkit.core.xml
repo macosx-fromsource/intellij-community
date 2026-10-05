@@ -33,6 +33,7 @@
     <module name="intellij.platform.buildData"/>
     <module name="intellij.platform.builtInServer"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -144,8 +145,10 @@
     <fileBasedIndex implementation="org.jetbrains.idea.devkit.dom.index.IdeaPluginRegistrationIndex"/>
     <fileBasedIndex implementation="org.jetbrains.idea.devkit.dom.index.PluginIdModuleIndex"/>
     <fileBasedIndex implementation="org.jetbrains.idea.devkit.dom.index.PluginIdDependenciesIndex"/>
+    <fileBasedIndex implementation="org.jetbrains.idea.devkit.dom.index.PluginXIncludeIndex"/>
     <fileBasedIndex implementation="org.jetbrains.idea.devkit.dom.index.ExtensionPointIndex"/>
     <fileBasedIndex implementation="org.jetbrains.idea.devkit.dom.index.ExtensionPointClassIndex"/>
+    <fileBasedIndex implementation="org.jetbrains.idea.devkit.dom.index.ExtensionImplementationIndex"/>
 
     <editorTabTitleProvider implementation="org.jetbrains.idea.devkit.dom.ide.PluginDescriptorEditorTabTitleProvider"/>
     <useScopeEnlarger implementation="org.jetbrains.idea.devkit.dom.ide.PluginDescriptorUseScopeEnlarger"/>
@@ -760,6 +763,12 @@
                      implementationClass="org.jetbrains.idea.devkit.inspections.ContentModuleWithoutDedicatedJpsModuleInspection"
                      key="inspection.content.module.without.dedicated.jps.module.name"/>
 
+    <localInspection language="" projectType="INTELLIJ_PLUGIN"
+                     groupPathKey="inspections.group.path" groupKey="inspections.group.descriptor"
+                     enabledByDefault="true" level="WARNING"
+                     implementationClass="org.jetbrains.idea.devkit.inspections.ToolWindowStripeTitleInspection"
+                     key="inspection.tool.window.stripe.title.display.name"/>
+
     <localInspection language="XML" applyToDialects="false"
                      projectType="INTELLIJ_PLUGIN"
                      groupPathKey="inspections.group.path" groupKey="inspections.group.descriptor"
@@ -844,6 +853,9 @@
     <psi.referenceContributor language="UAST" implementation="org.jetbrains.idea.devkit.references.ActionOrGroupIdReferenceContributor"/>
     <referenceInjector implementation="org.jetbrains.idea.devkit.references.ActionOrGroupIdReferenceInjector"/>
     <referencesSearch implementation="org.jetbrains.idea.devkit.references.ActionWithoutIdReferencesQueryExecutor"/>
+
+    <platform.backend.documentation.psiTargetProvider order="before JavaPsiDocumentationTargetProvider"
+                                                      implementation="org.jetbrains.idea.devkit.references.IconFieldDocumentationTargetProvider"/>
 
     <psi.referenceContributor language="UAST"
                               implementation="org.jetbrains.idea.devkit.references.NotificationGroupIdReferenceContributor"/>
@@ -1203,10 +1215,6 @@
       <add-to-group group-id="NewGroup" relative-to-action="CreateResourceBundle" anchor="before"/>
     </group>
 
-    <action id="NewRemoteDevModule" class="org.jetbrains.idea.devkit.actions.NewRemoteDevModuleAction" icon="AllIcons.Nodes.Module">
-      <add-to-group group-id="NewGroup" anchor="after" relative-to-action="NewDir"/>
-    </action>
-
     <action class="org.jetbrains.idea.devkit.actions.GenerateComponentExternalizationAction" id="GenerateExternalization">
       <add-to-group anchor="last" group-id="GenerateGroup"/>
     </action>
@@ -1219,6 +1227,8 @@
       <action id="DevKit.AnalyzePersistentSyntaxTreeOverhead" internal="true"
               class="org.jetbrains.idea.devkit.hprof.AnalyzePersistentSyntaxTreeOverheadAction"/>
       <action id="AnalyzeUnloadablePlugins" internal="true" class="org.jetbrains.idea.devkit.internal.AnalyzeUnloadablePluginsAction"/>
+      <action id="PluginPermissionServiceDemo" internal="true"
+              class="org.jetbrains.idea.devkit.plugins.PluginPermissionServiceDemoAction"/>
       <add-to-group group-id="Internal" anchor="last"/>
     </group>
 
@@ -1238,7 +1248,7 @@
     </action>
     <action id="ShowEditorHighlighterTokens" internal="true"
             class="org.jetbrains.idea.devkit.internal.ShowEditorHighlighterTokensAction">
-      <add-to-group group-id="Internal"/>
+      <add-to-group group-id="Internal.Editor"/>
     </action>
 
     <action id="DumpFocusableComponentHierarchyAction" internal="true"
@@ -1306,9 +1316,6 @@
       <add-to-group group-id="Internal.UI.Demos"/>
     </action>
     <action id="TestTooltipsAction" internal="true" class="org.jetbrains.idea.devkit.internal.ui.TestTooltipsAction">
-      <add-to-group group-id="Internal.UI.Demos"/>
-    </action>
-    <action id="ShowInlineBanner" internal="true" class="org.jetbrains.idea.devkit.internal.ui.InlineBannerTestAction">
       <add-to-group group-id="Internal.UI.Demos"/>
     </action>
     <action id="ToolbarDemo" internal="true" class="org.jetbrains.idea.devkit.internal.ui.ToolbarDemoAction">

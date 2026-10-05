@@ -406,7 +406,7 @@ Many products share one plugin layout registry, so the report names no product.
 Fix:
 1. Move the module to the platform, so that every plugin reads the one copy.
 2. Or extract a new plugin that holds the module, and let each plugin depend on it.
-3. Or grandfather the name: add it to KNOWN_MODULES_IN_MULTIPLE_PLUGINS in platform/buildScripts/src/productLayout/ultimateGenerator.kt.
+3. Or grandfather the name: add it to KNOWN_MODULES_IN_MULTIPLE_PLUGINS in platform/buildScripts/plugin-model/src/ultimateGenerator.kt.
 
 [Rule: ModuleInMultiplePluginsValidation]
 ```
@@ -418,7 +418,7 @@ The rule reads the other direction too. An allowlist entry that no plugin layout
 **Fixes**:
 1. **Move the module to the platform**, so that every plugin reads the one copy
 2. **Extract a new plugin** that holds the module, and let each plugin depend on it
-3. **Grandfather the name** in `KNOWN_MODULES_IN_MULTIPLE_PLUGINS` in `platform/buildScripts/src/productLayout/ultimateGenerator.kt`
+3. **Grandfather the name** in `KNOWN_MODULES_IN_MULTIPLE_PLUGINS` in `platform/buildScripts/plugin-model/src/ultimateGenerator.kt`
 
 **Auto-Fix**: No. The error is a hard failure. The allowlist is the whole suppression mechanism, and `suppressions.json` holds no entry for this rule.
 

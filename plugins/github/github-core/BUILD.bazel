@@ -57,6 +57,7 @@ jvm_library(
     resource_strip_prefix = "resources",
     resources = glob(
         ["resources/**/*"],
+        exclude = ["resources/**/icon-robots.txt"],
     ),
     visibility = ["//visibility:public"],
     deps = [
@@ -121,8 +122,6 @@ jvm_library(
         "//platform/vcs-impl/shared",
         "//platform/lang-api:lang",
         "//platform/util/concurrency",
-        "//platform/eel-provider",
-        "//platform/eel",
         ":libraries_kotlinc_libraries-kotlinc-kotlinx-serialization-compiler-plugin_provided",
     ],
 )
@@ -203,8 +202,6 @@ jvm_library(
         "//platform/vcs-impl/shared:shared_test_lib",
         "//platform/lang-api:lang_test_lib",
         "//platform/util/concurrency:concurrency_test_lib",
-        "//platform/eel-provider:eel-provider_test_lib",
-        "//platform/eel:eel_test_lib",
     ],
 )
 ### auto-generated section `build intellij.vcs.github` end
@@ -405,10 +402,10 @@ jvm_library(
         "//platform/testFramework/junit5/codeInsight",
         "//platform/testFramework/junit5/codeInsight:codeInsight_test_lib",
         "@lib//:app-cash-turbine-jvm",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
-        "//libraries/junit5-params",
-        "//libraries/junit5-params:junit5-params_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
+        "//libraries/junit6-params",
+        "//libraries/junit6-params:junit6-params_test_lib",
     ],
 )
 ### auto-generated section `build intellij.vcs.github.tests` end

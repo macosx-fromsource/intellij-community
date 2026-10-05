@@ -49,23 +49,19 @@ interface PythonHelpersLocator {
      * Retrieves Path of a helper file given its resource name.
      *
      * @param resourceName The name of the helper resource file.
-     * @return Path of the helper file, or null if the file does not exist.
+     * @return Path of the helper file.
+     * @throws IllegalStateException if the file does not exist. The helpers are part of the installation,
+     * so a missing file is a bug.
      */
     @JvmStatic
     @RequiresBackgroundThread(generateAssertion = false /* IJPL-115548 */)
     fun findPathInHelpers(resourceName: String): Path {
-      return findPathInHelpersPossibleNull(resourceName) ?: error("File $resourceName does not exist in helpers root. Installation broken?")
-    }
-
-    @JvmStatic
-    @RequiresBackgroundThread(generateAssertion = false /* IJPL-115548 */)
-    fun findPathInHelpersPossibleNull(resourceName: String): Path? {
       for (helperRoot in getHelpersRoots()) {
         val path = Path.of(helperRoot.pathString, resourceName)
         if (path.exists())
           return path
       }
-      return null
+      error("File $resourceName does not exist in helpers root. Installation broken?")
     }
 
 
@@ -85,13 +81,13 @@ interface PythonHelpersLocator {
      * Retrieves the absolute path of a helper file given its resource name.
      *
      * @param resourceName The name of the helper resource file (for example, `pydev` or `jupyter_debug`).
-     * @return The absolute path of the helper file, or null if the file does not exist.
+     * @return The absolute path of the helper file.
+     * @throws IllegalStateException if the file does not exist. See [findPathInHelpers].
      */
     @ApiStatus.Internal
     @JvmStatic
     @RequiresBackgroundThread(generateAssertion = false /* IJPL-115548 */)
-    fun findPathStringInHelpers(@NonNls resourceName: String): String = findPathInHelpersPossibleNull(resourceName)?.absolutePathString()
-                                                                        ?: ""
+    fun findPathStringInHelpers(@NonNls resourceName: String): String = findPathInHelpers(resourceName).absolutePathString()
   }
 
   @ApiStatus.Internal

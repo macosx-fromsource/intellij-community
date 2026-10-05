@@ -21,11 +21,6 @@ dev_dist_plugin(
         "intellij.platform.images.xdebugger",
     ],
     descriptor = "resources/META-INF/plugin.xml",
-    descriptor_modules = [
-        "intellij.platform.images.copyright",
-        "intellij.platform.images.jcef",
-        "intellij.platform.images.xdebugger",
-    ],
     jars = {
         "lib/platform-images.jar": ["intellij.platform.images"],
     },
@@ -48,6 +43,7 @@ jvm_library(
     resource_strip_prefix = "resources",
     resources = glob(
         ["resources/**/*"],
+        exclude = ["resources/**/icon-robots.txt"],
     ),
     visibility = ["//visibility:public"],
     deps = [
@@ -238,8 +234,8 @@ jvm_library(
         "//xml/xml-psi-api:psi_test_lib",
         "//platform/util-ex",
         "//platform/util-ex:util-ex_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
     ],
 )
 ### auto-generated section `build intellij.platform.images.tests` end

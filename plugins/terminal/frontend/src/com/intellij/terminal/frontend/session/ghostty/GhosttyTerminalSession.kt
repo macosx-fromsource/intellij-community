@@ -1,22 +1,16 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.terminal.frontend.session.ghostty
 
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.diagnostic.trace
-import com.intellij.openapi.editor.colors.EditorColorsListener
-import com.intellij.openapi.editor.colors.EditorColorsManager
-import com.intellij.openapi.editor.ex.EditorSettingsExternalizable
 import com.intellij.openapi.project.Project
 import com.intellij.platform.eel.EelDescriptor
-import com.intellij.platform.eel.EelOsFamily
 import com.intellij.platform.eel.provider.LocalEelDescriptor
 import com.intellij.platform.util.coroutines.childScope
 import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
-import com.intellij.terminal.TerminalUiSettingsManager
+import com.intellij.terminal.emulator.ColorScheme
 import com.intellij.terminal.emulator.CursorShape
 import com.intellij.terminal.emulator.ScreenChange
-import com.intellij.terminal.emulator.ScrollbackPullPolicy
 import com.intellij.terminal.emulator.TerminalColor
 import com.intellij.terminal.emulator.TerminalCustomCommandListener
 import com.intellij.terminal.emulator.TerminalEmulator
@@ -27,7 +21,6 @@ import com.intellij.terminal.frontend.session.ObservableTtyConnector
 import com.intellij.terminal.frontend.session.TerminalShellIntegrationController
 import com.intellij.terminal.frontend.session.addWorkingDirectoryListener
 import com.intellij.util.AwaitCancellationAndInvoke
-import com.intellij.util.asDisposable
 import com.intellij.util.awaitCancellationAndInvoke
 import com.jediterm.core.util.TermSize
 import com.jediterm.terminal.TtyConnector
@@ -49,9 +42,7 @@ import org.jetbrains.annotations.VisibleForTesting
 import org.jetbrains.plugins.terminal.LocalTerminalTtyConnector
 import org.jetbrains.plugins.terminal.ShellStartupOptions
 import org.jetbrains.plugins.terminal.TerminalEmulatorType
-import org.jetbrains.plugins.terminal.TerminalOptionsProvider
 import org.jetbrains.plugins.terminal.TerminalUtil
-import org.jetbrains.plugins.terminal.block.ui.TerminalUi
 import org.jetbrains.plugins.terminal.block.ui.TerminalUiUtils
 import org.jetbrains.plugins.terminal.original
 import org.jetbrains.plugins.terminal.session.impl.TerminalBeepEvent
@@ -63,15 +54,19 @@ import org.jetbrains.plugins.terminal.session.impl.TerminalOutputEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalResizeEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalSession
 import org.jetbrains.plugins.terminal.session.impl.TerminalSessionTerminatedEvent
+import org.jetbrains.plugins.terminal.session.impl.TerminalSetColorSchemeEvent
+import org.jetbrains.plugins.terminal.session.impl.TerminalSetDefaultCursorShapeEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalStateChangedEvent
 import org.jetbrains.plugins.terminal.session.impl.TerminalWriteBytesEvent
+import org.jetbrains.plugins.terminal.session.impl.dto.CursorShapeDto
 import org.jetbrains.plugins.terminal.session.impl.dto.KeyEventProcessingResultDto
+import org.jetbrains.plugins.terminal.session.impl.dto.TerminalColorSchemeDto
+import org.jetbrains.plugins.terminal.session.impl.dto.TerminalRgbColorDto
 import org.jetbrains.plugins.terminal.session.impl.dto.TerminalStateDto
+import org.jetbrains.plugins.terminal.session.impl.dto.toCursorShape
 import org.jetbrains.plugins.terminal.startup.TerminalProcessType
-import java.awt.Color
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
-import java.beans.PropertyChangeListener
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
@@ -93,7 +88,7 @@ import kotlin.time.Duration.Companion.milliseconds
  *   [TerminalEmulator.customCommandListener], parsed by the shared
  *   [TerminalShellIntegrationController], and turned into
  *   `TerminalShellIntegrationEvent`s (and the shell-integration state flag).
- *   Each command forces a projection and an emission at its own position, off the [OUTPUT_POLL_INTERVAL] cadence.
+ *   Each command forces a projection at its own position, off the [OUTPUT_POLL_INTERVAL] cadence.
  * - the bell ([TerminalListener.onBell]) becomes a `TerminalBeepEvent`;
  * - emulator responses ([TerminalListener.onRespondToHost]) and input events are
  *   written back to the PTY;
@@ -123,6 +118,8 @@ class GhosttyTerminalSession internal constructor(
   private val ttyConnector: TtyConnector,
   initialSize: TerminalSize,
   initialWorkingDirectory: String?,
+  /** The `TERM` of the started process, which the emulator reports for the `XTGETTCAP` query `TN`; null if not set. */
+  private val terminfoName: String?,
   private val shellIntegrationController: TerminalShellIntegrationController,
   settings: JBTerminalSystemSettingsProviderBase,
   override val coroutineScope: CoroutineScope,
@@ -143,15 +140,23 @@ class GhosttyTerminalSession internal constructor(
   private val projector = TerminalEmulatorOutputProjector(emulator)
 
   // Encode AWT key/mouse events into PTY bytes through the emulator; call only under
-  // [lock].
+  // [emulatorLock].
   private val keyEncoder = TerminalEmulatorKeyEventEncoder(emulator, settings)
   private val mouseEncoder = TerminalEmulatorMouseEventEncoder(emulator, settings)
 
   /**
    * The emulator is not thread-safe: serialize the read loop and the resize/input
-   * handler.
+   * handler. The EDT takes it to encode key and mouse events, so nothing may wait for
+   * the output collector while holding it (see [emitLock]).
    */
-  private val lock = ReentrantLock()
+  private val emulatorLock = ReentrantLock()
+
+  /**
+   * Serializes the emissions to [outputFlow] in projection order, and is held while a
+   * slow collector catches up. Only the read loop and the polling job take it, always
+   * before [emulatorLock]; the EDT never does.
+   */
+  private val emitLock = ReentrantLock()
 
   private val inputChannel = Channel<TerminalInputEvent>(Channel.UNLIMITED)
 
@@ -162,29 +167,29 @@ class GhosttyTerminalSession internal constructor(
   //
   // SUSPEND, not DROP_OLDEST: output events are incremental deltas, so a collector
   // missing one would desync from every update after it. Emissions wait for room — and
-  // for a collector to exist at all (see tryEmitOutput) — while holding [lock], which
-  // stalls the read loop and pushes the backpressure into the PTY. Emitting under the
-  // lock also serializes the emitters, so a projection cannot overtake an earlier one.
+  // for a collector to exist at all (see tryEmitOutput) — while holding [emitLock], which
+  // stalls the read loop and pushes the backpressure into the PTY. The same lock
+  // serializes the emitters, so a projection cannot overtake an earlier one.
   private val outputFlow = MutableSharedFlow<List<TerminalOutputEvent>>(
     replay = 1,
     extraBufferCapacity = 0,
     onBufferOverflow = BufferOverflow.SUSPEND,
   )
 
-  // Diffing state (guarded by lock).
+  // Diffing state (guarded by emulatorLock).
   private var lastScrollbackRows = -1
   private var lastCursorLine = -1L
   private var lastCursorColumn = -1
   private var lastState: TerminalStateDto? = null
 
   // Whether anything projection reads (emulator content, modes, the working
-  // directory) may have changed since the last projection; guarded by lock. Lets the
+  // directory) may have changed since the last projection; guarded by emulatorLock. Lets the
   // polling job skip idle ticks outright — otherwise every tick of an idle session
   // pays the FFI dirty poll, state snapshot, and cursor row reads. Starts true so the
   // first tick after a collector appears emits the initial frame.
   private var changedSinceLastProjection = true
 
-  // Synchronized-output (DEC 2026) deferral state, guarded by lock: the watchdog
+  // Synchronized-output (DEC 2026) deferral state, guarded by emulatorLock: the watchdog
   // bounding the currently open block (null when none is armed), and the force-paint
   // it requests when the block overstays — consumed by the next projection. See
   // isDeferringForSyncOutputLocked().
@@ -195,18 +200,22 @@ class GhosttyTerminalSession internal constructor(
   // flushed by syncLocked().
   private val pendingEvents = ArrayList<TerminalOutputEvent>()
 
-  // Emulator replies to host queries (DSR, DA, OSC reports), collected during a write
-  // and written to the PTY by [flushResponses] *after* [lock] is released. They must
+  // Projections not emitted yet, in projection order; guarded by emulatorLock. Queued under
+  // [emulatorLock] and emitted after it is released, under [emitLock] (see takeBatchesLocked).
+  private val pendingBatches = ArrayList<List<TerminalOutputEvent>>()
+
+  // Emulator replies to host queries (DSR, DA, OSC reports) and color scheme reports, collected during a write
+  // or a color scheme change and written to the PTY by [flushResponses] *after* [emulatorLock] is released. They must
   // not be written inline: the write-pty effect fires synchronously inside
   // emulator.write, so a full PTY buffer would park the read thread both inside
   // ghostty's vt_write (see terminal.h: effects "must not block for too long ... they
-  // are blocking further IO processing") and while holding [lock] — freezing resize
+  // are blocking further IO processing") and while holding [emulatorLock] — freezing resize
   // along with it.
   private val pendingResponses = ArrayList<ByteArray>()
 
   // The working directory reported in the session state: starts at the requested
   // startup directory and is kept fresh by the working-directory tracker (see
-  // createGhosttyTerminalSession). Guarded by lock; the next projection reports the
+  // createGhosttyTerminalSession). Guarded by emulatorLock; the next projection reports the
   // new value.
   private var currentDirectory: String? = initialWorkingDirectory
 
@@ -256,7 +265,7 @@ class GhosttyTerminalSession internal constructor(
    * projection tick.
    */
   fun updateCurrentDirectory(directory: String) {
-    lock.withLock {
+    emulatorLock.withLock {
       currentDirectory = directory
       changedSinceLastProjection = true
     }
@@ -265,49 +274,42 @@ class GhosttyTerminalSession internal constructor(
   @OptIn(AwaitCancellationAndInvoke::class)
   fun start() {
     emulator.listener = object : TerminalListener {
-      // Fires synchronously inside emulator.write, i.e. under [lock] on the read thread.
+      // Fires synchronously inside emulator.write (or emulator.setColorScheme), i.e. under [emulatorLock].
       // Queue only: the actual pty write happens in flushResponses(), once the lock is
       // released. See [pendingResponses].
       override fun onRespondToHost(data: ByteArray) {
         pendingResponses.add(data)
       }
 
-      // Fires synchronously inside emulator.write, i.e. under [lock] on the read thread.
+      // Fires synchronously inside emulator.write, i.e. under [emulatorLock] on the read thread.
       override fun onBell() {
         pendingEvents.add(TerminalBeepEvent)
       }
     }
 
     // OSC 1341 (JetBrains shell integration): the emulator's custom-command listener fires
-    // synchronously inside emulator.write, i.e. under [lock] on the read thread, and the controller
+    // synchronously inside emulator.write, i.e. under [emulatorLock] on the read thread, and the controller
     // delivers the parsed events on the same thread.
     // Commands force a projection to ensure that the event is delivered in order with other emulator changes.
     shellIntegrationController.addEventSink { event ->
       pendingEvents.add(event)
       // Bypass the synchronized-output deferral on purpose.
       // A half-drawn frame costs less than an OSC 1341 command boundary that lands at the wrong offset.
-      flushPendingEventsLocked(bypassSyncOutputDeferral = true)
+      projectLocked(bypassSyncOutputDeferral = true)
     }
     emulator.customCommandListener = TerminalCustomCommandListener(shellIntegrationController::processCustomCommand)
 
-    // Applies the IDE's cursor-shape/blink-caret settings as the emulator's defaults, and keeps
-    // them in sync with those settings for the rest of the session. Must run before the read loop
-    // below starts, so the emulator never shows Ghostty's own hardcoded defaults even briefly.
-    installDefaultCursorStateUpdating(coroutineScope.childScope("Default cursor state updating"))
-
-    // Applies the IDE terminal colors as the emulator's default colors, and keeps them in sync with the color scheme.
-    // Must run before the read loop below starts, so the emulator answers the first color query (OSC 10/11) of a program.
-    installColorSchemeUpdating(coroutineScope.childScope("Color scheme updating"))
-
     // Windows host is using ConPTY that has its own buffer: it stores screen lines only,
     // and when terminal size grows, it can't pull scrollback lines to the screen.
-    // So, we have to use "ScrollbackPullPolicy.NEVER" in the Windows case to ensure
+    // So, we have to disable the scrollback pull in the Windows case to ensure
     // that emulator and ConPTY buffers are in sync after resize.
-    val scrollbackPullPolicy = if (eelDescriptor.osFamily == EelOsFamily.Windows) {
-      ScrollbackPullPolicy.NEVER
+    emulator.setResizePullScrollback(localTtyConnector?.isWinConPty() != true)
+
+    terminfoName?.let { name ->
+      // TERM comes from the user environment, so a name that the emulator rejects must not stop the session.
+      runCatching { emulator.setTerminfoName(name) }
+        .onFailure { LOG.warn("Failed to set the terminfo name '$name'", it) }
     }
-    else ScrollbackPullPolicy.CURSOR_AT_BOTTOM
-    emulator.setResizeScrollbackPullPolicy(scrollbackPullPolicy)
 
     // Read the PTY on a dedicated daemon thread rather than a coroutine in the session
     // scope (production uses a plain executor for the same reason): the blocking read()
@@ -321,13 +323,21 @@ class GhosttyTerminalSession internal constructor(
           val count = ttyConnector.read(buffer, 0, buffer.size)
           if (count <= 0) break // EOF
           var responses: List<ByteArray> = emptyList()
-          lock.withLock {
-            if (disposed) break
-            val input = String(buffer, 0, count)
-            LOG.trace { "Writing to emulator: ${input.escapeControlCharactersForLog()}" }
-            emulator.write(input)
-            changedSinceLastProjection = true
-            responses = takeResponsesLocked()
+          // emitLock first: while an emission waits for the collector, the read loop stops reading the PTY.
+          emitLock.withLock {
+            var batches: List<List<TerminalOutputEvent>> = emptyList()
+            emulatorLock.withLock {
+              if (disposed) break
+              val input = String(buffer, 0, count)
+              LOG.trace { "Writing to emulator: ${input.escapeControlCharactersForLog()}" }
+              emulator.write(input)
+              changedSinceLastProjection = true
+              // Take batches that may have been added by the shell integration event force projection.
+              // It is empty in the regular case.
+              batches = takeBatchesLocked()
+              responses = takeResponsesLocked()
+            }
+            emitBatches(batches)
           }
           flushResponses(responses)
         }
@@ -342,11 +352,20 @@ class GhosttyTerminalSession internal constructor(
         // requireCollector = false on both emissions — with nothing collecting they
         // must not wait, or teardown would hang; the replay slot keeps the last one
         // on a best effort.
-        val finalEvents = runCatching {
-          lock.withLock { if (disposed) emptyList() else syncLocked(bypassSyncOutputDeferral = true) }
-        }.getOrDefault(emptyList())
-        if (finalEvents.isNotEmpty()) emitOutputBlocking(finalEvents, requireCollector = false)
-        emitOutputBlocking(listOf(TerminalSessionTerminatedEvent), requireCollector = false)
+        emitLock.withLock {
+          val finalBatches = runCatching {
+            emulatorLock.withLock {
+              if (disposed) emptyList()
+              else {
+                // Also takes the batches that a failed write queued: the final frame is a delta after them.
+                projectLocked(bypassSyncOutputDeferral = true)
+                takeBatchesLocked()
+              }
+            }
+          }.getOrDefault(emptyList())
+          emitBatches(finalBatches, requireCollector = false)
+          emitOutputBlocking(listOf(TerminalSessionTerminatedEvent), requireCollector = false)
+        }
         coroutineScope.cancel()
       }
     }
@@ -367,7 +386,7 @@ class GhosttyTerminalSession internal constructor(
     // amount of output into bounded state, and each tick emits one coalesced delta, so
     // a program spamming output produces ~50 event batches per second instead of one
     // per PTY read. Dispatchers.IO because the emission deliberately blocks under
-    // [lock] while a slow collector catches up (see projectAndEmitLocked).
+    // [emitLock] while a slow collector catches up (see emitOutputBlocking).
     coroutineScope.launch(Dispatchers.IO) {
       while (true) {
         delay(OUTPUT_POLL_INTERVAL)
@@ -376,17 +395,22 @@ class GhosttyTerminalSession internal constructor(
         // keeps feeding the emulator meanwhile, bounded by its history-eviction flush.
         if (outputFlow.subscriptionCount.value == 0) continue
         var responses: List<ByteArray> = emptyList()
-        lock.withLock {
-          if (disposed) return@launch
-          // An idle tick (nothing changed, no force paint pending) costs one lock
-          // acquisition and nothing else — no FFI reads.
-          val forcePaint = consumeSyncOutputForcePaintLocked()
-          // isHistoryReplaced is scoped only to the primary screen buffer.
-          if (changedSinceLastProjection || forcePaint ||
-              (projector.isHistoryReplaced && !emulator.usingAlternateScreen)) {
-            flushPendingEventsLocked(bypassSyncOutputDeferral = forcePaint)
+        emitLock.withLock {
+          var batches: List<List<TerminalOutputEvent>> = emptyList()
+          emulatorLock.withLock {
+            if (disposed) return@launch
+            // An idle tick (nothing changed, no force paint pending) costs two lock
+            // acquisitions and nothing else — no FFI reads.
+            val forcePaint = consumeSyncOutputForcePaintLocked()
+            // isHistoryReplaced is scoped only to the primary screen buffer.
+            if (changedSinceLastProjection || forcePaint ||
+                (projector.isHistoryReplaced && !emulator.usingAlternateScreen)) {
+              projectLocked(bypassSyncOutputDeferral = forcePaint)
+            }
+            batches = takeBatchesLocked()
+            responses = takeResponsesLocked()
           }
-          responses = takeResponsesLocked()
+          emitBatches(batches)
         }
         flushResponses(responses)
       }
@@ -395,18 +419,18 @@ class GhosttyTerminalSession internal constructor(
     coroutineScope.awaitCancellationAndInvoke {
       disposed = true
       runCatching { ttyConnector.close() }
-      lock.withLock {
+      emulatorLock.withLock {
         runCatching { projector.close() }
         runCatching { emulator.close() }
       }
     }
   }
 
-  override fun processMouseEvent(e: MouseEvent, x: Int, y: Int): ByteArray? = lock.withLock {
+  override fun processMouseEvent(e: MouseEvent, x: Int, y: Int): ByteArray? = emulatorLock.withLock {
     if (disposed) null else mouseEncoder.encodeMouseEvent(e, x, y)
   }
 
-  override fun processKeyEvent(e: KeyEvent): KeyEventProcessingResultDto = lock.withLock {
+  override fun processKeyEvent(e: KeyEvent): KeyEventProcessingResultDto = emulatorLock.withLock {
     if (disposed) KeyEventProcessingResultDto.Unhandled else keyEncoder.encodeKeyEvent(e)
   }
 
@@ -437,7 +461,7 @@ class GhosttyTerminalSession internal constructor(
         .onFailure { if (!disposed) LOG.warn("Failed to write ${event.bytes.size} bytes to the PTY", it) }
       is TerminalResizeEvent -> {
         var responses: List<ByteArray> = emptyList()
-        lock.withLock {
+        emulatorLock.withLock {
           if (disposed) return
           emulator.resize(TerminalSize(event.newSize.columns, event.newSize.rows))
           changedSinceLastProjection = true
@@ -452,13 +476,34 @@ class GhosttyTerminalSession internal constructor(
       }
       is TerminalClearBufferEvent -> handleClearBuffer()
       is TerminalCloseEvent -> runCatching { ttyConnector.close() }
+      is TerminalSetColorSchemeEvent -> handleSetColorScheme(event.colorScheme)
+      is TerminalSetDefaultCursorShapeEvent -> emulatorLock.withLock {
+        if (disposed) return
+        emulator.setDefaultCursorShape(event.cursorShape.toEmulatorCursorShape())
+        emulator.setDefaultCursorBlinking(event.cursorShape.toCursorShape().isBlinking)
+        changedSinceLastProjection = true
+      }
     }
+  }
+
+  private fun handleSetColorScheme(colorScheme: TerminalColorSchemeDto) {
+    var responses: List<ByteArray> = emptyList()
+    emulatorLock.withLock {
+      if (disposed) return
+      emulator.setDefaultForegroundColor(colorScheme.foreground.toEmulatorColor())
+      emulator.setDefaultBackgroundColor(colorScheme.background.toEmulatorColor())
+      emulator.setDefaultAnsiColors(colorScheme.ansiColors.map { it.toEmulatorColor() })
+      // Last, because it can send the color scheme report (mode 2031), after which the program queries the new colors.
+      emulator.setColorScheme(if (colorScheme.isDark) ColorScheme.DARK else ColorScheme.LIGHT)
+      responses = takeResponsesLocked()
+    }
+    flushResponses(responses)
   }
 
   private fun handleClearBuffer() {
     var responses: List<ByteArray> = emptyList()
     var wipedPrimaryScreen = false
-    lock.withLock {
+    emulatorLock.withLock {
       if (disposed) return
       // Emit VT sequence to clear both the screen and scrollback.
       // But skip the alternate buffer case: neither JediTerm's nor real Ghostty's own Cmd+K touches it.
@@ -478,7 +523,7 @@ class GhosttyTerminalSession internal constructor(
   }
 
   /**
-   * Must be called under [lock]: hands over the emulator replies queued by the write-pty
+   * Must be called under [emulatorLock]: hands over the emulator replies queued by the write-pty
    * effect since the last call, leaving [pendingResponses] empty. Allocates nothing on
    * the common path, where no query was answered.
    */
@@ -490,7 +535,29 @@ class GhosttyTerminalSession internal constructor(
   }
 
   /**
-   * Must be called *after* releasing [lock]: writes [responses] back to the pty, in the
+   * Must be called under [emulatorLock]: hands over the projections queued since the last
+   * call, leaving [pendingBatches] empty. The caller emits them with [emitBatches].
+   */
+  private fun takeBatchesLocked(): List<List<TerminalOutputEvent>> {
+    if (pendingBatches.isEmpty()) return emptyList()
+    val taken = ArrayList(pendingBatches)
+    pendingBatches.clear()
+    return taken
+  }
+
+  /**
+   * Must be called under [emitLock], *after* releasing [emulatorLock]: emits [batches] in
+   * order. Stops at teardown, so a batch cannot reach the collector without the ones before it.
+   */
+  private fun emitBatches(batches: List<List<TerminalOutputEvent>>, requireCollector: Boolean = true) {
+    for (batch in batches) {
+      if (disposed) return
+      emitOutputBlocking(batch, requireCollector)
+    }
+  }
+
+  /**
+   * Must be called *after* releasing [emulatorLock]: writes [responses] back to the pty, in the
    * order the emulator produced them. Blocking here is fine — the emulator is no longer
    * mid-parse and no other thread is waiting on us to let go of the lock.
    */
@@ -517,9 +584,12 @@ class GhosttyTerminalSession internal constructor(
   /**
    * Emits [events] on [outputFlow], retrying with a short sleep until accepted and
    * bailing out only once torn down. Blocking rather than suspending is deliberate:
-   * the projection sites hold [lock] — a plain lock, which a coroutine must not
+   * the emitters hold [emitLock] — a plain lock, which a coroutine must not
    * suspend under — and the read loop is not a coroutine to begin with. See the
    * [outputFlow] declaration for why dropping is not an option here.
+   *
+   * Never called under [emulatorLock]: the EDT waits for that lock,
+   * and the collector may wait for the EDT.
    *
    * [requireCollector] is false only for the teardown emissions (the final frame and
    * [TerminalSessionTerminatedEvent]): by then there may be no collector left to wait
@@ -533,7 +603,7 @@ class GhosttyTerminalSession internal constructor(
   }
 
   /**
-   * Must be called under [lock]. Projects the current emulator state into output events.
+   * Must be called under [emulatorLock]. Projects the current emulator state into output events.
    *
    * [bypassSyncOutputDeferral] paints the mid-block state that
    * [isDeferringForSyncOutputLocked] would otherwise keep holding back. It is set for
@@ -606,17 +676,18 @@ class GhosttyTerminalSession internal constructor(
   }
 
   /**
-   * Must be called under [lock]. Projects the emulator state now and emits it together with the events queued so far.
+   * Must be called under [emulatorLock]. Projects the emulator state now and queues it together with the events queued so far.
+   * The caller emits the queue after releasing [emulatorLock] (see [takeBatchesLocked]).
    */
-  private fun flushPendingEventsLocked(bypassSyncOutputDeferral: Boolean) {
+  private fun projectLocked(bypassSyncOutputDeferral: Boolean) {
     val events = syncLocked(bypassSyncOutputDeferral)
     if (events.isNotEmpty()) {
-      emitOutputBlocking(events)
+      pendingBatches.add(events)
     }
   }
 
   /**
-   * Must be called under [lock]. Whether this frame has to be held back because the
+   * Must be called under [emulatorLock]. Whether this frame has to be held back because the
    * program is inside a synchronized-output block (DEC 2026), and maintains the
    * watchdog that bounds how long that can last.
    *
@@ -651,7 +722,7 @@ class GhosttyTerminalSession internal constructor(
   }
 
   /**
-   * Must be called under [lock]. Schedules the force-paint request that bounds an
+   * Must be called under [emulatorLock]. Schedules the force-paint request that bounds an
    * over-long synchronized-output block, unless one is already pending: the deadline
    * is measured from the first deferred frame since the previous paint, so a program
    * that keeps writing inside a block cannot push the deadline back indefinitely.
@@ -660,7 +731,7 @@ class GhosttyTerminalSession internal constructor(
     if (syncWatchdogJob != null) return
     syncWatchdogJob = coroutineScope.launch {
       delay(SYNC_OUTPUT_TIMEOUT)
-      lock.withLock {
+      emulatorLock.withLock {
         if (disposed) return@launch
         // Clear first, so the next deferred frame arms a fresh watchdog.
         syncWatchdogJob = null
@@ -671,7 +742,7 @@ class GhosttyTerminalSession internal constructor(
   }
 
   /**
-   * Must be called under [lock]. Whether the watchdog requested a force paint;
+   * Must be called under [emulatorLock]. Whether the watchdog requested a force paint;
    * consuming resets it, so one request paints one frame and cannot leak into
    * deferring the frames after it.
    */
@@ -681,101 +752,11 @@ class GhosttyTerminalSession internal constructor(
     return requested
   }
 
-  /** Must be called under [lock]. */
+  /** Must be called under [emulatorLock]. */
   private fun cancelSyncWatchdogLocked() {
     syncWatchdogJob?.cancel()
     syncWatchdogJob = null
     syncOutputForcePaint = false
-  }
-
-  /**
-   * Subscribes to the terminal's "Cursor shape" setting ([TerminalOptionsProvider]) and the
-   * editor's "Blink caret" setting ([EditorSettingsExternalizable]), and pushes their current
-   * values into [emulator] as its default cursor shape/blink.
-   */
-  private fun installDefaultCursorStateUpdating(scope: CoroutineScope) {
-    val disposable = scope.asDisposable()
-    var lastCursorShape: TerminalUiSettingsManager.CursorShape? = null
-    var lastBlinkCaret: Boolean? = null
-
-    fun TerminalUiSettingsManager.CursorShape.toEmulatorCursorShape(): CursorShape = when (this) {
-      TerminalUiSettingsManager.CursorShape.BLOCK -> CursorShape.BLOCK
-      TerminalUiSettingsManager.CursorShape.UNDERLINE -> CursorShape.UNDERLINE
-      TerminalUiSettingsManager.CursorShape.VERTICAL -> CursorShape.BAR
-    }
-
-    fun updateCursorShapeIfChangedLocked() {
-      val current = TerminalOptionsProvider.instance.cursorShape
-      if (current != lastCursorShape) {
-        lastCursorShape = current
-        emulator.setDefaultCursorShape(current.toEmulatorCursorShape())
-        changedSinceLastProjection = true
-      }
-    }
-
-    fun updateCursorBlinkIfChangedLocked() {
-      val current = EditorSettingsExternalizable.getInstance().isBlinkCaret
-      if (current != lastBlinkCaret) {
-        lastBlinkCaret = current
-        emulator.setDefaultCursorBlinking(current)
-        changedSinceLastProjection = true
-      }
-    }
-
-    TerminalOptionsProvider.instance.addListener(disposable) {
-      lock.withLock {
-        if (!disposed) updateCursorShapeIfChangedLocked()
-      }
-    }
-    EditorSettingsExternalizable.getInstance().addPropertyChangeListener(PropertyChangeListener { event ->
-      if (event.propertyName == EditorSettingsExternalizable.PropNames.PROP_IS_CARET_BLINKING) {
-        lock.withLock {
-          if (!disposed) updateCursorBlinkIfChangedLocked()
-        }
-      }
-    }, disposable)
-
-    lock.withLock {
-      updateCursorShapeIfChangedLocked()
-      updateCursorBlinkIfChangedLocked()
-    }
-  }
-
-  /**
-   * Subscribes to the global editor color scheme ([EditorColorsManager.TOPIC]), and pushes the IDE terminal colors
-   * ([TerminalUi.defaultForeground] and [TerminalUi.defaultBackground]) into [emulator] as its default colors.
-   * The emulator reports them to a program that queries them (`OSC 10 ; ?` and `OSC 11 ; ?`).
-   */
-  private fun installColorSchemeUpdating(scope: CoroutineScope) {
-    var lastForeground: TerminalColor.Rgb? = null
-    var lastBackground: TerminalColor.Rgb? = null
-
-    fun Color.toEmulatorColor(): TerminalColor.Rgb = TerminalColor.Rgb(red, green, blue)
-
-    fun updateColorsIfChangedLocked() {
-      val foreground = TerminalUi.defaultForeground().toEmulatorColor()
-      if (foreground != lastForeground) {
-        lastForeground = foreground
-        emulator.setDefaultForegroundColor(foreground)
-      }
-      val background = TerminalUi.defaultBackground().toEmulatorColor()
-      if (background != lastBackground) {
-        lastBackground = background
-        emulator.setDefaultBackgroundColor(background)
-      }
-    }
-
-    ApplicationManager.getApplication().messageBus
-      .connect(scope.asDisposable())
-      .subscribe(EditorColorsManager.TOPIC, EditorColorsListener {
-        lock.withLock {
-          if (!disposed) updateColorsIfChangedLocked()
-        }
-      })
-
-    lock.withLock {
-      updateColorsIfChangedLocked()
-    }
   }
 }
 
@@ -797,6 +778,14 @@ private val OUTPUT_POLL_INTERVAL: Duration = 20.milliseconds
 private val CLEAR_BUFFER_SEQUENCE: ByteArray = "\u001B[2J\u001B[3J".encodeToByteArray()
 
 private val CTRL_L_BYTE: ByteArray = byteArrayOf(0x0C)
+
+private fun TerminalRgbColorDto.toEmulatorColor(): TerminalColor.Rgb = TerminalColor.Rgb(red, green, blue)
+
+private fun CursorShapeDto.toEmulatorCursorShape(): CursorShape = when (this) {
+  CursorShapeDto.BLINK_BLOCK, CursorShapeDto.STEADY_BLOCK -> CursorShape.BLOCK
+  CursorShapeDto.BLINK_UNDERLINE, CursorShapeDto.STEADY_UNDERLINE -> CursorShape.UNDERLINE
+  CursorShapeDto.BLINK_VERTICAL_BAR, CursorShapeDto.STEADY_VERTICAL_BAR -> CursorShape.BAR
+}
 
 /** Escapes control characters (e.g. `\e` for ESC) so raw PTY output is readable in the log. */
 private fun String.escapeControlCharactersForLog(): String {
@@ -837,6 +826,7 @@ internal fun createGhosttyTerminalSession(
     ttyConnector = observableTtyConnector,
     initialSize = TerminalSize(initialTermSize.columns, initialTermSize.rows),
     initialWorkingDirectory = options.workingDirectory,
+    terminfoName = options.envVariables["TERM"],
     shellIntegrationController = shellIntegrationController,
     settings = settings,
     coroutineScope = coroutineScope,

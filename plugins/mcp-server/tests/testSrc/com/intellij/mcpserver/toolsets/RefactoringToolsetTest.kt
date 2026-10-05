@@ -19,6 +19,8 @@ import kotlinx.serialization.json.buildJsonObject
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 
 class RefactoringToolsetTest : GeneralMcpToolsetTestBase() {
   private val json = Json { ignoreUnknownKeys = true }
@@ -66,6 +68,17 @@ class RefactoringToolsetTest : GeneralMcpToolsetTestBase() {
 
   private val renameMe by sourceRootFixture.virtualFileFixture("RenameMe.java", renameMeSource)
 
+  private val widgetSource = """
+    |public class Widget {
+    |  static Widget copyOf(Widget widget) {
+    |    Widget widgetCopy = widget;
+    |    return widgetCopy;
+    |  }
+    |}
+    |""".trimMargin()
+
+  private val widget by sourceRootFixture.virtualFileFixture("Widget.java", widgetSource)
+
   /** A method named after the word in its own comment. The comment holds no reference to it. */
   private val commentHostSource = """
     |public class CommentHost {
@@ -77,6 +90,24 @@ class RefactoringToolsetTest : GeneralMcpToolsetTestBase() {
     |""".trimMargin()
 
   private val commentHost by sourceRootFixture.virtualFileFixture("CommentHost.java", commentHostSource)
+
+  private val pingTargetSource = """
+    |public class PingTarget {
+    |  static void ping() { }
+    |}
+    |""".trimMargin()
+
+  private val pingTarget by sourceRootFixture.virtualFileFixture("PingTarget.java", pingTargetSource)
+
+  private val pingCallerSource = """
+    |public class PingCaller {
+    |  void call() {
+    |    PingTarget.ping();
+    |  }
+    |}
+    |""".trimMargin()
+
+  private val pingCaller by sourceRootFixture.virtualFileFixture("PingCaller.java", pingCallerSource)
 
   @BeforeEach
   fun waitForIndexes() {
@@ -333,6 +364,29 @@ class RefactoringToolsetTest : GeneralMcpToolsetTestBase() {
   }
 
   @Test
+  fun `renaming a class renames the variables named after it`(): Unit = runBlocking(Dispatchers.Default) {
+    val result = callRename(widget) {
+      put("symbolName", JsonPrimitive("Widget"))
+      put("newName", JsonPrimitive("Gadget"))
+    }
+    assertThat(result.error).isNull()
+    assertThat(result.applied).isTrue()
+    assertThat(widget.text()).contains("static Gadget copyOf(Gadget gadget)", "Gadget gadgetCopy = gadget;")
+  }
+
+  @Test
+  fun `renaming a class without automatic renamers keeps the variable names`(): Unit = runBlocking(Dispatchers.Default) {
+    val result = callRename(widget) {
+      put("symbolName", JsonPrimitive("Widget"))
+      put("newName", JsonPrimitive("Gadget"))
+      put("applyAutomaticRenamers", JsonPrimitive(false))
+    }
+    assertThat(result.error).isNull()
+    assertThat(result.applied).isTrue()
+    assertThat(widget.text()).contains("static Gadget copyOf(Gadget widget)", "Gadget widgetCopy = widget;")
+  }
+
+  @Test
   fun `a position in a comment does not select the enclosing declaration`(): Unit = runBlocking(Dispatchers.Default) {
     val before = commentHost.text()
     val (line, column) = positionOf(commentHostSource, "counter here")
@@ -347,6 +401,37 @@ class RefactoringToolsetTest : GeneralMcpToolsetTestBase() {
       .isFalse()
     assertThat(result.error?.kind).isEqualTo("symbol_not_found")
     assertThat(commentHost.text()).isEqualTo(before)
+  }
+
+  @Test
+  fun `rename reads the target file from the disk`(): Unit = runBlocking(Dispatchers.Default) {
+    // The agent writes the file past the VFS, and the file watcher has not reported it yet.
+    shadowHost.toNioPath().writeText(shadowHostSource.replace("private int counter;", "private int counter;\n  private int extra;"))
+
+    val result = callRename {
+      put("symbolName", JsonPrimitive("extra"))
+      put("newName", JsonPrimitive("spare"))
+      put("contextSnippet", JsonPrimitive("private int extra;"))
+    }
+    assertThat(result.error).isNull()
+    assertThat(result.applied).isTrue()
+    assertThat(shadowHost.toNioPath().readText()).contains("private int counter;", "private int spare;")
+  }
+
+  @Test
+  fun `rename keeps an edit on the disk in a file with a usage`(): Unit = runBlocking(Dispatchers.Default) {
+    val callerPath = pingCaller.toNioPath()
+    callerPath.writeText(pingCallerSource.replace("  void call() {", "  void marker() { }\n\n  void call() {"))
+
+    val result = callRename(pingTarget) {
+      put("symbolName", JsonPrimitive("ping"))
+      put("newName", JsonPrimitive("pong"))
+    }
+    assertThat(result.error).isNull()
+    assertThat(result.applied).isTrue()
+    assertThat(callerPath.readText())
+      .describedAs("The rename must start from the text on the disk, and not write the stale one over it")
+      .contains("void marker() { }", "PingTarget.pong();")
   }
 
   private suspend fun callRename(file: VirtualFile = shadowHost, arguments: JsonObjectBuilderScope): RenameResult {

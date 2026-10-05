@@ -12,6 +12,9 @@ object JavaPluginLayout {
       spec.mainJarName = "java-impl.jar"
 
       spec.withModule("intellij.platform.jps.build.launcher", "jps-launcher.jar")
+      // run configurations put this jar on the classpath of a user process, so it stays a jar of its own
+      // A layout jar and not a content module: the test plugins of every product declare intellij.java.rt themselves.
+      spec.withModule("intellij.java.rt", "idea_rt.jar")
 
       spec.withProjectLibrary("Eclipse", "ecj")
 
@@ -19,7 +22,7 @@ object JavaPluginLayout {
       // explicitly pack and sa-jdwp as a separate JARs
       spec.withModuleLibrary("sa-jdwp", "intellij.java.debugger.impl", "sa-jdwp.jar")
 
-      spec.withResourceArchiveFromModule("intellij.java.jdkAnnotations", "resources", "lib/resources/jdkAnnotations.jar")
+      spec.withModule("intellij.java.jdkAnnotations", "resources/jdkAnnotations.jar")
 
       addition?.invoke(spec)
     }

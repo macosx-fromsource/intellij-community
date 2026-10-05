@@ -65,14 +65,10 @@ internal class GhosttyEnumsTest {
     assertMirrors<GhosttyTerminalProgressState>("GhosttyTerminalProgressState", Coverage.EXHAUSTIVE) { it.code }
   }
 
-  /**
-   * TODO: [GhosttyTerminalScrollbackPull] is not yet added to the libghostty-vt C API types list.
-   *  uncomment when it is added.
-   */
-  //@Test
-  //fun ghosttyTerminalScrollbackPull() {
-  //  assertMirrors<GhosttyTerminalScrollbackPull>("GhosttyTerminalScrollbackPull", Coverage.EXHAUSTIVE) { it.code }
-  //}
+  @Test
+  fun ghosttyColorScheme() {
+    assertMirrors<GhosttyColorScheme>("GhosttyColorScheme", Coverage.EXHAUSTIVE) { it.code }
+  }
 
   @Test
   fun ghosttyRenderStateDirty() {

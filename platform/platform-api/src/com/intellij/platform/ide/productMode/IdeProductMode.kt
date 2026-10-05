@@ -2,7 +2,7 @@
 package com.intellij.platform.ide.productMode
 
 import com.intellij.openapi.components.service
-import com.intellij.platform.runtime.product.ProductMode
+import com.intellij.platform.productMode.ProductMode
 import com.intellij.util.PlatformUtils
 import org.jetbrains.annotations.ApiStatus
 
@@ -28,9 +28,7 @@ interface IdeProductMode {
      */
     @JvmStatic
     val isFrontend: Boolean
-      get() = getInstance().currentMode.let {
-        it == ProductMode.FRONTEND || it == ProductMode.LIGHT || it == ProductMode.LIGHT_WITH_RD_CONNECTION
-      }
+      get() = getInstance().currentMode.isFrontendProcess
 
     /**
      * Returns `true` if this process is running in a monolithic mode (a regular IDE instance).
@@ -44,9 +42,7 @@ interface IdeProductMode {
      */
     @JvmStatic
     val isLight: Boolean
-      get() = getInstance().currentMode.let {
-        it == ProductMode.LIGHT || it == ProductMode.LIGHT_WITH_RD_CONNECTION
-      }
+      get() = getInstance().currentMode.isLight
 
     /**
      * Light mode in standalone (no RD)

@@ -68,7 +68,7 @@ internal class PyPackagesTreeDocPreviewSupport(private val tree: PyPackagesTree,
       session?.documentationSession?.mouseOutsideOfSourceArea()
       return
     }
-    val sdk = project.service<PyPackagingToolWindowService>().currentSdk ?: return
+    val packageManager = project.service<PyPackagingToolWindowService>().currentPackageManager ?: return
     session?.let { existing ->
       if (existing.row == row && existing.packageName == packageName) {
         existing.documentationSession.mouseWithinSourceArea()
@@ -81,7 +81,7 @@ internal class PyPackagesTreeDocPreviewSupport(private val tree: PyPackagesTree,
       requirementsFile = null,
       pyRequirement = pyRequirement(packageName),
       anchor = null,
-      sdkOverride = sdk,
+      packageManagerOverride = packageManager,
     )
     // showDocumentationOnHoverAround calls target.documentationRequest() inline (which asserts read
     // access); use the *ByRequests overload and resolve the request inside a read action ourselves.

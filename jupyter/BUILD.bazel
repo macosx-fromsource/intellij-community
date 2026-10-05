@@ -1,9 +1,4 @@
 load("@rules_jvm//:jvm.bzl", "jvm_library")
-load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
-
-### auto-generated section `dev intellij.notebooks.jupyter.core` start
-content_module_jar(module = ":notebooks-jupyter-core")
-### auto-generated section `dev intellij.notebooks.jupyter.core` end
 
 ### auto-generated section `build intellij.notebooks.jupyter.core` start
 jvm_library(
@@ -22,6 +17,7 @@ jvm_library(
     resource_strip_prefix = "resources",
     resources = glob(
         ["resources/**/*"],
+        exclude = ["resources/**/icon-robots.txt"],
     ),
     visibility = ["//visibility:public"],
     deps = [

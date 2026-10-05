@@ -1,10 +1,10 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.intellij.build
 
+import com.intellij.platform.buildScripts.devLaunch.customCommandSystemProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.Assertions.entry
-import org.jetbrains.intellij.build.dev.customCommandSystemProperties
 import org.junit.jupiter.api.Test
 
 /** `DevMainImpl` and `PreBuiltDevMain` read the properties of a custom command through this one helper. */

@@ -2,7 +2,6 @@
     "version": 2,
     "plugin": "intellij.maven.plugin",
     "variant": "",
-    "layoutSignature": "7ezs3zo5bnxh02e3byalrond7",
     "assets": [
         {
             "destination": "lib/intellij.maven.model.jar",
@@ -55,16 +54,10 @@
             }
         },
         {
-            "module": "intellij.maven.profiler"
-        },
-        {
             "module": "intellij.maven.proofreading"
         },
         {
             "module": "intellij.maven.performanceTesting"
-        },
-        {
-            "module": "intellij.maven.errorProne.compiler"
         },
         {
             "module": "intellij.maven.groovy"
@@ -77,9 +70,6 @@
         },
         {
             "module": "intellij.maven.delegation.testng"
-        },
-        {
-            "module": "intellij.maven.completion.ex"
         },
         {
             "module": "intellij.maven.jps"
@@ -356,39 +346,6 @@
             "classPath": false
         }
     ],
-    "preparations": [
-        {
-            "id": "layout-assets:resource-generator:0",
-            "inputs": [
-                "layout-source:resource-generator:0:0"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:0:output"
-            ],
-            "modelSignature": "5cihu15nbbpo4cwyliz1o8siw"
-        },
-        {
-            "id": "layout-assets:resource-generator:1",
-            "inputs": [
-                "layout-source:resource-generator:1:0",
-                "layout-source:resource-generator:1:1"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:1:output"
-            ],
-            "modelSignature": "3mpxykhigirs4o82e2hqnlyz7"
-        },
-        {
-            "id": "layout-assets:resource-generator:2",
-            "inputs": [
-                "layout-source:resource-generator:2:0"
-            ],
-            "outputs": [
-                "layout-assets:resource-generator:2:output"
-            ],
-            "modelSignature": "3njm9wbzqzcgsowakrmtdskq5"
-        }
-    ],
     "operations": [
         {
             "id": "layout-assets:resource-generator:0",
@@ -437,15 +394,15 @@
                     {
                         "destination": "",
                         "sources": [
-                            0,
+                            0
+                        ],
+                        "mode": 420
+                    },
+                    {
+                        "destination": "",
+                        "sources": [
                             1
                         ],
-                        "transform": {
-                            "kind": "tree-map",
-                            "mappings": [
-                                {}
-                            ]
-                        },
                         "mode": 420
                     }
                 ]
@@ -470,12 +427,6 @@
                         "sources": [
                             0
                         ],
-                        "transform": {
-                            "kind": "tree-map",
-                            "mappings": [
-                                {}
-                            ]
-                        },
                         "mode": 420
                     }
                 ]

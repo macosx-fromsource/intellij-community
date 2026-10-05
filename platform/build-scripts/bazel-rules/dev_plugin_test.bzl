@@ -7,8 +7,11 @@ load(":content_module_jar.bzl", "ContentModuleJarInfo", "content_module_jar", "c
 load(":dev_dist_content.bzl", "DevDistContentInfo")
 load(":dev_dist_plugin.bzl", "dev_dist_plugin", "dev_dist_plugin_component_target_name")
 load(":dev_dist_plugin_descriptor.bzl", "dev_dist_plugin_descriptor", "dev_dist_plugin_descriptor_target_name", "dev_dist_product_info")
-load(":dev_plugin.bzl", "dev_plugin")
+load(":dev_plugin.bzl", "DevDistRuntimeLayoutInfo", "dev_plugin")
 load(":intellij_dev_dist.bzl", "IntellijDevFragmentInfo")
+
+# The application info of the fixture product, an EAP product without a release date.
+_FIXTURE_APPLICATION_INFO = Label("//platform/build-scripts/bazel-rules:testdata/ApplicationInfo.xml")
 
 # The suite's package and name are fixed: a test rule's configuration names the product info target by label.
 _PACKAGE = "//platform/build-scripts/bazel-rules/dev-plugin-tests"
@@ -23,6 +26,7 @@ _MAIN_MODULE = "test.dev.plugin"
 _SPLIT_MODULE = "test.dev.split"
 _MEMBER_MODULE = "test.dev.member"
 _MODE_MODULE = "test.dev.mode"
+_TEST_MODULE = "test.dev.tests"
 
 def _fixture_module_impl(ctx):
     jar = ctx.outputs.jar
@@ -79,6 +83,38 @@ def _fixture_resources_impl(ctx):
 
 _fixture_resources = rule(implementation = _fixture_resources_impl)
 
+def _fixture_tree_impl(ctx):
+    """`count` directory artifacts, as an action such as the Jupyter frontend writes one, and `extra_file` beside them."""
+
+    # A Windows build agent has no bash, so each tree is an empty archive that the zipper extracts.
+    archive = ctx.actions.declare_file(ctx.label.name + ".empty.zip")
+    ctx.actions.write(archive, _EMPTY_JAR)
+    outputs = []
+    for index in range(ctx.attr.count):
+        tree = ctx.actions.declare_directory(ctx.label.name + "/tree-%d" % index)
+        ctx.actions.run(
+            executable = ctx.executable._zipper,
+            arguments = ["x", archive.path, "-d", tree.path],
+            inputs = [archive],
+            outputs = [tree],
+            mnemonic = "FixtureTree",
+        )
+        outputs.append(tree)
+    if ctx.attr.extra_file:
+        extra = ctx.actions.declare_file(ctx.label.name + ".extra.txt")
+        ctx.actions.write(extra, "")
+        outputs.append(extra)
+    return [DefaultInfo(files = depset(outputs))]
+
+_fixture_tree = rule(
+    implementation = _fixture_tree_impl,
+    attrs = {
+        "count": attr.int(default = 1),
+        "extra_file": attr.bool(),
+        "_zipper": attr.label(default = "@bazel_tools//tools/zip:zipper", executable = True, cfg = "exec"),
+    },
+)
+
 def _with_short_path(argument, inputs):
     """A `library=` or `module=` flag with the file's short path, so two configurations of one jar compare equal."""
     if not argument.startswith("library=") and not argument.startswith("module="):
@@ -103,7 +139,7 @@ def _dev_plugin_test_impl(ctx):
     actions = analysistest.target_actions(env)
     packs = [action for action in actions if action.mnemonic == "PackDevPluginJar"]
     collects = [action for action in actions if action.mnemonic == "CollectDevPluginComponent"]
-    asserts.equals(env, 2, len(packs))
+    asserts.equals(env, 3, len(packs))
     asserts.equals(env, 1, len(collects))
 
     # The component is neutral and states the product's platform prefix.
@@ -113,19 +149,18 @@ def _dev_plugin_test_impl(ctx):
     asserts.true(env, "--kind=" + _MAIN_MODULE in collect.argv)
     asserts.equals(env, [], [argument for argument in collect.argv if argument.startswith("--os=") or argument.startswith("--arch=")])
     asserts.equals(env, _MAIN_MODULE, fragment.name)
-    asserts.equals(env, None, fragment.home)
     asserts.equals(env, [fragment.plugin_classpath_part], groups.dev_dist_plugin_classpath.to_list())
-    asserts.equals(env, 3, len(groups.file_metadata.to_list()))
-    asserts.equals(env, 3 if ctx.attr.spans else 0, len(groups.trace_spans.to_list()))
+    asserts.equals(env, 4, len(groups.file_metadata.to_list()))
+    asserts.equals(env, 4 if ctx.attr.spans else 0, len(groups.trace_spans.to_list()))
 
-    # The payload holds the two packed jars, the reused content module jar, the copied script and the two files of the
+    # The payload holds the three packed jars, the reused content module jar, the copied script and the two files of the
     # copied directory. The file outside the prefix is not copied.
     # Files are compared by short path: the test's own attributes are configured with the test, and the component's
     # inputs with the reset, so the same jar arrives as two `File` objects.
     payload = fragment.payload.to_list()
     payload_paths = [file.short_path for file in payload]
     content = ctx.attr.content_jar[ContentModuleJarInfo]
-    asserts.equals(env, 6, len(payload))
+    asserts.equals(env, 7, len(payload))
     asserts.true(env, content.jar.short_path in payload_paths)
     helper = ctx.file.helper
     asserts.true(env, helper.short_path in payload_paths)
@@ -136,7 +171,8 @@ def _dev_plugin_test_impl(ctx):
     for file in payload:
         asserts.true(env, file in collect.inputs.to_list(), file.path)
 
-    # The main jar's flag file: the patch, the modules in order, then the library, as `JarPackager` orders the jar.
+    # The main jar's flag file: the distribution name, the patch, the modules in order, then the library, as
+    # `JarPackager` orders the jar.
     main = _pack_action(packs, "dev-plugin.jar")
     module_jars = [module[_KtJvmInfo].all_output_jars[0] for module in ctx.attr.modules]
     library_jars = ctx.attr.library[JavaInfo].transitive_runtime_jars.to_list()
@@ -152,6 +188,14 @@ def _dev_plugin_test_impl(ctx):
     rest = rest[2:]
     expected = ["module=" + jar.short_path for jar in module_jars] + ["library=" + jar.short_path for jar in library_jars]
     asserts.equals(env, expected, rest)
+
+    # A jar that merges a test-only module takes its test jar and the writer flags of every other jar. Its one source
+    # is a module output, whose manifest survives without a flag. It has no directory entries.
+    tests_pack = _pack_action(packs, "tests.jar")
+    tests_argv = [_with_short_path(argument, tests_pack.inputs.to_list()) for argument in tests_pack.argv[1:]]
+    tests_flags = [argument for argument in tests_argv if not argument.startswith(("output=", "metadata-file=", "trace-file=", "module="))]
+    asserts.equals(env, ["merge-entities=true"], tests_flags)
+    asserts.equals(env, ["module=" + ctx.file.test_jar.short_path], [argument for argument in tests_argv if argument.startswith("module=")])
 
     # A jar file token is one archive: the jar takes that file and nothing else.
     single = _pack_action(packs, "foo.jar")
@@ -185,7 +229,7 @@ def _dev_plugin_test_impl(ctx):
     asserts.equals(env, 1, spec["version"])
     asserts.equals(env, "plugins/dev-plugin", spec["pluginDirectory"])
     asserts.true(env, spec["descriptor"].endswith(_MAIN_MODULE + ".plugin.classpath.xml"), spec["descriptor"])
-    asserts.equals(env, ["lib/member.jar", "lib/dev-plugin.jar", "lib/foo.jar"], [jar["destination"] for jar in spec["jars"]])
+    asserts.equals(env, ["lib/member.jar", "lib/dev-plugin.jar", "lib/foo.jar", "lib/tests.jar"], [jar["destination"] for jar in spec["jars"]])
     asserts.equals(env, reused[0].path, spec["jars"][0]["source"])
 
     # The metadata is compared by its repository-relative tail. From the ultimate root the community rules are an
@@ -202,12 +246,34 @@ def _dev_plugin_test_impl(ctx):
     asserts.true(env, spec["files"][2]["source"].endswith("/" + resources["second.txt"].short_path.removeprefix("../")), spec["files"][2]["source"])
     asserts.equals(env, [], [action for action in actions if action.mnemonic not in ["PackDevPluginJar", "CollectDevPluginComponent", "FileWrite"]])
 
+    # The layout part states the jars in `classpath_jars` order and keeps the merge order of their members. So the reused
+    # jar comes first here, marked, with the members its own target merged.
+    layout = target[DevDistRuntimeLayoutInfo]
+    asserts.equals(env, spec["descriptor"], layout.descriptor.path)
+    parts = [action for action in actions if layout.part in action.outputs.to_list()]
+    asserts.equals(env, 1, len(parts))
+    part = json.decode(parts[0].content)
+    asserts.equals(env, [1, _MAIN_MODULE, "plugins/dev-plugin", "plugin", layout.descriptor.path], [part[key] for key in ["version", "descriptorModule", "directory", "order", "descriptor"]])
+    asserts.equals(env, ["lib/member.jar", "lib/dev-plugin.jar", "lib/foo.jar", "lib/tests.jar"], [jar["destination"] for jar in part["jars"]])
+    asserts.equals(env, [True, False, False, False], [jar.get("reused", False) for jar in part["jars"]])
+    main_members = part["jars"][1]["members"]
+    asserts.equals(env, [None, _MAIN_MODULE, _SPLIT_MODULE], [member.get("module") for member in main_members])
+    asserts.equals(env, _PACKAGE + ":" + ctx.attr.library.label.name, main_members[0]["library"])
+    asserts.equals(env, len(library_jars), len(main_members[0]["jars"]))
+    for jar, path in zip(library_jars, main_members[0]["jars"]):
+        asserts.true(env, path.endswith("/" + jar.short_path.removeprefix("../")), path)
+    single = part["jars"][2]["members"]
+    asserts.equals(env, [_PACKAGE + ":foo-1.2.3.jar"], [member["library"] for member in single])
+    asserts.true(env, single[0]["jars"][0].endswith("/" + ctx.file.single_jar.short_path.removeprefix("../")), single[0]["jars"])
+    asserts.equals(env, [{"module": _TEST_MODULE}], part["jars"][3]["members"])
+    asserts.equals(env, [{"module": module} for module in content.member_modules], part["jars"][0]["members"])
+
     # The raw content: every merged module jar, the members of the reused content module jar, and every library the
     # plugin names, the jar file token included. Neutral, like the packed inputs, so compared by short path.
     raw_content = target[DevDistContentInfo]
     asserts.equals(
         env,
-        sorted([jar.short_path for jar in module_jars] + [jar.short_path for jar in content.member_jars]),
+        sorted([jar.short_path for jar in module_jars] + [ctx.file.test_jar.short_path] + [jar.short_path for jar in content.member_jars]),
         sorted([jar.short_path for jar in raw_content.module_jars.to_list()]),
     )
     raw_libraries = {entry.label: [jar.short_path for jar in entry.jars] for entry in raw_content.library_jars.to_list()}
@@ -226,6 +292,7 @@ _DEV_PLUGIN_ATTRS = {
     "resources": attr.label(mandatory = True),
     "single_jar": attr.label(mandatory = True, allow_single_file = [".jar"]),
     "spans": attr.bool(),
+    "test_jar": attr.label(mandatory = True, allow_single_file = [".jar"]),
 }
 
 # The product flag alone, so the reset of the inputs target lands in the default configuration. A flag set to its
@@ -242,11 +309,42 @@ _dev_plugin_spans_test = analysistest.make(
     config_settings = {_PRODUCT_INFO_FLAG: _PRODUCT_INFO, _TRACE_SPANS: True},
 )
 
-def _mode_test_impl(ctx):
-    """Under a frontend product the leaf refuses the modules of that mode, and the shared packaging ships none of them.
+def _tree_test_impl(ctx):
+    """A destination in `tree_files` copies the one directory artifact of its label, and the collector walks it.
 
-    A refused module leaves every jar, and a jar that merges no module any more goes. A refused reused jar goes too. A
-    packaging a product states for itself keeps everything `jars` names.
+    The spec names the directory with `tree` and no mode. The directory is an input of the collector and part of the
+    payload. No action of the component copies or lists it.
+    """
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    actions = analysistest.target_actions(env)
+    specs = [action for action in actions if [file for file in action.outputs.to_list() if file.basename.endswith(".packed.json")]]
+    asserts.equals(env, 1, len(specs))
+    copies = json.decode(specs[0].content)["files"]
+    tree = ctx.attr.tree[DefaultInfo].files.to_list()[0]
+    asserts.equals(env, ["bin/helper.sh", "web"], [copy["destination"] for copy in copies])
+    asserts.equals(env, {"destination": "web", "source": copies[1]["source"], "tree": True}, copies[1])
+    asserts.true(env, copies[1]["source"].endswith("/" + tree.short_path.removeprefix("../")), copies[1]["source"])
+    asserts.equals(env, True, copies[0]["executable"])
+    collects = [action for action in actions if action.mnemonic == "CollectDevPluginComponent"]
+    asserts.equals(env, 1, len(collects))
+    directories = [file for file in collects[0].inputs.to_list() if file.is_directory]
+    asserts.equals(env, [copies[1]["source"]], [file.path for file in directories])
+    payload = target[IntellijDevFragmentInfo].payload.to_list()
+    asserts.equals(env, [copies[1]["source"]], [file.path for file in payload if file.is_directory])
+    return analysistest.end(env)
+
+_tree_test = analysistest.make(
+    _tree_test_impl,
+    attrs = {"tree": attr.label(mandatory = True)},
+    config_settings = {_PRODUCT_INFO_FLAG: _PRODUCT_INFO},
+)
+
+def _mode_test_impl(ctx):
+    """Under a frontend product the distribution places no jar of a module the leaf refuses for that mode.
+
+    A jar whose every module is refused is not packed, and a reused jar of a refused module is not placed. A jar that
+    merges a refused module with a kept one is packed whole.
     """
     env = analysistest.begin(ctx)
     actions = analysistest.target_actions(env)
@@ -256,6 +354,9 @@ def _mode_test_impl(ctx):
     destinations = sorted([jar["destination"] for jar in json.decode(specs[0].content)["jars"]])
     asserts.equals(env, sorted(ctx.attr.expected_packed), packed)
     asserts.equals(env, sorted(ctx.attr.expected_destinations), destinations)
+    merged = [action for action in actions if action.mnemonic == "PackDevPluginJar" and [file for file in action.outputs.to_list() if file.basename == "mode.jar"]]
+    asserts.equals(env, 1, len(merged))
+    asserts.true(env, [input for input in merged[0].inputs.to_list() if input.basename.endswith("split.jar")] != [], "the mixed jar keeps the refused module")
     return analysistest.end(env)
 
 _mode_test = analysistest.make(
@@ -328,16 +429,17 @@ def _stale_macro_test(name):
     )
     return test
 
-def _copies_macro_test(name, helper_token, resources_token, resources_prefix):
-    """`dev_dist_plugin` forwards `files`, `file_prefixes` and `executable_files` to the component it declares."""
+def _copies_macro_test(name, helper_token, resources_token, resources_prefix, tree_token):
+    """`dev_dist_plugin` forwards `files`, `file_prefixes`, `executable_files` and `tree_files` to the component it declares."""
     main_module = "intellij.test.copied"
     copied_owner = name + "_copied_owner"
     copied_source = name + "_copied_descriptor"
     _fixture_module(name = copied_owner, module_name = main_module)
     _fixture_xml(name = copied_source)
-    files = {"bin/helper.sh": helper_token, "helpers": resources_token}
+    files = {"bin/helper.sh": helper_token, "helpers": resources_token, "web": tree_token}
     file_prefixes = {"helpers": resources_prefix}
     executable_files = ["bin/helper.sh"]
+    tree_files = ["web"]
     dev_dist_plugin(
         main_module = main_module,
         module_targets = {main_module: [":" + copied_owner + ".jar"]},
@@ -346,13 +448,14 @@ def _copies_macro_test(name, helper_token, resources_token, resources_prefix):
         files = files,
         file_prefixes = file_prefixes,
         executable_files = executable_files,
+        tree_files = tree_files,
     )
     component = native.existing_rule(dev_dist_plugin_component_target_name(main_module))
     test = name + "_copies_macro_test"
     _declaration_test(
         name = test,
-        actual = json.encode([component["files"], component["file_prefixes"], component["executable_files"]]),
-        expected = json.encode([files, file_prefixes, executable_files]),
+        actual = json.encode([component["files"], component["file_prefixes"], component["executable_files"], component["tree_files"]]),
+        expected = json.encode([files, file_prefixes, executable_files, tree_files]),
     )
     return test
 
@@ -366,19 +469,16 @@ def dev_plugin_test_suite(name):
         fail("dev_plugin_test_suite must be declared as '%s' in package '%s'" % (_SUITE, _PACKAGE))
     dev_dist_product_info(
         name = name + "_product_info",
-        release_date = "20260101",
-        release_version = "2026300",
+        application_info = _FIXTURE_APPLICATION_INFO,
         platform_prefix = "idea",
     )
     dev_dist_product_info(
         name = name + "_no_prefix_product_info",
-        release_date = "20260101",
-        release_version = "2026300",
+        application_info = _FIXTURE_APPLICATION_INFO,
     )
     dev_dist_product_info(
         name = name + "_frontend_product_info",
-        release_date = "20260101",
-        release_version = "2026300",
+        application_info = _FIXTURE_APPLICATION_INFO,
         platform_prefix = "client",
         mode = "frontend",
     )
@@ -389,6 +489,11 @@ def dev_plugin_test_suite(name):
     _fixture_module(name = owner, module_name = _MAIN_MODULE)
     _fixture_module(name = split, module_name = _SPLIT_MODULE)
     _fixture_module(name = member, module_name = _MEMBER_MODULE)
+
+    # A test-only module, as the converter declares one: the component names its `.jar` output and stays not `testonly`.
+    tests_lib = name + "_tests_test_lib"
+    _fixture_module(name = tests_lib, module_name = _TEST_MODULE, testonly = True)
+    test_module_jars = {":" + tests_lib + ".jar": _TEST_MODULE}
     content_module_jar(module = ":" + member)
     content_jar = content_module_jar_target_name(member)
 
@@ -405,8 +510,7 @@ def dev_plugin_test_suite(name):
     _fixture_xml(name = source)
     dev_dist_plugin_descriptor(
         main_module = _MAIN_MODULE,
-        descriptor_module = ":" + source,
-        descriptor = source,
+        descriptor = ":" + source,
     )
     descriptor = ":" + dev_dist_plugin_descriptor_target_name(_MAIN_MODULE)
     modules = {":" + owner: _MAIN_MODULE, ":" + split: _SPLIT_MODULE}
@@ -423,6 +527,15 @@ def dev_plugin_test_suite(name):
     resources_token = _PACKAGE + ":" + resources
     resources_prefix = native.package_name() + "/" + resource_files + ".source-root"
 
+    # One directory artifact, two of them, and one with a regular file beside it.
+    tree = name + "_tree"
+    _fixture_tree(name = tree)
+    tree_token = _PACKAGE + ":" + tree
+    two_trees = name + "_two_trees"
+    _fixture_tree(name = two_trees, count = 2)
+    mixed_tree = name + "_mixed_tree"
+    _fixture_tree(name = mixed_tree, extra_file = True)
+
     component = name + "_component"
     dev_plugin(
         name = component,
@@ -430,14 +543,16 @@ def dev_plugin_test_suite(name):
         descriptor = descriptor,
         plugin_directory = "plugins/dev-plugin",
         modules = modules,
+        test_module_jars = test_module_jars,
         libraries = [library_token, single_token],
         content_module_jars = [":" + content_jar],
         jars = {
             "lib/dev-plugin.jar": [library_token, _MAIN_MODULE, _SPLIT_MODULE],
             "lib/foo.jar": [single_token],
+            "lib/tests.jar": [_TEST_MODULE],
         },
         module_jar_paths = {_MEMBER_MODULE: "lib/member.jar"},
-        classpath_jars = ["lib/member.jar", "lib/dev-plugin.jar", "lib/foo.jar"],
+        classpath_jars = ["lib/member.jar", "lib/dev-plugin.jar", "lib/foo.jar", "lib/tests.jar"],
         files = {
             "bin/helper.sh": helper_token,
             "helpers": resources_token,
@@ -458,6 +573,7 @@ def dev_plugin_test_suite(name):
             resources = ":" + resource_files,
             single_jar = ":foo-1.2.3.jar",
             spans = spans,
+            test_jar = ":" + tests_lib + ".jar",
         )
 
     for case, jars, classpath_jars, message, test_rule in [
@@ -481,6 +597,24 @@ def dev_plugin_test_suite(name):
         )
         tests.append(failing + "_test")
         test_rule(name = tests[-1], target_under_test = ":" + failing, expected_message = message)
+
+    # A test-only module is refused when `modules` also names it, and when its label is not one jar file.
+    for case, failing_test_module_jars, message in [
+        ("test_module_twice", {":" + tests_lib + ".jar": _MAIN_MODULE}, "module 'test.dev.plugin' is named twice"),
+        ("test_module_not_one_jar", {":" + library: _TEST_MODULE}, "is not one jar file for test-only module 'test.dev.tests'"),
+    ]:
+        failing = name + "_failing_" + case
+        dev_plugin(
+            name = failing,
+            main_module = _MAIN_MODULE,
+            descriptor = descriptor,
+            plugin_directory = "plugins/dev-plugin",
+            modules = modules,
+            test_module_jars = failing_test_module_jars,
+            jars = {"lib/x.jar": [_MAIN_MODULE]},
+        )
+        tests.append(failing + "_test")
+        _failure_test(name = tests[-1], target_under_test = ":" + failing, expected_message = message)
 
     # A copy is refused when it meets a jar or another copy, when a single-file destination has two sources, when a
     # directory copy is empty, and when `executable_files` names anything but a copied single file.
@@ -509,44 +643,81 @@ def dev_plugin_test_suite(name):
         tests.append(failing + "_test")
         _failure_test(name = tests[-1], target_under_test = ":" + failing, expected_message = message)
 
-    tests.append(_stale_macro_test(name))
-    tests.append(_copies_macro_test(name, helper_token, resources_token, resources_prefix))
+    # A directory artifact is a copy only in `tree_files`. It is refused as a source tree, beside another file or
+    # directory, and with a stated mode. `tree_files` refuses a destination whose label is a regular file.
+    tree_component = name + "_tree_component"
+    dev_plugin(
+        name = tree_component,
+        main_module = _MAIN_MODULE,
+        descriptor = descriptor,
+        plugin_directory = "plugins/dev-plugin",
+        modules = modules,
+        jars = {"lib/x.jar": [_MAIN_MODULE]},
+        files = {"bin/helper.sh": helper_token, "web": tree_token},
+        executable_files = ["bin/helper.sh"],
+        tree_files = ["web"],
+    )
+    tests.append(tree_component + "_test")
+    _tree_test(name = tests[-1], target_under_test = ":" + tree_component, tree = ":" + tree)
+    for case, files, file_prefixes, executable_files, tree_files, message in [
+        ("tree_without_tree_files", {"web": tree_token}, {}, [], [], "state the destination in `tree_files`"),
+        ("tree_as_source_tree", {"web": tree_token}, {"web": "nowhere"}, [], [], "state the destination in `tree_files`"),
+        ("tree_files_and_prefix", {"web": tree_token}, {"web": "nowhere"}, [], ["web"], "which `file_prefixes` also names"),
+        ("two_trees", {"web": _PACKAGE + ":" + two_trees}, {}, [], ["web"], "and a copy takes regular files only, or one directory alone"),
+        ("mixed_tree", {"web": _PACKAGE + ":" + mixed_tree}, {}, [], ["web"], "and a copy takes regular files only, or one directory alone"),
+        ("tree_of_a_file", {"bin/helper.sh": helper_token}, {}, [], ["bin/helper.sh"], "produces no single directory"),
+        ("unknown_tree", {"bin/helper.sh": helper_token}, {}, [], ["web"], "tree_files names 'web', which `files` does not copy"),
+        ("executable_tree", {"web": tree_token}, {}, ["web"], ["web"], "which is a directory copy"),
+        ("file_under_tree", {"web": tree_token, "web/extra.txt": helper_token}, {}, [], ["web"], "is below 'web', which `tree_files` copies as a whole"),
+    ]:
+        failing = name + "_failing_" + case
+        dev_plugin(
+            name = failing,
+            main_module = _MAIN_MODULE,
+            descriptor = descriptor,
+            plugin_directory = "plugins/dev-plugin",
+            modules = modules,
+            jars = {"lib/x.jar": [_MAIN_MODULE]},
+            files = files,
+            file_prefixes = file_prefixes,
+            executable_files = executable_files,
+            tree_files = tree_files,
+        )
+        tests.append(failing + "_test")
+        _failure_test(name = tests[-1], target_under_test = ":" + failing, expected_message = message)
 
-    # One leaf serves a frontend product: it refuses the split module and the member there, and the shared packaging
-    # drops both. A packaging that keeps them is one product's own.
+    tests.append(_stale_macro_test(name))
+    tests.append(_copies_macro_test(name, helper_token, resources_token, resources_prefix, tree_token))
+
+    # One leaf serves a frontend product: it names the split module and the member as refused there. The distribution
+    # packs the mixed `lib/mode.jar` whole, packs no `lib/split.jar`, and places no reused member jar.
     mode_owner = name + "_mode_owner"
     _fixture_module(name = mode_owner, module_name = _MODE_MODULE)
     dev_dist_plugin_descriptor(
         main_module = _MODE_MODULE,
-        descriptor_module = ":" + source,
-        descriptor = source,
+        descriptor = ":" + source,
         mode_refused_content_modules = {"frontend": [_SPLIT_MODULE, _MEMBER_MODULE]},
     )
-    for case, keeps, expected_packed, expected_destinations in [
-        ("shared", False, ["mode.jar"], ["lib/mode.jar"]),
-        ("own", True, ["mode.jar", "split.jar"], ["lib/mode.jar", "lib/modules/test.dev.member.jar", "lib/split.jar"]),
-    ]:
-        mode_component = name + "_mode_" + case
-        dev_plugin(
-            name = mode_component,
-            main_module = _MODE_MODULE,
-            descriptor = ":" + dev_dist_plugin_descriptor_target_name(_MODE_MODULE),
-            plugin_directory = "plugins/mode",
-            modules = {":" + mode_owner: _MODE_MODULE, ":" + split: _SPLIT_MODULE},
-            libraries = [library_token],
-            content_module_jars = [":" + content_jar],
-            jars = {
-                "lib/mode.jar": [_MODE_MODULE, _SPLIT_MODULE],
-                "lib/split.jar": [_SPLIT_MODULE, library_token],
-            },
-            keeps_mode_refused_modules = keeps,
-        )
-        tests.append(mode_component + "_test")
-        _mode_test(
-            name = tests[-1],
-            target_under_test = ":" + mode_component,
-            expected_packed = expected_packed,
-            expected_destinations = expected_destinations,
-        )
+    mode_component = name + "_mode"
+    dev_plugin(
+        name = mode_component,
+        main_module = _MODE_MODULE,
+        descriptor = ":" + dev_dist_plugin_descriptor_target_name(_MODE_MODULE),
+        plugin_directory = "plugins/mode",
+        modules = {":" + mode_owner: _MODE_MODULE, ":" + split: _SPLIT_MODULE},
+        libraries = [library_token],
+        content_module_jars = [":" + content_jar],
+        jars = {
+            "lib/mode.jar": [_MODE_MODULE, _SPLIT_MODULE],
+            "lib/split.jar": [_SPLIT_MODULE, library_token],
+        },
+    )
+    tests.append(mode_component + "_test")
+    _mode_test(
+        name = tests[-1],
+        target_under_test = ":" + mode_component,
+        expected_packed = ["mode.jar"],
+        expected_destinations = ["lib/mode.jar"],
+    )
 
     native.test_suite(name = name, tests = tests)

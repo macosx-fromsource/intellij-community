@@ -37,6 +37,7 @@
       <action id="CopyReference" class="com.intellij.markdown.backend.reference.headers.MarkdownHeaderCopyAction" overrides="true"/>
     </actions>
     <extensions defaultExtensionNs="com.intellij">
+      <postStartupActivity implementation="org.intellij.plugins.markdown.settings.MarkdownSettingsMigration"/>
       <applicationService serviceImplementation="com.intellij.markdown.backend.services.MarkdownFrontendRunnerRequestService" client="all"/>
       <highlightingPassFactory implementation="com.intellij.markdown.backend.editor.livepreview.MarkdownLivePreviewPassFactory"/>
       <highlightingPassFactory implementation="com.intellij.markdown.backend.editor.fence.CodeFenceBackgroundHighlightingPassFactory"/>
@@ -175,6 +176,7 @@
       <psi.referenceContributor language="Markdown" implementation="com.intellij.markdown.backend.reference.backtick.BacktickReferenceContributor"/>
       <psi.referenceContributor language="Markdown" implementation="com.intellij.markdown.backend.reference.github.GithubWikiLocalReferenceContributor"/>
       <psi.referenceContributor language="Markdown" implementation="com.intellij.markdown.backend.reference.test.TestPsiReferenceContributor"/>
+      <gotoDeclarationHandler implementation="com.intellij.markdown.backend.reference.link.MarkdownLinkTextGotoDeclarationHandler"/>
 
       <stubIndex implementation="com.intellij.markdown.backend.index.HeaderTextIndex"/>
       <stubIndex implementation="com.intellij.markdown.backend.index.HeaderAnchorIndex"/>
@@ -200,5 +202,11 @@
       <runLineMarkerContributor language="Markdown" implementationClass="com.intellij.markdown.backend.highlighting.markers.MarkdownRunLineMarkersProvider"/>
 
       <treeStructureProvider implementation="com.intellij.markdown.backend.projectTree.MarkdownTreeStructureProvider"/>
+
+      <useScopeEnlarger implementation="com.intellij.markdown.backend.lang.references.MarkdownReferenceUseScopeEnlarger"/>
     </extensions>
+    <applicationListeners>
+      <listener topic="com.intellij.ide.trustedProjects.TrustedProjectsListener"
+                class="org.intellij.plugins.markdown.settings.MarkdownSettingsMigration"/>
+    </applicationListeners>
 </idea-plugin>

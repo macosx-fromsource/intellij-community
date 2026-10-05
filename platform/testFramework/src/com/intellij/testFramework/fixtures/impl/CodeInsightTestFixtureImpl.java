@@ -15,6 +15,7 @@ import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.codeInsight.daemon.impl.HighlightInfoType;
 import com.intellij.codeInsight.daemon.impl.IdentifierHighlighterPassFactory;
+import com.intellij.codeInsight.daemon.impl.LineMarkersPass;
 import com.intellij.codeInsight.daemon.impl.TestDaemonCodeAnalyzerImpl;
 import com.intellij.codeInsight.highlighting.actions.HighlightUsagesAction;
 import com.intellij.codeInsight.intention.IntentionAction;
@@ -250,6 +251,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -1932,7 +1934,7 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
     data.checkResult(file, infos, file.getText());
     if (data.hasLineMarkers()) {
       Document document = getDocument(getFile());
-      data.checkLineMarkers(file, DaemonCodeAnalyzerImpl.getLineMarkers(document, getProject()), document.getText());
+      data.checkLineMarkers(file, LineMarkersPass.getDisplayedLineMarkers(document, getProject()), document.getText());
     }
     Reference.reachabilityFence(hardRefToFileElement);
     return elapsed;
@@ -2455,6 +2457,7 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
     VirtualFile vFile = requireNonNull(InjectedLanguageManager.getInstance(project).getTopLevelFile(file)).getVirtualFile();
     withReadOnlyFile(vFile, project, () -> {
       try {
+        CompletableFuture<Void> barrier = new CompletableFuture<>();
         ApplicationManager.getApplication().invokeLater(() -> {
           try {
             //PsiFile may be invalidated by any WA executed in between -> needs to be re-resolved
@@ -2470,8 +2473,14 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
           catch (StubTextInconsistencyException e) {
             PsiTestUtil.compareStubTexts(e);
           }
+          finally {
+            // FIFO barrier: completes after every runnable that the intention queued with Application.invokeLater. Relies on:
+            // - NonBlockingFlushQueue runs runnables with the same metadata (modality state, write-intent flag) in scheduling order;
+            // - Application.invokeLater on the EDT schedules with the current modality state and the write-intent flag.
+            ApplicationManager.getApplication().invokeLater(() -> barrier.complete(null));
+          }
         });
-        UIUtil.dispatchAllInvocationEvents();
+        PlatformTestUtil.waitForFuture(barrier);
         checkPsiTextConsistency(project, vFile);
       }
       catch (AssertionError e) {

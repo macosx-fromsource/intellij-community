@@ -1,8 +1,8 @@
-"""Builds independently cacheable fragments of a dev-mode IDE distribution.
+"""Composes a dev-mode IDE distribution from components, and declares the reference fragments of the gates.
 
-A fragment names itself and the slice it owns; the assembler decides ownership from the layout it computed, so the
-fragments of one distribution partition it exactly instead of following lists someone maintains. See
-`org.jetbrains.intellij.build.dev.DevBuildFragment`.
+A component names the files it places, and the composer copies them into the distribution. A reference fragment
+runs the reference assembler, which produces the same files a second time, so a gate can compare the two producers. No
+distribution composes a reference.
 
 Split assembly deliberately supports only builds with scrambling disabled. Platform co-scrambling and per-plugin
 scrambling require both component layouts in one process.
@@ -11,23 +11,12 @@ scrambling require both component layouts in one process.
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@community//build:project_model_manifest.bzl", "write_project_model_manifest")
 load("//build:dev_launch_dependencies.bzl", "platform_parts")
+load(":dev_dist_build_date.bzl", "DEV_DIST_PINNED_BUILD_DATE_IN_SECONDS")
 load(":dev_dist_content.bzl", "DevDistContentInfo", "DevDistPlatformPayloadInfo")
 load(":dev_dist_plugin_descriptor.bzl", "DevDistProductInfo", "dev_dist_product_info_transition")
 
-# Pinned so the fragments of one distribution agree and an assembly does not carry the wall clock into its outputs. It
-# dates archive entries and the `.SNAPSHOT` plugin version suffix, and both would otherwise differ between fragments
-# assembled minutes apart.
-#
-# Deliberately *not* the product build date. A dev distribution stamps none, so the IDE resolves its build time at
-# startup and no EAP expiration period can run out on a cached distribution. See `computeAppInfoXml`. A far-future date
-# chosen to outrun that period makes every dev IDE start expired, because a build date over a day ahead of the wall
-# clock is expired too.
-#
-# `dev_dist_plugin_descriptor` stamps the same date. It reads the product's own value out of `dev_dist_product_info.bzl`.
-DEV_DIST_PINNED_BUILD_DATE_IN_SECONDS = "1767225600"  # 2026-01-01T00:00:00Z
-
 IntellijDevBuildInputsInfo = provider(
-    doc = "The exact Bazel inputs and label-to-path manifest made available to one dev-build fragment.",
+    doc = "The exact Bazel inputs and label-to-path manifest made available to one reference.",
     fields = {
         "files": "The input files named by the manifest.",
         "manifest": "The logical Bazel input label to execution path manifest.",
@@ -47,8 +36,9 @@ def _add_input_entry(ctx, entries, origins, logical_key, files, source, origin):
     is keyed by the container target that groups its jars (`DevDistContentInfo.library_jars` in `dev_dist_content.bzl`) and a
     multi-jar library has several, in an order the packer depends on. The manifest still holds one line per file, which
     is what keeps `wc -l` counting files for `dev_dist_unused_inputs_test.bzl`. The origin sidecar stays one line per
-    *key* and is read as a lookup rather than positionally (`tallyOrigins` in `//build/dev-dist` keeps the manifest as
-    a list of pairs and the origins as a `Map`), so a repeated key resolves to the one origin it was recorded under.
+    *key* and is read as a lookup rather than positionally (`tally_origins` in `//build/dev-dist-tools/bins/dev-dist`
+    keeps the manifest as a list of pairs and the origins as a `HashMap`), so a repeated key resolves to the one origin
+    it was recorded under.
 
     [origin] is written to a sidecar only, never to the manifest: it answers "which half of the declaration asked for
     this key", which is what turns `.unused-inputs` from a count into an attributable measurement.
@@ -78,21 +68,6 @@ def _dev_build_inputs_impl(ctx):
             fail("%s: %s must provide exactly one file, got %s" % (ctx.label, target.label, files))
         _add_input_entry(ctx, entries, origins, str(target.label), (files[0],), target.label, "raw")
 
-    # A raw input a payload asked for on behalf of named modules, kept only while one of those modules is still declared.
-    # This is where a handed-over `lib/` jar stops costing declarations: the module whose bytes are now in that jar is
-    # not declared, so neither its own output nor its libraries stay in the manifest. The value is module *names*
-    # because a payload is written in names, and a name is the one key that means the same thing to the repository rule
-    # that wrote it and to analysis here.
-    if ctx.attr.owned_inputs:
-        declared = {name: True for name in ctx.attr.platform_payload[DevDistPlatformPayloadInfo].declared_modules.to_list()}
-        for target, owners in ctx.attr.owned_inputs.items():
-            files = target[DefaultInfo].files.to_list()
-            if len(files) != 1:
-                fail("%s: %s must provide exactly one file, got %s" % (ctx.label, target.label, files))
-            if not [owner for owner in owners.split(" ") if owner in declared]:
-                continue
-            _add_input_entry(ctx, entries, origins, str(target.label), (files[0],), target.label, "raw")
-
     if ctx.attr.content:
         content = ctx.attr.content[DevDistContentInfo]
 
@@ -102,7 +77,7 @@ def _dev_build_inputs_impl(ctx):
         # A module's production label is the *rule* label plus `.jar` (`compute_module_targets`,
         # `@community//build:jps_target_derivation.bzl:410-420`), and the rule's jar output is `%{name}.jar`
         # (`jvm-rules/rules/common-attrs.bzl:129-132`) - so the jar file's owner is the rule and `owner + ".jar"`
-        # reproduces the label. `jps_dynamic_deps_ultimate.bzl:567-570` states the same identity from the other side.
+        # reproduces the label. The generator writes the same labels from `build/bazel-targets.json`.
         for jar in content.module_jars.to_list():
             _add_input_entry(ctx, entries, origins, str(jar.owner) + ".jar", (jar,), jar.owner, "member")
 
@@ -127,12 +102,12 @@ def _dev_build_inputs_impl(ctx):
 
     # An empty declaration writes an empty file rather than a lone newline, for the same reason `writeUnusedInputs`
     # does: `wc -l` is what reads this pair, and a blank line would report one declared input that does not exist.
-    # Unchanged for every non-empty manifest, so no fragment is re-keyed by this.
+    # Unchanged for every non-empty manifest, so no reference is re-keyed by this.
     ctx.actions.write(manifest, ("\n".join(lines) + "\n") if lines else "")
 
     # A sidecar, deliberately not a third column in the manifest: `ExplicitBazelInputResolver.load` splits on the first
     # tab and takes the rest of the line as the path, and the manifest is an action input - changing its bytes would
-    # re-key every fragment to carry a measurement. Nothing declares this file as an input, so it re-keys nothing.
+    # re-key every reference to carry a measurement. Nothing declares this file as an input, so it re-keys nothing.
     inputs_origin = ctx.actions.declare_file(ctx.label.name + ".bazel-inputs-origin")
     origin_lines = ["%s\t%s" % (logical_key, origins[logical_key]) for logical_key in sorted(origins.keys())]
     ctx.actions.write(inputs_origin, ("\n".join(origin_lines) + "\n") if origin_lines else "")
@@ -147,7 +122,7 @@ def _dev_build_inputs_impl(ctx):
     ]
 
 intellij_dev_build_inputs = rule(
-    doc = "Groups a fragment's derived raw labels behind one typed, validated input boundary.",
+    doc = "Groups the derived raw labels of a reference behind one typed, validated input boundary.",
     implementation = _dev_build_inputs_impl,
     attrs = {
         # Inputs are direct generated labels, never aliases: configured Target.label is the manifest key. The Kotlin
@@ -159,33 +134,24 @@ intellij_dev_build_inputs = rule(
         # The jars, aggregated from the graph instead of from a generated name list. Both halves land in one manifest
         # under the same key convention, so nothing on the Kotlin side can tell where an entry came from.
         "content": attr.label(providers = [DevDistContentInfo]),
-        # Set on the fragment that owns `lib/`, together with `owned_inputs`. The reference target takes the same split
-        # from the other side - it declares the packed halves through `content` and packs them itself - so one target
-        # drives both and they cannot disagree about which side a module is on.
-        "platform_payload": attr.label(
-            providers = [DevDistPlatformPayloadInfo],
-            doc = "Decides which `owned_inputs` survive, through its `declared_modules`.",
-        ),
-        # Deliberately separate from `inputs`, which stays unconditional. What belongs there is everything a fragment
-        # reads for a reason no payload module owns: the project-model tree's files, the plugin descriptors, the
-        # payload's own library entries, and the build modules - every fragment loads the product properties before it
-        # packs anything, so those jars are classpath rather than content even for the two of them
-        # (`intellij.platform.dependencies`, `intellij.platform.buildScripts.downloader`) that a `lib/` jar also holds.
-        "owned_inputs": attr.label_keyed_string_dict(
-            allow_files = True,
-            doc = "Raw input to the space-separated names of the payload modules that asked for it.",
-        ),
     },
 )
 
 IntellijDevFragmentInfo = provider(
+    doc = "A component that a distribution composes. Its manifest names each file where it already is.",
     fields = {
-        "name": "The fragment name, which is also the `kind` of its manifest.",
-        "home": "The fragment tree, or None for a component whose manifest names files that already exist.",
-        "manifest": "The fragment manifest.",
-        "payload": "The already-existing files a `home`-less component's manifest names, or None; the composer stages them.",
-        "plugin_classpath_part": "This fragment's plugin-classpath records, or None if it built no plugin.",
-        "plugin_classpath_prefix": "The plugin-classpath prefix, or None if another fragment produces it.",
+        "name": "The component name, which is also the `kind` of its manifest.",
+        "manifest": "The component manifest.",
+        "payload": "The already-existing files the manifest names, or None; the composer stages them.",
+        "plugin_classpath_part": "This component's plugin-classpath records, or None if it built no plugin.",
+        "plugin_classpath_prefix": "The plugin-classpath prefix, or None if another component produces it.",
+    },
+)
+
+IntellijDevReferenceInfo = provider(
+    doc = "A reference fragment, the second producer of a gate. No distribution composes it.",
+    fields = {
+        "name": "The fragment name.",
         "inputs_manifest": "The label-to-path manifest of the fragment's declared Bazel inputs.",
         "unused_inputs": "The declared inputs the assembly never resolved - declared minus these is what it used.",
     },
@@ -206,28 +172,34 @@ IntellijProjectModelTreeInfo = provider(
     },
 )
 
-# Not `local`, which is what these actions used to say. Verified against the shipped `JetBrains/9.1.0-jb` binary rather
-# than the documentation: `Spawns.mayBeCached` is `!containsKey("no-cache") && !containsKey("local")`, and
-# `RemoteExecutionService.getRead/WriteCachePolicy` gates **`--disk_cache`** on exactly that - so `local` was throwing
-# away the local disk cache in order to keep gigabytes off the shared remote one. This says only the second thing.
-# Fragment outputs stay in the local disk cache: they are too large for the shared cache, and remote execution is out of
-# scope until the inputs are represented by platform-independent plans. Network access is blocked as a second line of
-# defence behind `--preloaded-only`; an accidentally incomplete preload set must fail instead of poisoning the cache.
+# The cache policy of the references and the component collectors. `cache.spec.md` states it.
+# The policy does not use `local`. In the shipped `JetBrains/9.1.0-jb` binary, `Spawns.mayBeCached` tests both
+# `no-cache` and `local`, and `RemoteExecutionService` gates `--disk_cache` on that test. So `local` also stops the disk
+# cache.
+# A reference declares the shared project-model tree and writes a large home, so the remote cache does not keep it.
+# Remote execution is out of scope until platform-independent plans represent the inputs of a reference.
+# A reference runs with `--preloaded-only`, and the blocked network is a second check. An incomplete preload set then
+# fails and does not poison the cache.
+# A collector writes one small manifest, and its payload stays in the cache of the action that produced it. The
+# collectors use this policy too, because no measurement supports another policy for them yet.
 _LOCAL_DISK_CACHE_ONLY = {
     "block-network": "1",
     "no-remote-cache": "1",
     "no-remote-exec": "1",
 }
 
-# What the scheduler reserves for one tool JVM, in CPUs and MiB. Without it Bazel books a JVM as a 250 MiB action and
-# starts as many as `--jobs` allows. The memory is the tool's `-Xmx` in `build/BUILD.bazel` plus the JVM's own
-# overhead and, on Windows, the launcher's `jar` helper. Keep the two sides in step.
+# What the scheduler reserves for one tool action, in CPUs and MiB. Without a `resource_set`, Bazel books an action at
+# one CPU and 250 MiB and starts as many as `--jobs` allows.
 def _small_tool_resources(_os, _inputs):
-    """The composer and the project model tree materializer: `-Xmx2g`, single-threaded."""
-    return {"cpu": 1, "memory": 2560}
+    """The materializer of the project model tree. It is a native binary with no JVM heap to reserve."""
+    return {"cpu": 1, "memory": 256}
+
+def _composer_resources(_os, _inputs):
+    """The composer clones the files of an export on a pool of four threads."""
+    return {"cpu": 4, "memory": 256}
 
 def _assembler_resources(_os, _inputs):
-    """The fragment assembler: `-Xmx8g`, G1 with a few worker threads."""
+    """The reference assembler: `-Xmx8g`, G1 with a few worker threads."""
     return {"cpu": 2, "memory": 9216}
 
 # The switch that turns span output on, carried by every rule here that runs a packaging tool.
@@ -235,7 +207,7 @@ def _assembler_resources(_os, _inputs):
 # A private label attribute read through `BuildSettingInfo` rather than a `select()` on a public one, so the value is
 # read once in the implementation and the two branches sit next to each other: declare the file and name it on the
 # command line, or do neither. The label is written bare and resolves in the repository this `.bzl` belongs to - the
-# same thing `content_module_jar.bzl` relies on for its `_packer = "//build/content-module-packer"` - so an ultimate
+# same thing `content_module_jar.bzl` relies on for its `_packer` default - so an ultimate
 # build reaches `@community//platform/build-scripts/bazel-rules:trace_spans` without this file naming a repository.
 _TRACE_SPANS_ATTR = {
     "_trace_spans": attr.label(
@@ -244,7 +216,8 @@ _TRACE_SPANS_ATTR = {
     ),
 }
 
-# The switch that turns the executed packaging recipe on, carried by the one rule here that runs the assembler.
+# The switch that turns the executed packaging recipe on, carried by the one rule here that runs the reference
+# assembler.
 #
 # A sibling of the above with the same shape rather than a reuse of it: a recipe and a measurement are wanted at
 # different times, and `trace_spans` has a protocol - hold it constant across a comparison, read it only from a cold
@@ -357,8 +330,9 @@ def _project_model_tree_impl(ctx):
         # Hermetic. It reads its manifest and the execroot-relative sources that manifest names, writes only under its
         # output directory, and consults no environment variable, no home directory and no network, so it may be
         # sandboxed and the disk cache may keep it. The remote cache may not. The output is tens of thousands of small
-        # files, every model edit re-keys it, and every consumer is a fragment that runs locally. A remote hit would
-        # download the whole tree to save a few seconds of local copying.
+        # files, and every model edit re-keys it. Its consumers are the runtime module repository action and the
+        # references, and both run locally. A remote hit would download the whole tree to save a few seconds of local
+        # copying.
         execution_requirements = {"no-remote-cache": "1"},
         resource_set = _small_tool_resources,
         mnemonic = "IntellijProjectModelTree",
@@ -366,23 +340,22 @@ def _project_model_tree_impl(ctx):
     )
     return [
         DefaultInfo(files = depset([tree])),
-        # Not in `IntellijProjectModelTreeInfo`: that provider is what a fragment reads to declare an *input*, and a
-        # span file must never become one. The fragment reaches this group instead.
+        # Not in `IntellijProjectModelTreeInfo`. A consumer reads that provider to declare an *input*, and a span file
+        # must never become one. A reference reaches this group instead.
         OutputGroupInfo(trace_spans = _spans_output_group([spans], [])),
         IntellijProjectModelTreeInfo(tree = tree),
     ]
 
 intellij_project_model_tree = rule(
-    doc = """The checkout-shaped JPS project model tree that dev-distribution fragments read.
+    doc = """The checkout-shaped JPS project model tree.
 
-    A consuming repository can declare one tree for many products and share it with every fragment of those products.
-    A fragment used to build its own, and at 7 432 file copies that cost as much as the assembly itself - affordable
-    once, not once per fragment.
+    Only the runtime module repository action and the references read the tree. No other action of a distribution
+    reads it. A consuming repository can declare one tree for many products and share it with every consumer of those
+    products. One tree per consumer would repeat about 7 400 file copies for each one.
 
-    It carries the union of what the fragments need, so a file only one of them reads (the OS natives of the resources
-    fragment, or the branding of one product, say) invalidates all of them. Those change far less often than the model
-    does, and the model was already invalidating every fragment: project files are inputs no fragment can prune, unlike
-    the module jars.
+    The tree carries the union of what its consumers need. A file that only one consumer reads, for example the branding
+    of one product, therefore re-keys every consumer. Such files change less often than the model, and every model edit
+    already re-keys every consumer.
     """,
     implementation = _project_model_tree_impl,
     attrs = {
@@ -394,7 +367,7 @@ intellij_project_model_tree = rule(
 )
 
 # The selector values `DevDistMain` accepts, mirrored here so a typo in a BUILD file fails at analysis time.
-_PLATFORM_SELECTORS = ["", "except", "only"]
+_PLATFORM_SELECTORS = ["", "only"]
 
 def _add_target_platform_args(args, target_platform):
     if target_platform:
@@ -407,21 +380,20 @@ def _mnemonic(fragment_name):
     return "IntellijDev" + "".join([part.capitalize() for part in fragment_name.replace("-", "_").replace(".", "_").split("_")])
 
 def _fragment_impl(ctx):
-    if not ctx.attr.platform and not ctx.attr.platform_resources and not ctx.attr.runtime_module_repository:
-        fail("%s selects nothing: set platform, platform_resources or runtime_module_repository" % ctx.label)
+    if not ctx.attr.platform and not ctx.attr.runtime_module_repository:
+        fail("%s selects nothing: set platform or runtime_module_repository" % ctx.label)
     if not ctx.files.preloaded_manifests:
         fail("%s must declare at least one preloaded download manifest" % ctx.label)
 
     home = ctx.actions.declare_directory(ctx.label.name + ".home")
-    component_manifest = ctx.actions.declare_file(ctx.label.name + ".component.json")
     scratch = ctx.actions.declare_directory(ctx.label.name + ".scratch")
 
     # Which declared inputs the assembly never resolved. It used to be `unused_inputs_list`, pruning the action key
     # after the fact - which can skip a re-run in one output base but never produce a disk- or remote-cache hit, since
     # the key is computed over the full declared set before the action runs. Narrowing what is *declared* replaced it.
-    # The file stays as the measurement of how honest a declaration is: declared minus unused is what a fragment used.
+    # The file stays as the measurement of how honest a declaration is: declared minus unused is what a reference used.
     unused_inputs = ctx.actions.declare_file(ctx.label.name + ".unused-inputs")
-    outputs = [home, component_manifest, scratch, unused_inputs]
+    outputs = [home, scratch, unused_inputs]
 
     project_tree = ctx.attr.project_model_tree[IntellijProjectModelTreeInfo].tree
     build_inputs = ctx.attr.build_inputs[IntellijDevBuildInputsInfo]
@@ -430,12 +402,11 @@ def _fragment_impl(ctx):
     args = ctx.actions.args()
     args.add("--project-dir=" + project_tree.path)
     args.add("--output-dir=" + home.path)
-    args.add("--component-manifest=" + component_manifest.path)
     args.add("--scratch-dir=" + scratch.path)
 
     # Whatever an assembly still wants to download or extract goes here rather than into the checkout, where the cache
     # used to live: the project tree is shared and read-only now, and a cache no action declares is not an input.
-    # Everything a fragment actually reads is declared - see the preloaded archives - so this should stay empty, and
+    # Everything a reference actually reads is declared - see the preloaded archives - so this should stay empty, and
     # it is cleaned on success.
     args.add("--download-cache-dir=" + scratch.path + "/download-cache")
     args.add("--clean-scratch-on-success")
@@ -448,26 +419,24 @@ def _fragment_impl(ctx):
     _add_target_platform_args(args, ctx.attr.target_platform)
 
     if ctx.attr.platform:
+        if not ctx.attr.platform_payload:
+            fail("%s: platform needs platform_payload, which names the jars" % ctx.label, attr = "platform_payload")
         args.add("--platform=" + ctx.attr.platform)
-        if ctx.attr.platform_payload:
-            # Empty for a `lib/`-owning fragment of a product whose payload packs nothing per module: `except` then owns
-            # all of `lib/`, which is what it meant before any of these jars were handed over.
-            args.add_all(
-                ctx.attr.platform_payload[DevDistPlatformPayloadInfo].packed_jar_names,
-                format_each = "--platform-jar=%s",
-            )
-    if ctx.attr.platform_resources:
-        args.add("--platform-resources")
+        args.add_all(
+            ctx.attr.platform_payload[DevDistPlatformPayloadInfo].packed_jar_names,
+            format_each = "--platform-jar=%s",
+        )
+    runtime_module_repository_layout = None
     if ctx.attr.runtime_module_repository:
-        # The assembler lays the platform and the bundled plugins out without files, then writes only `modules/`.
+        # The reference assembler lays the platform and the bundled plugins out without files, then writes only
+        # `modules/`.
         args.add("--runtime-module-repository")
-        args.add("--generate-runtime-module-repository")
 
-    plugin_classpath_prefix = None
-    if ctx.attr.produces_plugin_classpath_prefix:
-        plugin_classpath_prefix = ctx.actions.declare_file(ctx.label.name + ".plugin-classpath-prefix")
-        args.add("--plugin-classpath-prefix=" + plugin_classpath_prefix.path)
-        outputs.append(plugin_classpath_prefix)
+        # The layout the repository is generated from, the reference of `./build/dev-dist.cmd runtime-repo`. Not in the
+        # home, so no distribution composes it.
+        runtime_module_repository_layout = ctx.actions.declare_file(ctx.label.name + ".runtime-module-repository-layout.json")
+        args.add("--runtime-module-repository-layout=" + runtime_module_repository_layout.path)
+        outputs.append(runtime_module_repository_layout)
 
     args.add_all(ctx.files.preloaded_manifests, format_each = "--preloaded-manifest=%s")
     args.add("--preloaded-only")
@@ -498,39 +467,33 @@ def _fragment_impl(ctx):
         progress_message = "Assembling %s dev fragment %s" % (ctx.attr.platform_prefix, ctx.label),
     )
     return [
-        DefaultInfo(files = depset([home, component_manifest])),
+        DefaultInfo(files = depset([home])),
         # The three files `./build/dev-dist.cmd inputs` joins, in one group: declared keys with their paths, the
         # ones the assembly never resolved, and which half of the declaration asked for each. Requesting the group runs
         # the assembly, which is the point - `used` is only knowable from a real assembly.
         OutputGroupInfo(
             declared_inputs = depset([bazel_inputs_manifest, build_inputs.inputs_origin, unused_inputs]),
-            # This fragment's spans and the shared project model tree's. The tree is deliberately carried here: it is a
-            # dependency of every fragment and of no distribution, so this is the only path by which one request for a
-            # dist's spans can reach it.
+            # The spans of this reference and of the shared project model tree. No distribution composes a reference,
+            # so a request for the spans of a distribution does not reach the tree.
             trace_spans = _spans_output_group([spans], [ctx.attr.project_model_tree]),
-            # This fragment's executed recipe. Nothing is propagated into it: the tree runs no assembler.
+            # The executed recipe of this reference. Nothing is propagated into it: the tree runs no assembler.
             dev_dist_plans = _plans_output_group([plan], []),
+            runtime_module_repository_layout = depset([runtime_module_repository_layout] if runtime_module_repository_layout else []),
         ),
-        IntellijDevFragmentInfo(
+        IntellijDevReferenceInfo(
             name = ctx.attr.fragment_name,
-            home = home,
-            payload = None,
-            manifest = component_manifest,
-            plugin_classpath_part = None,
-            plugin_classpath_prefix = plugin_classpath_prefix,
             inputs_manifest = bazel_inputs_manifest,
             unused_inputs = unused_inputs,
         ),
     ]
 
 intellij_dev_fragment = rule(
-    doc = """One independently cacheable slice of a dev distribution.
+    doc = """A reference fragment: files of a dev distribution that the reference assembler packs a second time for a
+    gate.
 
-    What the fragment owns is a selector over names, not a file list. `platform` owns the `lib/` jars by a generated
-    jar-name set: every jar `except` the named ones, or `only` them. `platform_resources` owns `bin`, the product
-    metadata, the launchers and the copied product files. `runtime_module_repository` owns `modules/`, the runtime
-    module repository a row asks for. No fragment owns a plugin directory: the packed plugin components do, and the
-    composer checks that the components of one distribution partition it exactly.
+    It publishes `IntellijDevReferenceInfo`, so no distribution can compose it. What the fragment owns is a selector
+    over names, not a file list. `platform = "only"` owns the `lib/` jars that a generated jar-name set names.
+    `runtime_module_repository` owns `modules/`, the runtime module repository.
     """,
     implementation = _fragment_impl,
     attrs = {
@@ -538,21 +501,16 @@ intellij_dev_fragment = rule(
         "build_date_seconds": attr.string(default = DEV_DIST_PINNED_BUILD_DATE_IN_SECONDS),
         "platform_prefix": attr.string(mandatory = True),
         "target_platform": attr.string(default = ""),
-        "fragment_name": attr.string(mandatory = True, doc = "Identifies this fragment in its manifest, its mnemonic and the composer's completeness check."),
-        "platform": attr.string(default = "", values = _PLATFORM_SELECTORS, doc = "Which `lib/` jars this fragment owns - all `except` the packed ones, or `only` those; empty means none."),
-        "platform_resources": attr.bool(default = False, doc = "Whether this fragment owns `bin`, the product metadata, the launchers and the copied product files."),
+        "fragment_name": attr.string(mandatory = True, doc = "Identifies this fragment in its mnemonic, its recipe and its diagnostics."),
+        "platform": attr.string(default = "", values = _PLATFORM_SELECTORS, doc = "Which `lib/` jars this fragment owns: `only` the packed ones, or none when empty."),
         "runtime_module_repository": attr.bool(default = False, doc = "Whether this fragment owns `modules/module-descriptors.dat` and `modules/module-descriptors.jar`."),
         "platform_payload": attr.label(
             providers = [DevDistPlatformPayloadInfo],
-            doc = "The `lib/` jar file names `platform` reads, as the target that derives them: with `except`, the " +
-                  "jars another component provides and this fragment must therefore not pack; with `only`, the jars " +
-                  "it packs and nothing else. `intellij_dev_packed_jars_component` reads the same provider, so an " +
-                  "`except` fragment and it partition the `lib/` jars exactly; the composer fails on a path both " +
-                  "provide. The fragment still reports those jars' core-classpath entries - deciding that needs the " +
-                  "platform layout, which the packer does not have.",
+            doc = "The `lib/` jar file names `platform` reads, as the target that derives them: the jars that " +
+                  "`intellij_dev_packed_jars_component` provides, which this fragment packs the way `JarPackager` " +
+                  "packs them.",
         ),
-        "produces_plugin_classpath_prefix": attr.bool(default = False, doc = "Whether this fragment writes the `plugin-classpath.txt` prefix; exactly one fragment of a distribution does."),
-        "project_model_tree": attr.label(providers = [IntellijProjectModelTreeInfo], mandatory = True, doc = "The materialized project model tree this fragment reads, shared with the other fragments of its product."),
+        "project_model_tree": attr.label(providers = [IntellijProjectModelTreeInfo], mandatory = True, doc = "The materialized project model tree this reference reads. A consuming repository can share one tree with every reference."),
         "bazel_targets_json": attr.label(allow_single_file = True, mandatory = True),
         "build_inputs": attr.label(providers = [IntellijDevBuildInputsInfo], mandatory = True),
         "preloaded_downloads": attr.label_list(allow_files = True),
@@ -567,13 +525,15 @@ _COLLECTOR_ATTRS = {
     "target_platform": attr.string(default = ""),
 } | _TRACE_SPANS_ATTR
 
-def _collect_component(ctx, files, collection_args, inputs, mnemonic, progress_message):
+def _collect_component(ctx, files, collection_args, inputs, mnemonic, progress_message, plugin_classpath_prefix = None, main_class = ""):
     component_manifest = ctx.actions.declare_file(ctx.label.name + ".component.json")
     args = ctx.actions.args()
     args.add("--component-manifest=" + component_manifest.path)
     args.add("--kind=" + ctx.attr.component_name)
     args.add("--platform-prefix=" + ctx.attr.platform_prefix)
     _add_target_platform_args(args, ctx.attr.target_platform)
+    if main_class:
+        args.add("--main-class=" + main_class)
 
     # The manifest is the primary output, so it is also what names the span file: `dev-dist trace` joins a span file to
     # its action by the primary output's stem, and `X.component.json`'s stem is `X.component`.
@@ -593,13 +553,10 @@ def _collect_component(ctx, files, collection_args, inputs, mnemonic, progress_m
         OutputGroupInfo(trace_spans = _spans_output_group([spans], [])),
         IntellijDevFragmentInfo(
             name = ctx.attr.component_name,
-            home = None,
             payload = depset(files),
             manifest = component_manifest,
             plugin_classpath_part = None,
-            plugin_classpath_prefix = None,
-            inputs_manifest = None,
-            unused_inputs = None,
+            plugin_classpath_prefix = plugin_classpath_prefix,
         ),
     ]
 
@@ -640,14 +597,16 @@ def _metadata_catalogue(ctx, records):
 def _jar_destinations(ctx, records):
     """Where each packed jar goes within the plugin's `lib/`, which its own file name states only when it is flat.
 
-    A native tree goes to `lib/<native_lib_dir>/`, as a `tree` entry. Sorted by source, so the file the action reads is
-    the same file for the same set of jars.
+    A native tree goes to `lib/<native_lib_dir>/`, as a `tree` entry. A jar that the payload puts on the core classpath
+    is a `coreClassPath` entry. Sorted by source, so the file the action reads is the same file for the same set of jars.
     """
     by_source = {}
     for record in records:
         for source in _packed_sources(record):
             relative_path = record.native_lib_dir if source.tree else record.relative_path
             entry = {"source": source.file.path, "relativePath": relative_path} | ({"tree": True} if source.tree else {})
+            if not source.tree and record.core_classpath:
+                entry["coreClassPath"] = True
             previous = by_source.get(source.file.path)
             if previous != None and previous != entry:
                 fail("%s: %s is placed at both %s and %s" % (ctx.label, source.file.path, previous["relativePath"], relative_path))
@@ -655,6 +614,8 @@ def _jar_destinations(ctx, records):
     return [by_source[source] for source in sorted(by_source.keys())]
 
 def _packed_jars_component_impl(ctx):
+    if ctx.attr.plugin_classpath_prefix and not ctx.attr.platform_payload:
+        fail("%s: plugin_classpath_prefix needs platform_payload" % ctx.label)
     if ctx.attr.platform_payload:
         if ctx.attr.files or ctx.attr.executable_files:
             fail("%s: files and executable_files cannot be combined with platform_payload" % ctx.label)
@@ -676,6 +637,8 @@ def _packed_jars_component_impl(ctx):
             inputs = [catalogue, jar_list] + [source.metadata for record in records for source in _packed_sources(record)],
             mnemonic = "IntellijDevPackedJars",
             progress_message = "Naming %d packed %s jars and %d native trees for %%{label}" % (len(jars), ctx.attr.platform_prefix, len(trees)),
+            plugin_classpath_prefix = ctx.file.plugin_classpath_prefix,
+            main_class = ctx.attr.main_class,
         )
 
     if not ctx.attr.files and not ctx.attr.executable_files:
@@ -708,13 +671,14 @@ def _packed_jars_component_impl(ctx):
         inputs = [metadata] + files,
         mnemonic = "IntellijDevFiles",
         progress_message = "Naming distribution files for %{label}",
+        main_class = ctx.attr.main_class,
     )
 
 intellij_dev_packed_jars_component = rule(
     doc = """Collect packed platform jars or explicitly placed files into a distribution component.
 
     Set platform_payload to collect its packed jars at lib/<filename>, and the native tree of a content module jar at
-    lib/<native_lib_dir>/. Alternatively, set files and executable_files to map source labels to distribution paths;
+    lib/<native_lib_dir>/. The manifest marks the jars that the payload puts on the core classpath. Alternatively, set files and executable_files to map source labels to distribution paths;
     the composer gives a file of executable_files the executable bit. The modes cannot be combined. The action reads
     only these sources and writes one manifest. The composer copies the files directly from their sources.
     """,
@@ -726,6 +690,13 @@ intellij_dev_packed_jars_component = rule(
         ),
         "files": attr.label_keyed_string_dict(allow_files = True, doc = "Maps each source label to its distribution path. The composer copies the file as is."),
         "executable_files": attr.label_keyed_string_dict(allow_files = True, doc = "Maps each source label to its distribution path. The composer copies the file with the executable bit."),
+        "plugin_classpath_prefix": attr.label(
+            allow_single_file = True,
+            doc = "The `plugin-classpath.txt` prefix that `dev_dist_product_descriptor` writes. Only with `platform_payload`.",
+        ),
+        "main_class": attr.string(
+            doc = "The IDE main class the component declares, from the launch model. The `platform_resources` component states it. Empty for none.",
+        ),
     },
 )
 
@@ -746,10 +717,7 @@ def _add_source_bindings(args, fragment, anchor):
             "members": [member.tree_relative_path for member in expander.expand(source)] if source.is_directory else [],
         })
 
-    sources = depset(
-        direct = [fragment.home] if fragment.home else [],
-        transitive = [fragment.payload] if fragment.payload else [],
-    )
+    sources = fragment.payload if fragment.payload else depset()
     args.add_all(sources, map_each = _binding_input, expand_directories = True)
     args.add_all(sources, map_each = source_binding, expand_directories = False, allow_closure = True)
 
@@ -769,16 +737,13 @@ def _compose(ctx, fragment_targets):
     ide_config = ctx.actions.declare_file(ctx.label.name + ".ide.config")
     fingerprint = ctx.actions.declare_file(ctx.label.name + ".fingerprint")
     fragments = [target[IntellijDevFragmentInfo] for target in fragment_targets]
-    component_files = depset(
-        direct = [fragment.home for fragment in fragments if fragment.home],
-        transitive = [fragment.payload for fragment in fragments if fragment.payload],
-    )
+    component_files = depset(transitive = [fragment.payload for fragment in fragments if fragment.payload])
     runtime_files = component_files if local_launch else depset()
 
     prefixes = [fragment.plugin_classpath_prefix for fragment in fragments if fragment.plugin_classpath_prefix]
     parts = [fragment.plugin_classpath_part for fragment in fragments if fragment.plugin_classpath_part]
     if parts and len(prefixes) != 1:
-        fail("%s: exactly one fragment must set produces_plugin_classpath_prefix, got %d" % (ctx.label, len(prefixes)))
+        fail("%s: exactly one component must provide the plugin-classpath prefix, got %d" % (ctx.label, len(prefixes)))
 
     source_bindings = None
     if not local_launch:
@@ -798,9 +763,7 @@ def _compose(ctx, fragment_targets):
             "additionalModules": ctx.attr.additional_modules,
             "components": [
                 {
-                    # None for a component that declares no tree: its manifest names each file where it already is, and
-                    # the composer copies from there.
-                    "root": fragment.home.path if fragment.home else None,
+                    # The manifest names each file where it already is, and the composer copies from there.
                     "manifest": fragment.manifest.path,
                     "pluginClasspathPart": fragment.plugin_classpath_part.path if fragment.plugin_classpath_part else None,
                 }
@@ -822,9 +785,7 @@ def _compose(ctx, fragment_targets):
     ctx.actions.run(
         inputs = depset(
             direct = [composition_spec] + ([source_bindings] if source_bindings else []) +
-                     [fragment.manifest for fragment in fragments] +
-                     ([fragment.home for fragment in fragments if fragment.home] if not local_launch else []) +
-                     parts + prefixes,
+                     [fragment.manifest for fragment in fragments] + parts + prefixes,
             transitive = [fragment.payload for fragment in fragments if fragment.payload] if not local_launch else [],
         ),
         outputs = [home, ide_config, fingerprint] + ([spans] if spans else []),
@@ -833,7 +794,7 @@ def _compose(ctx, fragment_targets):
         # Composed distributions are large and intended for local consumption. Until a producer and delivery policy
         # exist, the local disk cache is the only intended cache.
         execution_requirements = {"no-remote-cache": "1"},
-        resource_set = _small_tool_resources,
+        resource_set = _composer_resources,
         mnemonic = "IntellijDevLaunchMetadata" if local_launch else "IntellijDevDistCompose",
         progress_message = "Composing dev launch metadata %s" % ctx.label if local_launch else "Composing dev distribution %s" % ctx.label,
     )
@@ -855,11 +816,11 @@ def _compose(ctx, fragment_targets):
             ide_config = depset([ide_config]),
             # The complete production plugin payload, without opening component archives or directories.
             dev_dist_plugin_outputs = _side_output_group([], fragment_targets, "dev_dist_plugin_outputs"),
-            # Every span file of this distribution in one request: the composition's own, each fragment's, and - through
-            # the fragments - the shared project model tree's. This is the group a measuring run asks for.
+            # Every span file of this distribution in one request: the composition's own and each component's. This is the
+            # group a measuring run asks for.
             trace_spans = _spans_output_group([spans], fragment_targets),
-            # Every fragment's executed recipe in one request. The composition itself has none: it places files, it
-            # does not pack them.
+            # The executed recipe of each component that has one, in one request. The composition itself has none,
+            # because it places files and does not pack them.
             dev_dist_plans = _plans_output_group([], fragment_targets),
         ),
     ]
@@ -868,7 +829,7 @@ def _compose_fragments_impl(ctx):
     if ctx.attr.plugin_components and ctx.attr.product_info == None:
         fail("%s composes plugin components and names no product_info" % ctx.label, attr = "product_info")
 
-    # The plugin components follow the fragments. The composer checks the set of kinds, not their order.
+    # The plugin components follow the platform components. The composer checks the set of kinds, not their order.
     return _compose(ctx, ctx.attr.fragments + ctx.attr.plugin_components)
 
 intellij_dev_fragments_dist = rule(
@@ -879,7 +840,7 @@ intellij_dev_fragments_dist = rule(
         "plugin_components": attr.label_list(
             providers = [IntellijDevFragmentInfo],
             cfg = dev_dist_product_info_transition,
-            doc = """The plugin components of this product, composed after `fragments`.
+            doc = """The plugin components of this product, composed after the components of `fragments`.
 
 Transitioned onto `product_info`: a packed plugin component reads the product through the flag, so one component target
 per plugin serves every product that bundles the plugin.""",
@@ -891,13 +852,13 @@ per plugin serves every product that bundles the plugin.""",
         "_allowlist_function_transition": attr.label(default = Label("@bazel_tools//tools/allowlists/function_transition_allowlist")),
         "local_launch": attr.bool(default = False, doc = "Compose metadata that refers to component runfiles instead of copying their contents."),
         "expect_fragments": attr.string_list(
-            doc = "The fragment names this distribution is supposed to be made of, stated independently of `fragments` so that a fragment missing from that list fails composition instead of thinning the IDE.",
+            doc = "The component names of this distribution, stated independently of `fragments`. A component missing from that list then fails composition and does not thin the IDE.",
         ),
         "additional_modules": attr.string_list(
             doc = "The plugin modules this distribution declares it contains, for `DevIdeConfig`. What the " +
-                  "distribution was configured with, not what any one fragment assembled: a module the product " +
-                  "bundles is packed by a shared plugin fragment, and a consumer asking for it can only find out " +
-                  "from here.",
+                  "distribution was configured with, not what any one component assembled. A shared plugin component " +
+                  "packs a module that the product bundles, so only this attribute tells a consumer that the " +
+                  "distribution contains it.",
         ),
     } | _TRACE_SPANS_ATTR,
 )

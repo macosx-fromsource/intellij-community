@@ -6,7 +6,6 @@ import com.intellij.openapi.observable.properties.AtomicBooleanProperty
 import com.intellij.openapi.observable.properties.ObservableMutableProperty
 import com.intellij.openapi.observable.properties.ObservableProperty
 import com.intellij.openapi.observable.util.not
-import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.validation.DialogValidationRequestor
@@ -17,6 +16,7 @@ import com.intellij.python.pyproject.PY_PROJECT_TOML
 import com.intellij.python.pyproject.PyProjectToml
 import com.intellij.python.pytools.backend.PyTool
 import com.intellij.python.pytools.backend.runtime.PyToolRuntime
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.python.uv.backend.UvPyTool
 import com.intellij.python.uv.backend.cli.uv.UvInitVcs
 import com.intellij.python.uv.backend.runtime.uvCli
@@ -30,7 +30,6 @@ import com.intellij.util.ui.AsyncProcessIcon
 import com.jetbrains.python.PyBundle.message
 import com.jetbrains.python.errorProcessing.ErrorSink
 import com.jetbrains.python.errorProcessing.PyResult
-import com.jetbrains.python.errorProcessing.withProject
 import com.jetbrains.python.newProjectWizard.collector.PythonNewProjectWizardCollector
 import com.jetbrains.python.sdk.add.v2.CustomNewEnvironmentCreator
 import com.jetbrains.python.sdk.add.v2.PathHolder
@@ -43,7 +42,9 @@ import com.jetbrains.python.sdk.add.v2.ValidatedPath
 import com.jetbrains.python.sdk.add.v2.ValidatedPathField
 import com.jetbrains.python.sdk.add.v2.VenvAlreadyExistsError
 import com.jetbrains.python.sdk.add.v2.VenvExistenceValidationState
-import com.jetbrains.python.sdk.add.v2.persistCustomToolPath
+import com.jetbrains.python.sdk.add.v2.errorOrNull
+import com.jetbrains.python.sdk.add.v2.pathHolder
+import com.jetbrains.python.sdk.add.v2.successOrNull
 import com.jetbrains.python.sdk.add.v2.validatablePathField
 import com.jetbrains.python.sdk.baseDir
 import com.jetbrains.python.sdk.uv.impl.createUvLowLevel
@@ -72,15 +73,10 @@ private fun Version.languageLevel(): @NlsSafe String = "$major.$minor"
 
 /**
  * Creates a UV environment creator for the given model.
- *
- * @param module The module context for environment creation. Can be null when creating an interpreter
- *               at the project level (not associated with a specific module). When null, the creator
- *               will navigate to the generic Python existing environment selector instead of the
- *               UV-specific selector if a .venv directory already exists.
  */
-internal fun PythonMutableTargetAddInterpreterModel<PathHolder.Eel>.uvCreator(module: Module?): EnvironmentCreatorUv<PathHolder.Eel> {
-  val errorSink = module?.project?.let { ErrorSink().withProject(it) } ?: ErrorSink()
-  return EnvironmentCreatorUv(this, module, errorSink)
+internal fun PythonMutableTargetAddInterpreterModel<PathHolder.Eel>.uvCreator(): EnvironmentCreatorUv<PathHolder.Eel> {
+  val errorSink = ErrorSink()
+  return EnvironmentCreatorUv(this, null, errorSink)
 }
 
 internal class EnvironmentCreatorUv<P : PathHolder>(
@@ -131,7 +127,7 @@ internal class EnvironmentCreatorUv<P : PathHolder>(
 
     propertyGraph.dependsOn(venvAlreadyExistsError, model.uvViewModel.uvVenvPath, deleteWhenChildModified = false) {
       @Suppress("UNCHECKED_CAST") // TODO: Express it in the type-safe manner
-      model.uvViewModel.uvVenvPath.get()?.validationResult?.errorOrNull as? VenvAlreadyExistsError<P>
+      model.uvViewModel.uvVenvPath.get()?.errorOrNull as? VenvAlreadyExistsError<P>
     }
   }
 
@@ -204,7 +200,7 @@ internal class EnvironmentCreatorUv<P : PathHolder>(
         versionComboBox.removeAllItems()
         defaultLanguageLevel = null
 
-        if (executable?.validationResult?.successOrNull == null) {
+        if (executable?.successOrNull == null) {
           return@onEach
         }
 
@@ -216,7 +212,7 @@ internal class EnvironmentCreatorUv<P : PathHolder>(
           val pythonVersions = withContext(Dispatchers.IO) {
             val versionRequest = PyProjectToml.parseOrNull(pyProjectTomlPath)?.project?.requiresPython
 
-            val cli = validateAndCreateUvCli(executable.pathHolder, model.fileSystem).getOr { return@withContext emptyList() }
+            val cli = validateAndCreateUvCli(executable.pathHolder.successOrNull, model.fileSystem).getOr { return@withContext emptyList() }
             // The supported Python versions of uv do not depend on a directory, so this runs with none.
             val uvLowLevel = createUvLowLevel(cwd = null, cli)
             uvLowLevel.listSupportedPythonVersions(versionRequest)
@@ -224,7 +220,7 @@ internal class EnvironmentCreatorUv<P : PathHolder>(
           }
 
           // Resolved before the items are added so the renderer already knows which row to mark on its first paint.
-          defaultLanguageLevel = executable.pathHolder?.let { uvExecutable ->
+          defaultLanguageLevel = executable.pathHolder.successOrNull?.let { uvExecutable ->
             withContext(Dispatchers.IO) { resolveDefaultLanguageLevel(uvExecutable, projectPath) }
           }
 
@@ -282,12 +278,12 @@ internal class EnvironmentCreatorUv<P : PathHolder>(
     }
   }
 
-  override suspend fun setupEnvSdk(moduleBasePath: Path): PyResult<Sdk> {
-    val uv = toolExecutable.get()?.pathHolder!!
+  override suspend fun setupEnvSdk(moduleBasePath: Path): PyResult<PythonInterpreter> {
+    val uv = toolExecutable.get()!!.pathHolder.getOr { return it }
     return setupNewUvSdkAndEnv(
       uvExecutable = uv,
       workingDir = moduleBasePath,
-      venvPath = model.uvViewModel.uvVenvPath.get()?.pathHolder,
+      venvPath = model.uvViewModel.uvVenvPath.get()?.pathHolder?.getOr { return it },
       fileSystem = model.fileSystem,
       version = pythonVersion.get(),
       errorSink = errorSink,
@@ -304,7 +300,7 @@ internal class EnvironmentCreatorUv<P : PathHolder>(
    * the IDE's VCS mapping.
    */
   override suspend fun createPythonModuleStructure(module: Module, createGitRepository: Boolean): PyResult<Unit> {
-    val uv = toolExecutable.get()?.pathHolder!!
+    val uv = toolExecutable.get()!!.pathHolder.getOr { return it }
     val baseDir = module.baseDir!!
     val runtime = PyToolRuntime(
       model.fileSystem.getBinaryToExec(uv),

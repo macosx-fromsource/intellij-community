@@ -7,8 +7,13 @@ import com.intellij.ide.ui.laf.darcula.DarculaUIUtil.BW
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.util.NlsContexts
+import com.intellij.python.sdk.backend.PythonInterpreter
+import com.intellij.python.sdk.backend.getSdkAPI
+import com.intellij.python.sdk.backend.pythonInterpreterAsync
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.SimpleTextAttributes
@@ -27,7 +32,6 @@ import com.intellij.util.ui.UIUtil
 import com.jetbrains.python.PyBundle
 import com.jetbrains.python.icons.PythonIcons
 import com.jetbrains.python.packaging.PyPackageName
-import com.jetbrains.python.sdk.ModuleOrProject
 import com.jetbrains.python.packaging.common.PythonPackage
 import com.jetbrains.python.packaging.common.PythonPackageManagementListener
 import com.jetbrains.python.packaging.management.PyWorkspaceMember
@@ -50,9 +54,9 @@ import com.jetbrains.python.packaging.toolwindow.model.WorkspaceMember
 import com.jetbrains.python.packaging.toolwindow.ui.PyChangeVersionPopupLauncher
 import com.jetbrains.python.packaging.toolwindow.ui.PyInstallPackageDialogLauncher
 import com.jetbrains.python.packaging.utils.PyPackageCoroutine
+import com.jetbrains.python.sdk.ModuleOrProject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
 import java.awt.BorderLayout
 import java.awt.Cursor
 import java.awt.Dimension
@@ -62,6 +66,7 @@ import java.awt.Point
 import java.awt.Rectangle
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.io.IOException
 import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -201,7 +206,7 @@ internal class PyPackagesTreePane(
    * so `lateinit` is safe — the alternative would be a `by lazy` that reads the still-`null`
    * `tree` field during `.apply { }`.
    */
-  private lateinit var navigator: PkgRowNavigator
+  private var navigator: PkgRowNavigator
 
   private val tree: Tree = object : Tree(treeModel) {
     override fun paintComponent(g: Graphics) {
@@ -311,10 +316,11 @@ internal class PyPackagesTreePane(
     ApplicationManager.getApplication().messageBus.connect(parentDisposable).subscribe(
       PythonPackageManager.PACKAGE_MANAGEMENT_TOPIC,
       object : PythonPackageManagementListener {
-        override fun packagesChanged(sdk: Sdk) {
+        override fun packagesChanged(interpreter: PythonInterpreter) {
           // Match by name: `currentSdk` may be an editable copy from `ProjectSdksModel` while the
           // event fires against the original SDK from `ProjectJdkTable`, so `===` would miss it.
-          if (sdk.name != currentSdk?.name) return
+          @Suppress("DEPRECATION") // The pane still holds the SDK of the settings combo.
+          if (interpreter.getSdkAPI().name != currentSdk?.name) return
           ApplicationManager.getApplication().invokeLater({ reloadCurrentSdk() }, project.disposed)
         }
       },
@@ -324,19 +330,18 @@ internal class PyPackagesTreePane(
   /**
    * Re-runs the async load for the SDK currently displayed. Called from the packaging-event listener
    * so the tree reflects install / uninstall / change-version outcomes that the user triggered from
-   * inline row actions. Cache is invalidated first so uv / poetry re-scan `uv tree` instead of
+   * inline row actions. [loadSdk] invalidates the cache first so uv / poetry re-scan `uv tree` instead of
    * returning the pre-op snapshot.
    *
    * `treeProvider?.invalidateCache()` uses a safe call because a manager without a tree provider
-   * still drives this pane (via the flat-list fallback path in [setSdk]); there is nothing to
+   * still drives this pane (via the flat-list fallback path); there is nothing to
    * invalidate on that side, so the safe call is intentional, not defensive.
    */
   private fun reloadCurrentSdk() {
     val sdk = currentSdk ?: return
-    currentManager?.treeProvider?.invalidateCache()
     currentSdk = null
     currentManager = null
-    setSdk(sdk)
+    loadSdk(sdk, invalidateCache = true)
   }
 
   /**
@@ -352,20 +357,39 @@ internal class PyPackagesTreePane(
 
   fun setSdk(sdk: Sdk?) {
     if (currentSdk === sdk) return
-    currentSdk = sdk
     if (sdk == null) {
+      currentSdk = null
       currentManager = null
       applyUiState(PackageTreeUiState.noSdk())
       return
     }
-    val manager = PythonPackageManager.forSdk(project, sdk)
-    currentManager = manager
+    loadSdk(sdk, invalidateCache = false)
+  }
 
-    // Sync fast path: paint the cached snapshot immediately so the tab is not blank while the tree loader
-    // runs. The tree loader below then replaces this with the hierarchical view if the manager provides one.
-    applyUiState(snapshotUiState(manager))
+  /**
+   * Shows "loading", then the packages of [sdk]. Stops as soon as the user selects another SDK.
+   *
+   * The interpreter is detected here, so the manager is known only inside the coroutine. That is why a reload
+   * invalidates the cache of the manager it gets here, and not of [currentManager], which is `null` during detection.
+   */
+  private fun loadSdk(sdk: Sdk, invalidateCache: Boolean) {
+    currentSdk = sdk
+    currentManager = null
+    applyUiState(PackageTreeUiState.loading())
 
     PyPackageCoroutine.launch(project, Dispatchers.IO) {
+      // The settings hold an editable copy of the SDK, so the interpreter is detected here and not read from the
+      // project structure.
+      val manager = PythonPackageManager.forPythonInterpreter(project, sdk.pythonInterpreterAsync())
+      if (invalidateCache) manager.treeProvider?.invalidateCache()
+      val stillCurrent = withContext(Dispatchers.EDT) {
+        if (currentSdk !== sdk) return@withContext false
+        currentManager = manager
+        // Paint the cached snapshot first, so the tab is not blank while the tree loader runs.
+        applyUiState(snapshotUiState(manager))
+        true
+      }
+      if (!stillCurrent) return@launch
       val uiState = safeLoadPackageTree(manager)
       withContext(Dispatchers.EDT) {
         if (currentSdk !== sdk) return@withContext
@@ -632,11 +656,18 @@ internal class PyPackagesTreePane(
   private fun triggerInstallPackageDialog() {
     val sdkToOpenOn = currentSdk
     val moduleForPreselect = preselectModuleName
-    PyInstallPackageDialogLauncher.open(
-      project = project,
-      sdk = sdkToOpenOn,
-      preselectModuleName = moduleForPreselect,
-    )
+    // Taken at the click, so the dialog opens over a modal Settings window instead of waiting for it to close.
+    val modality = ModalityState.current().asContextElement()
+    PyPackageCoroutine.launch(project) {
+      val interpreterToOpenOn = sdkToOpenOn?.pythonInterpreterAsync()
+      withContext(Dispatchers.EDT + modality) {
+        PyInstallPackageDialogLauncher.open(
+          project = project,
+          interpreter = interpreterToOpenOn,
+          preselectModuleName = moduleForPreselect,
+        )
+      }
+    }
   }
 
   /**
@@ -690,7 +721,7 @@ internal class PyPackagesTreePane(
     val pkgName = pkg.name.name
     val member = workspaceMemberName?.let { PyWorkspaceMember(it) }
     PyPackageCoroutine.launch(project) {
-      PythonPackageManagerUI.forSdk(project, sdk).uninstallPackagesBackground(listOf(pkgName), workspaceMember = member)
+      PythonPackageManagerUI.forPythonInterpreter(project, sdk.pythonInterpreterAsync()).uninstallPackagesBackground(listOf(pkgName), workspaceMember = member)
       withContext(Dispatchers.EDT) {
         val current = currentSdk ?: return@withContext
         if (current === sdk) reloadCurrentSdk()

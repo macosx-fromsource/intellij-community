@@ -1,7 +1,6 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.intellij.build.impl.qodana
 
-import org.jetbrains.intellij.build.BuildContext
 
 private val COMMON_ADDITIONAL_VM_OPTIONS = listOf(
   "-Dqodana.application=true",
@@ -36,10 +35,10 @@ private const val IS_EAP = true
  * @property customVmOptions Distribution-specific vm options required for Qodana application.
  */
 class QodanaProductProperties(val productCode: String, val productName: String, private val customVmOptions: List<String> = emptyList()) {
-  fun getAdditionalVmOptions(context: BuildContext): List<String> {
+  fun getAdditionalVmOptions(buildNumber: String): List<String> {
     val appInfoOptions = listOf(
       "-Dqodana.product.name=$productName",
-      "-Dqodana.build.number=$productCode-${context.buildNumber}",
+      "-Dqodana.build.number=$productCode-$buildNumber",
       "-Dqodana.eap=${isEap(productCode)}",
     )
     return COMMON_ADDITIONAL_VM_OPTIONS + customVmOptions + appInfoOptions

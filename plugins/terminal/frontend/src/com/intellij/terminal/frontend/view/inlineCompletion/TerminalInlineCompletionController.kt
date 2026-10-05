@@ -7,6 +7,7 @@ import com.intellij.codeInsight.inline.completion.InlineCompletionEventAdapter
 import com.intellij.codeInsight.inline.completion.InlineCompletionEventType
 import com.intellij.codeInsight.inline.completion.TypingEvent.NewLine
 import com.intellij.codeInsight.inline.completion.TypingEvent.OneSymbol
+import com.intellij.codeInsight.inline.completion.editor.InlineCompletionEditorType
 import com.intellij.codeInsight.inline.completion.logs.InlineCompletionUsageTracker.ShownEvents.FinishType
 import com.intellij.codeInsight.inline.completion.session.InlineCompletionSession
 import com.intellij.openapi.application.EDT
@@ -23,18 +24,22 @@ import com.intellij.util.AwaitCancellationAndInvoke
 import com.intellij.util.asDisposable
 import com.intellij.util.awaitCancellationAndInvoke
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.plugins.terminal.block.reworked.TerminalUsageLocalStorage
 import org.jetbrains.plugins.terminal.view.TerminalOutputModel
 import org.jetbrains.plugins.terminal.view.shellIntegration.TerminalCommandBlock
+import org.jetbrains.plugins.terminal.view.shellIntegration.TerminalCommandExecutionListener
+import org.jetbrains.plugins.terminal.view.shellIntegration.TerminalCommandFinishedEvent
 import org.jetbrains.plugins.terminal.view.shellIntegration.TerminalOutputStatus
 import org.jetbrains.plugins.terminal.view.shellIntegration.TerminalShellIntegration
 import org.jetbrains.plugins.terminal.view.shellIntegration.getTypedCommandText
 import java.awt.event.KeyEvent
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Connects terminal input to inline completion.
@@ -54,6 +59,8 @@ class TerminalInlineCompletionController(
 
   @OptIn(AwaitCancellationAndInvoke::class)
   fun install() {
+    // Install listeners read the editor type, and unit tests resolve it to MAIN_EDITOR unless it is forced.
+    InlineCompletionEditorType.force(editor, InlineCompletionEditorType.TERMINAL)
     InlineCompletion.install(editor, coroutineScope)
     InlineCompletion.getHandlerOrNull(editor)?.addEventListener(inlineCompletionShownCounter)
     typingTracker.addTypingListener(coroutineScope.asDisposable(), object : TerminalTypingListener {
@@ -64,14 +71,18 @@ class TerminalInlineCompletionController(
         }
       }
     })
-    coroutineScope.launch {
-      shellIntegration.outputStatus
-        .filter { it == TerminalOutputStatus.TypingCommand }
-        .drop(1)// Do not suggest immediately for the very first command
-        .collect {
-          invokeNewCommandCompletion()
+    shellIntegration.addCommandExecutionListener(coroutineScope.asDisposable(), object : TerminalCommandExecutionListener {
+      override fun commandFinished(event: TerminalCommandFinishedEvent) {
+        coroutineScope.launch(Dispatchers.Default) {
+          withTimeoutOrNull(PROMPT_TIMEOUT) {
+            shellIntegration.outputStatus
+              .first { it == TerminalOutputStatus.TypingCommand }
+
+            invokeNewCommandCompletion()
+          }
         }
-    }
+      }
+    })
     coroutineScope.awaitCancellationAndInvoke(Dispatchers.EDT) {
       InlineCompletion.remove(editor)
     }
@@ -146,6 +157,7 @@ class TerminalInlineCompletionController(
   }
 
   companion object {
+    private val PROMPT_TIMEOUT = 1.seconds
     private val LOG = logger<TerminalInlineCompletionController>()
   }
 

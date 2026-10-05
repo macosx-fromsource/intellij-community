@@ -8,7 +8,9 @@
     <module name="intellij.libraries.kotlinx.serialization.json"/>
     <module name="intellij.mcpserver"/>
     <module name="intellij.platform.analysis"/>
+    <module name="intellij.platform.buildView"/>
     <module name="intellij.platform.concurrency"/>
+    <module name="intellij.platform.consoleView"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -18,7 +20,6 @@
     <module name="intellij.platform.editor.ui"/>
     <module name="intellij.platform.execution"/>
     <module name="intellij.platform.execution.impl"/>
-    <module name="intellij.platform.externalSystem.impl"/>
     <module name="intellij.platform.ide.core.impl"/>
     <module name="intellij.platform.ide.impl"/>
     <module name="intellij.platform.ide.progress"/>
@@ -29,10 +30,14 @@
     <module name="intellij.platform.refactoring"/>
     <module name="intellij.platform.usageView"/>
     <module name="intellij.platform.util.coroutines"/>
+    <module name="intellij.platform.util.diff"/>
     <module name="intellij.platform.util.ex"/>
     <module name="intellij.platform.util.ui"/>
   </dependencies>
   <!-- endregion -->
+  <extensionPoints>
+    <extensionPoint qualifiedName="com.intellij.mcpServer.navigationItemMapper" interface="com.intellij.mcpserver.toolsets.general.McpNavigationItemMapper" dynamic="true" />
+  </extensionPoints>
   <extensions defaultExtensionNs="com.intellij">
     <applicationService serviceImplementation="com.intellij.mcpserver.toolsets.general.SymbolSearchEngine" open="true"/>
     <mcpServer.projectDependenciesProvider implementation="com.intellij.mcpserver.toolsets.general.JpsDependenciesProvider" />
@@ -47,5 +52,6 @@
     <mcpServer.mcpToolset implementation="com.intellij.mcpserver.toolsets.general.RefactoringToolset" />
     <mcpServer.mcpToolset implementation="com.intellij.mcpserver.toolsets.general.DiagnosticsToolset" />
     <mcpServer.mcpToolset implementation="com.intellij.mcpserver.toolsets.general.IdeScriptToolset" />
+    <buildProgressListenerRegistrar implementation="com.intellij.mcpserver.toolsets.util.RunConfigurationBuildListenerRegistrar"/>
   </extensions>
 </idea-plugin>

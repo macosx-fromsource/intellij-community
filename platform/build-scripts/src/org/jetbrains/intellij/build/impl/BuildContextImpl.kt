@@ -4,7 +4,6 @@
 package org.jetbrains.intellij.build.impl
 
 import com.intellij.platform.buildScripts.concurrency.SharedCache
-import com.intellij.platform.ijent.community.buildConstants.isMultiRoutingFileSystemEnabledForProduct
 import com.intellij.platform.runtime.product.serialization.ProductModulesSerialization
 import com.intellij.platform.runtime.product.serialization.RawProductModules
 import com.intellij.platform.runtime.product.serialization.ResourceFileResolver
@@ -43,17 +42,16 @@ import org.jetbrains.intellij.build.WindowsDistributionCustomizer
 import org.jetbrains.intellij.build.classPath.PluginBuildResult
 import org.jetbrains.intellij.build.computeAppInfoXml
 import org.jetbrains.intellij.build.findProductModulesFile
-import org.jetbrains.intellij.build.impl.PlatformJarNames.PLATFORM_CORE_NIO_FS
-import org.jetbrains.intellij.build.impl.moduleRepository.MODULE_DESCRIPTORS_COMPACT_PATH
 import org.jetbrains.intellij.build.impl.moduleRepository.computeDescriptorsForAdditionalFrontendPlugins
 import org.jetbrains.intellij.build.impl.plugins.PluginAutoPublishList
+import org.jetbrains.intellij.build.impl.productInfo.ProductLaunchInputs
+import org.jetbrains.intellij.build.impl.productInfo.productJvmArguments
+import org.jetbrains.intellij.build.impl.productInfo.renderAdditionalJvmArguments
 import org.jetbrains.intellij.build.io.runProcess
 import org.jetbrains.intellij.build.jarCache.JarCacheManager
 import org.jetbrains.intellij.build.jarCache.LocalDiskJarCacheManager
 import org.jetbrains.intellij.build.jarCache.NonCachingJarCacheManager
-import org.jetbrains.intellij.build.productLayout.JNA_PLUGIN_MODULE
-import org.jetbrains.intellij.build.productLayout.PTY4J_PLUGIN_MODULE
-import org.jetbrains.intellij.build.productLayout.SKIKO_PLUGIN_MODULE
+import org.jetbrains.intellij.build.loadApplicationInfoPropertiesForProduct
 import org.jetbrains.intellij.build.productRunner.IntellijProductRunner
 import org.jetbrains.intellij.build.productRunner.createDevModeProductRunner
 import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
@@ -436,89 +434,29 @@ class BuildContextImpl internal constructor(
   }
 
   override fun getAdditionalJvmArguments(os: OsFamily, arch: JvmArchitecture, isScript: Boolean, isPortableDist: Boolean, isQodana: Boolean): List<String> {
-    fun String.quoteIfNeeded(): String = if (isScript) '"' + this + '"' else this
+    return renderAdditionalJvmArguments(
+      jvm = productJvmArguments(launchInputs(), bundledRuntime.version),
+      os = os,
+      arch = arch,
+      openedPackages = getCommandLineArgumentsForOpenPackages(context = this, os),
+      isScript = isScript,
+      isPortableDist = isPortableDist,
+      isQodana = isQodana,
+    )
+  }
 
-    val jvmArgs = ArrayList<String>()
-
-    val macroName = when (os) {
-      OsFamily.WINDOWS -> "%IDE_HOME%"
-      OsFamily.MACOS -> $$"$APP_PACKAGE$${if (isPortableDist) "" else "/Contents"}"
-      OsFamily.LINUX -> $$"$IDE_HOME"
-    }
-    val useMultiRoutingFs = !isQodana && isMultiRoutingFileSystemEnabledForProduct(productProperties.platformPrefix)
-
-    val bcpJarNames = productProperties.xBootClassPathJarNames + if (useMultiRoutingFs) listOf(PLATFORM_CORE_NIO_FS) else emptyList()
-    if (bcpJarNames.isNotEmpty()) {
-      val (pathSeparator, dirSeparator) = if (os == OsFamily.WINDOWS) ";" to "\\" else ":" to "/"
-      val bootCp = bcpJarNames.joinToString(pathSeparator) { arrayOf(macroName, "lib", it).joinToString(dirSeparator) }
-      jvmArgs.add("-Xbootclasspath/a:${bootCp}".quoteIfNeeded())
-    }
-
-    if (productProperties.enableCds) {
-      val cacheDir = if (os == OsFamily.WINDOWS) "%IDE_CACHE_DIR%\\" else $$"$IDE_CACHE_DIR/"
-      jvmArgs.add("-XX:SharedArchiveFile=${cacheDir}${productProperties.baseFileName}${buildNumber}.jsa")
-      jvmArgs.add("-XX:+AutoCreateSharedArchive")
-    }
-    else {
-      productProperties.classLoader?.let {
-        jvmArgs.add("-Djava.system.class.loader=${it}")
-      }
-    }
-
-    jvmArgs.add("-Didea.vendor.name=${applicationInfo.shortCompanyName}")
-    jvmArgs.add("-Didea.paths.selector=${systemSelector}")
-
-    val bundledPluginModules = getBundledPluginModules()
-    // `intellij.jna.plugin` owns the JNA copy and places `lib/jna`
-    if (bundledPluginModules.contains(JNA_PLUGIN_MODULE)) {
-      // require bundled JNA dispatcher lib
-      jvmArgs.add("-Djna.boot.library.path=${macroName}/lib/jna/${arch.dirName}".quoteIfNeeded())
-      jvmArgs.add("-Djna.nosys=true")
-      jvmArgs.add("-Djna.noclasspath=true")
-    }
-    // `intellij.pty4j.plugin` owns the pty4j copy and places `lib/pty4j`
-    if (bundledPluginModules.contains(PTY4J_PLUGIN_MODULE)) {
-      jvmArgs.add("-Dpty4j.preferred.native.folder=${macroName}/lib/pty4j".quoteIfNeeded())
-    }
-    jvmArgs.add("-Dio.netty.allocator.type=pooled")
-
-    // `intellij.skiko.plugin` owns the Skiko copy and places `lib/skiko-awt-runtime-all`
-    if (bundledPluginModules.contains(SKIKO_PLUGIN_MODULE)) {
-      jvmArgs.add("-Dskiko.library.path=${macroName}/lib/skiko-awt-runtime-all".quoteIfNeeded())
-    }
-
-    if (useModularLoader || generateRuntimeModuleRepository) {
-      jvmArgs.add("-Dintellij.platform.runtime.repository.path=${macroName}/${MODULE_DESCRIPTORS_COMPACT_PATH}".quoteIfNeeded())
-    }
-    if (useModularLoader) {
-      jvmArgs.add("-Dintellij.platform.root.module=${productProperties.rootModuleForModularLoader!!}")
-      jvmArgs.add("-Dintellij.platform.product.mode=${productProperties.productMode.id}")
-    }
-
-    if (productProperties.platformPrefix != null) {
-      jvmArgs.add("-Didea.platform.prefix=${productProperties.platformPrefix}")
-    }
-
-    jvmArgs.addAll(productProperties.additionalIdeJvmArguments)
-    jvmArgs.addAll(productProperties.getAdditionalContextDependentIdeJvmArguments(this))
-
-    if (productProperties.useSplash) {
-      @Suppress("SpellCheckingInspection", "RedundantSuppression")
-      jvmArgs.add("-Dsplash=true")
-    }
-
-    // https://youtrack.jetbrains.com/issue/IDEA-269280
-    jvmArgs.add("-Daether.connector.resumeDownloads=false")
-
-    jvmArgs.add("-Dcompose.swing.render.on.graphics=true")
-
-    if (bundledRuntime.version >= 25) {
-      jvmArgs.add("--enable-native-access=ALL-UNNAMED")
-    }
-
-    jvmArgs.addAll(getCommandLineArgumentsForOpenPackages(context = this, os))
-
-    return jvmArgs
+  /** What [org.jetbrains.intellij.build.impl.productInfo.computeProductLaunchModel] reads of this context. */
+  internal fun launchInputs(): ProductLaunchInputs {
+    return ProductLaunchInputs(
+      properties = productProperties,
+      applicationInfo = applicationInfo,
+      buildNumber = buildNumber,
+      bundledPluginModules = getBundledPluginModules(),
+      useModularLoader = useModularLoader,
+      generateRuntimeModuleRepository = generateRuntimeModuleRepository,
+      bootClassPathJarNames = bootClassPathJarNames,
+      applicationInfoOf = { loadApplicationInfoPropertiesForProduct(it, this) },
+    )
   }
 
   override fun addExtraExecutablePattern(os: OsFamily, pattern: String) {

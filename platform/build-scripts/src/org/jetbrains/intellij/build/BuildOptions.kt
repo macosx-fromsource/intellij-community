@@ -127,8 +127,8 @@ data class BuildOptions(
    * build - agree on it.
    *
    * It decides two things. The build date stamped into `ApplicationInfo.xml`: a dev distribution stamps none, so that
-   * the IDE resolves its build time at startup and no EAP expiration period can run out on it. And the resource
-   * generators of a plugin: a dev distribution skips a generator declared with `DeclaredResourceGeneratorRun.BUNDLED_ONLY`.
+   * the IDE resolves its build time at startup and no EAP expiration period can run out on it. And the layout callbacks
+   * of a plugin: a dev distribution skips a callback whose `DevPluginLayoutAssetSpec.runsInClassicDev` is false.
    */
   @JvmField internal val isDevDistribution: Boolean = false,
 
@@ -171,7 +171,7 @@ data class BuildOptions(
      */
     const val OS_NONE: String = "none"
 
-    /** Build actual searchableOptions.xml file. If skipped, the (possibly outdated) source version of the file will be used. */
+    /** Build the searchable options index of the `Settings` dialog. If the step is skipped, the distribution has no index. */
     const val SEARCHABLE_OPTIONS_INDEX_STEP: String = "search_index"
     const val BROKEN_PLUGINS_LIST_STEP: String = "broken_plugins_list"
     const val PROVIDED_MODULES_LIST_STEP: String = "provided_modules_list"

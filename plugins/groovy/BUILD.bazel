@@ -30,11 +30,6 @@ dev_dist_plugin(
     ],
     main_module = "intellij.groovy",
 )
-
-exports_files(
-    ["intellij.groovy.dev-plan.json"],
-    visibility = ["//visibility:public"],
-)
 ### auto-generated section `dev intellij.groovy` end
 
 ### auto-generated section `build intellij.groovy` start
@@ -116,6 +111,8 @@ jvm_library(
         "//platform/backend/workspace",
         "//java/unscramble",
         "//platform/execution",
+        "//platform/consoleView",
+        "//platform/consoleView/impl",
         "//platform/statistics",
         "//platform/forms_rt:java-guiForms-rt",
         "//java/java-frontback-psi-api:frontback-psi",
@@ -199,6 +196,8 @@ jvm_library(
         "//platform/backend/workspace:workspace_test_lib",
         "//java/unscramble:unscramble_test_lib",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView:consoleView_test_lib",
+        "//platform/consoleView/impl:impl_test_lib",
         "//platform/statistics:statistics_test_lib",
         "//libraries/jetcheck",
         "//libraries/jetcheck:jetcheck_test_lib",
@@ -242,6 +241,7 @@ jvm_library(
         # do not sort,
         "//plugins/groovy/langInjection",
         "//plugins/groovy/spock",
+        "//platform/vcs/plugin",
     ],
 )
 
@@ -276,6 +276,7 @@ jvm_library(
         "//platform/platform-util-io:ide-util-io_test_lib",
         "//plugins/groovy/langInjection:langInjection_test_lib",
         "//plugins/groovy/spock:spock_test_lib",
+        "//platform/vcs/plugin:plugin_test_lib",
     ],
     deps = [
         # do not sort,
@@ -414,8 +415,8 @@ jvm_library(
         "//platform/build-scripts/downloader:downloader_test_lib",
         "//libraries/assertj-core",
         "//libraries/assertj-core:assertj-core_test_lib",
-        "//libraries/junit5-jupiter",
-        "//libraries/junit5-jupiter:junit5-jupiter_test_lib",
+        "//libraries/junit6-jupiter",
+        "//libraries/junit6-jupiter:junit6-jupiter_test_lib",
         "//platform/testFramework",
         "//platform/testFramework:testFramework_test_lib",
         "//platform/workspace/jps",
@@ -446,8 +447,8 @@ jvm_library(
         "//platform/statistics:statistics_test_lib",
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
     ],
 )
 ### auto-generated section `build intellij.groovy.tests` end
@@ -501,6 +502,8 @@ jvm_library(
         "//plugins/groovy:groovy-tests_test_lib",
         "//plugins/groovy/groovy-uast-tests:uast-tests",
         "//plugins/groovy/groovy-uast-tests:uast-tests_test_lib",
+        "//plugins/groovy/compiler-tests",
+        "//plugins/groovy/compiler-tests:compiler-tests_test_lib",
     ],
 )
 ### auto-generated section `build intellij.groovy.tests.main` end

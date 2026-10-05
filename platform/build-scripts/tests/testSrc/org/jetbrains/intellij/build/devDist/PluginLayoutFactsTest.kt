@@ -3,6 +3,9 @@
 
 package org.jetbrains.intellij.build.devDist
 
+import com.intellij.platform.buildScripts.pluginModelTool.PluginLayoutFacts
+import com.intellij.platform.buildScripts.pluginModelTool.pluginJarPlacementConvention
+import com.intellij.platform.buildScripts.pluginModelTool.pluginLayoutFacts
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.jetbrains.intellij.build.impl.PluginLayout

@@ -100,7 +100,7 @@
     <orderEntry type="module" module-name="intellij.platform.util.xmlDom" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.ide.util.io.impl" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.ide.util.netty" scope="TEST" />
-    <orderEntry type="module" module-name="intellij.libraries.junit5" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.junit6" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.util.zip" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.util.rt.java8" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.wsl.impl" scope="TEST" />
@@ -115,7 +115,7 @@
     <orderEntry type="module" module-name="intellij.libraries.hdr.histogram" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.util.text.matching" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.lang.testEntities" scope="TEST" />
-    <orderEntry type="module" module-name="intellij.libraries.junit5.suites" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.junit6.suites" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.backend.workspace" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.diagnostic.telemetry" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.diagnostic.telemetry.exporters" scope="TEST" />
@@ -176,6 +176,8 @@
     <orderEntry type="module" module-name="intellij.platform.testFramework.junit5.highlighting" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.vcs.impl.shared" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.execution" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.consoleView" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.consoleView.impl" scope="TEST" />
     <orderEntry type="module" module-name="intellij.libraries.jetcheck" scope="TEST" />
     <orderEntry type="module" module-name="intellij.libraries.jediterm.core" scope="TEST" />
     <orderEntry type="library" scope="TEST" name="jetbrains.kotlinx.lincheck.jvm" level="project" />
@@ -186,7 +188,7 @@
     <orderEntry type="module" module-name="intellij.platform.serviceContainer.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.workspace.storage.testEntities" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.eel.impl.base" scope="TEST" />
-    <orderEntry type="module" module-name="intellij.libraries.junit5.params" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.junit6.params" scope="TEST" />
     <orderEntry type="module" module-name="intellij.webp.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.searchEverywhere.backend" scope="TEST" />
     <orderEntry type="module" module-name="intellij.java.aetherDependencyResolver.plugin" scope="TEST" />

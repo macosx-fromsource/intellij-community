@@ -150,9 +150,6 @@ private fun createPlatformLayout(
     outputProvider = outputProvider,
     bundledPluginModules = { bundledPluginModules },
   )
-  for ((module, patterns) in productLayout.moduleExcludes) {
-    layout.excludeFromModule(module, patterns)
-  }
 
   addModule(UTIL_RT_JAR, productLayout = productLayout, layout = layout)
   addModule("trove.jar", productLayout = productLayout, layout = layout)
@@ -170,17 +167,6 @@ private fun createPlatformLayout(
 
   // the library is put to a separate JAR due to IJPL-248572; todo: include it only for Linux: IJPL-249098
   layout.withProjectLibraries(sequenceOf("jetbrains.intellij.deps.java.atk.wrapper.linux"))
-
-  // https://jetbrains.team/p/ij/reviews/67104/timeline
-  // https://youtrack.jetbrains.com/issue/IDEA-179784
-  // https://youtrack.jetbrains.com/issue/IDEA-205600
-  layout.withProjectLibraries(sequenceOf(
-    "jaxb-runtime",
-    "jaxb-api",
-  ))
-
-  // the library is put to a separate JAR due to IJPL-248591; it would be better to get rid of it completely, see IJPL-749
-  layout.withModuleLibrary(libraryName = "swingx", moduleName = "intellij.libraries.swingx")
 
   addModule(PLATFORM_LOADER_JAR, productLayout = productLayout, layout = layout)
   addModule(UTIL_JAR, productLayout = productLayout, layout = layout)
@@ -422,7 +408,7 @@ private fun validateImplicitPlatformModule(
   if (readModuleDescriptor(contentModuleNameToDescriptorFileName(name)) == null) {
     return
   }
-  else if (allowedMissingDependencies.contains(name) || chain.firstOrNull() == "intellij.tools.testsBootstrap") {
+  else if (allowedMissingDependencies.contains(name)) {
     Span.current().addEvent("Suppressing implicit content module validation for $name via allowMissingDependencies (chain: $chain)")
   }
   else if (isClientBuild) {

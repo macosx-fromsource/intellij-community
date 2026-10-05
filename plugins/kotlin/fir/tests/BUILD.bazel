@@ -121,6 +121,8 @@ jvm_library(
         "//platform/indexing-api:indexing_test_lib",
         "//platform/execution",
         "//platform/execution:execution_test_lib",
+        "//platform/consoleView",
+        "//platform/consoleView:consoleView_test_lib",
         "//jps/model-api:model",
         "//jps/model-api:model_test_lib",
         "//platform/lang-core",
@@ -313,8 +315,8 @@ jvm_library(
         "//platform/util/concurrency:concurrency_test_lib",
         "//libraries/junit4",
         "//libraries/junit4:junit4_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
     ],
 )
 ### auto-generated section `build kotlin.fir.tests` end

@@ -25,6 +25,7 @@
     <module name="intellij.platform.workspace.storage"/>
     <module name="intellij.python.community"/>
     <module name="intellij.python.community.common"/>
+    <module name="intellij.python.externalIndex"/>
     <module name="intellij.python.requirements.backend"/>
     <module name="intellij.python.sdk.backend"/>
     <module name="intellij.python.sdk.common"/>
@@ -48,6 +49,7 @@
     <notificationGroup id="PyProject.toml" displayType="STICKY_BALLOON" isLogByDefault="true"
                        bundle="messages.PyProjectTomlBundle" key="pyproject.notification.title"/>
     <backgroundPostStartupActivity implementation="com.intellij.python.pyproject.model.internal.platformBridge.PyProjectSyncActivity"/>
+    <backgroundPostStartupActivity implementation="com.intellij.python.pyproject.model.evolution.EvoPyProjectModelStartupActivity"/>
 
     <statistics.projectUsagesCollector implementation="com.intellij.python.pyproject.statistics.PythonTomlStatsUsagesCollector"/>
     <projectSettings service="com.intellij.python.pyproject.model.PyProjectModelSettings"/>

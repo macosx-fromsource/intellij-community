@@ -1,6 +1,9 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.intellij.build.devDist
 
+import com.intellij.platform.buildScripts.pluginModelTool.DerivedCandidacyOffer
+import com.intellij.platform.buildScripts.pluginModelTool.DerivedPluginCandidacy
+import com.intellij.platform.buildScripts.pluginModelTool.foldDerivedPluginContentCandidacy
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -56,7 +59,7 @@ class PluginContentCandidacyFoldTest {
   }
 
   private fun plugin(offers: List<DerivedCandidacyOffer> = emptyList(), vetoes: List<String> = emptyList()): DerivedPluginCandidacy {
-    return DerivedPluginCandidacy(offers = offers, vetoes = vetoes, memberPaths = emptyMap(), memberLibraries = emptyMap())
+    return DerivedPluginCandidacy(offers = offers, vetoes = vetoes, memberPaths = emptyMap())
   }
 
   private fun offer(moduleName: String, libraries: Set<String>, isStated: Boolean = false): DerivedCandidacyOffer {

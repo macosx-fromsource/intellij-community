@@ -22,6 +22,7 @@
     <module name="intellij.python.community.execService"/>
     <module name="intellij.python.community.impl"/>
     <module name="intellij.python.lsp.core.common"/>
+    <module name="intellij.python.pyproject"/>
     <module name="intellij.python.pytools.backend"/>
     <module name="intellij.python.pytools.common"/>
   </dependencies>
@@ -50,6 +51,9 @@
                  defaultValue="false"
                  restartRequired="true"
                  description="Offer the external type engine to a project with more than one module"/>
+
+    <search.optionContributor
+        implementation="com.intellij.python.lsp.core.typeEngine.PyTypeEngineSearchableOptionContributor"/>
 
     <statistics.counterUsagesCollector implementationClass="com.intellij.python.lsp.core.typeEngine.PyTypeEngineUsageCollector"/>
     <projectSettings service="com.intellij.python.lsp.core.typeEngine.PyTypeEngineProjectSettings"/>

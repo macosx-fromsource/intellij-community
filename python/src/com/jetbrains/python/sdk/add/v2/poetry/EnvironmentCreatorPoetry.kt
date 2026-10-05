@@ -16,6 +16,7 @@ import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.platform.util.progress.withProgressText
 import com.intellij.python.community.impl.poetry.backend.PoetryPyTool
 import com.intellij.python.pytools.backend.PyTool
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.ui.dsl.builder.Panel
 import com.intellij.ui.dsl.builder.bindSelected
 import com.jetbrains.python.PyBundle.message
@@ -36,7 +37,7 @@ import com.jetbrains.python.sdk.add.v2.VenvExistenceValidationState.Error
 import com.jetbrains.python.sdk.add.v2.VenvExistenceValidationState.Invisible
 import com.jetbrains.python.sdk.add.v2.getBasePath
 import com.jetbrains.python.sdk.add.v2.getOrInstallBasePython
-import com.jetbrains.python.sdk.add.v2.persistCustomToolPath
+import com.jetbrains.python.sdk.add.v2.pathHolder
 import com.jetbrains.python.sdk.poetry.configurePoetryEnvironment
 import com.jetbrains.python.sdk.poetry.createNewPoetrySdk
 import com.jetbrains.python.statistics.InterpreterType
@@ -116,10 +117,10 @@ internal class EnvironmentCreatorPoetry<P : PathHolder>(
     }
   }
 
-  override suspend fun setupEnvSdk(moduleBasePath: Path): PyResult<Sdk> {
+  override suspend fun setupEnvSdk(moduleBasePath: Path): PyResult<PythonInterpreter> {
     val basePythonBinaryPath = model.getOrInstallBasePython()
                                ?: return PyResult.localizedError(message("python.sdk.provided.path.is.invalid", null))
-    val poetryExecutable = model.poetryViewModel.poetryExecutable.get()?.pathHolder
+    val poetryExecutable = model.poetryViewModel.poetryExecutable.get()?.pathHolder?.getOr { return it }
                            ?: return PyResult.localizedError(message("sdk.create.custom.poetry.error.poetry.executable.path.is.not.valid"))
 
     service<PoetryConfigService>().updateExistingPoetryToml(moduleBasePath, model.fileSystem, poetryExecutable)

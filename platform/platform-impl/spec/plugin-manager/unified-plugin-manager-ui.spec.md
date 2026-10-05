@@ -67,7 +67,7 @@ targets:
 # Unified Plugin Manager UI
 
 Status: Active
-Date: 2026-09-24
+Date: 2026-09-29
 
 ## Purpose
 
@@ -204,6 +204,12 @@ Untested: Product welcome buttons on a remote backend keep the Settings route be
 
 ## Search and Navigation
 
+- Settings search must find the Plugins page by an installed plugin's name or description.
+- Action search must omit the Plugins page options for plugin names and descriptions.
+  [@test] ../../testSrc/com/intellij/ide/ui/search/PluginSearchableOptionContributorTest.kt (
+    `Settings search finds Plugins by installed plugin name and description`
+  )
+
 - An empty query must make local, Suggested, Internal, and custom repository sources eligible.
 - A general nonempty query must replace Suggested with Marketplace.
 - An Installed navigation request must search local plugins without starting other source searches.
@@ -288,9 +294,11 @@ Untested: Product welcome buttons on a remote backend keep the Settings route be
     `search renders placeholder and ordered focusable controls`
   )
 
-- The first result for a query revision must set the plugin order in each section.
+- Earlier rows may remain visible while filtering runs. They must not set the new query's order or automatic selection.
+- The first projected result for a query revision must set the plugin order in each section.
 - Relevance must initially place local plugins with errors before healthy plugins.
-- Without text terms, relevance must place enabled plugins before disabled plugins within each error group.
+- Without text terms, Installed relevance must place enabled plugins before disabled plugins within each error group.
+- Without text terms, Bundled relevance must place enabled plugins before disabled plugins within each category and error group.
 - With text terms, relevance must use the existing match scores before enabled state within each error group.
 - Enabled plugins must win a match score tie.
 - Later results in the same query revision must retain the relative order of plugins that remain in a section.
@@ -299,6 +307,8 @@ Untested: Product welcome buttons on a remote backend keep the Settings route be
 - The first collapsed and expanded Bundled results may set separate orders to keep categories together.
 - An explicit sort must override both local priorities and control Marketplace ordering. Custom repositories must retain their source order.
   [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsPageSourceCoordinatorTest.kt (
+    `new query ignores previous repository order until projection finishes`;
+    `repeating a repository query restores its relevance order`;
     `local relevance prioritizes errors and enabled plugins while explicit sorts override priorities`;
     `text search ranks match scores before enabled state`;
     `installed relevance uses legacy name and description match scores`;
@@ -325,6 +335,11 @@ Untested: Product welcome buttons on a remote backend keep the Settings route be
     `Spotlight search applies its query without requesting focus`
   )
 
+- The search field must preserve the header background around its rounded outline when focus changes.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsPageViewTest.kt (
+    `search focus repaint preserves header background around field`
+  )
+
 - The latest page input, Settings search action, or navigation request must win over an older deferred request.
   [@test] ../../testSrc/com/intellij/ide/plugins/UnifiedPluginsPageSessionTest.kt (
     `stale Settings clear does not replace Marketplace navigation`;
@@ -340,6 +355,7 @@ Untested: Community tests verify the Enter handler, but they do not verify the S
 ## Search Reporting
 
 - Each nonempty query must emit one unified search event after all eligible sources settle.
+- A pending query projection must not count as settled.
 - The event must report the query shape, filter kinds, source kinds, effective sort, and each section result count.
 - The event must not report filter values or repository identities.
 - A session start event must identify the unified page.
@@ -650,6 +666,11 @@ Untested: No focused test verifies Shift-selection across sections.
     `details page spacing is enabled only for the unified page`
   )
 
+- The first action in unified plugin details must show its complete focus outline.
+  [@test] ../../testSrc/com/intellij/ide/plugins/unified/LegacyPluginRowFactoryTest.kt (
+    `unified details actions align their visible leading edge`
+  )
+
 - The screenshot carousel must fit inside both details insets so that its controls remain available.
   [@test] ../../testSrc/com/intellij/ide/plugins/newui/PluginImagesComponentTest.kt (
     `image width accounts for both parent insets`;
@@ -663,13 +684,15 @@ Untested: No focused test verifies Shift-selection across sections.
 Untested: No focused test verifies that Internal ignores the legacy Show All query.
 
 - Bundled must use Other for a missing category.
-- Default Relevance must sort category names with case sensitivity and put Other last.
+- Default Relevance must sort category names with case sensitivity, then put Other, then Libraries.
+- A disabled Bundled category must keep its position under Default Relevance.
 - Default Relevance must sort plugin names within each category.
   [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginLocalDataProviderTest.kt (
     `local snapshot assigns bundled categories and normalizes a missing category`
   )
   [@test] ../../testSrc/com/intellij/ide/plugins/unified/UnifiedPluginsPageSourceCoordinatorTest.kt (
-    `bundled relevance sorts exact categories and names with Other last`
+    `bundled relevance sorts exact categories and names with Other and Libraries last`;
+    `disabled Bundled categories keep category order and priority`
   )
 
 - An expanded Bundled section must group plugins by category when the query is empty.

@@ -1,5 +1,6 @@
 package org.jetbrains.intellij.build.devDist
 
+import com.intellij.platform.buildScripts.pluginModelTool.deriveProductReviewReport
 import com.intellij.platform.distributionContent.DevDistProductReport
 import com.intellij.platform.distributionContent.FileEntry
 import com.intellij.platform.distributionContent.PluginContentReport

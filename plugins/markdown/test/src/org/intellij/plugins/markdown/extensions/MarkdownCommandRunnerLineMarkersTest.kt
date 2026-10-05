@@ -1,7 +1,7 @@
 // Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.intellij.plugins.markdown.extensions
 
-import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
+import com.intellij.codeInsight.daemon.impl.LineMarkersPass.getDisplayedLineMarkers
 import com.intellij.execution.Executor
 import com.intellij.icons.AllIcons
 import com.intellij.lang.Language
@@ -75,7 +75,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
 
   override fun tearDown() {
     try {
-      MarkdownSettings.getInstance(project).useFileDirectoryForCommands = null
+      MarkdownSettings.getInstance().useFileDirectoryForCommands = null
     }
     catch (e: Throwable) {
       addSuppressedException(e)
@@ -88,7 +88,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
   @Test
   fun `block run marker is shown for shell code fence`() {
     myFixture.doHighlighting()
-    val markers = DaemonCodeAnalyzerImpl.getLineMarkers(myFixture.editor.document, project)
+    val markers = getDisplayedLineMarkers(myFixture.editor.document, project)
     assertNotNull(markers.firstOrNull { it.icon == AllIcons.RunConfigurations.TestState.Run_run })
   }
 
@@ -101,7 +101,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
       val file = myFixture.addFileToProject("foo/$alias.md", "```$alias\npwd\n```")
       myFixture.openFileInEditor(file.virtualFile)
       myFixture.doHighlighting()
-      val markers = DaemonCodeAnalyzerImpl.getLineMarkers(myFixture.editor.document, project)
+      val markers = getDisplayedLineMarkers(myFixture.editor.document, project)
       val marker = markers.firstOrNull { it.icon == AllIcons.RunConfigurations.TestState.Run_run }
       assertNotNull("The $alias fence must have a block marker", marker)
       val action = (marker!!.createGutterRenderer() as GutterIconRenderer).clickAction!!
@@ -155,14 +155,14 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
       val file = myFixture.addFileToProject("foo/$language.md", "```$language\ntext\n```")
       myFixture.openFileInEditor(file.virtualFile)
       myFixture.doHighlighting()
-      val markers = DaemonCodeAnalyzerImpl.getLineMarkers(myFixture.editor.document, project)
+      val markers = getDisplayedLineMarkers(myFixture.editor.document, project)
       assertNull(markers.firstOrNull { it.icon == AllIcons.RunConfigurations.TestState.Run_run })
     }
   }
 
   @Test
   fun `block run marker invokes runner with base directory as working directory`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = false
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = false
     fireBlockMarkerAction()
     val expected = BaseProjectDirectories.getInstance(project).getBaseDirectoryFor(myFixture.file.virtualFile)?.canonicalPath
     assertEquals(expected, capturingRunner.capturedDir)
@@ -170,7 +170,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
 
   @Test
   fun `block run marker invokes runner with file directory as working directory when setting is enabled`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = true
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = true
     fireBlockMarkerAction()
     assertEquals(myFixture.file.virtualFile.parent.canonicalPath, capturingRunner.capturedDir)
   }
@@ -186,7 +186,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
   }
 
   private fun checkDirectoryForParentlessFile(useFileDirectory: Boolean) {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = useFileDirectory
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = useFileDirectory
     val backendFile = myFixture.file.virtualFile
     val frontendFile = object : LightVirtualFile("remote.md", myFixture.file.text) {
       override fun getPath(): String = backendFile.path
@@ -211,7 +211,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
 
   @Test
   fun `block run marker passes the Markdown source file to the runner`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = true
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = true
 
     fireBlockMarkerAction()
 
@@ -220,7 +220,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
 
   @Test
   fun `frontend continues after a runner failure`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = true
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = true
     capturingRunner.failNext = true
     fireBlockMarkerAction()
     capturingRunner.capturedCommand = null
@@ -232,7 +232,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
 
   @Test
   fun `gutter popup action requests the target chooser`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = true
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = true
 
     fireBlockMarkerAction(place = ActionPlaces.EDITOR_GUTTER_POPUP)
 
@@ -246,13 +246,13 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
     fireBlockMarkerAction(place = ActionPlaces.EDITOR_GUTTER_POPUP)
 
     assertNull(capturingRunner.capturedDir)
-    assertNull(MarkdownSettings.getInstance(project).useFileDirectoryForCommands)
+    assertNull(MarkdownSettings.getInstance().useFileDirectoryForCommands)
     assertTrue(capturingRunner.capturedContext?.showTargetChooser == true)
   }
 
   @Test
   fun `keyboard gutter action anchors the chooser after scrolling`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = true
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = true
     val prefix = "\n".repeat(100)
     val file = myFixture.addFileToProject("foo/scrolled.md", prefix + "```shell\npwd\n```")
     myFixture.openFileInEditor(file.virtualFile)
@@ -274,7 +274,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
 
   @Test
   fun `gutter popup action anchors the chooser at the mouse click`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = true
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = true
     val editor = myFixture.editor
     val clickPoint = Point(240, 80)
     val screenPoint = Point(clickPoint).also { SwingUtilities.convertPointToScreen(it, editor.component) }
@@ -292,7 +292,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
 
   @Test
   fun `frontend runner uses the action editor`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = true
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = true
     val editorFactory = EditorFactory.getInstance()
     val actionEditor = editorFactory.createEditor(myFixture.editor.document, project)
     try {
@@ -309,7 +309,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
   @Test
   fun `gutter popup action tells the user that it opens the terminal chooser`() {
     myFixture.doHighlighting()
-    val markers = DaemonCodeAnalyzerImpl.getLineMarkers(myFixture.editor.document, project)
+    val markers = getDisplayedLineMarkers(myFixture.editor.document, project)
     val blockMarker = markers.first { it.icon == AllIcons.RunConfigurations.TestState.Run_run }
     val action = (blockMarker.createGutterRenderer() as GutterIconRenderer).clickAction!!
     val dataContext = SimpleDataContext.builder().add(CommonDataKeys.PROJECT, project).build()
@@ -329,7 +329,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
 
   @Test
   fun `block run marker strips trailing hash comment from command`() {
-    MarkdownSettings.getInstance(project).useFileDirectoryForCommands = true
+    MarkdownSettings.getInstance().useFileDirectoryForCommands = true
     val testMdFile = myFixture.addFileToProject(
       "foo/withComment.md",
       "```bash\nnpm run dev       # start Vite dev server (HMR, localhost:5173)\n```"
@@ -434,7 +434,7 @@ class MarkdownCommandRunnerLineMarkersTest : BasePlatformTestCase() {
     inputEvent: MouseEvent? = MouseEvent(editor.component, MouseEvent.MOUSE_CLICKED, 0, 0, 0, 0, 1, false),
   ) {
     myFixture.doHighlighting()
-    val markers = DaemonCodeAnalyzerImpl.getLineMarkers(myFixture.editor.document, project)
+    val markers = getDisplayedLineMarkers(myFixture.editor.document, project)
     val blockMarker = markers.first { it.icon == AllIcons.RunConfigurations.TestState.Run_run }
     val action = (blockMarker.createGutterRenderer() as GutterIconRenderer).clickAction!!
     val dataContext = SimpleDataContext.builder()

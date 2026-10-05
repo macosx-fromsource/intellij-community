@@ -16,7 +16,6 @@ import org.jetbrains.intellij.build.LibcImpl
 import org.jetbrains.intellij.build.OsFamily
 import org.jetbrains.intellij.build.dependencies.TeamCityHelper
 import org.jetbrains.intellij.build.executeStep
-import org.jetbrains.intellij.build.io.copyDir
 import org.jetbrains.intellij.build.io.copyFileToDir
 import org.jetbrains.intellij.build.io.runProcess
 import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
@@ -37,14 +36,34 @@ internal fun copyNativeBinFileToDir(file: Path, binDir: Path): Path {
   return binDir.resolve(file.fileName)
 }
 
-/** Replaces a native bin tree and reports the files it wrote, for [OsSpecificDistributionBuilder.copyNativeBinFiles]. */
-internal fun copyNativeBinDir(
-  sourceDir: Path,
-  binDir: Path,
-  dirFilter: Predicate<Path>? = null,
-  fileFilter: Predicate<Path>? = null,
+/**
+ * The native files of `community/bin` that the `bin` directory of a distribution for [os] and [arch] takes, sorted by
+ * name within each directory.
+ *
+ * [OsSpecificDistributionBuilder.copyNativeBinFiles] copies them. The dev distribution plan names the same files, so a
+ * split dev distribution places them without build code. [macFileFilter] is `MacDistributionCustomizer.binFilesFilter`.
+ * A file whose name starts with a dot is no native file.
+ */
+@Internal
+fun nativeBinFiles(
+  communityHome: Path,
+  os: OsFamily,
+  arch: JvmArchitecture,
+  macFileFilter: Predicate<Path> = Predicate { true },
 ): List<Path> {
-  return copyDir(sourceDir, binDir, overwrite = true, dirFilter = dirFilter, fileFilter = fileFilter)
+  val binDir = communityHome.resolve("bin")
+  return when (os) {
+    OsFamily.MACOS -> listNativeBinDir(binDir.resolve("mac")).filter { macFileFilter.test(it) }
+    OsFamily.LINUX -> listOf(binDir.resolve("linux/${arch.dirName}/fsnotifier"))
+    // the architecture directory, then the top-level files of `bin/win`: the other architecture's directory is not ours
+    OsFamily.WINDOWS -> listNativeBinDir(binDir.resolve("win/${arch.dirName}")) + listNativeBinDir(binDir.resolve("win"))
+  }
+}
+
+private fun listNativeBinDir(dir: Path): List<Path> {
+  return Files.newDirectoryStream(dir).use { stream ->
+    stream.filter { Files.isRegularFile(it) && !it.fileName.toString().startsWith('.') }.sortedBy { it.fileName.toString() }
+  }
 }
 
 interface OsSpecificDistributionBuilder {

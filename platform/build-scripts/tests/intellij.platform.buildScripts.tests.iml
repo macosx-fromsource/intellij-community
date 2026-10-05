@@ -31,6 +31,9 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.pluginPreparation" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.buildData" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.buildScripts.pluginModelTool" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.buildScripts.devLaunch" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.searchableOptionsInjector" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.devIdeConfig" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.distributionContent" scope="TEST" />
@@ -45,7 +48,7 @@
     <orderEntry type="module" module-name="intellij.platform.bazel.runfiles" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.testFramework" scope="TEST" />
     <orderEntry type="module" module-name="intellij.libraries.assertj.core" scope="TEST" />
-    <orderEntry type="module" module-name="intellij.libraries.junit5" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.junit6" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.testExtensions" scope="TEST" />
     <orderEntry type="module" module-name="intellij.idea.community.build.tasks" scope="TEST" />
     <orderEntry type="module" module-name="intellij.idea.community.build.dependencies" scope="TEST" />
@@ -73,13 +76,13 @@
     <orderEntry type="module" module-name="intellij.regexp.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.debugger.impl.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.tools.testsBootstrap" scope="TEST" />
-    <orderEntry type="module" module-name="intellij.libraries.junit5.launcher" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.junit6.launcher" scope="TEST" />
     <orderEntry type="module" module-name="intellij.idea.community.build.tasks.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.buildScripts.productDsl.tests" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.pluginGraph" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.pluginSystem.parser.impl" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.runtime.repository" scope="TEST" />
-    <orderEntry type="module" module-name="intellij.libraries.junit5.params" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.libraries.junit6.params" scope="TEST" />
     <orderEntry type="module" module-name="intellij.libraries.netty.codec.http" scope="TEST" />
     <orderEntry type="module" module-name="intellij.libraries.zstd.jni" scope="TEST" />
   </component>

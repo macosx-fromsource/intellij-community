@@ -1,5 +1,6 @@
 package org.jetbrains.intellij.build.devDist
 
+import com.intellij.platform.buildScripts.pluginModelTool.derivePluginJars
 import com.intellij.platform.distributionContent.DevDistPlatformJars
 import com.intellij.platform.distributionContent.NonBundledPluginRow
 import kotlinx.collections.immutable.persistentListOf

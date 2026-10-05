@@ -1,12 +1,14 @@
 load("@community//build:tests-options.bzl", "jps_test")
 load("@rules_jvm//:jvm.bzl", "jvm_library")
-load("//platform/build-scripts/bazel-rules:content_module_jar.bzl", "content_module_jar")
-
-### auto-generated section `dev intellij.pycharm.community.ide.impl` start
-content_module_jar(module = ":impl")
-### auto-generated section `dev intellij.pycharm.community.ide.impl` end
+load("//build:compiler-options.bzl", "create_kotlinc_options")
 
 ### auto-generated section `build intellij.pycharm.community.ide.impl` start
+create_kotlinc_options(
+    name = "custom_impl",
+    warn = "error",
+    x_warning_level = ["DEPRECATION:warning"],
+)
+
 jvm_library(
     name = "impl",
     srcs = glob(
@@ -17,6 +19,7 @@ jvm_library(
         ],
         allow_empty = True,
     ),
+    kotlinc_opts = ":custom_impl",
     module_name = "intellij.pycharm.community.ide.impl",
     resource_strip_prefix = "resources",
     resources = glob(
@@ -101,6 +104,7 @@ jvm_library(
         [],
         allow_empty = True,
     ),
+    kotlinc_opts = ":custom_impl",
     module_name = "intellij.pycharm.community.ide.impl",
     visibility = ["//visibility:public"],
     runtime_deps = [
@@ -316,8 +320,8 @@ jvm_library(
         "//python/python-hatch:hatch_test_lib",
         "//platform/testFramework/junit5",
         "//platform/testFramework/junit5:junit5_test_lib",
-        "//libraries/junit5",
-        "//libraries/junit5:junit5_test_lib",
+        "//libraries/junit6",
+        "//libraries/junit6:junit6_test_lib",
         "//libraries/semver",
         "//libraries/semver:semver_test_lib",
         "//platform/non-modal-welcome-screen",

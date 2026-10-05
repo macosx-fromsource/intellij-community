@@ -21,6 +21,9 @@ import com.intellij.platform.util.coroutines.childScope
 import com.intellij.psi.PsiFile
 import com.intellij.python.pyproject.PyDependencyGroup
 import com.intellij.python.pyproject.model.spi.ProjectName
+import com.intellij.python.sdk.backend.PythonInterpreter
+import com.intellij.python.sdk.backend.pythonInterpreterAsync
+import com.intellij.python.sdk.backend.pythonInterpreterWithoutDetection
 import com.intellij.serviceContainer.AlreadyDisposedException
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread
 import com.intellij.util.concurrency.annotations.RequiresEdt
@@ -51,6 +54,10 @@ import com.jetbrains.python.sdk.isReadOnly
 import com.jetbrains.python.sdk.pySdkAdditionalData
 import com.jetbrains.python.sdk.readOnlyErrorMessage
 import com.jetbrains.python.sdk.refreshPaths
+import java.nio.file.Path
+import java.util.SequencedMap
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -70,10 +77,6 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.CheckReturnValue
 import org.jetbrains.annotations.Nls
-import java.nio.file.Path
-import java.util.SequencedMap
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.cancellation.CancellationException
 
 
 /**
@@ -231,8 +234,9 @@ abstract class PythonPackageManager @ApiStatus.Internal constructor(
     withContext(NonCancellable) {
       this@PythonPackageManager.installedPackages = packages
 
+      val interpreter = sdk.pythonInterpreterAsync()
       ApplicationManager.getApplication().messageBus.apply {
-        syncPublisher(PACKAGE_MANAGEMENT_TOPIC).packagesChanged(sdk)
+        syncPublisher(PACKAGE_MANAGEMENT_TOPIC).packagesChanged(interpreter)
         syncPublisher(PyPackageManager.PACKAGE_MANAGER_TOPIC).packagesRefreshed(sdk)
       }
 
@@ -323,8 +327,9 @@ abstract class PythonPackageManager @ApiStatus.Internal constructor(
     if (outdatedPackages == packageMap) return
 
     outdatedPackages = packageMap
+    val interpreter = sdk.pythonInterpreterAsync()
     ApplicationManager.getApplication().messageBus.apply {
-      syncPublisher(PACKAGE_MANAGEMENT_TOPIC).outdatedPackagesChanged(sdk)
+      syncPublisher(PACKAGE_MANAGEMENT_TOPIC).outdatedPackagesChanged(interpreter)
     }
   }
 
@@ -604,11 +609,27 @@ abstract class PythonPackageManager @ApiStatus.Internal constructor(
   }
 
   companion object {
+    /**
+     * [forPythonInterpreter] for a caller that holds only an [Sdk].
+     *
+     * It does not detect the environment, so the manager it returns has an incomplete interpreter. The packaging code and
+     * its UI do not call it any more. The other callers move to [forPythonInterpreter] in a follow-up change, one change
+     * per owner, so each owner reviews their own part: the LSP tools, the type engine, Jupyter, AI Assistant, Qodana,
+     * Aqua, marimo, dbt and django-core. [PythonPackageManagerUI.forSdk] stays until then for the same callers. This
+     * function is removed with the last of them.
+     */
+    @Deprecated("Pass a PythonInterpreter to forPythonInterpreter. Get it from the project structure or with pythonInterpreterAsync.")
     @Throws(AlreadyDisposedException::class)
     fun forSdk(project: Project, sdk: Sdk): PythonPackageManager {
-      val pythonPackageManagerService = project.service<PythonPackageManagerService>()
-      return pythonPackageManagerService.forSdk(project, sdk)
+      @Suppress("DEPRECATION") // This is the one bridge from an SDK to a package manager.
+      return forPythonInterpreter(project, sdk.pythonInterpreterWithoutDetection())
     }
+
+    /** The manager of the environment [interpreter] runs in. */
+    @ApiStatus.Internal
+    @Throws(AlreadyDisposedException::class)
+    fun forPythonInterpreter(project: Project, interpreter: PythonInterpreter): PythonPackageManager =
+      project.service<PythonPackageManagerService>().forPythonInterpreter(project, interpreter)
 
     @Topic.AppLevel
     val PACKAGE_MANAGEMENT_TOPIC: Topic<PythonPackageManagementListener> =

@@ -2,8 +2,8 @@
 package com.intellij.platform.searchEverywhere.providers.target
 
 import com.intellij.ide.actions.GotoActionBase
-import com.intellij.ide.actions.searcheverywhere.AbstractGotoSEContributor
 import com.intellij.ide.actions.searcheverywhere.FoundItemDescriptor
+import com.intellij.ide.actions.searcheverywhere.GotoLimitedRuns
 import com.intellij.ide.actions.searcheverywhere.PSIPresentationBgRendererWrapper
 import com.intellij.ide.actions.searcheverywhere.PersistentSearchEverywhereContributorFilter
 import com.intellij.ide.actions.searcheverywhere.SearchEverywhereContributor
@@ -52,6 +52,8 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.backend.presentation.TargetPresentation
 import com.intellij.platform.scopes.SearchScopeData
 import com.intellij.platform.scopes.SearchScopesInfo
+import com.intellij.platform.searchEverywhere.SeComposedWeight
+import com.intellij.platform.searchEverywhere.SeComposedWeightItem
 import com.intellij.platform.searchEverywhere.SeExtendedInfo
 import com.intellij.platform.searchEverywhere.SeItem
 import com.intellij.platform.searchEverywhere.SeItemsProvider
@@ -93,6 +95,7 @@ import kotlinx.coroutines.flow.takeWhile
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.Nls
 import java.awt.event.InputEvent
+import java.util.IdentityHashMap
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
@@ -103,7 +106,24 @@ import kotlin.coroutines.cancellation.CancellationException
  * A raw search result, with the matchers that decide which parts of its presentation the UI highlights.
  */
 @ApiStatus.Experimental
-class SeTargetRawItem(val rawItem: Any, val rawWeight: Int?, val matchers: ItemMatchers?)
+class SeTargetRawItem(
+  val rawItem: Any,
+  val rawWeight: Int?,
+  val matchers: ItemMatchers?,
+  val composedWeight: SeComposedWeight?,
+)
+
+/**
+ * A [FoundItemDescriptor] with a [composedWeight]. A goto item provider returns it, so that [SeTargetItemsProvider] keeps all components.
+ *
+ * The plain weight is the first component, for code that reads only [getWeight].
+ */
+@ApiStatus.Internal
+class SeComposedWeightFoundItemDescriptor<I>(item: I, val composedWeight: SeComposedWeight)
+  : FoundItemDescriptor<I>(item, composedWeight.components.first().weight)
+
+private val FoundItemDescriptor<*>.composedWeight: SeComposedWeight?
+  get() = (this as? SeComposedWeightFoundItemDescriptor<*>)?.composedWeight
 
 @ApiStatus.Experimental
 class SeTargetPresentableItem(rawItem: Any,
@@ -112,10 +132,12 @@ class SeTargetPresentableItem(rawItem: Any,
                               private val presentation: TargetPresentation,
                               val extendedInfo: SeExtendedInfo,
                               val isMultiSelectionSupported: Boolean,
-                              val isExactMatch: Boolean): SeItem {
+                              val isExactMatch: Boolean,
+                              private val composedWeight: SeComposedWeight?): SeItem, SeComposedWeightItem {
 
   override val rawObject: Any = PSIPresentationBgRendererWrapper.ItemWithPresentation(rawItem, presentation)
   override fun weight(): Int = weight
+  override fun composedWeight(): SeComposedWeight = composedWeight ?: SeComposedWeight(weight)
   override suspend fun presentation(): SeItemPresentation = SeTargetItemPresentationBuilder()
     .withTargetPresentation(presentation, matchers, extendedInfo, isMultiSelectionSupported)
     .build()
@@ -127,28 +149,39 @@ class SeTargetItemsProvider<T> private constructor(
   private val psiContext: SmartPsiElementPointer<PsiElement?>?,
   private val operationDisposable: Disposable?,
   private val label: String,
-  private val gotoModelProvider: (Project, ScopeDescriptor?, Set<T>) -> (FilteringGotoByModel<*>),
-  private val typeFilterProvider: (Project) -> List<PersistentSearchEverywhereContributorFilter<T>>,
+  private val gotoModelProvider: (Project, ScopeDescriptor?, Map<String, Set<T>>) -> (FilteringGotoByModel<*>),
+  private val typeFilterProvider: (Project) -> Map<String, PersistentSearchEverywhereContributorFilter<out T>>,
   private val extendedInfoCalculator: SeExtendedInfoCalculator,
   private val isFileProvider: Boolean,
   private val acceptsBlankQuery: Boolean,
   private val supportsScopes: Boolean,
+  private val scopesProvider: SeTargetScopesProvider,
 ) : Disposable {
   //region Search
 
   /**
    * Runs the search of [params] and sends every result to [collector].
+   *
+   * The search runs with a result limit, so a contributor that honors [FindSymbolParameters.getLimit] computes only the
+   * first page. When the collector took every item and a contributor was cut, the search runs again with a bigger limit.
+   * See [GotoLimitedRuns].
    */
   suspend fun collectItems(params: SeParams, collector: SeItemsProvider.Collector): Unit = coroutineScope {
     val inputQuery = normalizeQuery(params.inputQuery)
     val inputQueryHasNoExtension = !inputQuery.contains('.')
 
-    getItemsFlow(params, presentationProvider = { fetchPresentation(it, inputQuery, inputQueryHasNoExtension) })
-      .buffer(capacity = 0, onBufferOverflow = BufferOverflow.SUSPEND)
-      .takeWhile {
-        collector.put(it)
-      }
-      .collect()
+    val runs = GotoLimitedRuns(FIRST_RUN_LIMIT)
+    runs.collect { limit ->
+      LOG.debug { "$label: run ${runs.runNumber}, limit=$limit" }
+      var accepted = true
+      getItemsFlow(rawItemsFlow(params, runs), presentationProvider = { fetchPresentation(it, inputQuery, inputQueryHasNoExtension) })
+        .buffer(capacity = 0, onBufferOverflow = BufferOverflow.SUSPEND)
+        .takeWhile {
+          collector.put(it).also { accepted = it }
+        }
+        .collect()
+      accepted
+    }
   }
 
   private suspend fun fetchPresentation(
@@ -176,17 +209,25 @@ class SeTargetItemsProvider<T> private constructor(
         inputQueryHasNoExtension = inputQueryHasNoExtension,
         isDirectory = PSIPresentationBgRendererWrapper.toPsi(item.rawItem) is PsiDirectory,
       ),
+      composedWeight = item.composedWeight,
     )
   }
 
+  /** Runs the search of [params] without a result limit and computes the presentation of every result. */
+  fun getItemsFlow(params: SeParams, presentationProvider: suspend (SeTargetRawItem) -> SeTargetPresentableItem): Flow<SeTargetPresentableItem> =
+    getItemsFlow(rawItemsFlow(params, runs = null), presentationProvider)
+
   @OptIn(ExperimentalCoroutinesApi::class)
-  fun getItemsFlow(params: SeParams, presentationProvider: suspend (SeTargetRawItem) -> SeTargetPresentableItem): Flow<SeTargetPresentableItem> {
+  private fun getItemsFlow(
+    rawItems: Flow<SeTargetRawItem>,
+    presentationProvider: suspend (SeTargetRawItem) -> SeTargetPresentableItem,
+  ): Flow<SeTargetPresentableItem> {
     val stats = SeFetchStats(LOG.isDebugEnabled)
     val presentationNanos = AtomicLong(0)
     val presentedCount = AtomicInteger(0)
     val startedAtNano = System.nanoTime()
 
-    return getItemsFlow(params)
+    return rawItems
       .buffer(capacity = RAW_ITEMS_BUFFER)              // let the search run ahead
       .flatMapMerge(concurrency = PRESENTATION_CONCURRENCY) { rawItem ->
         flow {
@@ -205,7 +246,15 @@ class SeTargetItemsProvider<T> private constructor(
       }
   }
 
-  fun getItemsFlow(params: SeParams): Flow<SeTargetRawItem> = channelFlow {
+  /** Runs the search of [params] without a result limit. */
+  fun getItemsFlow(params: SeParams): Flow<SeTargetRawItem> = rawItemsFlow(params, runs = null)
+
+  /**
+   * Runs the search of [params]. With [runs], the search asks for [GotoLimitedRuns.limit] items and skips the items that
+   * were sent already: by an earlier run, an earlier attempt of this run, or another contributor. Without it, the search
+   * has no limit.
+   */
+  private fun rawItemsFlow(params: SeParams, runs: GotoLimitedRuns?): Flow<SeTargetRawItem> = channelFlow {
     // The counters live outside the read action, because `readAction` restarts the block after a write action.
     val attemptCount = AtomicInteger(0)
     val stats = SeFetchStats(LOG.isDebugEnabled)
@@ -231,23 +280,24 @@ class SeTargetItemsProvider<T> private constructor(
 
     persistHiddenTypes(hiddenTypes)
 
-    // The filters of the model know their own elements, so this stays free of any one model.
-    val hiddenTypeRefs = hiddenTypes?.toSet()?.let { hiddenNames ->
-      typeFilters.getValue().flatMap { filter ->
-        filter.allElements.filter { hiddenNames.contains(filter.getElementText(it)) }
-      }
-    }?.toSet() ?: emptySet()
+    val hiddenNamesByFilter = hiddenTypes ?: emptyMap()
+    val hiddenTypeRefs = typeFilters.getValue().mapValues { (key, filter) ->
+      hiddenElements(filter, hiddenNamesByFilter[key].orEmpty().toSet())
+    }
 
     try {
       readAction {
         val attempt = attemptCount.incrementAndGet()
         if (attempt > 1) {
           LOG.debug {
-            "$label: read action restarted, attempt=$attempt, ${sentCount.get()} items are re-sent"
+            "$label: read action restarted, attempt=$attempt, ${sentCount.get()} items were sent"
           }
         }
 
-        val model = stats.measure(stats.modelCreateNanos) { gotoModelProvider(project, scopeDescriptor, hiddenTypeRefs) }
+        val model = stats.measure(stats.modelCreateNanos) {
+          gotoModelProvider(project, scopeDescriptor, hiddenTypeRefs)
+        }
+
         if (operationDisposable != null && model is Disposable) {
           Disposer.register(operationDisposable, model)
         }
@@ -262,6 +312,7 @@ class SeTargetItemsProvider<T> private constructor(
         val context = psiContext?.element
         val provider = ChooseByNameModelEx.getItemProvider(model, context)
         val isEverywhere = scope.isSearchInLibraries
+        runs?.startAttempt()
         val viewModel = MyViewModel(project, model, acceptsBlankQuery)
         val defaultMatchers = createDefaultMatchers(pattern, model)
 
@@ -278,24 +329,25 @@ class SeTargetItemsProvider<T> private constructor(
           stats.measure(stats.modelSearchNanos) {
             when (provider) {
               is ChooseByNameInScopeItemProvider -> {
-                val parameters = FindSymbolParameters.wrap(pattern, scope)
+                // The limit goes only with the cut sink, so a cut always reaches the runs. The other providers search without a limit.
+                val parameters = FindSymbolParameters.wrap(pattern, scope).let { if (runs != null) it.withLimit(runs.limit, runs::markCut) else it }
                 provider.filterElementsWithWeights(viewModel, parameters, progressIndicator
                 ) { item: FoundItemDescriptor<*> ->
                   fromModelCount.incrementAndGet()
-                  processElement(progressIndicator, model, item.item, item.weight, defaultMatchers, stats, startedAtNano)
+                  processElement(progressIndicator, model, item.item, item.weight, item.composedWeight, defaultMatchers, runs, stats, startedAtNano)
                 }
               }
               is ChooseByNameWeightedItemProvider -> {
                 provider.filterElementsWithWeights(viewModel, pattern, isEverywhere, progressIndicator
                 ) { item: FoundItemDescriptor<*> ->
                   fromModelCount.incrementAndGet()
-                  processElement(progressIndicator, model, item.item, item.weight, defaultMatchers, stats, startedAtNano)
+                  processElement(progressIndicator, model, item.item, item.weight, item.composedWeight, defaultMatchers, runs, stats, startedAtNano)
                 }
               }
               else -> {
                 provider.filterElements(viewModel, pattern, isEverywhere, progressIndicator) { element: Any ->
                   fromModelCount.incrementAndGet()
-                  processElement(progressIndicator, model, element, null, defaultMatchers, stats, startedAtNano)
+                  processElement(progressIndicator, model, element, null, null, defaultMatchers, runs, stats, startedAtNano)
                 }
               }
             }
@@ -321,7 +373,9 @@ class SeTargetItemsProvider<T> private constructor(
     model: ChooseByNameModel,
     element: Any?,
     weight: Int?,
+    composedWeight: SeComposedWeight?,
     defaultMatchers: ItemMatchers,
+    runs: GotoLimitedRuns?,
     stats: SeFetchStats,
     startedAtNano: Long,
   ): Boolean {
@@ -335,15 +389,27 @@ class SeTargetItemsProvider<T> private constructor(
       LOG.error("SeTargetItemsProvider($label): null returned from $model")
       return true
     }
+    // An item that was sent already, with the same or a better weight. A provider without weights sends each item once.
+    val sentWeight = weight ?: 0
+    if (runs != null && !runs.accept(element, sentWeight)) return true
 
-    runBlockingCancellable {
-      LOG.debug {
-        "$label: emitting ${element.toString().split('\n').firstOrNull()}, weight=$weight"
+    // A write action cancels a `send` that waits for the consumer, and the read action restarts: that attempt must send the item.
+    var delivered = false
+    try {
+      runBlockingCancellable {
+        LOG.debug {
+          "$label: emitting ${element.toString().split('\n').firstOrNull()}, weight=$weight"
+        }
+        // `send` waits for the consumer while the read lock is held, so the wait goes into the log.
+        stats.measure(stats.blockedInSendNanos) {
+          send(SeTargetRawItem(element, weight, itemMatchers(defaultMatchers, model, element), composedWeight))
+        }
+        delivered = true
       }
-      // `send` waits for the consumer while the read lock is held, so the wait goes into the log.
-      stats.measure(stats.blockedInSendNanos) {
-        send(SeTargetRawItem(element, weight, itemMatchers(defaultMatchers, model, element)))
-      }
+    }
+    catch (e: CancellationException) {
+      if (!delivered) runs?.forget(element, sentWeight)
+      throw e
     }
     stats.sentCount.incrementAndGet()
     stats.recordFirstItem(startedAtNano)
@@ -398,11 +464,12 @@ class SeTargetItemsProvider<T> private constructor(
 
   private suspend fun createScopes(): SeTargetScopes {
     val descriptors = readAction {
-      collectScopesWithSeparators(AbstractGotoSEContributor.createScopes(project, psiContext))
+      collectScopesWithSeparators(scopesProvider.createDescriptors(project, psiContext))
     }
     if (descriptors.isEmpty()) return SeTargetScopes(null, SeScopeByIdMap(emptyMap(), null, null))
 
     val descriptorByScopeId = mutableMapOf<String, ScopeDescriptor>()
+    val scopeIdByDescriptor = IdentityHashMap<ScopeDescriptor, String>()
 
     val scopeDataList = descriptors.mapNotNull { descriptor ->
       val name = descriptor.displayName ?: return@mapNotNull null
@@ -410,26 +477,27 @@ class SeTargetItemsProvider<T> private constructor(
 
       SearchScopeData.from(descriptor, scopeId)?.also {
         descriptorByScopeId[scopeId] = descriptor
+        scopeIdByDescriptor[descriptor] = scopeId
       }
     }
 
-    fun scopeIdOf(name: @Nls String): String? = scopeDataList.firstOrNull { it.name == name }?.scopeId
-
-    val projectScopeName = GlobalSearchScope.projectScope(project).displayName
-    val everywhereScopeName = GlobalSearchScope.everythingScope(project).displayName
-    val projectScopeId = scopeIdOf(projectScopeName)
-    val everywhereScopeId = scopeIdOf(everywhereScopeName)
+    val everywhereScope = scopesProvider.findEverywhereScope(project, descriptors)
+    val projectScope = scopesProvider.findProjectScope(project, descriptors, everywhereScope)
+    val everywhereScopeId = everywhereScope?.let { scopeIdByDescriptor[it] }
+    val projectScopeId = projectScope?.let { scopeIdByDescriptor[it] }
 
     // The scope chooser can auto toggle to the everywhere scope only when both ids resolve and differ.
     // See SeScopeChooserActionProvider.canToggleEverywhere. A null id disables the auto toggle silently.
     if (projectScopeId == null || everywhereScopeId == null) {
       SeLog.warn("$label: the auto toggle is off, because a scope id is missing. " +
-                 "project='$projectScopeName' -> $projectScopeId, everywhere='$everywhereScopeName' -> $everywhereScopeId. " +
+                 "project='${projectScope?.displayName}' -> $projectScopeId, " +
+                 "everywhere='${everywhereScope?.displayName}' -> $everywhereScopeId. " +
                  "Known scopes: ${scopeDataList.joinToString { it.name }}")
     }
     else {
       SeLog.log(SeLog.SCOPE) {
-        "$label: scopes=${scopeDataList.size}, project='$projectScopeName', everywhere='$everywhereScopeName'"
+        "$label: scopes=${scopeDataList.size}, project='${projectScope.displayName}', " +
+        "everywhere='${everywhereScope.displayName}'"
       }
     }
 
@@ -468,40 +536,46 @@ class SeTargetItemsProvider<T> private constructor(
   //region Type filters
 
   /**
-   * The persistent type filters of the model, in the order that the filter actions appear.
+   * The persistent type filters of the model, by the key that names each one.
    */
-  private val typeFilters: SuspendLazyProperty<List<PersistentSearchEverywhereContributorFilter<T>>> = suspendLazy {
+  private val typeFilters: SuspendLazyProperty<Map<String, PersistentSearchEverywhereContributorFilter<out T>>> = suspendLazy {
     typeFilterProvider(project)
   }
 
   /**
-   * The type list that the filter action at [index] shows, or an empty list when there is no such filter.
+   * The type list that the filter which [key] names shows, or an empty list when there is no such filter.
    */
-  suspend fun getTypeVisibilityStates(index: Int): List<SeTypeVisibilityStatePresentation> =
-    typeFilters.getValue().getOrNull(index)?.let {
+  suspend fun getTypeVisibilityStates(key: String): List<SeTypeVisibilityStatePresentation> =
+    typeFilters.getValue()[key]?.let {
       typeVisibilityStates(it)
     } ?: emptyList()
 
-  private fun typeVisibilityStates(filter: PersistentSearchEverywhereContributorFilter<T>): List<SeTypeVisibilityStatePresentation> =
+  private fun <E> typeVisibilityStates(filter: PersistentSearchEverywhereContributorFilter<E>): List<SeTypeVisibilityStatePresentation> =
     filter.allElements.map { element ->
       SeTypeVisibilityStatePresentation(filter.getElementText(element), filter.getElementIcon(element)?.rpcId(), filter.isSelected(element))
     }
 
   /**
-   * Writes [hiddenTypes] into every persistent type filter.
+   * Writes the hidden types of each key into the persistent type filter that the key names.
+   *
+   * A filter with no matching key hides nothing, and a key with no matching filter is ignored.
    */
-  private suspend fun persistHiddenTypes(hiddenTypes: List<String>?) {
-    val hidden = hiddenTypes?.toSet() ?: return
-    typeFilters.getValue().forEach { filter ->
-      persistHiddenTypes(filter, hidden)
+  private suspend fun persistHiddenTypes(hiddenTypes: Map<String, List<String>>?) {
+    if (hiddenTypes == null) return
+    typeFilters.getValue().forEach { (key, filter) ->
+      persistHiddenTypes(filter, hiddenTypes[key].orEmpty().toSet())
     }
   }
 
-  private fun persistHiddenTypes(filter: PersistentSearchEverywhereContributorFilter<T>, hiddenTypes: Set<String>) {
+  private fun <E> persistHiddenTypes(filter: PersistentSearchEverywhereContributorFilter<E>, hiddenTypes: Set<String>) {
     filter.allElements.forEach { element ->
       filter.setSelected(element, !hiddenTypes.contains(filter.getElementText(element)))
     }
   }
+
+  /** The elements of [filter] that [hiddenNames] hides, by the element text of the filter. */
+  private fun <E : T> hiddenElements(filter: PersistentSearchEverywhereContributorFilter<E>, hiddenNames: Set<String>): Set<T> =
+    filter.allElements.filterTo(HashSet<T>()) { hiddenNames.contains(filter.getElementText(it)) }
 
   //endregion
 
@@ -605,6 +679,9 @@ class SeTargetItemsProvider<T> private constructor(
     /** How many presentations compute at once. */
     private const val PRESENTATION_CONCURRENCY = 10
 
+    /** The limit of the first run of [collectItems]: the frontend asks for 50 items at a time. */
+    private const val FIRST_RUN_LIMIT = 50
+
     suspend fun isCoroutineBasedGotoEnabled(legacyContributor: SearchEverywhereContributor<Any>, providerId: String): Boolean {
       if (!RegistryManager.getInstanceAsync().`is`(COROUTINE_BASED_GOTO_KEY)) return false
 
@@ -690,23 +767,30 @@ class SeTargetItemsProvider<T> private constructor(
     /**
      * Builds a provider that drives [gotoModelProvider].
      *
+     * [gotoModelProvider] takes one hidden set per type filter, under the key that
+     * [typeFilterProvider] gave that filter. So a provider reads each of its filters by name.
+     *
      * [acceptsBlankQuery] lets a blank query run. A goto model finds nothing for one, so the default
      * skips the search.
      *
      * [supportsScopes] builds the scope list of the scope chooser. Turn it off for a provider that
      * offers no scope, because the first search of a session pays for the whole list.
+     *
+     * [scopesProvider] builds that scope list. Pass one for a provider whose scope the platform does
+     * not know, such as the data source scope of the DB objects tab.
      */
     suspend fun <T> create(
       project: Project,
       dataContext: DataContext,
       operationDisposable: Disposable?,
       label: String,
-      gotoModelProvider: (Project, ScopeDescriptor?, Set<T>) -> (FilteringGotoByModel<*>),
-      typeFilterProvider: (Project) -> List<PersistentSearchEverywhereContributorFilter<T>> = { emptyList() },
+      gotoModelProvider: (Project, ScopeDescriptor?, Map<String, Set<T>>) -> (FilteringGotoByModel<*>),
+      typeFilterProvider: (Project) -> Map<String, PersistentSearchEverywhereContributorFilter<out T>> = { emptyMap() },
       extendedInfoCalculator: SeExtendedInfoCalculator = SePsiExtendedInfoCalculator(),
       isFileProvider: Boolean = false,
       acceptsBlankQuery: Boolean = false,
       supportsScopes: Boolean = true,
+      scopesProvider: SeTargetScopesProvider = SeTargetScopesProvider.DEFAULT,
     ): SeTargetItemsProvider<T> {
       val psiContext = readAction {
         GotoActionBase.getPsiContext(dataContext)?.let { context ->
@@ -715,7 +799,8 @@ class SeTargetItemsProvider<T> private constructor(
       }
 
       return SeTargetItemsProvider(project, psiContext, operationDisposable, label, gotoModelProvider,
-                                   typeFilterProvider, extendedInfoCalculator, isFileProvider, acceptsBlankQuery, supportsScopes)
+                                   typeFilterProvider, extendedInfoCalculator, isFileProvider, acceptsBlankQuery,
+                                   supportsScopes, scopesProvider)
     }
   }
 }

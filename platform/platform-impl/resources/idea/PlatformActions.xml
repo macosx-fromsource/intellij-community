@@ -533,9 +533,8 @@
 
           <reference ref="SwitchIdeScaleAction"/>
 
+          <separator/>
           <group id="UIToggleActions">
-            <separator/>
-            <reference ref="TogglePresentationAssistantAction"/>
             <separator/>
             <reference ref="ViewMainMenu"/>
             <reference ref="ChangeMainMenuModeActionGroup"/>
@@ -764,7 +763,6 @@
         <group id="HelpDiagnosticTools" popup="true">
           <reference ref="Performance.ActivityMonitor"/>
           <reference ref="Performance.DumpThreads"/>
-          <reference ref="Performance.MemTester"/>
           <separator/>
           <reference ref="LogDebugConfigure"/>
           <reference ref="BrowseSpecialPaths"/>
@@ -1070,10 +1068,7 @@
       <reference ref="ChangeIdeScale"/>
     </group>
 
-    <group id="MaintenanceGroup">
-      <reference ref="ShowRegistry"/>
-      <reference ref="ShowExperiments"/>
-    </group>
+    <group id="MaintenanceGroup"/>
 
     <reference ref="Console.Open"/>
     <reference ref="Console.Execute"/>
@@ -1345,8 +1340,6 @@
     </group>
 
     <reference ref="ChangeProjectColorActionGroup"/>
-
-    <reference ref="PresentationAssistantQuickSettingsGroup"/>
 
     <group id="ToolbarPopupActions"/>
 

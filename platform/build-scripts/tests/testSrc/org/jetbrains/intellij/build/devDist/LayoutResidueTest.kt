@@ -1,6 +1,14 @@
 // Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.intellij.build.devDist
 
+import com.intellij.platform.buildScripts.pluginModelTool.LayoutModuleLibrary
+import com.intellij.platform.buildScripts.pluginModelTool.PluginContentResidue
+import com.intellij.platform.buildScripts.pluginModelTool.PluginLayoutFacts
+import com.intellij.platform.buildScripts.pluginModelTool.RecordedLibrary
+import com.intellij.platform.buildScripts.pluginModelTool.layoutJarMembers
+import com.intellij.platform.buildScripts.pluginModelTool.layoutResidueOf
+import com.intellij.platform.buildScripts.pluginModelTool.pluginLayoutFacts
+import com.intellij.platform.buildScripts.pluginModelTool.plus
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 

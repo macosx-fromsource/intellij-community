@@ -26,6 +26,7 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.UI
 import com.intellij.openapi.application.UiWithModelAccess
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.application.impl.LaterInvocator
 import com.intellij.openapi.application.ui
 import com.intellij.openapi.components.ComponentManagerEx
 import com.intellij.openapi.components.serviceAsync
@@ -61,6 +62,7 @@ import com.intellij.openapi.wm.ToolWindowId
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.ex.ProjectFrameCapabilitiesService
+import com.intellij.openapi.wm.ex.ProjectFrameCapability
 import com.intellij.openapi.wm.ex.ProjectFrameTypeService
 import com.intellij.openapi.wm.ex.ProjectFrameUiPolicy
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener
@@ -82,6 +84,7 @@ import com.intellij.platform.diagnostic.telemetry.impl.rootTask
 import com.intellij.platform.diagnostic.telemetry.impl.span
 import com.intellij.platform.ide.bootstrap.hideSplash
 import com.intellij.platform.ide.diagnostic.startUpPerformanceReporter.FUSProjectHotStartUpMeasurer
+import com.intellij.platform.ide.diagnostic.startUpPerformanceReporter.recordStartupSpan
 import com.intellij.problems.WolfTheProblemSolver
 import com.intellij.psi.PsiManager
 import com.intellij.toolWindow.computeToolWindowBeans
@@ -241,16 +244,27 @@ internal class IdeProjectFrameAllocator(
               val toolWindowPane = withContext(Dispatchers.UI) {
                 projectFrameHelper.toolWindowPane
               }
+              // resolve the policy once: the provider of the welcome project policy writes a first-run flag
+              val projectFrameUiPolicy = serviceAsync<ProjectFrameCapabilitiesService>().getUiPolicyForToolWindows(project)
+              val earlyStartupToolWindowActivation = projectFrameUiPolicy?.let {
+                EarlyStartupToolWindowActivation.create(toolWindowManager, project, it)
+              }
               span("tool window manager init") {
                 toolWindowManager.init(
                   pane = toolWindowPane,
                   reopeningEditorJob = reopeningEditorJob,
                   taskListDeferred = taskListDeferred,
                   projectFrameTypeId = projectFrameTypeId,
+                  onDefaultPaneToolWindowsRegistered = earlyStartupToolWindowActivation?.let { it::run },
                 )
               }
-              serviceAsync<ProjectFrameCapabilitiesService>().getUiPolicyForToolWindows(project)?.let { projectFrameUiPolicy ->
-                applyProjectFrameUiPolicy(toolWindowManager, project, projectFrameUiPolicy)
+              if (projectFrameUiPolicy != null) {
+                applyProjectFrameUiPolicy(
+                  toolWindowManager = toolWindowManager,
+                  project = project,
+                  projectFrameUiPolicy = projectFrameUiPolicy,
+                  isStartupToolWindowActivated = earlyStartupToolWindowActivation?.isAttempted == true,
+                )
               }
             }
           }
@@ -480,26 +494,91 @@ private suspend fun hideSplashWhenEditorOrToolWindowShown(project: Project) {
   }
 }
 
+/**
+ * Activates [ProjectFrameUiPolicy.startupToolWindowIdToActivate] as soon as the tool windows of the default pane are registered.
+ * The activation does not wait for the `toolWindowsRegistered` event, the activation action registration, and the pending tasks.
+ * If the tool window is not registered at that time, [applyProjectFrameUiPolicy] activates it later.
+ */
+private class EarlyStartupToolWindowActivation private constructor(
+  private val toolWindowManager: ToolWindowManager,
+  private val project: Project,
+  private val toolWindowId: String,
+) {
+  companion object {
+    /**
+     * Returns null if the early activation can change the result of [applyProjectFrameUiPolicy].
+     * [applyProjectFrameUiPolicy] hides the tool windows outside the exclusive showing set before the activation.
+     * It hides a tool window of [ProjectFrameUiPolicy.toolWindowIdsToHideOnStartup] in the same EDT task as the activation.
+     */
+    fun create(
+      toolWindowManager: ToolWindowManager,
+      project: Project,
+      projectFrameUiPolicy: ProjectFrameUiPolicy,
+    ): EarlyStartupToolWindowActivation? {
+      val toolWindowId = projectFrameUiPolicy.startupToolWindowIdToActivate ?: return null
+      val exclusiveShowing = projectFrameUiPolicy.toolWindowIdsToExclusiveShowing
+      if (exclusiveShowing.isNotEmpty() && toolWindowId !in exclusiveShowing) {
+        return null
+      }
+      if (toolWindowId in projectFrameUiPolicy.toolWindowIdsToHideOnStartup) {
+        return null
+      }
+      return EarlyStartupToolWindowActivation(toolWindowManager, project, toolWindowId)
+    }
+  }
+
+  /**
+   * True if [run] found the tool window and started its activation.
+   * It is read after `ToolWindowManagerImpl.init` returns, so the activation is not repeated.
+   */
+  @Volatile
+  var isAttempted: Boolean = false
+    private set
+
+  @RequiresEdt
+  fun run() {
+    // the activation through `invokeLater` waits for a modal dialog to close
+    if (project.isDisposed || LaterInvocator.isInModalContext()) {
+      return
+    }
+    val toolWindow = toolWindowManager.getToolWindow(toolWindowId) ?: return
+    // set before the activation: a failed activation is not repeated, the same as the activation through `invokeLater`
+    isAttempted = true
+    toolWindow.activate(null)
+  }
+}
+
 private fun applyProjectFrameUiPolicy(
   toolWindowManager: ToolWindowManager,
   project: Project,
   projectFrameUiPolicy: ProjectFrameUiPolicy,
+  isStartupToolWindowActivated: Boolean,
 ) {
   val exclusiveShowing = projectFrameUiPolicy.toolWindowIdsToExclusiveShowing
   if (exclusiveShowing.isNotEmpty()) {
-    val toHide = toolWindowManager.toolWindowIds.filter { !exclusiveShowing.contains(it) }
-
-    if (toHide.isNotEmpty()) {
-      toolWindowManager.invokeLater {
-        val impl = toolWindowManager as ToolWindowManagerImpl
-        for (id in toHide) {
-          impl.hideToolWindow(id, removeFromStripe = true)
+    @Suppress("UnsafeOpenServiceCast")
+    fun hideNotExclusive(toHide: List<String>) {
+      if (toHide.isNotEmpty()) {
+        toolWindowManager.invokeLater {
+          val impl = toolWindowManager as ToolWindowManagerImpl
+          for (id in toHide) {
+            impl.hideToolWindow(id, removeFromStripe = true)
+          }
         }
       }
     }
+
+    hideNotExclusive(toolWindowManager.toolWindowIds.filter { !exclusiveShowing.contains(it) })
+
+    val messageBusConnection = project.messageBus.connect(project)
+    messageBusConnection.subscribe(ToolWindowManagerListener.TOPIC, object : ToolWindowManagerListener {
+      override fun toolWindowsRegistered(ids: List<String>, toolWindowManager: ToolWindowManager) {
+        hideNotExclusive(ids.filter { !exclusiveShowing.contains(it) })
+      }
+    })
   }
 
-  val startupToolWindowId = projectFrameUiPolicy.startupToolWindowIdToActivate
+  val startupToolWindowId = projectFrameUiPolicy.startupToolWindowIdToActivate.takeUnless { isStartupToolWindowActivated }
   val toolWindowIdsToHideOnStartup = projectFrameUiPolicy.toolWindowIdsToHideOnStartup
   val pendingToolWindowIds = ConcurrentHashMap.newKeySet<String>().apply {
     startupToolWindowId?.let(::add)
@@ -680,7 +759,11 @@ private suspend fun postOpenEditors(
                                  }
       if (!isNotificationSilentMode(project)) {
         finishEmptyEditorStartupBeforeProjectView(
-          finishOpeningStartupEditors = { findAndOpenReadmeIfNeeded(project) },
+          finishOpeningStartupEditors = {
+            val readmeCheckStart = System.nanoTime()
+            findAndOpenReadmeIfNeeded(project)
+            recordStartupSpan("readme opening check", readmeCheckStart, System.nanoTime())
+          },
           presentEmptyEditor = {
             releaseStartupEmptyStatePresentationHold()
             val settled = emptyStateFocusSettled
@@ -1003,8 +1086,7 @@ private fun focusProjectViewIfOpened(project: Project) {
 }
 
 private suspend fun findAndOpenReadmeIfNeeded(project: Project) {
-  if (!AdvancedSettings.getBoolean("ide.open.readme.md.on.startup") ||
-      FileEditorManagerKeys.DO_NOT_REOPEN_FILES.isIn(project)) {
+  if (!isReadmeLookupOnStartupEnabled(project)) {
     return
   }
 
@@ -1026,6 +1108,16 @@ private suspend fun findAndOpenReadmeIfNeeded(project: Project) {
       FUSProjectHotStartUpMeasurer.openedReadme(readme, System.nanoTime())
     }
   }
+}
+
+/**
+ * Tells if the project open looks for a README of [project] to open.
+ * A project with [ProjectFrameCapability.WELCOME_EXPERIENCE] gets no lookup.
+ */
+internal suspend fun isReadmeLookupOnStartupEnabled(project: Project): Boolean {
+  return AdvancedSettings.getBoolean("ide.open.readme.md.on.startup") &&
+         !FileEditorManagerKeys.DO_NOT_REOPEN_FILES.isIn(project) &&
+         !serviceAsync<ProjectFrameCapabilitiesService>().has(project, ProjectFrameCapability.WELCOME_EXPERIENCE)
 }
 
 private class MutableLoadingState(override val done: Job) : FrameLoadingState

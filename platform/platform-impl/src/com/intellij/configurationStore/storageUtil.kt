@@ -38,15 +38,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.annotations.ApiStatus.Internal
-import org.jetbrains.annotations.TestOnly
 import java.io.IOException
 import java.nio.file.Path
 import kotlin.io.path.invariantSeparatorsPathString
 
 const val NOTIFICATION_GROUP_ID: String = "Load Error"
-
-@TestOnly
-var DEBUG_LOG: String? = null
 
 @Internal
 fun doNotify(macros: MutableSet<@NlsSafe String>, project: Project, substitutorToStore: Map<TrackingPathMacroSubstitutor, IComponentStore>) {
@@ -202,8 +198,3 @@ class UnknownMacroNotification(
     }
   }
 }
-
-/** Used in constructed configuration store events to trigger VFS content reloading for files updated via NIO. */
-@Internal
-@JvmField
-val RELOADING_STORAGE_WRITE_REQUESTOR: StorageManagerFileWriteRequestor = object : StorageManagerFileWriteRequestor { }

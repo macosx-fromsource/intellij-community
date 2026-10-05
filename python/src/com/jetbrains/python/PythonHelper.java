@@ -9,6 +9,7 @@ import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.python.psi.LanguageLevel;
 import com.jetbrains.python.sdk.PythonEnvUtil;
 import com.jetbrains.python.sdk.PythonSdkType;
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -20,7 +21,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static com.intellij.python.community.helpersLocator.PythonHelpersLocator.findPathInHelpers;
-import static com.intellij.python.community.helpersLocator.PythonHelpersLocator.findPathInHelpersPossibleNull;
 import static com.intellij.python.community.helpersLocator.PythonHelpersLocator.findPathStringInHelpers;
 import static com.intellij.python.community.helpersLocator.PythonHelpersLocator.getCommunityHelpersRoot;
 import static com.intellij.python.venv.VenvKt.VIRTUALENV_ZIPAPP_NAME;
@@ -76,7 +76,7 @@ public enum PythonHelper implements HelperPackage {
   DOCSTRING_FORMATTER("docstring_formatter.py"),
 
   EXTRA_SYSPATH("extra_syspath.py"),
-  SYSPATH("syspath.py"),
+  SYSPATH(Constants.SYSPATH_PY),
 
   // Compatible with 3.8+
   PYCODESTYLE("pycodestyle.py"),
@@ -96,11 +96,8 @@ public enum PythonHelper implements HelperPackage {
                                                        String[] thirdPartyDependencies) {
     List<HelperDependency> dependencies = HelperDependency.findThirdPartyDependencies(thirdPartyDependencies);
 
-    if (findPathInHelpersPossibleNull(path + ".zip") != null) {
-      return new ModuleHelperPackage(moduleEntryPoint, path + ".zip", dependencies);
-    }
-    Path pathInHelpers = findPathInHelpersPossibleNull(path);
-    if (!asModule && pathInHelpers != null && new File(pathInHelpers.toFile(), moduleEntryPoint + ".py").isFile()) {
+    Path pathInHelpers = findPathInHelpers(path);
+    if (!asModule && new File(pathInHelpers.toFile(), moduleEntryPoint + ".py").isFile()) {
       return new ScriptPythonHelper(moduleEntryPoint + ".py", pathInHelpers.toFile(), dependencies);
     }
 
@@ -185,9 +182,6 @@ public enum PythonHelper implements HelperPackage {
     }
   }
 
-  /**
-   * Module Python helper can be executed from zip-archive
-   */
   public static class ModuleHelperPackage extends PathHelperPackage {
     private final String myModuleName;
 
@@ -296,5 +290,10 @@ public enum PythonHelper implements HelperPackage {
 
   public @NotNull GeneralCommandLine newCommandLine(@NotNull Sdk pythonSdk, @NotNull List<String> parameters) {
     return myModule.newCommandLine(pythonSdk, parameters);
+  }
+
+  @ApiStatus.Internal
+  public static final class Constants {
+    public static final String SYSPATH_PY = "syspath.py";
   }
 }

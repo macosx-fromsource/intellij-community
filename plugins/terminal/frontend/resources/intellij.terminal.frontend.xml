@@ -13,6 +13,7 @@
     <module name="intellij.libraries.pty4j"/>
     <module name="intellij.platform.analysis"/>
     <module name="intellij.platform.codeStyle"/>
+    <module name="intellij.platform.consoleView"/>
     <module name="intellij.platform.core"/>
     <module name="intellij.platform.core.impl"/>
     <module name="intellij.platform.core.ui"/>
@@ -117,6 +118,8 @@
     <toolWindowInitializer implementation="com.intellij.terminal.frontend.toolwindow.impl.TerminalToolWindowTabsManagerImpl$Initializer"/>
 
     <portForwardingManager implementation="com.intellij.terminal.frontend.view.portForwarding.TerminalPortForwardingManagerImpl"/>
+
+    <workingDirectoryCustomizer implementation="com.intellij.terminal.frontend.settings.WelcomeProjectTerminalWorkingDirectoryCustomizer"/>
 
     <escapeHandler implementation="com.intellij.terminal.frontend.action.CancelSelection"/>
     <escapeHandler implementation="com.intellij.terminal.frontend.action.CloseSearch"/>

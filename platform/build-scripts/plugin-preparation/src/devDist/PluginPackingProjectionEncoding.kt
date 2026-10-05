@@ -17,7 +17,7 @@ import org.jetbrains.annotations.ApiStatus
  * A module's own jar is the commonest asset by far: one `module-v1` source, the dev-distribution writer, the module as
  * the one input, and `lib/modules/<module>.jar` as the destination. The compact form states it as `{"module": "<m>"}`.
  * Any other asset leaves `inputs` out when the list repeats the recipe sources. The full form stays readable, and a
- * decoded projection equals the encoded one, so the layout signature, which hashes the objects, does not change.
+ * decoded projection equals the encoded one.
  *
  * Only `PluginPackingProjection.assets` uses this codec. A library layout recipe embeds the same classes, and keeps
  * the full form, so the recipe text and every signature over it stay as they are.
@@ -56,7 +56,6 @@ private class CompactAsset(
   @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val kind: String = "file",
   @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val classPath: Boolean = true,
   @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val normalizeTreeModes: Boolean = false,
-  @EncodeDefault(EncodeDefault.Mode.NEVER) @JvmField val scope: String = PLUGIN_ASSET_SCOPE,
 )
 
 private object CompactAssetSerializer : KSerializer<PluginPackingAsset> {
@@ -77,7 +76,6 @@ private object CompactAssetSerializer : KSerializer<PluginPackingAsset> {
         kind = value.kind,
         classPath = value.classPath,
         normalizeTreeModes = value.normalizeTreeModes,
-        scope = value.scope,
       )
     }
     encoder.encodeSerializableValue(CompactAsset.serializer(), compact)
@@ -91,7 +89,7 @@ private object CompactAssetSerializer : KSerializer<PluginPackingAsset> {
       require(
         compact.destination == null && compact.inputs == null && compact.recipe == null && compact.symlinkTarget == null &&
         compact.mode == plain.mode && compact.kind == plain.kind && compact.classPath == plain.classPath &&
-        compact.normalizeTreeModes == plain.normalizeTreeModes && compact.scope == plain.scope
+        compact.normalizeTreeModes == plain.normalizeTreeModes
       ) { "A module jar asset states only its module: $module" }
       return moduleJarAsset(module)
     }
@@ -107,7 +105,6 @@ private object CompactAssetSerializer : KSerializer<PluginPackingAsset> {
       kind = compact.kind,
       classPath = compact.classPath,
       normalizeTreeModes = compact.normalizeTreeModes,
-      scope = compact.scope,
     )
   }
 }

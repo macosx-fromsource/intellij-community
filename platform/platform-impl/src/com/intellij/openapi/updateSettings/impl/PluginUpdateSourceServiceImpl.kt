@@ -6,7 +6,6 @@ import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.plugins.RepositoryHelper
 import com.intellij.ide.plugins.marketplace.utils.MarketplaceCustomizationService
 import com.intellij.ide.plugins.newui.PluginUiModel
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.RoamingType
 import com.intellij.openapi.components.SerializablePersistentStateComponent
 import com.intellij.openapi.components.State
@@ -16,7 +15,12 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.extensions.PluginDescriptor
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.updateSettings.impl.PluginUpdateSourceService.Companion.isFunctionalitySupported
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.NlsSafe
+import com.intellij.openapi.util.registry.Registry
+import com.intellij.testFramework.TestModeFlags
+import com.intellij.ui.JBAccountInfoService
+import com.intellij.ui.LicensingFacade
 import com.intellij.util.UriUtil
 import com.intellij.util.xmlb.annotations.Attribute
 import com.intellij.util.xmlb.annotations.Tag
@@ -27,6 +31,9 @@ import org.jetbrains.annotations.Nls
 import org.jetbrains.annotations.NonNls
 import org.jetbrains.annotations.TestOnly
 import java.util.Random
+
+internal const val REGISTRY_KEY_DISABLE_UPDATE_SOURCES_FOR_INTERNAL_USERS =
+  "platform.disable.plugin.update.sources.ui.and.filtering.for.internal.users"
 
 @State(name = "PluginUpdateSources", storages = [Storage("pluginUpdateSources.xml", roamingType = RoamingType.DISABLED)])
 internal class PluginUpdateSourceServiceImpl : PluginUpdateSourceService,
@@ -141,7 +148,7 @@ internal class PluginUpdateSourceServiceImpl : PluginUpdateSourceService,
     plugin: PluginDescriptor,
     safePluginIdList: List<String>,
   ): PluginUpdateSource {
-    if (!ApplicationManager.getApplication().isInternal) return updateSource
+    if (!isInternalUser()) return updateSource
     if (!(updateSource as Repository).isNightlyRepository) return updateSource
     if (!plugin.hasImplicitMarketplaceUpdateSource() && !safePluginIdList.contains(plugin.pluginId.idString)) return updateSource
     return Repository(isMarketplace = true, isNightlyRepository = true,
@@ -198,18 +205,18 @@ internal data class XmlSerializableRepository(
   fun toPluginSourceId(): PluginUpdateSource {
     return Repository(hostToSerialize,
                       isMarketplaceToSerialize,
-                      isNightlyRepositoryToSerialize && ApplicationManager.getApplication().isInternal)
+                      isNightlyRepositoryToSerialize && isInternalUser())
   }
 }
 
 private const val CUSTOM_BUILT_IN_PLUGIN_REPOSITORY_PROPERTY = "intellij.plugins.custom.built.in.repository.url"
 
 private fun createRepository(initialHost: String?): Repository {
-  val isMarketplace = initialHost == null
   val host = normalizeHost(initialHost)
+  val isMarketplace = initialHost == null || MarketplaceChannelUrlService.getInstance().isMarketplaceChannelUrl(host)
   return Repository(host,
                     isMarketplace,
-                    isNightlyRepository(host, ApplicationManager.getApplication().isInternal))
+                    isNightlyRepository(host, isInternalUser()))
 }
 
 private fun normalizeHost(initialHost: String?): String {
@@ -229,6 +236,21 @@ internal fun isNightlyRepository(host: String, isInternalMode: Boolean): Boolean
     ?.map { normalizeHost(it) }
     ?.contains(host) == true
 }
+
+private fun isInternalUser(): Boolean {
+  if (TestModeFlags.`is`(FORCE_INTERNAL_USER_FOR_TESTS_IN_PLUGIN_UPDATE_SOURCES)) return true
+  val isJetBrainsEmail = JBAccountInfoService.getInstance()?.userData?.email?.endsWith("@jetbrains.com") == true
+  val isJetBrainsTeam = LicensingFacade.getInstance()?.licensedTo?.contains("JetBrains Team") == true
+  return isJetBrainsEmail || isJetBrainsTeam
+}
+
+internal fun isPluginUpdateSourceUIAndFilteringDisabledForInternalUser(): Boolean {
+  return Registry.`is`(REGISTRY_KEY_DISABLE_UPDATE_SOURCES_FOR_INTERNAL_USERS, false) && isInternalUser()
+}
+
+@ApiStatus.Internal
+@TestOnly
+val FORCE_INTERNAL_USER_FOR_TESTS_IN_PLUGIN_UPDATE_SOURCES: Key<Boolean> = Key("PluginUpdateSourceService.forceInternalUser")
 
 private fun PluginUpdateSource.toXmlSerializableRepository(): XmlSerializableRepository {
   val repository = this as Repository

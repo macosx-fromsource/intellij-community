@@ -37,6 +37,14 @@
     <module name="intellij.libraries.ktor.server.cio"/>
     <!-- endregion -->
 
+    <!-- region nested: libraries.platform > libraries.netty -->
+    <module name="intellij.libraries.netty.buffer" loading="embedded"/>
+    <module name="intellij.libraries.netty.codec.compression" loading="embedded"/>
+    <module name="intellij.libraries.netty.codec.http" loading="embedded"/>
+    <module name="intellij.libraries.netty.codec.protobuf" loading="embedded"/>
+    <module name="intellij.libraries.netty.handler.proxy"/>
+    <!-- endregion -->
+
     <!-- region direct modules -->
     <module name="intellij.libraries.java.compatibility" loading="embedded"/>
     <module name="intellij.libraries.jetbrains.annotations" loading="embedded"/>
@@ -83,6 +91,7 @@
     <module name="intellij.libraries.ion" loading="embedded"/>
     <module name="intellij.libraries.java.websocket"/>
     <module name="intellij.libraries.javax.annotation" loading="embedded"/>
+    <module name="intellij.libraries.jaxb" loading="embedded"/>
     <module name="intellij.libraries.jaxen" loading="embedded"/>
     <module name="intellij.libraries.jbr" loading="embedded"/>
     <module name="intellij.libraries.jcip" loading="embedded"/>
@@ -95,11 +104,6 @@
     <module name="intellij.libraries.lz4" loading="embedded"/>
     <module name="intellij.libraries.markdown" loading="embedded"/>
     <module name="intellij.libraries.mvstore" loading="embedded"/>
-    <module name="intellij.libraries.netty.buffer" loading="embedded"/>
-    <module name="intellij.libraries.netty.codec.compression" loading="embedded"/>
-    <module name="intellij.libraries.netty.codec.http" loading="embedded"/>
-    <module name="intellij.libraries.netty.codec.protobuf" loading="embedded"/>
-    <module name="intellij.libraries.netty.handler.proxy"/>
     <module name="intellij.libraries.oro.matcher" loading="embedded"/>
     <module name="intellij.libraries.protobuf" loading="embedded"/>
     <module name="intellij.libraries.protobuf.kotlin"/>
@@ -164,6 +168,7 @@
     <!-- endregion -->
 
     <!-- region direct modules -->
+    <module name="intellij.platform.productMode" loading="embedded"/>
     <module name="intellij.platform.runtime.product" loading="embedded"/>
     <module name="intellij.platform.bazel.runfiles" loading="embedded"/>
     <module name="intellij.platform.buildScripts.concurrency"/>

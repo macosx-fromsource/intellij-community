@@ -2,12 +2,12 @@
 package com.jetbrains.python.packaging.management
 
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.fileLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.util.Disposer
 import com.intellij.python.pyproject.model.evolution.EvoPyProjectModel
+import com.intellij.python.sdk.backend.PythonInterpreter
 import com.intellij.python.sdk.backend.getSdkAPI
 import com.intellij.serviceContainer.AlreadyDisposedException
 import com.intellij.util.IncorrectOperationException
@@ -18,13 +18,13 @@ import com.jetbrains.python.packaging.utils.PyPackageCoroutine
 import com.jetbrains.python.sdk.PythonSdkAdditionalData
 import com.jetbrains.python.sdk.PythonSdkUpdater
 import com.jetbrains.python.sdk.pySdkAdditionalData
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
-import org.jetbrains.annotations.TestOnly
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import org.jetbrains.annotations.TestOnly
 
 internal class PythonPackageManagerServiceImpl(
   private val project: Project,
@@ -42,13 +42,17 @@ internal class PythonPackageManagerServiceImpl(
     // change earlier, while `EvoPyProjectModel` still holds the generation before it, and reading that one would
     // reconcile against the interpreters of a moment that has passed.
     scope.launch {
-      project.service<EvoPyProjectModel>().snapshotFlow().collect { syncWatchers(it) }
+      EvoPyProjectModel.getInstance(project).snapshotFlow().collect { syncWatchers(it) }
     }
   }
 
   /** One cached manager, and the watcher of the interpreter paths that it has while the project uses the interpreter. */
-  private class CachedManager(val sdk: Sdk, val manager: PythonPackageManager) {
+  private class CachedManager(val interpreter: PythonInterpreter, val manager: PythonPackageManager) {
     var watcher: Disposable? = null
+
+    /** The SDK of [interpreter], for the watcher and the SDK updater, which still take one. */
+    @Suppress("DEPRECATION")
+    val sdk: Sdk get() = interpreter.getSdkAPI()
   }
 
   /**
@@ -71,15 +75,15 @@ internal class PythonPackageManagerServiceImpl(
    */
   private fun syncWatchers(structure: EvoPyProjectModel.Snapshot?) {
     if (cache.isEmpty() || structure == null) return
-    @Suppress("DEPRECATION")
-    val sdksInUse = structure.interpreters.mapTo(mutableSetOf()) { it.getSdkAPI() }
+    val interpretersInUse = structure.interpreters
     watchersLock.withLock {
       for ((key, entry) in cache) {
         val watched = entry.watcher != null
-        if (entry.sdk in sdksInUse && !watched) {
+        val inUse = entry.interpreter in interpretersInUse
+        if (inUse && !watched) {
           watchInterpreterPaths(key, entry)
         }
-        else if (entry.sdk !in sdksInUse && watched) {
+        else if (!inUse && watched) {
           logger.info("The project does not use '${entry.sdk.name}' any more, so its paths are not watched")
           entry.watcher?.let { Disposer.dispose(it) }
           entry.watcher = null
@@ -111,7 +115,7 @@ internal class PythonPackageManagerServiceImpl(
   }
 
   /**
-   * Returns a cached [PythonPackageManager] for the given [sdk], creating one on first access.
+   * Returns a cached [PythonPackageManager] for the given [interpreter], creating one on first access.
    *
    * On cache hit the call is effectively free (a [ConcurrentHashMap] lookup).
    * On cache miss (once per SDK per project lifetime) the method creates the manager
@@ -120,11 +124,14 @@ internal class PythonPackageManagerServiceImpl(
    * In practice the first call happens during project/SDK setup on a background thread,
    * so subsequent EDT callers always get a cached instance.
    *
-   * The interpreter paths are watched only while a module of the project uses [sdk]; see [syncWatchers].
+   * The interpreter paths are watched only while a module of the project uses [interpreter]; see [syncWatchers].
    *
-   * Requires [sdk] to be a Python SDK with [com.jetbrains.python.sdk.PythonSdkAdditionalData].
+   * Requires the SDK of [interpreter] to be a Python SDK with [com.jetbrains.python.sdk.PythonSdkAdditionalData].
    */
-  override fun forSdk(project: Project, sdk: Sdk): PythonPackageManager {
+  override fun forPythonInterpreter(project: Project, interpreter: PythonInterpreter): PythonPackageManager {
+    // The managers are keyed by the SDK and its additional data, so this service reads the SDK.
+    @Suppress("DEPRECATION")
+    val sdk = interpreter.getSdkAPI()
     val cacheKey = (sdk.pySdkAdditionalData).uuid
 
     var newEntry = false
@@ -140,7 +147,7 @@ internal class PythonPackageManagerServiceImpl(
         }
       }
 
-      val manager = PythonPackageManagerProvider.EP_NAME.extensionList.firstNotNullOf { it.createPackageManagerForSdk(project, sdk) }
+      val manager = PythonPackageManagerProvider.EP_NAME.extensionList.firstNotNullOf { it.createPackageManager(project, interpreter) }
       try {
         Disposer.register(PyPackageCoroutine.getInstance(project), manager)
       }
@@ -151,11 +158,11 @@ internal class PythonPackageManagerServiceImpl(
       // I don't think it should be here
       PythonRequirementTxtSdkUtils.migrateRequirementsTxtPathFromModuleToSdk(project, sdk)
 
-      CachedManager(sdk, manager)
+      CachedManager(interpreter, manager)
     }
     // Only a new entry needs one: an entry that is already cached gets its watcher from the next structure that moves
     // its interpreter into use or out of it. A structure that has not landed yet arrives on the flow shortly.
-    if (newEntry) syncWatchers(project.service<EvoPyProjectModel>().snapshotOrNull())
+    if (newEntry) syncWatchers(EvoPyProjectModel.getInstance(project).snapshotOrNull())
     return entry.manager
   }
 
